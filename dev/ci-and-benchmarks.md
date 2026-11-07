@@ -26,7 +26,7 @@ Shared dependency setup is centralized in `.github/actions/setup-ci-deps/action.
 
 1. Runs `setup-ci-deps` with Neovim enabled
 2. Restores compiler cache via `hendrikmuhs/ccache-action@v1` (`key: test`)
-3. Restores CMake dependency cache (`build/_deps`, `deps-v2-*`)
+3. Restores CMake dependency cache (`build/_deps`, `deps-v3-*`)
 4. Builds the test binaries and `vimficiency` in Release mode
    (`-DVIMF_DEBUG=OFF`, `-DVIMF_TRACK_STATES=OFF`)
 5. Runs the fast correctness gate via `scripts/vimfy_tests`: unit, approval,
@@ -72,17 +72,24 @@ token with repository Administration read access.
 One automatic trigger drives `bench-local-run.sh`:
 
 - **`main` pushes** — `.github/workflows/bench-main.yml` runs on a
-  self-hosted macOS runner (the "spare machine"). Fires on every push to
-  main, including PR merges done via the web UI. It is the only source of
-  timeline points.
+  self-hosted runner (the dev Linux machine). Fires on every push to main,
+  including PR merges done via the web UI. It is the only source of
+  timeline points. While the machine is asleep, runs queue (GitHub cancels
+  after 24h) and complete on wake; each queued SHA still gets its own point.
 
 Feature branches are **not** benched automatically. A `.githooks/pre-push`
 hook on the dev machine used to bench them, but that put two hardware
-profiles (Linux dev machine vs the macOS spare) on one timeline and made
-every cross-regime comparison apples-to-oranges. The hook and its
-`core.hooksPath` install step (formerly in the top-level `CMakeLists.txt`)
-were removed; the timeline is now all-main, all-macOS-runner, so points are
-directly comparable.
+profiles on one timeline and made every cross-regime comparison
+apples-to-oranges. The hook and its `core.hooksPath` install step (formerly
+in the top-level `CMakeLists.txt`) were removed; the timeline is now
+all-main, one-runner, so points are directly comparable. The runner machine
+has changed twice (dev Linux → spare MacBook at 5c4a5be5 → dev Linux again,
+Nov 2026); each cutover shows as a step in absolute numbers, not an
+optimizer change.
+
+Noise sources on a dev machine as runner: a heavy build or test run in
+another terminal while a bench is in flight inflates that point. Steady
+state is ~3-5 min per main push.
 
 For ad-hoc pre-merge perf intuition, run the benchmark binary directly from a
 **Release** tree — `./build-release/tests/vimfy_benchmarks
@@ -103,9 +110,9 @@ cmake --build build-release --target vimfy_benchmarks
 it by hand when you actually want a point on the timeline (see *Re-running
 manually*).
 
-### Self-hosted macOS runner (`main`)
+### Self-hosted runner (`main`)
 
-GitHub workflow `bench-main.yml` on `runs-on: [self-hosted, macOS,
+GitHub workflow `bench-main.yml` on `runs-on: [self-hosted, Linux,
 vimficiency-bench]`, triggered `on: push: branches: [main]`. The job
 checks out the repo with `fetch-depth: 0` (the baseline-lookup step needs
 HEAD~1; gh-pages is fetched explicitly inside the script) and invokes the
@@ -114,10 +121,9 @@ script skips the `flock` single-flight (the workflow's `concurrency:
 group: bench-main` already serializes runs).
 
 The runner is registered to the repo via `Settings → Actions → Runners`
-and runs as a launchd service via the installer's `./svc.sh install`.
-Sleep is disabled via `pmset` so PR merges during off-hours bench
-promptly. Deps installed via Homebrew (`ccache cmake neovim jq bun`);
-Apple clang from `xcode-select --install` handles the C++ build.
+and runs as a systemd service via the installer's `./svc.sh install`. Deps
+(`ccache cmake neovim jq bun g++`) are system packages on the machine; the
+workflow's "Check bench deps" step fails fast if one is missing.
 
 ### What the runner does
 
@@ -135,7 +141,7 @@ never touched. Two `git worktree`s sharing `.git` with the main repo:
 Every bench ingests into the same root timeline at
 `gh-pages/{edit,motion,composition}/data.json`. There are no per-branch
 dashboards, no promotion-on-PR-merge logic, no `branches.json` index.
-With benches now main-only on the spare machine, each chart point is a real
+With benches now main-only on one machine, each chart point is a real
 main-SHA measurement on one consistent machine. (A manual
 `bench-local-run.sh` on a non-main SHA would still ingest a point; that is
 the one remaining way an off-main entry can land, so do it deliberately.)
@@ -154,7 +160,7 @@ Steps:
    - `CompositionOpt.*` → `composition_result.json`
 3. Baseline comparison: look up the parent SHA's stored entry in `gh-pages/{edit,motion,composition}/data.json` via `scripts/bench-baseline-from-stored.ts`, feed it to `bench-compare.ts`. Skipped when the parent has no stored entry (first run on this machine, parent was rebased away, etc.) — informational, never gates the run.
 4. **Main only:** build and run `vimfy_explore` for exploration data; time the unit + approval binaries (`convert-gtest-timing.ts`) and snapshot property + safety coverage (`convert-gtest-coverage.ts`)
-5. Build `web/dashboard/` with `--base=/Vimficiency/`
+5. Build `web/dashboard/` with `--base=/vimficiency/`
 6. In the `gh-pages` worktree: ingest results, prune to 100 entries, ingest exploration (main only), copy dashboard assets
 7. Commit + push to `origin gh-pages`. On push conflict (race with another local run) fetch + rebase once and retry
 
@@ -184,50 +190,37 @@ point. Behavior is identical for any `<branch>` — only the optional
 main-only extras differ — which is also why running it on a non-main SHA
 deliberately lands an off-main point.
 
-## Self-hosted macOS runner setup (one-time)
+## Self-hosted runner setup (one-time)
 
-Steps to register the spare MacBook as the runner backing
-`bench-main.yml`. Run as your normal user; nothing here needs `sudo`
-except where noted.
+Steps to register the dev Linux machine as the runner backing
+`bench-main.yml`. Run as your normal user; `svc.sh` needs `sudo`.
 
-1. **Toolchain bootstrap.** Apple clang for the C++ build, Homebrew so
-   the workflow has something to install bench deps into. Everything else
-   (`ccache`, `cmake`, `neovim`, `jq`, `bun`) is installed idempotently by
-   `bench-main.yml`'s "Install bench deps" step on every run, so it
-   doesn't need to live in this checklist.
+1. **Deps.** `ccache cmake neovim jq bun gcc` as system packages (on Arch:
+   `pacman -S ccache cmake neovim jq bun gcc`). Nothing is installed by the
+   workflow.
 
-   ```bash
-   xcode-select --install
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-   ```
-
-2. **Disable sleep so PR merges during off-hours bench promptly.**
-
-   ```bash
-   sudo pmset -a sleep 0
-   sudo pmset -a disksleep 0
-   sudo pmset -c disablesleep 1   # AC-powered: never sleep, even with lid closed
-   ```
-
-3. **Register the runner.** In the repo on GitHub: Settings → Actions →
-   Runners → New self-hosted runner → macOS. The page gives a download +
+2. **Register the runner.** In the repo on GitHub: Settings → Actions →
+   Runners → New self-hosted runner → Linux x64. The page gives a download +
    `./config.sh` command with a registration token (1hr expiry). When it
    asks for labels, enter `vimficiency-bench` so the workflow's
-   `runs-on: [self-hosted, macOS, vimficiency-bench]` matches.
+   `runs-on: [self-hosted, Linux, vimficiency-bench]` matches. Extract
+   outside the repo (e.g. `~/actions-runner`).
 
-4. **Install as a launchd service** so it auto-starts on boot and
-   survives logout:
+3. **Install as a systemd service** so it auto-starts on boot:
 
    ```bash
-   cd ~/actions-runner       # or wherever you extracted it
-   ./svc.sh install
-   ./svc.sh start
-   ./svc.sh status           # should show running
+   cd ~/actions-runner
+   sudo ./svc.sh install $USER
+   sudo ./svc.sh start
+   sudo ./svc.sh status
    ```
 
-5. **Verify.** The runner appears as "Idle" in the GitHub Settings page.
-   Trigger a test run by pushing any commit to main, or by re-running the
-   most recent `bench-main` workflow from the Actions tab.
+   The service runs with the login user's `PATH` from systemd's default
+   environment, not a shell profile; `/usr/bin` is on it, which is where the
+   pacman deps live.
+
+4. **Verify.** The runner appears as "Idle" in the GitHub Settings page.
+   Trigger a test run from the Actions tab (`bench-main` → Run workflow).
 
 ### First-run gotchas
 
@@ -235,12 +228,12 @@ except where noted.
   (cmake fetches GoogleTest/FuzzTest/benchmark/msgpack/etc., compiles
   Release with no ccache history). Expect ~10-20 min. Steady-state with a
   warm ccache is ~3-5 min.
-- Apple clang may flag warnings GCC doesn't. If the first build fails,
-  fix the warnings or set `-DCMAKE_CXX_FLAGS=-Wno-<flag>` in the workflow
-  rather than hacking around it.
-- Numbers will land in a different absolute range than the dev-machine
-  history — the chart shows a step at the cutover. Not a bug; the spare
-  machine is a different CPU.
+- The runner's `ccache` and `~/.cache/vimficiency-bench` worktrees are
+  separate from the ones a by-hand `bench-local-run.sh` uses only if `HOME`
+  differs; with `svc.sh install $USER` they are shared, which is fine
+  (flock is skipped under CI, concurrency is serialized by the workflow).
+- Numbers land in a different absolute range than the macOS history — the
+  chart shows a step at the cutover. Not a bug; different CPU.
 
 ## Data Pipeline
 
@@ -323,7 +316,7 @@ A single-page React + TypeScript + Vite app using TanStack Router for client-sid
 web/dashboard/
 ├── package.json
 ├── bun.lock
-├── vite.config.ts          # base: '/Vimficiency/', single entry
+├── vite.config.ts          # base: '/vimficiency/', single entry
 ├── tsconfig.json
 ├── index.html              # SPA shell (single Vite entry point)
 ├── public/

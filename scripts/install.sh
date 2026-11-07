@@ -8,7 +8,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-repo="TheRickyZhang/Vimficiency"
+repo="TheRickyZhang/vimficiency"
 
 asset=""
 lib=""

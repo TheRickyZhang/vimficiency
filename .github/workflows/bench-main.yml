@@ -1,8 +1,8 @@
 name: bench-main
 # Triggered on every push to main (including PR merges), runs the local
-# bench pipeline on the self-hosted macOS runner. This is the only automatic
-# bench trigger — the former dev-machine pre-push hook (feature branches) was
-# removed so the whole timeline stays on one machine.
+# bench pipeline on the self-hosted runner (the dev Linux machine). This is
+# the only automatic bench trigger — the former dev-machine pre-push hook
+# (feature branches) was removed so the whole timeline stays on one machine.
 on:
   push:
     branches: [main]
@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   bench:
-    runs-on: [self-hosted, macOS, vimficiency-bench]
+    runs-on: [self-hosted, Linux, vimficiency-bench]
     # First run after registering the runner builds everything from scratch.
     # Steady state is ~3-5 min once ccache is warm.
     timeout-minutes: 60
@@ -33,20 +33,15 @@ jobs:
           # gh-pages; a shallow clone breaks both.
           fetch-depth: 0
 
-      - name: Add Homebrew to PATH
-        # The actions runner runs under launchd, which doesn't inherit a
-        # login shell's PATH. brew installs to /opt/homebrew on Apple
-        # Silicon and /usr/local on Intel — add whichever exists.
+      - name: Check bench deps
+        # Deps are system packages on the runner machine, not installed by
+        # the workflow; fail fast with a clear list instead of mid-pipeline.
         run: |
-          [ -d /opt/homebrew/bin ] && echo "/opt/homebrew/bin" >> $GITHUB_PATH
-          [ -d /usr/local/bin ]    && echo "/usr/local/bin"    >> $GITHUB_PATH
-          true   # don't let a missing dir fail the step
-
-      - name: Install bench deps
-        # Idempotent — brew install on already-present formulae is a fast
-        # version check. Keeps the runner machine's required state to just
-        # brew + Xcode CLI tools; everything else lives in the workflow.
-        run: brew install --quiet ccache cmake neovim jq node oven-sh/bun/bun
+          missing=
+          for t in ccache cmake nvim jq bun g++; do
+            command -v "$t" >/dev/null || missing="$missing $t"
+          done
+          [ -z "$missing" ] || { echo "missing on runner:$missing"; exit 1; }
 
       - name: Run bench pipeline
         env:

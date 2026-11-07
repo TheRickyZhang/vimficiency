@@ -38,7 +38,7 @@ type    out[i][j-1] → in[i][j]    enter insert, type goal char j-1       entry
 ```
 
 - nothing is charged per region, so a state needs no memory of where its region began; that is why two tables suffice
-- the two sides behave differently, which is why there are two: typing is additive per character, so `in` extends one character at a time, while a deletion is not — a span that grows to swallow a whole line becomes one `dd` — so every delete arrival is priced by a [sweep](/Vimficiency/docs/how-it-works/pricing-spans/) from its start
+- the two sides behave differently, which is why there are two: typing is additive per character, so `in` extends one character at a time, while a deletion is not — a span that grows to swallow a whole line becomes one `dd` — so every delete arrival is priced by a [sweep](/vimficiency/docs/how-it-works/pricing-spans/) from its start
 - each cell keeps one candidate: its cost, the step that produced it, and the predecessor cell
 
 <GridWidget />
@@ -53,4 +53,4 @@ On `aa b cc` → `xx b zz` the winning path runs `DELETE` down the whole left
 column and then `TYPE` across: one region, the `C` plan. Change the goal to
 `xx b cc` and the path turns into a diagonal `MOVE` after the first edit.
 
-Next: [how a span's cost is priced](/Vimficiency/docs/how-it-works/pricing-spans/).
+Next: [how a span's cost is priced](/vimficiency/docs/how-it-works/pricing-spans/).
