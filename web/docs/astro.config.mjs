@@ -2,10 +2,10 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import { visit } from 'unist-util-visit';
 
-const SITE_BASE = '/Vimficiency/docs';
+const SITE_BASE = '/vimficiency/docs';
 
 // Rewrites relative `*.md` hrefs in rendered HTML to Starlight slug routes
-// (e.g. `01-installation.md` → `/Vimficiency/docs/01-installation/`). The
+// (e.g. `01-installation.md` → `/vimficiency/docs/01-installation/`). The
 // shipped `astro-rehype-relative-markdown-links` package can't see our
 // custom `generateId` from content.config.ts (README → 'index'), and our
 // content collection lives outside `src/content/` so its filesystem
@@ -31,7 +31,7 @@ function rehypeRewriteMdLinks() {
 }
 
 // `base` matches the gh-pages mount point used by bench.yml: the
-// dashboard ships at `/Vimficiency/`, this site at `/Vimficiency/docs/`.
+// dashboard ships at `/vimficiency/`, this site at `/vimficiency/docs/`.
 export default defineConfig({
   site: 'https://therickyzhang.github.io',
   base: SITE_BASE,

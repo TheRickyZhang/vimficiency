@@ -1,7 +1,7 @@
 # vimficiency
 
-[![CI](https://github.com/TheRickyZhang/Vimficiency/actions/workflows/bench.yml/badge.svg)](https://github.com/TheRickyZhang/Vimficiency/actions/workflows/bench.yml)
-[![Release](https://img.shields.io/github/v/release/TheRickyZhang/Vimficiency)](https://github.com/TheRickyZhang/Vimficiency/releases/latest)
+[![CI](https://github.com/TheRickyZhang/vimficiency/actions/workflows/bench.yml/badge.svg)](https://github.com/TheRickyZhang/vimficiency/actions/workflows/bench.yml)
+[![Release](https://img.shields.io/github/v/release/TheRickyZhang/vimficiency)](https://github.com/TheRickyZhang/vimficiency/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 https://github.com/user-attachments/assets/d32cb577-8b72-4301-85ea-dc2c3d706a04
@@ -11,13 +11,13 @@ One of the biggest challenges with Vim is knowing which of the many ways to perf
 vimficiency watches how you edit and surfaces shorter keystroke sequences that would have produced the same result, with awareness of customizable per-key effort and the algorithmically-tractable subset of Vim's grammar. You keep editing the way you already do; the plugin runs in the background and lets you replay suggestions side-by-side to learn.
 
 The benchmark dashboard with details on the search process is here:
-https://therickyzhang.github.io/Vimficiency/
+https://therickyzhang.github.io/vimficiency/
 
 For the two algorithms underneath — how a buffer change is partitioned into
 planned edits, and how each plan is turned into keystrokes by shortest-path
 search — see [How it works](#how-it-works) below, or the interactive
 walkthrough on the docs site:
-https://therickyzhang.github.io/Vimficiency/docs/how-it-works/
+https://therickyzhang.github.io/vimficiency/docs/how-it-works/
 
 - [Requirements](#requirements)
 - [Installation](#installation)
@@ -51,7 +51,7 @@ builds from source.
 
 ```lua
 {
-  "TheRickyZhang/Vimficiency",
+  "TheRickyZhang/vimficiency",
   version = "*",
   build = "./scripts/install.sh",
   config = function()
@@ -70,7 +70,7 @@ and other startup problems, see
 
 ```lua
 use {
-  "TheRickyZhang/Vimficiency",
+  "TheRickyZhang/vimficiency",
   tag = "*",
   run = "./scripts/install.sh",
   config = function() require("vimficiency").setup() end,
@@ -80,7 +80,7 @@ use {
 ### vim-plug
 
 ```vim
-Plug 'TheRickyZhang/Vimficiency', { 'tag': '*', 'do': './scripts/install.sh' }
+Plug 'TheRickyZhang/vimficiency', { 'tag': '*', 'do': './scripts/install.sh' }
 ```
 
 …then in your Lua config: `require("vimficiency").setup()`.
@@ -88,8 +88,8 @@ Plug 'TheRickyZhang/Vimficiency', { 'tag': '*', 'do': './scripts/install.sh' }
 ### Manual build
 
 ```bash
-git clone --branch v0.1.1 https://github.com/TheRickyZhang/Vimficiency
-cd Vimficiency
+git clone --branch v0.1.1 https://github.com/TheRickyZhang/vimficiency
+cd vimficiency
 ./scripts/install.sh
 ```
 
@@ -104,7 +104,7 @@ Then either place the plugin on your `runtimepath` or point at the library
 explicitly:
 
 ```bash
-export VIMFICIENCY_LIB_PATH=/path/to/Vimficiency/build/libvimficiency.so   # .dylib on macOS
+export VIMFICIENCY_LIB_PATH=/path/to/vimficiency/build/libvimficiency.so   # .dylib on macOS
 ```
 
 For a full setup with configuration and keymaps, see
@@ -158,7 +158,7 @@ https://github.com/user-attachments/assets/737cf2df-1d26-47b9-b947-d5159b5b586b
 
 The full explanation, with interactive widgets that run the real planner on
 text you type, is on the docs site:
-**[How it works](https://therickyzhang.github.io/Vimficiency/docs/how-it-works/)**.
+**[How it works](https://therickyzhang.github.io/vimficiency/docs/how-it-works/)**.
 
 ## License
 

@@ -1,5 +1,5 @@
 return {
-  "TheRickyZhang/Vimficiency",
+  "TheRickyZhang/vimficiency",
   version = "*",
   build = "./scripts/install.sh",
   lazy = false,

@@ -57,3 +57,4 @@ anim/**/manim-env/
 anim/.cache/
 anim/out/
 __pycache__/
+/deck/

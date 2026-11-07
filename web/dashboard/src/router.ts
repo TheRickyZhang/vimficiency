@@ -22,7 +22,7 @@ import {
 const VALID_OPTIMIZERS = ['edit', 'motion', 'composition', 'tests'] as const;
 export type OptimizerSlug = (typeof VALID_OPTIMIZERS)[number];
 
-const base = import.meta.env.BASE_URL; // '/Vimficiency/'
+const base = import.meta.env.BASE_URL; // '/vimficiency/'
 
 export const rootRoute = createRootRoute({
   component: RootLayout,
@@ -257,7 +257,7 @@ const routeTree = rootRoute.addChildren([
 
 export const router = createRouter({
   routeTree,
-  basepath: base.replace(/\/$/, ''), // '/Vimficiency'
+  basepath: base.replace(/\/$/, ''), // '/vimficiency'
   defaultPreload: 'intent',
 });
 
