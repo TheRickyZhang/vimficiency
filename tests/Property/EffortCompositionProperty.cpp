@@ -60,14 +60,14 @@ class EffortCompositionGeneratedPropertyTest {
     RunningEffort b = buildEffort(bKeys);
     RunningEffort appended = a;
     appended.appendFrom(b, qwerty_);
-    RunningEffort merged = RunningEffort::merge(a, b);
+    RunningEffort merged = RunningEffort::merge(a, b, qwerty_);
     RunningEffort naive = buildNaive(aKeys, bKeys);
 
     EXPECT_NEAR(
-        naive.getEffort(qwerty_), appended.getEffort(qwerty_),
+        naive.getEffort(), appended.getEffort(),
         EFFORT_TOLERANCE);
     EXPECT_NEAR(
-        naive.getEffort(qwerty_), merged.getEffort(qwerty_),
+        naive.getEffort(), merged.getEffort(),
         EFFORT_TOLERANCE);
     EXPECT_EQ(naive.getStrokes(), appended.getStrokes());
     EXPECT_EQ(naive.getStrokes(), merged.getStrokes());
@@ -93,10 +93,10 @@ class EffortCompositionGeneratedPropertyTest {
       const PhysicalKeys& aKeys, const PhysicalKeys& bKeys) {
     RunningEffort naive = buildNaive(aKeys, bKeys);
     RunningEffort merged =
-        RunningEffort::merge(buildEffort(aKeys), buildEffort(bKeys));
+        RunningEffort::merge(buildEffort(aKeys), buildEffort(bKeys), qwerty_);
 
     EXPECT_NEAR(
-        naive.getEffort(qwerty_), merged.getEffort(qwerty_),
+        naive.getEffort(), merged.getEffort(),
         EFFORT_TOLERANCE)
         << "Merged effort should equal naive sequential effort";
     EXPECT_EQ(naive.getStrokes(), merged.getStrokes())
@@ -113,8 +113,8 @@ class EffortCompositionGeneratedPropertyTest {
     RunningEffort b = buildEffort(bKeys);
     RunningEffort c = buildEffort(cKeys);
 
-    RunningEffort left = RunningEffort::merge(RunningEffort::merge(a, b), c);
-    RunningEffort right = RunningEffort::merge(a, RunningEffort::merge(b, c));
+    RunningEffort left = RunningEffort::merge(RunningEffort::merge(a, b, qwerty_), c, qwerty_);
+    RunningEffort right = RunningEffort::merge(a, RunningEffort::merge(b, c, qwerty_), qwerty_);
 
     RunningEffort naive;
     naive.append(aKeys, qwerty_);
@@ -122,10 +122,10 @@ class EffortCompositionGeneratedPropertyTest {
     naive.append(cKeys, qwerty_);
 
     EXPECT_NEAR(
-        naive.getEffort(qwerty_), left.getEffort(qwerty_),
+        naive.getEffort(), left.getEffort(),
         EFFORT_TOLERANCE);
     EXPECT_NEAR(
-        naive.getEffort(qwerty_), right.getEffort(qwerty_),
+        naive.getEffort(), right.getEffort(),
         EFFORT_TOLERANCE);
     EXPECT_EQ(naive.getStrokes(), left.getStrokes());
     EXPECT_EQ(naive.getStrokes(), right.getStrokes());

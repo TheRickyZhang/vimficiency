@@ -35,8 +35,8 @@ struct CompositionEmitter {
 
   double costDiffFor(string_view token) const {
     RunningEffort candidate(globalSequenceToKeys().tokenize(token), config);
-    RunningEffort merged = RunningEffort::merge(acceptedEffort, candidate);
-    return merged.getEffort(config) - acceptedCost;
+    RunningEffort merged = RunningEffort::merge(acceptedEffort, candidate, config);
+    return merged.getEffort() - acceptedCost;
   }
 
   void emit(string_view token, CursorPos landingPos, double distance = 0.0) {
@@ -119,7 +119,7 @@ vector<Suggestion> rankCompositionFrontier(
     const Config& config) {
   vector<Suggestion> items;
   RunningEffort acceptedEffort(globalSequenceToKeys().tokenize(query.seq), config);
-  const double acceptedCost = acceptedEffort.getEffort(config);
+  const double acceptedCost = acceptedEffort.getEffort();
   CompositionOptimizerParams params =
       OptimizerParamOverrides::resolved<CompositionOptimizerParams>(query.overrides);
   CompositionEmitter emitter{

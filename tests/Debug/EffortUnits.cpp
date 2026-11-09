@@ -24,7 +24,7 @@ void probe(const char* cfgName, const Config& config) {
   auto show = [&](const char* name, string_view text) {
     KeyedSequence ks;
     ks.append(text);
-    const double effort = RunningEffort(ks.keys, config).getEffort(config);
+    const double effort = RunningEffort(ks.keys, config).getEffort();
     const double keys = (double)ks.keys.size();
     cout << "  " << setw(8) << left << name << " keys=" << setw(3) << (int)keys
          << " effort=" << setw(8) << effort << " effort/key=" << effort / keys

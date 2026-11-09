@@ -76,7 +76,7 @@ std::optional<Result> tryReplacement(
   if (lastDiff < endPos) appendNav(endPos - lastDiff);
 
   RunningEffort effort(ks.keys, config);
-  double totalEffort = effort.getEffort(config);
+  double totalEffort = effort.getEffort();
   if (totalEffort > maxEffort) return std::nullopt;
 
   return Result(std::move(ks.seq), totalEffort);

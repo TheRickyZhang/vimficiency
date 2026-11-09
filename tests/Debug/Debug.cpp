@@ -2095,7 +2095,7 @@ TEST_F(DebugTest, CompositionOptimizer_TraceFailure) {
              << ") edits=" << editsCompleted
              << " seq='" << s.getSequence() << "' effort=" << s.getEffort()
              << " cost=" << s.getCost() << endl;
-        results.emplace_back(s.getSequence().str(), s.getRunningEffort().getEffort(config));
+        results.emplace_back(s.getSequence().str(), s.getRunningEffort().getEffort());
         if (results.size() >= 3) break;
         continue;
       }
@@ -2305,7 +2305,7 @@ TEST_F(DebugTest, InvestigateTelescopingSearch) {
     if (editsCompleted == ctx.totalEdits()) {
       cerr << "  POP " << popCount << ": GOAL seq='" << s.getSequence()
            << "' effort=" << s.getEffort() << " cost=" << s.getCost() << endl;
-      results.emplace_back(s.getSequence().str(), s.getRunningEffort().getEffort(config));
+      results.emplace_back(s.getSequence().str(), s.getRunningEffort().getEffort());
       if (results.size() >= 5) break;
       continue;
     }

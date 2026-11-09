@@ -248,7 +248,7 @@ RunningEffort ChangeGoalHandler::mergeGoalSuffixEffort(
   if (completionPenalty > 0.0) {
     prefixEffort.addPenalty(completionPenalty);
   }
-  return RunningEffort::merge(prefixEffort, typedSuffixEffort);
+  return RunningEffort::merge(prefixEffort, typedSuffixEffort, config);
 }
 
 CursorPos ChangeGoalHandler::seedPositionForStart(int startIndex, const Lines& initialLines,
@@ -318,7 +318,7 @@ vector<RunningEffort> ChangeGoalHandler::buildRawSuffixEfforts(
     if (i == extraPenaltyIndex && extraPenalty > 0.0) {
       editEffort.addPenalty(extraPenalty);
     }
-    suffixEfforts[i] = RunningEffort::merge(editEffort, suffixEfforts[i + 1]);
+    suffixEfforts[i] = RunningEffort::merge(editEffort, suffixEfforts[i + 1], config);
   }
   return suffixEfforts;
 }
@@ -343,7 +343,7 @@ SuffixValue ChangeGoalHandler::buildSuffixValueForNextIndex(
   RunningEffort expandedPrefixEffort(expandedPrefix.keys, config);
 
   RunningEffort expandedEffort =
-      RunningEffort::merge(expandedPrefixEffort, rawSuffixEfforts[dotIndex + 1]);
+      RunningEffort::merge(expandedPrefixEffort, rawSuffixEfforts[dotIndex + 1], config);
 
   return SuffixValue(
       suffixProgram, dotIndex + 1, std::move(expandedPrefix), expandedEffort,
@@ -458,7 +458,7 @@ GoalStates ChangeGoalHandler::emitEditGoal(
         totalLines, cursorLine, postCompletionState.getPos().col);
     dotSeq += buildCollapseSequence(totalLines, cursorLine);
     RunningEffort dotPrefixEffort(dotSeq.keys, config);
-    RunningEffort dotEffort = RunningEffort::merge(dotPrefixEffort, typedVariants.dotTyped.effort);
+    RunningEffort dotEffort = RunningEffort::merge(dotPrefixEffort, typedVariants.dotTyped.effort, config);
     dotSeq += typedVariants.dotTyped.sequence;
 
     result.dotVariant = states.afterCommand(
@@ -478,11 +478,11 @@ Result ChangeGoalHandler::resultFromClearedGoal(const TransformState& base) cons
 
   RunningEffort completionEffort(completion.keys, config);
   RunningEffort totalEffort =
-      RunningEffort::merge(base.getRunningEffort(), completionEffort);
+      RunningEffort::merge(base.getRunningEffort(), completionEffort, config);
 
   Sequence seq = Sequence(base.getSeq());
   seq.append(completion.seq.view());
-  return Result(seq, totalEffort.getEffort(config));
+  return Result(seq, totalEffort.getEffort());
 }
 
 GoalStates ChangeGoalHandler::emitLinewiseChangeGoal(
@@ -605,8 +605,8 @@ SuffixCacheResult ChangeGoalHandler::tryUseSuffixCache(
         "fullSeq='" + seqStr + "'",
         "pos=(" + to_string(s.getPos().line) + "," + to_string(s.getPos().col) + ")",
         "useDot=" + string(useDot ? "true" : "false"));
-  RunningEffort mergedEffort = RunningEffort::merge(s.getRunningEffort(), suffixEffort);
-  double totalEffort = mergedEffort.getEffort(config);
+  RunningEffort mergedEffort = RunningEffort::merge(s.getRunningEffort(), suffixEffort, config);
+  double totalEffort = mergedEffort.getEffort();
 
   bool firstForStart = bucket.empty();
   bucket.emplace_back(Sequence(seqStr), totalEffort);

@@ -395,7 +395,7 @@ optimizeImpl(
 
     if (editsCompleted == ctx.totalEdits() && pos == goalPos) {
       ctx.nodesProcessed++;
-      double effort = s.getRunningEffort().getEffort(config);
+      double effort = s.getRunningEffort().getEffort();
       debug("GOAL #" + to_string(results.size()) + ":",
             "\"" + s.getSequence().str() + "\"", "effort:", effort);
       results.emplace_back(s.getSequence(), effort);

@@ -214,7 +214,7 @@ TransformResult computeTransformResultForDiff(
     full += buildTypedCommands(
         insertLines, "", diff.boundary.prefix(), diff.boundary.suffix());
     RunningEffort runningEffort(full.keys, config);
-    double effort = runningEffort.getEffort(config);
+    double effort = runningEffort.getEffort();
 
     vector<vector<Result>> insertResultsByStart(1);
     insertResultsByStart[0].emplace_back(std::move(full.seq), effort);

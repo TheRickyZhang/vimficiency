@@ -127,16 +127,19 @@ Sequence "l3wfD;"
 
 The `RunningEffort` class (`Effort/RunningEffort.h`) computes typing cost from `PhysicalKeys`:
 
-**Metrics tracked:**
-- Stroke count
+**Terms, each weighed by `ScoreWeights` as the key is appended:**
 - Base key cost (some keys harder than others)
-- Same-finger bigrams (penalty)
-- Same-key repeats (extra penalty)
+- Same-finger bigrams on different keys (penalty)
+- Same-key repeats (priced separately, not as same-finger)
 - Hand alternation (bonus)
 - Good/bad rolls (inward vs outward finger sequences)
 
-The weighted sum of these metrics produces the final effort score used by the
-optimizer's A* heuristic. Every metric is bigram-window: `RunningEffort` is a
+Only the running total, the stroke count, the additive penalty, and the
+first/last key are stored, so a `RunningEffort` is tied to the `Config` it was
+built with; `merge` and `appendFrom` take that config to price the seam bigram.
+
+The total is the effort score used by the
+optimizer's A* heuristic. Every term is bigram-window: `RunningEffort` is a
 monoid with O(1) `merge` and a one-key boundary
 (`typing s[q:j) = PS(j) - PS(q) - cut(q)`, pinned by
 `tests/Unit/Misc/EffortDecompositionTest.cpp`). A metric with a wider context

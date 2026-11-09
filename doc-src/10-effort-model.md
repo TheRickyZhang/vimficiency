@@ -25,7 +25,7 @@ The following knobs are accepted by `setup{}`; see their live values with
 require('vimficiency').setup({
   weights = {
     key_weight         = 1.0,   -- baseline per-keystroke cost
-    same_finger_weight = 1.0,   -- penalty for consecutive same-finger
+    same_finger_weight = 1.0,   -- penalty for two different keys on one finger
     same_key_weight    = 1.0,   -- penalty for the same key twice
     alt_hand_weight    = 1.0,   -- bonus for alternating hands
     good_roll_weight   = 1.0,   -- bonus for inward rolls

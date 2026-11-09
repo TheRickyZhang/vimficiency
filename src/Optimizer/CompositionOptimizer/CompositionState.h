@@ -133,7 +133,7 @@ public:
       CursorPos pos, Mode mode = Mode::Normal,
       int editsCompleted = 0,
       RunningEffort runningEffort = RunningEffort()) const {
-    double effort = runningEffort.getEffort(config);
+    double effort = runningEffort.getEffort();
     CompositionState state(pos, mode, editsCompleted, std::move(runningEffort), effort, 0.0);
     state.cost = costFor(state);
     return state;

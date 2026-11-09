@@ -34,7 +34,7 @@ TEST(EditCountPenaltyIntegrationTest, CountedLineEditsIncludeRuntimePenalty) {
       cursor, lines, 2,
       [&](LineRange, const SequenceBinding& sourceCmd) {
         if (sourceCmd.count == 3 && sourceCmd.base.seq.view() == "dd") {
-          baseline = sourceCmd.effort.getEffort(config);
+          baseline = sourceCmd.effort.getEffort();
         }
       });
   ASSERT_GT(baseline, 0.0);
@@ -53,7 +53,7 @@ TEST(EditCountPenaltyIntegrationTest, CountedLineEditsIncludeRuntimePenalty) {
       cursor, lines, 2,
       [&](LineRange, const SequenceBinding& sourceCmd) {
         if (sourceCmd.count == 3 && sourceCmd.base.seq.view() == "dd") {
-          overridden = sourceCmd.effort.getEffort(config);
+          overridden = sourceCmd.effort.getEffort();
         }
       });
   ASSERT_GT(overridden, 0.0);
@@ -77,7 +77,7 @@ TEST(EditCountPenaltyIntegrationTest, CountedJoinEditsIncludeRuntimePenalty) {
       cursor, lines, 2,
       [&](bool addSpace, const SequenceBinding& sourceCmd) {
         if (!addSpace && sourceCmd.count == 3 && sourceCmd.base.seq.view() == "gJ") {
-          baseline = sourceCmd.effort.getEffort(config);
+          baseline = sourceCmd.effort.getEffort();
         }
       });
   ASSERT_GT(baseline, 0.0);
@@ -96,7 +96,7 @@ TEST(EditCountPenaltyIntegrationTest, CountedJoinEditsIncludeRuntimePenalty) {
       cursor, lines, 2,
       [&](bool addSpace, const SequenceBinding& sourceCmd) {
         if (!addSpace && sourceCmd.count == 3 && sourceCmd.base.seq.view() == "gJ") {
-          overridden = sourceCmd.effort.getEffort(config);
+          overridden = sourceCmd.effort.getEffort();
         }
       });
   ASSERT_GT(overridden, 0.0);

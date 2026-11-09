@@ -88,8 +88,8 @@ struct EditEmitter {
 
   double costDiffFor(string_view tokenSequence) const {
     RunningEffort candidate(globalSequenceToKeys().tokenize(tokenSequence), config);
-    RunningEffort merged = RunningEffort::merge(acceptedEffort, candidate);
-    return merged.getEffort(config) - acceptedCost;
+    RunningEffort merged = RunningEffort::merge(acceptedEffort, candidate, config);
+    return merged.getEffort() - acceptedCost;
   }
 
   void emit(string_view tokenSequence, CursorPos landingPos, double distance = 0.0) {
@@ -378,7 +378,7 @@ vector<Suggestion> rankTransformFrontier(
   vector<Suggestion> items;
   items.reserve(static_cast<size_t>(query.maxCount));
   RunningEffort acceptedEffort(globalSequenceToKeys().tokenize(query.seq), config);
-  const double acceptedCost = acceptedEffort.getEffort(config);
+  const double acceptedCost = acceptedEffort.getEffort();
   EditEmitter emitter{
       items,
       {},

@@ -483,10 +483,10 @@ vector<Suggestion> View::recommendInsert(int editIndex, int maxCount) const {
   // Running effort is contextual across the accepted-sequence boundary.
   RunningEffort acceptedEffort(
       globalSequenceToKeys().tokenize(state_.seq), config_);
-  const double acceptedCost = acceptedEffort.getEffort(config_);
+  const double acceptedCost = acceptedEffort.getEffort();
   RunningEffort candidate(globalSequenceToKeys().tokenize(typedText), config_);
-  RunningEffort merged = RunningEffort::merge(acceptedEffort, candidate);
-  const double costDiff = merged.getEffort(config_) - acceptedCost;
+  RunningEffort merged = RunningEffort::merge(acceptedEffort, candidate, config_);
+  const double costDiff = merged.getEffort() - acceptedCost;
 
   Suggestion suggestion{
       .token = Token{typedText},

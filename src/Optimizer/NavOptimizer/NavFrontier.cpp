@@ -36,7 +36,7 @@ vector<Suggestion> rankNavFrontier(
   // Would it be faster to include all of these in the query, assuming that config will be stable per explore invocation?
   EffortBank bank(config);
   RunningEffort acceptedEffort(globalSequenceToKeys().tokenize(query.seq), config);
-  const double acceptedCost = acceptedEffort.getEffort(config);
+  const double acceptedCost = acceptedEffort.getEffort();
 
   auto scoreState = [&](CursorPos pos, double effort) {
     const double distance = NavHeuristic::distanceToRange(motionRange, pos);

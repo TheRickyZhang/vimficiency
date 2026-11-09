@@ -126,7 +126,7 @@ LandingNavResult NavOptimizer::optimize(
 
     if (isGoal) {
       stats.incrementNodesExplored();
-      double effort = s.getRunningEffort().getEffort(config);
+      double effort = s.getRunningEffort().getEffort();
 
       if ((params.maxResultsPerEndPos > 1)) {
         allResults.emplace_back(s.getSequence(), effort, pos);

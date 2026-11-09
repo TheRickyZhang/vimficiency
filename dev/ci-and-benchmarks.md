@@ -222,6 +222,33 @@ Steps to register the dev Linux machine as the runner backing
 4. **Verify.** The runner appears as "Idle" in the GitHub Settings page.
    Trigger a test run from the Actions tab (`bench-main` → Run workflow).
 
+### Registration lifetime
+
+GitHub deletes a self-hosted runner that has not connected for 14 days;
+this is not configurable. The clock resets whenever the service connects,
+so a machine that boots at least once every two weeks stays registered.
+
+After a longer gap, jobs sit at "Waiting for a runner" and
+`gh api repos/TheRickyZhang/vimficiency/actions/runners` shows no runner.
+The download and systemd service survive, so only the registration needs
+repeating:
+
+```bash
+cd ~/actions-runner
+sudo ./svc.sh stop
+./config.sh remove
+./config.sh --url https://github.com/TheRickyZhang/vimficiency --labels vimficiency-bench --unattended --token "$(gh api -X POST repos/TheRickyZhang/vimficiency/actions/runners/registration-token --jq .token)"
+sudo ./svc.sh start
+```
+
+If `./config.sh remove` asks for a token, pass a fresh one from
+`actions/runners/remove-token`. Registration is per repo URL, so a repo
+rename or transfer is another reason to re-check that the runner is listed.
+
+The queue limit is separate: a job waiting longer than 24h is cancelled,
+so pushes made while the machine is off for over a day lose their point
+(see "Re-running manually").
+
 ### First-run gotchas
 
 - First main push after registration builds everything from scratch

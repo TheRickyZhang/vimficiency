@@ -214,7 +214,7 @@ Typing::Typing(const FlatText& goal, const Config& config)
   for (int rj = 0; rj < (int)goal.text.size(); rj++) {
     KeyedSequence one;
     one.append(string_view(goal.text).substr(rj, 1));
-    PS[rj + 1] = PS[rj] + RunningEffort(one.keys, config).getEffort(config);
+    PS[rj + 1] = PS[rj] + RunningEffort(one.keys, config).getEffort();
   }
 }
 

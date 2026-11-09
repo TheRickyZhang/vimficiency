@@ -22,7 +22,7 @@ namespace {
 double standaloneEffort(string_view text, const Config& config) {
   KeyedSequence ks;
   ks.append(text);
-  return RunningEffort(ks.keys, config).getEffort(config);
+  return RunningEffort(ks.keys, config).getEffort();
 }
 
 void checkDecomposition(const string& text, const Config& config) {
@@ -34,14 +34,14 @@ void checkDecomposition(const string& text, const Config& config) {
     KeyedSequence one;
     one.append(string_view(text).substr(t, 1));
     seg.emplace_back(one.keys, config);
-    segEffort[t] = seg[t].getEffort(config);
+    segEffort[t] = seg[t].getEffort();
   }
   vector<double> ps(m + 1, 0.0), cut(m + 1, 0.0);
   RunningEffort acc = seg[0];
   ps[1] = segEffort[0];
   for (int t = 1; t < m; t++) ps[t + 1] = acc.appendFrom(seg[t], config);
   for (int q = 1; q < m; q++) {
-    cut[q] = RunningEffort::merge(seg[q - 1], seg[q]).getEffort(config) -
+    cut[q] = RunningEffort::merge(seg[q - 1], seg[q], config).getEffort() -
              segEffort[q - 1] - segEffort[q];
   }
 

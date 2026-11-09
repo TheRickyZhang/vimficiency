@@ -81,7 +81,7 @@ public:
   }
 
   [[nodiscard]] NavState initial(CursorPos pos, RunningEffort runningEffort) const {
-    double effort = runningEffort.getEffort(config);
+    double effort = runningEffort.getEffort();
     return NavState(pos, std::move(runningEffort), effort, computeCost(pos, effort));
   }
 

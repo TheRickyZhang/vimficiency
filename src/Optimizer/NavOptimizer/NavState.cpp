@@ -37,7 +37,7 @@ void NavState::applyCountedMotionImpl(const KeyedSequence& baseMotion, int cnt,
   }
   if (extraPenalty > 0.0) {
     runningEffort.addPenalty(extraPenalty);
-    effort = runningEffort.getEffort(config);
+    effort = runningEffort.getEffort();
   }
 }
 
