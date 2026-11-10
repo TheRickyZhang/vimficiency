@@ -6,12 +6,47 @@ export import vf.Types.LineEdgeType;
 export import vf.Types.CharRange;
 export import vf.Types.LineRange;
 export import vf.Types.Lines;
+import vf.VimCore.CharMask;
 
 export {
 
-// Forward declaration
-
 namespace VimCore {
+
+// Convert an inclusive character position into a same-line half-open endpoint.
+inline CursorPos onePastOnSameLine(const Lines& lines, const CursorPos& inclusivePos) {
+  int lineLen = static_cast<int>(lines[inclusivePos.line].size());
+  return CursorPos(inclusivePos.line, std::min(inclusivePos.col + 1, lineLen));
+}
+
+inline bool hasOnlyBlankPrefix(std::string_view line, int endCol, int contentStartCol = 0) {
+  int begin = std::clamp(contentStartCol, 0, static_cast<int>(line.size()));
+  int end = std::clamp(endCol, begin, static_cast<int>(line.size()));
+  for (int col = begin; col < end; col++) {
+    if (!CharMask::isWhitespace(line[col])) return false;
+  }
+  return true;
+}
+
+inline bool hasOnlyBlankSuffix(std::string_view line, int beginCol) {
+  int begin = std::clamp(beginCol, 0, static_cast<int>(line.size()));
+  for (int col = begin; col < static_cast<int>(line.size()); col++) {
+    if (!CharMask::isWhitespace(line[col])) return false;
+  }
+  return true;
+}
+
+// Half-open range for a backward exclusive motion (db, dB) whose exclusive end
+// is the cursor. `contentStartCol` is the first editable column on the cursor's
+// line (leftColOffset on line 0 of a sliced buffer, else 0).
+inline CharRange buildBackwardExclusiveCharRange(
+    const CursorPos& endpoint, const CursorPos& cursor, const Lines& lines,
+    int contentStartCol = 0) {
+  if (cursor.col == contentStartCol && endpoint.line < cursor.line) {
+    int prevLine = cursor.line - 1;
+    return CharRange(endpoint, CursorPos(prevLine, static_cast<int>(lines[prevLine].size())));
+  }
+  return CharRange(endpoint, cursor);
+}
 
 // =============================================================================
 // Endpoint and CharRange Computation for Boundary Checking

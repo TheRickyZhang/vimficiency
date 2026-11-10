@@ -20,7 +20,7 @@ local function call_new_active(start_kind, end_kind)
   local win = vim.api.nvim_get_current_win()
   local buf = vim.api.nvim_get_current_buf()
   return session_store.new_active_session(
-    "id1", -1,
+    "id1", nil,
     win,
     buf,
     {

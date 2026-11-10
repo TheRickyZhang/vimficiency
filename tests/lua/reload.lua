@@ -8,13 +8,13 @@ test("reload: setup is idempotent (two calls in a row don't crash)", function()
   assert_true(true, "survived two setups")
 end)
 
-test("reload: shutdown detaches global on_key subscribers", function()
+test("reload: shutdown detaches atom subscribers", function()
   vimfy.setup({})
-  local kt = require("vimficiency.capture.key_tracking")
-  assert_true(kt.is_global_attached("recall_capture"),
+  local atoms = require("vimficiency.capture.atoms")
+  assert_true(atoms.is_subscribed("recall_capture"),
     "recall_capture subscriber present after setup")
   vimfy.shutdown()
-  assert_true(not kt.is_global_attached("recall_capture"),
+  assert_true(not atoms.is_subscribed("recall_capture"),
     "recall_capture subscriber gone after shutdown")
 end)
 

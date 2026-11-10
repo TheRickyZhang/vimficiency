@@ -5,8 +5,7 @@
 local M = {}
 
 local alias_mod = require("vimficiency.session.alias")
-local ffi_session = require("vimficiency.ffi.session")
-local key_tracking = require("vimficiency.capture.key_tracking")
+local atoms = require("vimficiency.capture.atoms")
 local util = require("vimficiency.util")
 local config = require("vimficiency.config")
 
@@ -15,19 +14,19 @@ local config = require("vimficiency.config")
 --------------------------------------------------------------------------------
 
 --- Canonical session record.
---- Active records accumulate `key_seq`; finished records hold `result`.
+--- Active records accumulate `atoms`; finished records hold `result`.
 ---
 ---@class VF.Session.Record
 ---@field id          string                    # Unique identifier
----@field key_nsid    integer                   # >=0 for manual w/ macro recording, -1 for recall (uses global tracking)
+---@field capture_sub string|nil                # Atoms subscriber name this record owns (manual/watch); nil for recall (shared sub) and fetched
 ---@field win         integer                   # Window where session started
 ---@field buf         integer                   # Buffer where session started
 ---@field start_state? VF.BufferState          # Cursor/viewport at start; nil for fetched/imported records
 ---@field time_started integer                  # hrtime when started
 ---@field status      "active" | "finished"
----@field key_seq     VF.KeyEvent[]|nil # Accumulated keys (active only); dropped at finish
----@field key_count   integer                   # Live count while active; frozen at finish
----@field first_mode  string|nil                # Vim mode of the first captured key (recall only); used for command-boundary snapping
+---@field atoms       VF.Atom[]|nil             # Accumulated atoms (active only); dropped at finish
+---@field key_count   integer                   # Live count of captured atoms (commands) while active; frozen at finish
+---@field had_mouse   boolean|nil               # Mouse/scroll activity seen during capture; surfaces a warning at finish
 ---@field result      VF.Session.Result|nil         # Set at finish
 ---@field finish_alias string|nil               # Literal alias passed to finish (`a`, `3s`, ...); used as the default filename for `:Vimfy save`
 ---@field start_kind  "manual"|"auto"           # Who picked the start. Manual = user called :Vimfy start|watch. Auto = created from the recall queue.
@@ -104,16 +103,16 @@ end
 --------------------------------------------------------------------------------
 
 ---@param id string
----@param key_nsid integer  >= 0 for manual sessions (with macro recording), -1 for recall sessions
+---@param capture_sub string|nil  Atoms subscriber this record owns (manual/watch); nil for recall
 ---@param win integer
 ---@param buf integer
 ---@param start_state VF.BufferState
 ---@param start_kind "manual"|"auto"
 ---@param end_kind "manual"|"auto"
 ---@return VF.Session.Record
-function M.new_active_session(id, key_nsid, win, buf, start_state, start_kind, end_kind)
+function M.new_active_session(id, capture_sub, win, buf, start_state, start_kind, end_kind)
   assert(type(id) == "string" and id ~= "", "session.id must be nonempty string")
-  assert(type(key_nsid) == "number", "key_nsid must be a number")
+  assert(capture_sub == nil or type(capture_sub) == "string", "capture_sub must be a string or nil")
   assert(vim.api.nvim_win_is_valid(win), "win must be a valid window id")
   assert(vim.api.nvim_buf_is_valid(buf), "buf is not valid: " .. buf)
   assert(start_kind == "manual" or start_kind == "auto",
@@ -123,15 +122,15 @@ function M.new_active_session(id, key_nsid, win, buf, start_state, start_kind, e
 
   return {
     id = id,
-    key_nsid = key_nsid,
+    capture_sub = capture_sub,
     win = win,
     buf = buf,
     start_state = start_state,
     time_started = vim.uv.hrtime(),
     status = "active",
-    key_seq = {},
+    atoms = {},
     key_count = 0,
-    first_mode = nil,
+    had_mouse = false,
     result = nil,
     start_kind = start_kind,
     end_kind = end_kind,
@@ -174,40 +173,20 @@ local last_suggest_id = nil
 -- Recall lookup
 --------------------------------------------------------------------------------
 
---- Find the youngest recall record index `i` whose time_started <= target.
----@param records table<string, VF.Session.Record>
----@param order string[]
+--- Youngest recall record index whose `time_started <= target_hrtime`, or nil
+--- if the window reaches before the oldest retained record. Each atom is a
+--- complete command, so every ring entry is already a clean command boundary —
+--- no mode-based backward snapping is needed (unlike the old per-keystroke ring).
 ---@param target_hrtime integer
----@param budget integer
----@return integer|nil
-local function resolve_recall_cutoff_pure(records, order, target_hrtime, budget)
-  return ffi_session.resolve_recall_cutoff(records, order, target_hrtime, budget)
-end
-
----@param cutoff_index integer
----@return integer|nil
-local function snap_backward_to_boundary_pure(records, order, cutoff_index, budget)
-  local synthetic = {}
-  for i = 1, #order do
-    local id = order[i]
-    local rec = records[id] or {}
-    synthetic[id] = {
-      time_started = rec.time_started or i,
-      first_mode = rec.first_mode,
-    }
-  end
-  return resolve_recall_cutoff_pure(synthetic, order, cutoff_index, budget)
-end
-
----@param target_hrtime integer
----@return integer|nil
+---@return integer|nil index
 local function resolve_recall_cutoff(target_hrtime)
-  return resolve_recall_cutoff_pure(
-    session_records,
-    recall_id_order,
-    target_hrtime,
-    config.SNAP_LOOKBACK_KEYS or 20
-  )
+  for i = #recall_id_order, 1, -1 do
+    local rec = session_records[recall_id_order[i]]
+    if rec and rec.time_started <= target_hrtime then
+      return i
+    end
+  end
+  return nil
 end
 
 --- Convert alias to session ID.
@@ -242,7 +221,7 @@ end
 -- Internal mutators
 --------------------------------------------------------------------------------
 
---- Detach key tracking for a record and remove it from `session_records`.
+--- Detach atom capture for a record and remove it from `session_records`.
 ---@param id string
 ---@return boolean removed
 local function destroy_record(id)
@@ -252,8 +231,8 @@ local function destroy_record(id)
     rec.watch_disarm()
     rec.watch_disarm = nil
   end
-  if rec.key_nsid and rec.key_nsid >= 0 then
-    key_tracking.detach(rec.key_nsid)
+  if rec.capture_sub then
+    atoms.unsubscribe(rec.capture_sub)
   end
   session_records[id] = nil
   if last_finished_id == id then last_finished_id = nil end
@@ -300,7 +279,7 @@ end
 --------------------------------------------------------------------------------
 
 --- Check if we can store a manual session.
---- Call this BEFORE allocating resources (key_nsid) to avoid cleanup on failure.
+--- Call this BEFORE subscribing to atom capture to avoid cleanup on failure.
 --- The cap only counts active sessions. Finished records keep their alias
 --- slot but do not block a new start.
 ---@param alias string
@@ -430,8 +409,8 @@ function M.finish_session(id, result, finish_alias, end_kind_override, reason)
     rec.watch_disarm = nil
   end
 
-  if rec.key_nsid and rec.key_nsid >= 0 then
-    key_tracking.detach(rec.key_nsid)
+  if rec.capture_sub then
+    atoms.unsubscribe(rec.capture_sub)
   end
 
   if end_kind_override then
@@ -441,7 +420,7 @@ function M.finish_session(id, result, finish_alias, end_kind_override, reason)
   rec.status = "finished"
   rec.result = result
   rec.key_count = result.key_count
-  rec.key_seq = nil  -- compiled into result.user_seq; free the events
+  rec.atoms = nil  -- compiled into result.user_seq; free the events
   rec.finish_alias = finish_alias
   last_finished_id = id
 
@@ -558,15 +537,15 @@ function M.register_fetched_result(alias, result)
 
   session_records[id] = {
     id            = id,
-    key_nsid      = -1,   -- no key tracking for fetched records
+    capture_sub   = nil,  -- no live capture for fetched records
     win           = vim.api.nvim_get_current_win(),
     buf           = cur_buf,
     start_state   = nil,  -- not used for already-finished records
     time_started  = vim.uv.hrtime(),
     status        = "finished",
-    key_seq       = nil,
+    atoms         = nil,
     key_count     = (result.key_count or 0),
-    first_mode    = nil,
+    had_mouse     = result.had_mouse,
     result        = result,
     start_kind    = "manual",
     end_kind      = "manual",
@@ -676,7 +655,7 @@ function M.summarize(id)
     status        = rec.status,
     start_time    = rec.time_started,
     end_time      = result and result.timestamp or nil,
-    key_count     = (rec.status == "active") and #(rec.key_seq or {}) or rec.key_count,
+    key_count     = (rec.status == "active") and #(rec.atoms or {}) or rec.key_count,
     preview       = preview,
     result        = result,
   }
@@ -697,69 +676,57 @@ end
 -- Recall install
 --------------------------------------------------------------------------------
 
---- Ingest one tracked keystroke into the rolling recall ring.
+-- Buffer state immediately *before* the next atom in each buffer. A CmdAtom
+-- fires after its action, so a recall record created at atom i needs the state
+-- that preceded it — which is the state captured right after atom i-1. We keep
+-- one rolling snapshot per buffer and shift it forward each atom. The first
+-- atom in a buffer has no predecessor, so it seeds the snapshot without spawning
+-- a record (recalling "before the very first command" is not meaningful).
+---@type table<integer, VF.BufferState>
+local recall_prev_state = {}
+
+--- Ingest one recorded atom into the rolling recall ring.
 ---
---- Callers are responsible for event-source filtering and window validity.
----@param event VF.KeyEvent
-function M.ingest_recall_event(event)
-  -- Append the event to every still-active recall record.
+--- Callers are responsible for verdict filtering (only "record" atoms) and
+--- buffer/window validity.
+---@param atom VF.Atom
+function M.ingest_recall_atom(atom)
+  -- Extend every still-active recall record with this atom.
   for _, id in ipairs(recall_id_order) do
     local rec = session_records[id]
     if rec and rec.status == "active" then
-      table.insert(rec.key_seq, event)
+      table.insert(rec.atoms, atom)
       rec.key_count = rec.key_count + 1
     end
   end
 
-  -- Create a new record from the pre-key state.
-  local buf = event.buf
-  local win = event.win
-  local id = util.new_id(buf)
-  local start_state = util.capture_state(buf, win)
+  local prev = recall_prev_state[atom.buf]
+  -- Shift: this atom's post-state becomes the predecessor for the next one.
+  recall_prev_state[atom.buf] = util.capture_state(atom.buf, atom.win)
 
+  -- Without a predecessor snapshot we can't frame "before this atom"; seed and wait.
+  if not prev then return end
+
+  local id = util.new_id(atom.buf)
   -- Recall is auto-start/manual-end until auto_suggest takes over.
-  local rec = M.new_active_session(id, -1, win, buf, start_state, "auto", "manual")
-
-  -- Include the current key because the state was captured before it ran.
-  table.insert(rec.key_seq, event)
+  local rec = M.new_active_session(id, nil, atom.win, atom.buf, prev, "auto", "manual")
+  table.insert(rec.atoms, atom)
   rec.key_count = 1
-  rec.first_mode = event.mode
-
   M.store_recall(rec)
 end
 
---- Strip pre-resolution mapping bytes from every active recall record.
----@param typed_raw string   The resolution event's raw `typed` (full LHS bytes).
-function M.strip_recall_pre_resolution(typed_raw)
+--- Flag mouse/scroll activity on every active recall record in `buf`, so a
+--- recall finished across it surfaces the mouse warning (mouse atoms are not
+--- appended to the sequence, only remembered).
+---@param buf integer
+function M.mark_recall_mouse(buf)
   for _, id in ipairs(recall_id_order) do
     local rec = session_records[id]
-    if rec and rec.status == "active" and rec.key_seq then
-      local popped = key_tracking.strip_matching_tail(rec.key_seq, typed_raw)
-      if popped > 0 then
-        rec.key_count = math.max(0, (rec.key_count or 0) - popped)
-      end
+    if rec and rec.status == "active" and rec.buf == buf then
+      rec.had_mouse = true
     end
   end
 end
-
---- Drop the Vimfy trigger key from every active recall record.
-function M.uncount_recall_trigger()
-  for _, id in ipairs(recall_id_order) do
-    local rec = session_records[id]
-    if rec and rec.status == "active" and rec.key_seq then
-      local popped = key_tracking.pop_trigger(rec.key_seq)
-      if popped > 0 then
-        rec.key_count = math.max(0, (rec.key_count or 0) - popped)
-      end
-    end
-  end
-end
-
--- Test-only pure helpers.
-M._pure = {
-  resolve_recall_cutoff = resolve_recall_cutoff_pure,
-  snap_backward_to_boundary = snap_backward_to_boundary_pure,
-}
 
 --- Test-only: fetch an active record by id.
 ---@param id string

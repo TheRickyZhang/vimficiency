@@ -5,7 +5,6 @@ module;
 module vf.Optimizer.TransformOptimizer.ChangeGoalHandler;
 
 import std.compat;
-import vf.Optimizer.TransformOptimizer.TransformOptimizer;
 import vf.Keyboard.ToKeys.MovementToKeys;
 import vf.Optimizer.BuildTypedCommands;
 import vf.Optimizer.TransformOptimizer.TransformPostExplorerEmissions;

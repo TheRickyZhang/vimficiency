@@ -1,4 +1,4 @@
-*vimficiency.txt*  *vimficiency*       For Neovim >= 0.11       Last change: 2026 November 09
+*vimficiency.txt*  *vimficiency*       For Neovim >= 0.11       Last change: 2026 November 10
 
 ==============================================================================
 Table of Contents                              *vimficiency-table-of-contents*
@@ -44,8 +44,8 @@ as the canonical sample.
 
 You can pass config overrides to `setup{}` — see 9. Configuration.
 
-Bind keys through `vimfy.map()` or `<Plug>Vimfy*` with a multi-key LHS; see the
-keymap contract in the Index and the full writeup in 8. Keymaps.
+Bind keys with a `<Cmd>Vimfy ...<CR>` map or a `<Plug>Vimfy*` map; see the full
+writeup in 8. Keymaps.
 
 
 VERIFYING INSTALLATION
@@ -167,7 +167,7 @@ Watch must be configured before use:
 
 Watch currently supports the `idle` trigger only. The `keys` and `cost`
 triggers shipped for Suggest don’t yet apply here — the manual-start side
-of Watch doesn’t benefit from keystroke-count or cost-ratio firing the way
+of Watch doesn’t benefit from command-count or cost-ratio firing the way
 Suggest’s auto-start side does. Ask if you’d use them and we can extend.
 
 - Configuration parameters: see Idle end-detection
@@ -191,7 +191,7 @@ is foundational enough that there’s no toggle.
 
 >vim
     " ... edit normally ...
-    :Vimfy recall 6       " Analyze the last 6 keystrokes
+    :Vimfy recall 6       " Analyze the last 6 commands
     :Vimfy recall 3s      " Analyze the last 3 seconds
 <
 
@@ -204,7 +204,7 @@ WINDOW ALIASES: TWO WAYS TO INDEX THE QUEUE
   -----------------------------------------------------------------------
   Syntax   Meaning                 Use when
   -------- ----------------------- --------------------------------------
-  N        Last N keystrokes       You can estimate how many keys the
+  N        Last N commands         You can estimate how many commands the
                                    edit took
 
   Ns       Last N seconds of       You can estimate time better than key
@@ -213,7 +213,7 @@ WINDOW ALIASES: TWO WAYS TO INDEX THE QUEUE
 Both forms are measured back from _now_, and name the **whole span** up to that
 point — not a fixed-size window floating in the past. `3s` analyzes
 everything typed in the last 3 seconds (the range from 3s-ago through the
-present), and `50` the last 50 keystrokes. The number sets how far _back_ the
+present), and `50` the last 50 commands. The number sets how far _back_ the
 range reaches; the range always ends at the current cursor.
 
 Mixing forms (`3m`, `3ms`, `2h`, etc.) is not supported. Seconds is the only
@@ -226,12 +226,13 @@ it.
 
 IMPLEMENTATION DETAILS
 
-Each keystroke is tagged with a timestamp. `:Vimfy recall Ns` resolves to the
-`K` most recent keys typed within the last `N` seconds, with the window start
-snapped backward to the nearest normal-mode command boundary.
+Each command is tagged with a timestamp. `:Vimfy recall Ns` resolves to the
+most recent commands run within the last `N` seconds. Because every ring entry
+is already a complete command (one `CmdAtom` event), no boundary snapping is
+needed.
 
-The optimizer runs only when you invoke a recall command, so per-key overhead
-is O(1).
+The optimizer runs only when you invoke a recall command, so per-command
+overhead is O(1).
 
 
 CAPACITY
@@ -330,7 +331,7 @@ CONFIGURED TRIGGERS
     require('vimficiency').setup({
         auto_suggest = {
             idle = { ms = 3000, window = "3s" },
-            keys = { every = 50 },              -- every 50 keystrokes
+            keys = { every = 50 },              -- every 50 commands
             cost = { m = 1.5, b = 2.0, ms = 300, window = "100" },
             cooldown_ms = 5000,                 -- how often the optimizer may run
             notif_cooldown_ms = 2000,           -- min gap between *shown* toasts
@@ -348,7 +349,7 @@ Because Suggest is (auto, auto), both halves have a config pointer:
 - **Start scope** (`window`) — slice of the recall queue to analyze.
     Grammar + semantics: see Window aliases.
     `keys` has no separate window knob — the analysis slice is always
-    `every` keystrokes.
+    `every` commands.
 - **End trigger** (`ms`, `every`, `cooldown_ms`) — when Suggest fires.
     Idle/cost share the end-detection policy with Watch: see Idle
     end-detection <09-configuration.md#idle-end-detection>.
@@ -361,7 +362,7 @@ TRIGGERS
   --------- ----------------------------------------------------------------
   idle      You’ve been idle for idle.ms milliseconds.
 
-  keys      Every keys.every real keystrokes.
+  keys      Every keys.every real commands.
 
   cost      After cost.ms idle, iff user_cost > cost.m * optimal + cost.b.
   --------------------------------------------------------------------------
@@ -376,9 +377,9 @@ present.
 
 KEYS = { EVERY } ~
 
-Fires every `every` real user keystrokes. The analysis slice is always the last
-`every` keystrokes — a separate `window` would collapse to the same value, so
-it’s not a knob.
+Fires every `every` real user commands (one captured `CmdAtom` each). The
+analysis slice is always the last `every` commands — a separate `window`
+would collapse to the same value, so it’s not a knob.
 
 
 COST = { M, B, MS, WINDOW } ~
@@ -386,7 +387,7 @@ COST = { M, B, MS, WINDOW } ~
 The most selective trigger: only surfaces a result when your typed cost exceeds
 the optimal by a configurable margin. Because it runs the optimizer, it’s
 idle-gated on `cost.ms` — the check only runs at micro-pauses between
-commands, not on every keystroke.
+commands, not on every command.
 
 
   **v1 caveat.** Cost runs the optimizer synchronously on the idle tick. With
@@ -553,55 +554,53 @@ Press |g?| in a saved-result buffer to open this section directly.
 ==============================================================================
 8. Binding keys to Vimfy actions   *vimficiency-binding-keys-to-vimfy-actions*
 
-Vimfy measures the keys you type, so a key that _invokes_ Vimfy should not
-itself count as motion. For a mapping whose RHS is a Lua callback, the tracker
-recognizes the resolution event and strips the LHS it had just recorded —
-provided the LHS is more than one key (`<leader>vs`, `<F4>`, `jk`). A
-single-key LHS such as `Z` is indistinguishable from a plain keystroke at that
-point and is recorded. Two ways to bind, one ergonomic way that doesn’t work:
+Vimfy measures the keys you type, but a key that _invokes_ Vimfy is never
+mistaken for motion. Capture runs off Neovim’s per-command `CmdAtom` event,
+which reports the resolved action: a binding that runs a `:Vimfy` command (or
+any Lua that doesn’t edit the buffer) produces an inert event and is excluded
+automatically.
+
+So there is no special binding API — use whatever Vim already gives you.
 
 
-1. VIMFY.MAP() (RECOMMENDED)
+1. VIM.KEYMAP.SET WITH A <CMD> MAP (RECOMMENDED)
 
-The simplest path — one line per binding, handles all subcommands:
+Bind the LHS to the `:Vimfy` command directly:
 
 >lua
-    local vimfy = require('vimficiency')
-    
-    vimfy.map('n', '<leader>vs', 'start a')
-    vimfy.map('n', '<leader>vf', 'finish a')
-    vimfy.map('n', '<leader>vq', 'save @ quick')
+    vim.keymap.set('n', '<leader>vs', '<Cmd>Vimfy start a<CR>',   { silent = true })
+    vim.keymap.set('n', '<leader>vf', '<Cmd>Vimfy finish a<CR>',  { silent = true })
+    vim.keymap.set('n', '<leader>vq', '<Cmd>Vimfy save @ quick<CR>', { silent = true })
 <
 
-The string argument is parsed like `:Vimfy <args>`: first word is the
-subcommand, the rest are forwarded verbatim. Any `:Vimfy ...` command line
-works as a `vimfy.map` spec.
+Everything after `Vimfy` is the subcommand and its arguments, exactly as
+you’d type `:Vimfy ...`. `<Cmd>` runs it without leaving normal mode, and the
+keypress is never recorded as motion.
 
-The fourth argument is the `opts` table passed through to `vim.keymap.set`
-(`buffer`, `desc`, `silent`, …). `silent` defaults to `true`; `desc` defaults
-to `"Vimfy <spec>"`.
+In vimscript the equivalent is `nnoremap <leader>vs <Cmd>Vimfy start a<CR>`.
 
 
 BINDING ARBITRARY LUA ~
 
-Pass a function instead of a string when you need to branch or compose:
+Use a function RHS when you need to branch or compose:
 
 >lua
-    vimfy.map('n', '<leader>vz', function()
+    vim.keymap.set('n', 'Z', function()
       if vim.bo.buftype == "" then
         vim.cmd('Vimfy start a')
       end
     end)
 <
 
-This is plain `vim.keymap.set(mode, lhs, fn, opts)`; `vimfy.map` adds the
-string-spec parsing and the `silent`/`desc` defaults.
+As long as the callback doesn’t edit the buffer, pressing `Z` is not recorded
+as motion.
 
 
 2. <PLUG> MAPS
 
-For users who prefer the Vim convention, each common action has a `<Plug>`
-name. Bind with `remap = true` (or `nmap` in vimscript):
+For users who prefer the Vim convention, each common action has a `<Plug>` name
+that `setup()` registers for you. Bind with `remap = true` (or `nmap` in
+vimscript):
 
 >vim
     nmap <leader>vs <Plug>VimfyStartA
@@ -635,33 +634,22 @@ name. Bind with `remap = true` (or `nmap` in vimscript):
 
   <Plug>VimfyHelp                     :Vimfy help
   -----------------------------------------------------------------------
-`<Plug>` covers the common cases; `vimfy.map()` covers everything (including
-arbitrary args, e.g. `save @ quick`, which no `<Plug>` name exposes directly).
+`<Plug>` covers the common actions; a direct `<Cmd>Vimfy ...<CR>` map covers
+everything else (including arbitrary args, e.g. `save @ quick`, which no
+`<Plug>` name exposes).
 
 
-DIRECT :VIMFY ... TYPING
+DIRECT :VIMFY ... TYPING AND EX-COMMAND MAPS
 
-Works as-is. Cmdline input is never counted as motion.
-
-
-WHAT DOESN’T WORK
-
-A `nnoremap`/`nmap` whose RHS is a literal Ex command:
+Both work as-is. Typing `:Vimfy ...` is never counted as motion, and neither is
+a mapping whose RHS is a literal Ex command:
 
 >vim
     nnoremap X :Vimfy start a<CR>
-    nmap     Y <Cmd>Vimfy start a<CR>
 <
 
-The `X` or `Y` keystroke is delivered to Vimfy’s tracker _before_ the mapping
-resolves — we can’t retroactively uncount it. To fix: move the binding into
-`vimfy.map()` or a `<Plug>` map.
-
-At setup, Vimfy scans pre-existing mappings for this pattern and emits a
-one-shot warning listing each offender. The scan can’t see mappings defined
-_after_ setup (or Lua-callback RHS, or buffer-local mappings added later) —
-if an LHS keeps showing up as motion, check that the binding is a Lua-callback
-mapping (`vimfy.map()` / `<Plug>`) with a multi-key LHS.
+Because the `CmdAtom` event reports the resolved command rather than the raw
+keystroke, the `X` press is recognized as a non-editing action and excluded.
 
 
 ==============================================================================
@@ -773,16 +761,15 @@ a higher `distanceWeight` searches faster but may miss the cheapest sequence;
 
 RECALL AND SESSION SAFETY
 
-Recall keeps a rolling ring of recent keystrokes so you can analyze "N keys /
+Recall keeps a rolling ring of recent commands so you can analyze "N commands /
 Ns ago" after the fact. These knobs bound that ring and the lifetime of
 in-progress sessions.
 
   ---------------------------------------------------------------------------------
   Field                         Default                   Meaning
   ----------------------------- ------------------------- -------------------------
-  KEY_SESSION_CAPACITY          200                       Maximum keystrokes
-                                                          retained in the recall
-                                                          ring.
+  KEY_SESSION_CAPACITY          200                       Maximum commands retained
+                                                          in the recall ring.
 
   MAX_RETENTION_SECONDS         120                       Maximum age of recall
                                                           history. The oldest
@@ -794,17 +781,11 @@ in-progress sessions.
                                                           session left idle this
                                                           long is auto-ended with a
                                                           warning.
-
-  SNAP_LOOKBACK_KEYS            20                        When resolving a recall
-                                                          window, snap its start to
-                                                          a nearby clean key
-                                                          boundary lying within
-                                                          this many keys.
   ---------------------------------------------------------------------------------
 
 IDLE END-DETECTION
 
-Two features auto-fire on keystroke idleness: Watch (ends a manual session once
+Two features auto-fire on command idleness: Watch (ends a manual session once
 you pause) and Suggest’s `idle` / `cost` triggers (run the optimizer on a
 window of the recall queue). Both use the same engine but run independently —
 each owns its own timer and cooldown, configured under its own key.
@@ -812,8 +793,8 @@ each owns its own timer and cooldown, configured under its own key.
   -----------------------------------------------------------------------
   Parameter                     Meaning
   ----------------------------- -----------------------------------------
-  watch.idle.ms /               Real keystroke idleness, in ms, before
-  auto_suggest.idle.ms          the trigger fires.
+  watch.idle.ms /               Real command idleness, in ms, before the
+  auto_suggest.idle.ms          trigger fires.
 
   auto_suggest.cost.ms          Same semantic as idle.ms but dedicated to
                                 the cost trigger.
@@ -821,12 +802,13 @@ each owns its own timer and cooldown, configured under its own key.
   watch.cooldown_ms /           Minimum time between consecutive fires.
   auto_suggest.cooldown_ms      Safety rail for low idle.ms.
   -----------------------------------------------------------------------
-"Real keystroke" excludes cmdline input and Vimfy admin keystrokes, so `:Vimfy`
-commands and `vimfy.map`-routed bindings don’t reset the idle timer.
+"Real command" excludes cmdline input and Vimfy admin actions, so `:Vimfy`
+commands and `<Cmd>Vimfy`/`<Plug>`-routed bindings don’t reset the idle
+timer.
 
 A bare `ms` inside any trigger object universally means "idle threshold" —
 fire only after N ms of no activity. `keys.every` is the one exception: it
-counts keystrokes, not time, so it has no `ms`.
+counts commands, not time, so it has no `ms`.
 
 
 INSPECT WHAT THE C++ LAYER IS USING
@@ -1008,7 +990,7 @@ The `<alias>` argument splits by subcommand:
   ---------- ------------------------------------------------------------
   a, foo     Alphabetic → a manual session name.
 
-  6          Digits → recall N keys ago.
+  6          Digits → recall N commands ago.
 
   3s         Digits + s → recall N seconds ago (see 5. Recall).
   -----------------------------------------------------------------------
@@ -1041,7 +1023,7 @@ sessions) and **Saved** (files under `stdpath("data")/vimficiency/saved`) —
 and a live-filter prompt at the bottom. `<Tab>` toggles between panes.
 
 Ongoing sessions always sit in a pinned **Ongoing** section at the top,
-regardless of sort mode. Auto-generated recall ring entries (one per keystroke)
+regardless of sort mode. Auto-generated recall ring entries (one per command)
 are folded into a single `recall ring (N)` summary row — the per-entry
 aliases drift, so they’re not individually actionable from the picker;
 resolve a specific window with `:Vimfy recall N` or `:Vimfy recall Ns` instead.
@@ -1091,7 +1073,7 @@ Opens a read-only float summarizing your lifetime activity. Close with `q` or
 Sections:
 
 - **Lifetime** — total finished sessions, broken down by type (mark /
-    watch / recall / suggest), and total captured keystrokes.
+    watch / recall / suggest), and total captured commands.
 - **Efficiency** — a score out of 100, defined per session as
     `min(best_optimizer_cost / user_cost, 1) × 100` (capped at 100 so a
     beat doesn’t inflate the average). Aggregated as a geometric mean.
@@ -1245,9 +1227,9 @@ want to show a colleague.
 ==============================================================================
 13. Known limitations                          *vimficiency-known-limitations*
 
-- **Text-object final character** is sometimes missing from the recorded sequence
-    (e.g., `ciw` may record as `c`+`i`). The optimizer still analyzes the resulting
-    state correctly, but your `user:` sequence in the output may look truncated.
+- **Session capture needs Neovim nightly (0.13-dev).** Capture runs off the
+    `CmdAtom` event. On stable Neovim the commands and replay views still work, but
+    mark/watch/recall/suggest are disabled with a one-time warning.
 - **Screen-line motions** `gj`/`gk` are approximated as `j`/`k`. Exact on
     unwrapped lines; off by a little when wrapping is in play.
 - **Multi-buffer edits** aren’t supported within a single session. If you
@@ -1258,26 +1240,17 @@ want to show a colleague.
     split the edit up or increase the limit if you really want this.
 - **Long sessions** may hit the optimizer’s search budget; expect diminishing
     suggestion quality beyond roughly a dozen lines of edits.
-- **Ex-command mappings and single-key LHS mappings that invoke Vimfy** have
-    their trigger keypress counted as motion. See
-    8. Keymaps for the fix.
-- **Keys produced by a mapping’s RHS are invisible.** If `<leader>V` is mapped
-    to `V$%`, the `V$%` bytes never reach the capture — `vim.on_key` delivers
-    only a single resolution event that the plugin strips to avoid leaking the LHS.
-    The session records whatever you type _after_ the mapping from a stale starting
-    mode, which often tokenizes into something that looks nothing like what you
-    did. Type the underlying keys directly when you want a motion audited.
-- **Recall may include the final char of a <Plug>-mapped LHS** on occasion,
-    because `vim.on_key` fires for that char before Neovim resolves the mapping. If
-    you target `:Vimfy recall N` precisely, count `N` accordingly — or use time
-    recall (`Ns`), which rolls past the extra key without noticing.
-- **Recall only records keystrokes typed in normal file buffers** (`&buftype ==
-    ""`). Keys typed in help, quickfix, terminal, prompt, or scratch buffers are
-    skipped — they aren’t meaningful for nav or transform optimization, and
-    recording them would cause recall queries to fail with buffer-mismatch when you
-    return to your file. If you bind a Vimfy action that opens an async
-    floating-input prompt (e.g. `vim.ui.input` overridden by dressing.nvim), the
-    `2` / `<CR>` you type into that prompt are filtered automatically.
+- **Mappings to Lua callbacks can’t be audited as motion.** A key mapped to a
+    Lua function that edits the buffer produces an unreplayable capture event; a
+    session spanning it is dropped as untrustworthy. Mappings whose RHS is a key
+    sequence are fine — they are captured as the resolved post-mapping keys. Type
+    the underlying keys directly when you want a specific motion audited.
+- **Recall only records actions in normal file buffers** (`&buftype == ""`).
+    Actions in help, quickfix, terminal, prompt, or scratch buffers are skipped —
+    they aren’t meaningful for nav or transform optimization, and recording them
+    would cause recall queries to fail with buffer-mismatch when you return to your
+    file. Input typed into an async floating prompt (e.g. `vim.ui.input`
+    overridden by dressing.nvim) is filtered automatically.
 
 
 ==============================================================================
@@ -1333,18 +1306,19 @@ WATCH NEVER FIRES
 
 SUGGESTIONS LOOK WRONG OR WORSE THAN WHAT I DID
 
-- Some motions we can’t see (text-object last character, screen-line
-    motions, certain plugin-provided mappings).
+- Some motions we can’t model (screen-line motions `gj`/`gk`, and
+    mappings to Lua callbacks that edit the buffer).
 - Check `:Vimfy config` — a mismatched `shiftwidth` or keyboard-effort
     setting can skew the cost.
 - See 13. Limitations for the full list.
 
 
-A KEY I BOUND TO VIMFY IS SHOWING UP AS MOTION
+SESSION CAPTURE ISN’T RECORDING ANYTHING
 
-Either the mapping’s RHS is a literal Ex command, or its LHS is a single key.
-Route it through `vimfy.map()` or `<Plug>` with a multi-key LHS — see 8.
-Keymaps.
+Capture runs off the `CmdAtom` event, which only Neovim nightly (0.13-dev)
+exposes. On stable Neovim the commands and views work, but
+mark/watch/recall/suggest are disabled — `setup()` warns once at startup.
+Upgrade to a recent nightly to enable capture.
 
 
 “UNKNOWN CONFIG KEYS IGNORED” WARNING
@@ -1372,9 +1346,9 @@ Run `:Vimfy config` and capture the output along with the sequence you typed
 
 DOES VIMFY SLOW DOWN NEOVIM?
 
-No. Key capture is a small Lua append per keystroke. The optimizer only runs
-on `finish` (or an auto-trigger), in C++, over a snapshot. Recall is always on
-and the per-key overhead stays flat.
+No. Capture is a small Lua append per command, on the `CmdAtom` autocmd. The
+optimizer only runs on `finish` (or an auto-trigger), in C++, over a snapshot.
+Recall is always on and the per-command overhead stays flat.
 
 
 CAN I USE IT WITH COLEMAK / DVORAK / CUSTOM LAYOUTS?
@@ -1394,10 +1368,9 @@ simplified; see 13. Limitations.
 WHY DIDN’T THE “BETTER” SEQUENCE ACTUALLY GET SUGGESTED?
 
 A few common reasons: - The optimizer’s search budget truncated before
-reaching it. - A motion it would have used isn’t modeled (text-object final
-char, `gj`/`gk`, certain plugin mappings). - Your `shiftwidth` is different
-from the one the optimizer is configured with, so indent-aware motions score
-differently.
+reaching it. - A motion it would have used isn’t modeled (`gj`/`gk`, or a
+mapping to a Lua callback). - Your `shiftwidth` is different from the one the
+optimizer is configured with, so indent-aware motions score differently.
 
 See 14. Troubleshooting.
 

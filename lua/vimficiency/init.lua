@@ -1,8 +1,7 @@
 local config = require("vimficiency.config")
-local key_tracking = require("vimficiency.capture.key_tracking")
+local atoms = require("vimficiency.capture.atoms")
 local auto_suggest = require("vimficiency.capture.auto_suggest")
 local commands = require("vimficiency.commands")
-local mapping_scan = require("vimficiency.mapping_scan")
 local recall_capture = require("vimficiency.capture.recall")
 local ffi_config = require("vimficiency.ffi.config")
 
@@ -24,61 +23,12 @@ local function cmdline_entry(opts)
   end
 end
 
---- Every keymap-bound Vimfy entry point goes through here.
----
---- `vim.on_key` records the mapping's LHS before this callback runs.
---- Multi-key triggers are already stripped by `key_tracking.uncount_trigger`.
---- Retract the latest event for single-key triggers. `:Vimfy` needs no cleanup
---- because command-line input is never recorded.
----@param fn fun(...)
----@return fun(...)
-local function keymap_entry(fn)
-  return function(...)
-    key_tracking.uncount_trigger()
-    return fn(...)
-  end
-end
 
-
--- Public API.
-
---- Bind a key to a Vimfy subcommand (`"start a"`) or function so the trigger
---- keystroke is excluded from active recordings. A plain `vim.keymap.set`
---- would be counted as motion when the LHS is a single key; see
---- `key_tracking.uncount_trigger`.
----@param mode string|string[]
----@param lhs string
----@param spec string|fun(): any
----@param opts table|nil
-function M.map(mode, lhs, spec, opts)
-  opts = opts or {}
-  if opts.silent == nil then opts.silent = true end
-
-  local callback
-  if type(spec) == "string" then
-    local parts = vim.split(spec, "%s+", { trimempty = true })
-    if #parts == 0 then
-      error("vimfy.map: empty spec string")
-    end
-    local subcmd = parts[1]
-    if not commands.has_subcommand(subcmd) then
-      error("vimfy.map(" .. lhs .. "): unknown subcommand '" .. subcmd .. "'")
-    end
-    local subcmd_args = {}
-    for i = 2, #parts do subcmd_args[#subcmd_args + 1] = parts[i] end
-    callback = keymap_entry(function()
-      commands.dispatch_subcommand(subcmd, subcmd_args)
-    end)
-    if not opts.desc then opts.desc = "Vimfy " .. spec end
-  elseif type(spec) == "function" then
-    callback = keymap_entry(spec)
-    if not opts.desc then opts.desc = "Vimfy <fn>" end
-  else
-    error("vimfy.map: spec must be a string or function, got " .. type(spec))
-  end
-
-  vim.keymap.set(mode, lhs, callback, opts)
-end
+-- Binding keys: no plugin API. CmdAtom reports the resolved command, so a key
+-- bound to a `:Vimfy` action produces an inert excmd atom and is excluded from
+-- recordings on its own — users bind directly with
+-- `vim.keymap.set('n', lhs, '<Cmd>Vimfy start a<CR>', { silent = true })` or a
+-- `<Plug>Vimfy*` map. The `<Plug>` maps below are registered the same way.
 
 -- Lifecycle: setup, teardown, and dev reload.
 
@@ -126,7 +76,8 @@ function M.setup(user_config)
   end
 
   local function register_plug(name, spec)
-    M.map("n", "<Plug>Vimfy" .. name, spec)
+    vim.keymap.set("n", "<Plug>Vimfy" .. name, "<Cmd>Vimfy " .. spec .. "<CR>",
+      { silent = true, desc = "Vimfy " .. spec })
   end
   for _, alias in ipairs({ "a", "b", "c", "d", "e" }) do
     local upper = alias:upper()
@@ -143,13 +94,21 @@ function M.setup(user_config)
   register_plug("Config", "config")
   register_plug("Help", "help")
 
+  if not atoms.available() then
+    vim.schedule(function()
+      vim.notify(
+        "vimfy: this Neovim lacks the CmdAtom event (needs 0.13-dev / nightly). " ..
+        "Commands and views work, but session capture (mark/watch/recall/suggest) " ..
+        "is disabled until you upgrade.",
+        vim.log.levels.WARN)
+    end)
+  end
+
   recall_capture.install()
 
   if config.auto_suggest and auto_suggest.is_configured() then
     auto_suggest.enable()
   end
-
-  mapping_scan.warn_about_bad_mappings()
 end
 
 --- Tear down runtime state that should not outlive a Lua reload.
@@ -170,8 +129,8 @@ function M.shutdown()
   local ok_drop, n = pcall(session_store.teardown_active)
   if ok_drop then dropped_active = n or 0 end
 
-  -- Detach the shared global `vim.on_key` namespace last.
-  pcall(key_tracking.shutdown)
+  -- Tear down the CmdAtom capture and every subscriber last.
+  pcall(atoms.shutdown)
 
   pcall(vim.api.nvim_create_augroup, M.AUGROUP, { clear = true })
 

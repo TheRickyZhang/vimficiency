@@ -49,17 +49,18 @@ errored — see the two sections above.
 
 ## Suggestions look wrong or worse than what I did
 
-- Some motions we can't see (text-object last character, screen-line
-  motions, certain plugin-provided mappings).
+- Some motions we can't model (screen-line motions `gj`/`gk`, and
+  mappings to Lua callbacks that edit the buffer).
 - Check `:Vimfy config` — a mismatched `shiftwidth` or keyboard-effort
   setting can skew the cost.
 - See [13. Limitations](13-limitations.md) for the full list.
 
-## A key I bound to Vimfy is showing up as motion
+## Session capture isn't recording anything
 
-The mapping's RHS is a literal Ex command or a plain `vim.keymap.set`
-function. Route it through `vimfy.map()` or `<Plug>` — see
-[8. Keymaps](08-keymaps.md).
+Capture runs off the `CmdAtom` event, which only Neovim nightly
+(0.13-dev) exposes. On stable Neovim the commands and views work, but
+mark/watch/recall/suggest are disabled — `setup()` warns once at
+startup. Upgrade to a recent nightly to enable capture.
 
 ## "unknown config keys ignored" warning
 

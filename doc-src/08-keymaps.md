@@ -4,52 +4,50 @@ title: "Binding keys to Vimfy actions"
 
 # Binding keys to Vimfy actions
 
-Vimfy measures the keys you type, so a key that *invokes* Vimfy must
-not itself count as motion. Bindings made through `vimfy.map()` or a
-`<Plug>` map retract their own trigger keystroke from every active
-recording when they fire. Two ways to bind, one ergonomic way that
-doesn't work:
+Vimfy measures the keys you type, but a key that *invokes* Vimfy is
+never mistaken for motion. Capture runs off Neovim's per-command
+`CmdAtom` event, which reports the resolved action: a binding that runs
+a `:Vimfy` command (or any Lua that doesn't edit the buffer) produces an
+inert event and is excluded automatically.
 
-## 1. `vimfy.map()` (recommended)
+So there is no special binding API — use whatever Vim already gives you.
 
-The simplest path — one line per binding, handles all subcommands:
+## 1. `vim.keymap.set` with a `<Cmd>` map (recommended)
+
+Bind the LHS to the `:Vimfy` command directly:
 
 ```lua
-local vimfy = require('vimficiency')
-
-vimfy.map('n', '<leader>vs', 'start a')
-vimfy.map('n', '<leader>vf', 'finish a')
-vimfy.map('n', '<leader>vq', 'save @ quick')
+vim.keymap.set('n', '<leader>vs', '<Cmd>Vimfy start a<CR>',   { silent = true })
+vim.keymap.set('n', '<leader>vf', '<Cmd>Vimfy finish a<CR>',  { silent = true })
+vim.keymap.set('n', '<leader>vq', '<Cmd>Vimfy save @ quick<CR>', { silent = true })
 ```
 
-The string argument is parsed like `:Vimfy <args>`: first word is the
-subcommand, the rest are forwarded verbatim. Any `:Vimfy ...` command
-line works as a `vimfy.map` spec.
+Everything after `Vimfy` is the subcommand and its arguments, exactly as
+you'd type `:Vimfy ...`. `<Cmd>` runs it without leaving normal mode, and
+the keypress is never recorded as motion.
 
-The fourth argument is the `opts` table passed through to
-`vim.keymap.set` (`buffer`, `desc`, `silent`, ...). `silent` defaults
-to `true`; `desc` defaults to `"Vimfy <spec>"`.
+In vimscript the equivalent is `nnoremap <leader>vs <Cmd>Vimfy start a<CR>`.
 
 ### Binding arbitrary Lua
 
-Pass a function instead of a string when you need to branch or compose:
+Use a function RHS when you need to branch or compose:
 
 ```lua
-vimfy.map('n', 'Z', function()
+vim.keymap.set('n', 'Z', function()
   if vim.bo.buftype == "" then
     vim.cmd('Vimfy start a')
   end
 end)
 ```
 
-The callback is wrapped so that the `Z` keystroke is retracted before
-your function runs; a plain `vim.keymap.set` to the same function would
-record it as motion.
+As long as the callback doesn't edit the buffer, pressing `Z` is not
+recorded as motion.
 
 ## 2. `<Plug>` maps
 
 For users who prefer the Vim convention, each common action has a
-`<Plug>` name. Bind with `remap = true` (or `nmap` in vimscript):
+`<Plug>` name that `setup()` registers for you. Bind with `remap = true`
+(or `nmap` in vimscript):
 
 ```vim
 nmap <leader>vs <Plug>VimfyStartA
@@ -74,29 +72,19 @@ vim.keymap.set('n', '<leader>vs', '<Plug>VimfyStartA', { remap = true })
 | `<Plug>VimfyConfig`                  | `:Vimfy config`                      |
 | `<Plug>VimfyHelp`                    | `:Vimfy help`                        |
 
-`<Plug>` covers the common cases; `vimfy.map()` covers everything
-(including arbitrary args, e.g. `save @ quick`, which no `<Plug>`
-name exposes directly).
+`<Plug>` covers the common actions; a direct `<Cmd>Vimfy ...<CR>` map
+covers everything else (including arbitrary args, e.g. `save @ quick`,
+which no `<Plug>` name exposes).
 
-## Direct `:Vimfy ...` typing
+## Direct `:Vimfy ...` typing and Ex-command maps
 
-Works as-is. Cmdline input is never counted as motion.
-
-## What doesn't work
-
-A `nnoremap`/`nmap` whose RHS is a literal Ex command:
+Both work as-is. Typing `:Vimfy ...` is never counted as motion, and
+neither is a mapping whose RHS is a literal Ex command:
 
 ```vim
 nnoremap X :Vimfy start a<CR>
-nmap     Y <Cmd>Vimfy start a<CR>
 ```
 
-The `X` or `Y` keystroke is delivered to Vimfy's tracker *before* the
-mapping resolves — we can't retroactively uncount it. To fix: move the
-binding into `vimfy.map()` or a `<Plug>` map.
-
-At setup, Vimfy scans pre-existing mappings for this pattern and
-emits a one-shot warning listing each offender. The scan can't see
-mappings defined *after* setup (or Lua-callback RHS, or buffer-local
-mappings added later) — if an LHS keeps showing up as motion, check
-that the binding is routed through `vimfy.map()` / `<Plug>`.
+Because the `CmdAtom` event reports the resolved command rather than the
+raw keystroke, the `X` press is recognized as a non-editing action and
+excluded.

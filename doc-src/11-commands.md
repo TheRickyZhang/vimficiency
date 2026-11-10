@@ -43,7 +43,7 @@ The `<alias>` argument splits by subcommand:
 | Form       | Means                                                                |
 |------------|----------------------------------------------------------------------|
 | `a`, `foo` | Alphabetic → a manual session name.                                  |
-| `6`        | Digits → recall N keys ago.                                          |
+| `6`        | Digits → recall N commands ago.                                     |
 | `3s`       | Digits + `s` → recall N seconds ago (see [5. Recall](05-recall.md)). |
 
 `save` accepts the full grammar plus `@`, which resolves to the most
@@ -75,7 +75,7 @@ sessions) and **Saved** (files under `stdpath("data")/vimficiency/saved`)
 
 Ongoing sessions always sit in a pinned **Ongoing** section at the top,
 regardless of sort mode. Auto-generated recall ring entries (one per
-keystroke) are folded into a single `recall ring (N)` summary row — the
+command) are folded into a single `recall ring (N)` summary row — the
 per-entry aliases drift, so they're not individually actionable from the
 picker; resolve a specific window with `:Vimfy recall N` or `:Vimfy
 recall Ns` instead.
@@ -126,7 +126,7 @@ Opens a read-only float summarizing your lifetime activity. Close with
 Sections:
 
 - **Lifetime** — total finished sessions, broken down by type (mark /
-  watch / recall / suggest), and total captured keystrokes.
+  watch / recall / suggest), and total captured commands.
 - **Efficiency** — a score out of 100, defined per session as
   `min(best_optimizer_cost / user_cost, 1) × 100` (capped at 100 so a
   beat doesn't inflate the average). Aggregated as a geometric mean.

@@ -54,20 +54,19 @@ a higher `distanceWeight` searches faster but may miss the cheapest sequence;
 
 ## Recall and session safety
 
-[Recall](05-recall.md) keeps a rolling ring of recent keystrokes so you can
-analyze "N keys / Ns ago" after the fact. These knobs bound that ring and the
-lifetime of in-progress sessions.
+[Recall](05-recall.md) keeps a rolling ring of recent commands so you can
+analyze "N commands / Ns ago" after the fact. These knobs bound that ring and
+the lifetime of in-progress sessions.
 
 | Field | Default | Meaning |
 |-------|---------|---------|
-| `KEY_SESSION_CAPACITY` | `200` | Maximum keystrokes retained in the recall ring. |
+| `KEY_SESSION_CAPACITY` | `200` | Maximum commands retained in the recall ring. |
 | `MAX_RETENTION_SECONDS` | `120` | Maximum age of recall history. The oldest entries are evicted once **both** the capacity and the age limit are exceeded. |
 | `MANUAL_IDLE_TIMEOUT_SECONDS` | `300` | A manual (`start`/`finish`) session left idle this long is auto-ended with a warning. |
-| `SNAP_LOOKBACK_KEYS` | `20` | When resolving a recall window, snap its start to a nearby clean key boundary lying within this many keys. |
 
 ## Idle end-detection
 
-Two features auto-fire on keystroke idleness: [Watch](04-watch.md)
+Two features auto-fire on command idleness: [Watch](04-watch.md)
 (ends a manual session once you pause) and [Suggest](06-suggest.md)'s
 `idle` / `cost` triggers (run the optimizer on a window of the recall
 queue). Both use the same engine but run independently — each owns
@@ -75,17 +74,17 @@ its own timer and cooldown, configured under its own key.
 
 | Parameter                                        | Meaning                                                                |
 |--------------------------------------------------|------------------------------------------------------------------------|
-| `watch.idle.ms` / `auto_suggest.idle.ms`         | Real keystroke idleness, in ms, before the trigger fires.              |
+| `watch.idle.ms` / `auto_suggest.idle.ms`         | Real command idleness, in ms, before the trigger fires.               |
 | `auto_suggest.cost.ms`                           | Same semantic as `idle.ms` but dedicated to the cost trigger.          |
 | `watch.cooldown_ms` / `auto_suggest.cooldown_ms` | Minimum time between consecutive fires. Safety rail for low `idle.ms`. |
 
-"Real keystroke" excludes cmdline input and Vimfy admin
-keystrokes, so `:Vimfy` commands and `vimfy.map`-routed bindings don't
-reset the idle timer.
+"Real command" excludes cmdline input and Vimfy admin actions, so
+`:Vimfy` commands and `<Cmd>Vimfy`/`<Plug>`-routed bindings don't reset
+the idle timer.
 
 A bare `ms` inside any trigger object universally means "idle
 threshold" — fire only after N ms of no activity. `keys.every` is the
-one exception: it counts keystrokes, not time, so it has no `ms`.
+one exception: it counts commands, not time, so it has no `ms`.
 
 ## Inspect what the C++ layer is using
 

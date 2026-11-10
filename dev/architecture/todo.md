@@ -200,6 +200,37 @@ one; equal regret means exactness can be dropped and the `N` factor disappears.
 
 ---
 
+## 8. Make the optimizer mapping-aware
+
+**What.** Capture (via `CmdAtom`, since 2026-11-10) records the *resolved*
+`keys` of each action and discards the user's own mapping LHS. So for a user
+who has `Z`→`dd`, the cost comparison and every suggestion are in terms of the
+underlying edits (`3dd`), never their shorthand (`3Z`). That is correct for the
+beat/regression metric — costing physical `3Z` against optimal `3dd` would make
+any efficient mapping look like it beats the optimizer — but it means we can
+never *suggest* a mapping the user already has, nor credit them for it.
+
+The `VF.Atom` already carries both sides: `keys` (resolved) and `lhs`+`count`
+(as typed). The forward path is to thread the user's active mappings (the
+`lhs`→`keys` relation, available from `nvim_get_keymap`) into the optimizer as
+context, so it can (a) recognize when a candidate sequence is reachable by a
+cheaper bound mapping and surface *that*, and (b) optionally cost the user's
+input by what they physically typed when a mapping was involved.
+
+**Why deferred.** The optimizer's effort model and search operate on the
+canonical key vocabulary; mappings are an open-ended per-user alphabet. Feeding
+them in means a second cost lane (mapped-LHS effort) and a surface for the
+search to emit mapping tokens — neither exists today, and the resolved-keys
+behavior is the right default in the meantime.
+
+**Threshold to revisit.** A concrete request to have suggestions respect or
+propose user mappings, or activity-log evidence that resolved-keys suggestions
+are routinely worse for users who lean on custom mappings. Pointer:
+`lua/vimficiency/capture/atoms.lua` (`VF.Atom.lhs`/`count`) and wherever
+`user_seq`/`keyseq` is costed in `AnalyzeExports.cpp`.
+
+---
+
 ## Noted alternative: item 1 vs. the current approach
 
 The defense layers chosen for the track-states fix (`BuildConfig.h` + `static_assert` + workflow `jq` check + differentiated dashboard message) are cheaper and more localized than `CMakePresets.json`. Item 1 becomes the better path only when configuration count or CI complexity makes per-flag discipline hard to maintain — otherwise the current three-layer defense subsumes what presets would give us.

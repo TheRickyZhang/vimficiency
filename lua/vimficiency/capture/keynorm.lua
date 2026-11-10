@@ -1,10 +1,11 @@
--- Convert raw input bytes from `vim.on_key` into the C++ tokenizer's
--- printable form. See dev/lua/key-normalization.md for the raw-byte contract.
+-- Convert raw input bytes into the C++ tokenizer's printable form. Fed by the
+-- CmdAtom capture (`capture/atoms.lua`, the keys/lhs fields) and by Explore's
+-- own `vim.on_key` listener. See dev/lua/key-normalization.md for the contract.
 
 local M = {}
 
---- Input MUST be raw bytes from `vim.on_key`, not printable notation.
----@param input string|nil  raw bytes from `vim.on_key`
+--- Input MUST be raw input bytes, not printable notation.
+---@param input string|nil  raw input bytes (CmdAtom keys/lhs, or vim.on_key)
 ---@return string           printable form, e.g. `<C-u>`, `<BS>`, `a`
 function M.normalize(input)
   if not input or input == "" then return "" end
@@ -14,8 +15,8 @@ function M.normalize(input)
 end
 
 --- True for any mouse event token (clicks, drags, releases, wheel, move).
---- These reach `vim.on_key` as `<...>` names that the C++ tokenizer does not
---- recognize, so they would otherwise be costed character-by-character.
+--- These arrive as `<...>` names that the C++ tokenizer does not recognize,
+--- so they would otherwise be costed character-by-character.
 ---@param normalized string  output of `M.normalize`
 ---@return boolean
 function M.is_mouse(normalized)

@@ -115,7 +115,43 @@ jobs:
           cmake --build build -j$(nproc) --target \
             vimfy_unit_tests vimfy_approval_tests vimfy_property_tests vimfy_safety_tests vimficiency
 
+      # The Lua/FFI suite captures through the CmdAtom event (Neovim 0.13-dev+),
+      # which the pinned v0.11.5 lacks. Install a nightly alongside and point
+      # only the Lua phase at it via VF_NVIM; the C++ oracle keeps the pinned
+      # release. Cache key is date-stamped so a stale nightly can't outlive the
+      # day it was fetched.
+      - name: Date stamp for nightly cache
+        id: nightly-date
+        shell: bash
+        run: echo "ymd=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Neovim nightly
+        id: nvim-nightly-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/neovim/nightly
+          key: neovim-nightly-${{ runner.os }}-${{ runner.arch }}-${{ steps.nightly-date.outputs.ymd }}
+
+      - name: Install Neovim nightly
+        if: steps.nvim-nightly-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            aarch64) nvim_arch=arm64 ;;
+            *)       nvim_arch=x86_64 ;;
+          esac
+          archive="${RUNNER_TEMP}/nvim-nightly.tar.gz"
+          install_dir="${HOME}/.local/neovim/nightly"
+          curl -fsSL -o "${archive}" \
+            "https://github.com/neovim/neovim/releases/download/nightly/nvim-linux-${nvim_arch}.tar.gz"
+          mkdir -p "${install_dir}"
+          tar -xzf "${archive}" -C "${install_dir}" --strip-components=1
+
       - name: Fast correctness gate
         # Exercises deterministic C++ unit and approval tests, seeded property and
-        # safety tests, and the Lua/FFI boundary through Neovim headless.
-        run: scripts/vimfy_tests all "" seed
+        # safety tests, and the Lua/FFI boundary through Neovim headless. VF_NVIM
+        # routes only the Lua phase at the nightly installed above.
+        run: |
+          export VF_NVIM="${HOME}/.local/neovim/nightly/bin/nvim"
+          scripts/vimfy_tests all "" seed

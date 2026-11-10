@@ -5,8 +5,6 @@ local disk = require("vimficiency.session.disk")
 local ffi_optimizer = require("vimficiency.ffi.optimizer")
 local poller = require("vimficiency.async.poller")
 local ffi_session = require("vimficiency.ffi.session")
-local key_tracking = require("vimficiency.capture.key_tracking")
-local keynorm = require("vimficiency.capture.keynorm")
 local util = require("vimficiency.util")
 
 local M = {}
@@ -53,36 +51,37 @@ local function apply_motion_conversions(keyseq)
   return result
 end
 
----@param key_seq VF.KeyEvent[]|nil
+---@param atom_seq VF.Atom[]|nil
 ---@param reduced_sequence string
 ---@param normalized_sequence string
 ---@return table
-local function build_capture_debug(key_seq, reduced_sequence, normalized_sequence)
-  key_seq = key_seq or {}
+local function build_capture_debug(atom_seq, reduced_sequence, normalized_sequence)
+  atom_seq = atom_seq or {}
   local events = {}
   local raw_parts = {}
-  local first_t = key_seq[1] and tonumber(key_seq[1].t) or nil
+  local first_t = atom_seq[1] and tonumber(atom_seq[1].t) or nil
 
-  for i, ev in ipairs(key_seq) do
-    raw_parts[#raw_parts + 1] = ev.key_typed or ""
-    local t = tonumber(ev.t)
+  for i, atom in ipairs(atom_seq) do
+    raw_parts[#raw_parts + 1] = atom.keys or ""
+    local t = tonumber(atom.t)
     events[#events + 1] = {
       index = i,
-      t = tostring(ev.t or ""),
+      t = tostring(atom.t or ""),
       dt_ms = first_t and t and ((t - first_t) / 1000000) or 0,
-      mode = ev.mode or "",
-      key_sent = ev.key_sent or "",
-      key_sent_raw = ev.key_sent_raw or "",
-      key_typed = ev.key_typed or "",
-      key_typed_raw = ev.key_typed_raw or "",
-      win = ev.win or 0,
-      buf = ev.buf or 0,
+      type = atom.type or "",
+      keys = atom.keys or "",
+      lhs = atom.lhs or "",
+      count = atom.count,
+      changed = atom.changed,
+      moved = atom.moved,
+      win = atom.win or 0,
+      buf = atom.buf or 0,
     }
   end
 
   return {
-    version = 1,
-    event_count = #key_seq,
+    version = 2,
+    event_count = #atom_seq,
     raw_joined = table.concat(raw_parts),
     reduced_sequence = reduced_sequence,
     normalized_sequence = normalized_sequence,
@@ -116,24 +115,6 @@ local function slice_lines(lines, region_start, region_end)
     table.insert(sliced, lines[i])
   end
   return sliced
-end
-
---- Drop mouse events from the captured stream. They are uncapturable as
---- keyboard motion and otherwise inflate cost/length wildly (each unknown
---- `<…>` token is costed character-by-character). `had_mouse` drives a warning.
----@param key_seq VF.KeyEvent[]|nil
----@return VF.KeyEvent[] kept
----@return boolean had_mouse
-local function filter_mouse_events(key_seq)
-  local kept, had_mouse = {}, false
-  for _, ev in ipairs(key_seq or {}) do
-    if keynorm.is_mouse(ev.key_typed) then
-      had_mouse = true
-    else
-      kept[#kept + 1] = ev
-    end
-  end
-  return kept, had_mouse
 end
 
 -- All the synchronous main-thread work that reads live buffer state (buffer/
@@ -190,11 +171,15 @@ local function prepare(active)
   local initial_slice = slice_lines(initial_lines, start_search, end_search)
   local goal_slice = slice_lines(goal_lines, start_search, end_search)
 
-  -- Snapshot: a recall record keeps accumulating keys while the async worker
-  -- runs, and capture_debug must describe the events user_seq was built from.
-  local key_seq = vim.list_extend({}, active.key_seq)
-  local kept_events, had_mouse = filter_mouse_events(key_seq)
-  local keyseq_raw = key_tracking.build_sequence(kept_events)
+  -- Snapshot: a recall record keeps accumulating atoms while the async worker
+  -- runs, and capture_debug must describe the atoms user_seq was built from.
+  -- CmdAtom already resolves mappings and operator-pending duplication, so the
+  -- replayable sequence is just each atom's keys concatenated — no reduction,
+  -- no mouse filtering (mouse atoms never enter the stream).
+  local atom_seq = vim.list_extend({}, active.atoms)
+  local raw_parts = {}
+  for _, atom in ipairs(atom_seq) do raw_parts[#raw_parts + 1] = atom.keys end
+  local keyseq_raw = table.concat(raw_parts)
   local keyseq_str = apply_motion_conversions(keyseq_raw)
 
   local boundary_last_col = #initial_slice[#initial_slice] - 1
@@ -216,9 +201,8 @@ local function prepare(active)
     rel_end_col = end_state.col,
     keyseq_str = keyseq_str,
     keyseq_raw = keyseq_raw,
-    key_seq = key_seq,
-    kept_events = kept_events,
-    had_mouse = had_mouse,
+    atom_seq = atom_seq,
+    had_mouse = active.had_mouse or false,
     optimizer_overrides = ffi_optimizer.encode_optimizer_overrides({ shared = config.optimizer }),
   }
 end
@@ -282,9 +266,9 @@ local function finalize(ctx, analyze, analyze_ms)
     user_cost = analyze.user_cost,
     had_mouse = ctx.had_mouse,
     optimal_results = optimal_results,
-    capture_debug = build_capture_debug(ctx.key_seq, ctx.keyseq_raw, ctx.keyseq_str),
+    capture_debug = build_capture_debug(ctx.atom_seq, ctx.keyseq_raw, ctx.keyseq_str),
     start_time = active.time_started,
-    key_count = #ctx.kept_events,
+    key_count = #ctx.atom_seq,
     timestamp = vim.uv.hrtime(),
     analyze_ms = analyze_ms,
     compute_ms = compute_ms,
@@ -381,7 +365,7 @@ end
 ---@param now_ns integer
 ---@return string|nil
 function M.manual_should_evict(session, cursor_row, now_ns)
-  local seq = session.key_seq
+  local seq = session.atoms
   local last_key_time_ns = (seq and #seq > 0) and seq[#seq].t or nil
   return ffi_session.manual_evict_reason(
     session.start_state.row,

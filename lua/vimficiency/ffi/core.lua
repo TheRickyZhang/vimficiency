@@ -135,12 +135,6 @@ function M.encode_line_array(lines, name)
   return M.encode_string_list(lines)
 end
 
----@param n number
----@return string
-function M.encode_int64(n)
-  return string.format("%.0f", n)
-end
-
 ---@param encoded string
 ---@return string[]
 function M.decode_string_list(encoded)

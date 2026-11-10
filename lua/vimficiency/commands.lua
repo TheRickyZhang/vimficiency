@@ -3,10 +3,6 @@ local subcommands = require("vimficiency.commands.defs")
 
 local M = {}
 
-function M.has_subcommand(name)
-  return subcommands[name] ~= nil
-end
-
 ---@param subcmd string
 ---@param args string[]  Whitespace-split, no empty entries
 function M.dispatch_subcommand(subcmd, args)

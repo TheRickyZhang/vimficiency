@@ -21,7 +21,6 @@ Top-level modules are the plugin entry and cross-cutting infrastructure:
 | `config_detail.lua` | Config introspection / validation helpers. |
 | `ffi.lua` | Compatibility surface for LuaJIT FFI bindings to `libvimficiency.so`. |
 | `util.lua` | State capture, ID generation, UI helpers. |
-| `mapping_scan.lua` | Scans user mappings for `<Plug>Vimfy*` routing. |
 
 Subdirectories hold supporting modules for each domain:
 
@@ -73,9 +72,10 @@ Subdirectories hold supporting modules for each domain:
 
 | File | Purpose |
 |------|---------|
-| `capture/key_tracking.lua` | Captures keypresses via `vim.on_key()` with filtering. |
-| `capture/recall.lua` | Rolling recall-ring capture driven by key events. |
-| `capture/end_trigger.lua` | Idle-based auto-end triggers (Watch / Suggest). |
+| `capture/atoms.lua` | CmdAtom-driven capture: one atom per atomic user action, normalized and fanned out to named subscribers (manual/recall/triggers). See `dev/lua/atom-capture.md`. |
+| `capture/key_tracking.lua` | Legacy `vim.on_key()` capture, now used only by interactive Explore's frontier replay. |
+| `capture/recall.lua` | Rolling recall-ring capture driven by atom events. |
+| `capture/end_trigger.lua` | Idle/command-count auto-end triggers (Watch / Suggest). |
 | `capture/auto_suggest.lua` | Idle-trigger auto-suggest (runs optimizer on a recall window). |
 
 ## Session Architecture
@@ -89,66 +89,50 @@ Subdirectories hold supporting modules for each domain:
    entry point with a redirect to `:Vimfy recall`.
 
 2. **Recall** (rolling ring; queried via `:Vimfy recall N` or `:Vimfy recall Ns`)
-   Creates a retained session on every keystroke. Both indexing modes share
-   one ring — `N` means "N keys ago", `Ns` means "as far back as N seconds
-   ago, snapped backward to a clean normal-mode command boundary".
-   Permanently on (installed by `session_store.install_recall()` at
-   setup). Retention is bounded under **union** semantics: evict the
-   oldest session only when BOTH `KEY_SESSION_CAPACITY` and
-   `MAX_RETENTION_SECONDS` say drop.
+   Creates a retained session on every captured atom (one atomic user action).
+   Both indexing modes share one ring — `N` means "N commands ago", `Ns` means
+   "as far back as N seconds ago". Because each atom is already a complete
+   command boundary, no mode-based backward snapping is needed. Permanently on
+   (installed by `recall_capture.install()` at setup). Retention is bounded
+   under **union** semantics: evict the oldest session only when BOTH
+   `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS` say drop.
 
 ### Data Structures
 
 - **SessionRecord**: Canonical per-session entry with `status` ("active" | "finished"),
-  key event buffer (while active), `first_mode` (captured on recall creation for
-  command-boundary snapping), and `result` (after finish).
+  `capture_sub` (the atom-subscriber name, while active), the captured `atoms` list
+  (while active), and `result` (after finish).
 - **ResultSession**: Optimizer output + position + captured `start_time`/`key_count`,
   attached to the record at finish.
 - **SessionSummary**: Normalized view-model for `:Vimfy list` / auto-suggest output.
 
 One `session_records[id]` table holds everything; `manual_alias_to_id` and
 `recall_id_order` are the two indexes into it. Finish flips `status` in place
-and drops `key_seq` — it does NOT unindex. This removes tombstones from
+and drops `atoms` — it does NOT unindex. This removes tombstones from
 `recall_id_order` entirely: a finished session stays reachable via its recall
 alias (for `:Vimfy play Ns`) until the ring slot rotates out.
 
-## Key Tracking (key_tracking.lua)
+## Capture (capture/atoms.lua)
 
-Uses `vim.on_key(callback)` to capture keypresses with post-processing deduplication.
+Capture (manual sessions, recall, Watch/Suggest triggers) runs off Neovim's
+`CmdAtom` autocmd (0.13-dev / nightly). The event fires once per atomic user
+action, AFTER it runs, carrying the resolved post-mapping `keys`, the `lhs`
+that produced it, the count, and whether the buffer changed or the cursor
+moved. `atoms.lua` normalizes each event into a `VF.Atom`, classifies it
+(record / mouse / skip / abort), and fans it out to named subscribers; buffer
+and window scoping is each subscriber's job. See `dev/lua/atom-capture.md` for
+the full design (admission policy, synthetic-count stripping, recall
+snapshot-shift, the deferred-burst limitation).
 
-### Deduplication Logic
+Because the event already resolves operator-pending and mapping expansion,
+none of the old `vim.on_key` hazards apply: no operator-motion duplication, no
+mapping-LHS leakage, no missing text-object final char, no retraction. A
+`:Vimfy` keymap produces an inert excmd/no-keys atom and is naturally excluded
+without any scan — the obsolete `mapping_scan` warning was removed with the
+migration.
 
-When an operator-pending command completes (e.g., `cw`), Neovim re-evaluates and fires the
-motion key twice. `build_sequence()` removes these duplicates by detecting:
-- Same key appearing twice in succession
-- First occurrence in operator-pending mode (`no`)
-- Second occurrence in different mode (normal/insert)
-
-### Filtering logic
-Both `on_key` handlers drop events whose `typed` is empty. Neovim leaves it
-empty for keys the user did not type: `nvim_feedkeys` without `t`, `:normal`,
-and mapping-RHS expansions. The plugin's replay (`simulate/precompute.lua`)
-never passes `t`, so this one check keeps plugin-generated keys out of every
-recording; there is no admin/ignore flag.
-
-Mapping LHS: a Lua-callback mapping arrives as `key = LUA_KEY`, `typed = LHS`,
-before the callback runs. When `#typed > 1` the handlers strip the
-already-recorded LHS bytes (`strip_matching_tail`) and drop the event. A
-single-byte LHS looks like a plain keystroke there and is recorded; Vimfy's
-own keymap entry points (`init.lua` `entry`) then call
-`key_tracking.uncount_trigger`, which pops that newest event from every
-recording. Only Vimfy's bindings retract — a user's own Lua mapping is motion.
-
-Cmdline activity (`m == "c"`, `:` in normal mode) is dropped as meta-activity.
-
-No retroactive cleanup, no RHS/maparg heuristics. `nnoremap X :Vimfy …<CR>`
-style mappings are flagged by `mapping_scan` at setup; the user fix is to
-migrate the mapping.
-
-### Known limitations
-- Text object final character missing (`ciw` → `c, i, ?`) - Neovim consumes internally before `vim.on_key` fires
-- See `dev/lua/neovim_on_key_issues.md` for detailed analysis and potential workarounds
-- See neovim/neovim#19426 for `v:motion` feature request that would help
+`key_tracking.lua` (the former `vim.on_key` layer) survives only for
+interactive Explore's frontier replay, which still consumes raw key events.
 
 **Approximate motion conversions** (in session/compute.lua):
 - `gj` → `j`, `gk` → `k` (screen-line motions unsupported by optimizer)

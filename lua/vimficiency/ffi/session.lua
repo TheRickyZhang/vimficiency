@@ -55,31 +55,6 @@ function M.compute_search_region(start_lines, end_lines, start_row, end_row, pad
   return a, b
 end
 
----@param records table<string, { time_started: integer, first_mode: string|nil }>
----@param order string[]
----@param target_hrtime integer
----@param budget integer
----@return integer|nil
-function M.resolve_recall_cutoff(records, order, target_hrtime, budget)
-  local parts = {}
-  for i = 1, #order do
-    local rec = records[order[i]]
-    assert(rec, "resolve_recall_cutoff: missing record for order index " .. i)
-    parts[#parts + 1] = core.encode_int64(rec.time_started)
-    parts[#parts + 1] = rec.first_mode or ""
-  end
-  local encoded = core.encode_string_list(parts)
-  local index = lib.vf_resolve_recall_cutoff(
-    encoded,
-    #encoded,
-    target_hrtime,
-    budget
-  )
-  if index == 0 then
-    return nil
-  end
-  return index
-end
 
 ---@param start_row integer
 ---@param cursor_row integer

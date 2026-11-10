@@ -43,7 +43,7 @@ Setting `auto_suggest = false` turns the feature off entirely, and
 require('vimficiency').setup({
     auto_suggest = {
         idle = { ms = 3000, window = "3s" },
-        keys = { every = 50 },              -- every 50 keystrokes
+        keys = { every = 50 },              -- every 50 commands
         cost = { m = 1.5, b = 2.0, ms = 300, window = "100" },
         cooldown_ms = 5000,                 -- how often the optimizer may run
         notif_cooldown_ms = 2000,           -- min gap between *shown* toasts
@@ -61,7 +61,7 @@ Because Suggest is (auto, auto), both halves have a config pointer:
 - **Start scope** (`window`) — slice of the recall queue to analyze.
   Grammar + semantics: see [Window aliases](05-recall.md#window-aliases-two-ways-to-index-the-queue).
   `keys` has no separate window knob — the analysis slice is always
-  `every` keystrokes.
+  `every` commands.
 - **End trigger** (`ms`, `every`, `cooldown_ms`) — when Suggest fires.
   Idle/cost share the end-detection policy with Watch: see [Idle
   end-detection](09-configuration.md#idle-end-detection).
@@ -71,7 +71,7 @@ Because Suggest is (auto, auto), both halves have a config pointer:
 | Trigger | Fires when                                                                          |
 |---------|-------------------------------------------------------------------------------------|
 | `idle`  | You've been idle for `idle.ms` milliseconds.                                        |
-| `keys`  | Every `keys.every` real keystrokes.                                                 |
+| `keys`  | Every `keys.every` real commands.                                                   |
 | `cost`  | After `cost.ms` idle, iff `user_cost > cost.m * optimal + cost.b`.                   |
 
 ### `idle = { ms, window }`
@@ -83,16 +83,16 @@ present.
 
 ### `keys = { every }`
 
-Fires every `every` real user keystrokes. The analysis slice is always
-the last `every` keystrokes — a separate `window` would collapse to
-the same value, so it's not a knob.
+Fires every `every` real user commands (one captured `CmdAtom` each).
+The analysis slice is always the last `every` commands — a separate
+`window` would collapse to the same value, so it's not a knob.
 
 ### `cost = { m, b, ms, window }`
 
 The most selective trigger: only surfaces a result when your typed
 cost exceeds the optimal by a configurable margin. Because it runs
 the optimizer, it's idle-gated on `cost.ms` — the check only runs at
-micro-pauses between commands, not on every keystroke.
+micro-pauses between commands, not on every command.
 
 > **v1 caveat.** Cost runs the optimizer synchronously on the idle
 > tick. With `idle.ms = 3000` and `cost.ms = 300` armed together a 3s

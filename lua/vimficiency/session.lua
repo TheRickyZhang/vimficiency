@@ -4,8 +4,8 @@ local alias_mod = require("vimficiency.session.alias")
 local config = require("vimficiency.config")
 local compute = require("vimficiency.session.compute")
 local disk = require("vimficiency.session.disk")
+local atoms = require("vimficiency.capture.atoms")
 local end_trigger = require("vimficiency.capture.end_trigger")
-local key_tracking = require("vimficiency.capture.key_tracking")
 local playback = require("vimficiency.session.playback")
 local result_view = require("vimficiency.session.result_view")
 local result_window = require("vimficiency.session.result_window")
@@ -58,6 +58,24 @@ local function validate_manual_alias(alias)
   return true
 end
 
+--- Reason to drop an active manual/watch session, or nil to keep it. Checked on
+--- every atom: window closed, cursor drifted out of range, or idle too long.
+---@param session VF.Session.Active
+---@param end_kind VF.Session.EndKind
+---@return string|nil
+local function manual_evict_reason(session, end_kind)
+  local noun = end_kind == "auto" and "watch" or "session"
+  if not v.nvim_win_is_valid(session.win) then
+    return "Vimfy: " .. noun .. " [" .. session.id .. "] dropped — window closed"
+  end
+  local cursor = v.nvim_win_get_cursor(session.win)
+  local reason = compute.manual_should_evict(session, cursor[1] - 1, vim.uv.hrtime())
+  if reason then
+    return "Vimfy: " .. noun .. " dropped — " .. reason
+  end
+  return nil
+end
+
 ---@param alias string
 ---@param end_kind VF.Session.EndKind
 ---@return VF.Session.Active
@@ -67,35 +85,37 @@ local function start_manual_session(alias, end_kind)
   local id = util.new_id(buf)
   local start_state = util.capture_state(buf, win)
 
-  local key_nsid = key_tracking.attach(
-    function()
-      return session_store.get_active(alias)
-    end,
-    function(reason, level)
+  atoms.subscribe(id, function(atom, verdict)
+    local session = session_store.get_active(alias)
+    if not session or session.id ~= id then return end
+
+    -- Eviction runs on every atom regardless of which window is focused.
+    local reason = manual_evict_reason(session, end_kind)
+    if reason then
       session_store.remove(id)
-      if reason then
-        vim.schedule(function()
-          vim.notify(reason, level or vim.log.levels.INFO)
-        end)
-      end
-    end,
-    function(session)
-      if not v.nvim_win_is_valid(session.win) then
-        local noun = end_kind == "auto" and "watch" or "session"
-        return "Vimfy: " .. noun .. " [" .. alias .. "] dropped — window closed"
-      end
-      local cursor = v.nvim_win_get_cursor(session.win)
-      local reason = compute.manual_should_evict(session, cursor[1] - 1, vim.uv.hrtime())
-      if reason then
-        local noun = end_kind == "auto" and "watch" or "session"
-        return "Vimfy: " .. noun .. " [" .. alias .. "] dropped — " .. reason
-      end
-      return nil
+      vim.schedule(function() vim.notify(reason, vim.log.levels.WARN) end)
+      return
     end
-  )
+
+    -- Scope to the session's window; keys elsewhere are ignored, not fatal.
+    if atom.win ~= session.win then return end
+
+    if verdict == "mouse" then
+      session.had_mouse = true
+    elseif verdict == "abort" then
+      session_store.remove(id)
+      vim.schedule(function()
+        vim.notify("Vimfy: session [" .. alias .. "] dropped — an unreplayable " ..
+          "command (ex command or lossy mapping) changed the buffer", vim.log.levels.WARN)
+      end)
+    elseif verdict == "record" then
+      table.insert(session.atoms, atom)
+      session.key_count = session.key_count + 1
+    end
+  end)
 
   return session_store.new_active_session(
-    id, key_nsid, win, buf, start_state, "manual", end_kind)
+    id, id, win, buf, start_state, "manual", end_kind)
 end
 
 ---@param alias string
@@ -158,7 +178,7 @@ function M.watch(alias)
   })
 
   if not disarm then
-    key_tracking.detach(active.key_nsid)
+    atoms.unsubscribe(active.capture_sub)
     vim.notify("vimfy watch [" .. alias .. "] failed to arm idle trigger", vim.log.levels.ERROR)
     return
   end
@@ -240,7 +260,7 @@ end
 function M.recall(alias)
   if not alias or alias == "" then
     vim.notify(
-      "recall() requires a window alias (e.g. '5' for keys ago, '3s' for seconds)",
+      "recall() requires a window alias (e.g. '5' for commands ago, '3s' for seconds)",
       vim.log.levels.ERROR)
     return
   end
@@ -256,7 +276,7 @@ function M.recall(alias)
   if session_type ~= "recall_key" and session_type ~= "recall_time" then
     vim.notify(
       "Invalid recall alias '" .. alias .. "'. " ..
-      "Expected N (keys ago) or Ns (seconds ago).",
+      "Expected N (commands ago) or Ns (seconds ago).",
       vim.log.levels.ERROR)
     return
   end
@@ -264,7 +284,7 @@ function M.recall(alias)
   local active = session_store.get_active(alias)
   if not active then
     if session_type == "recall_key" then
-      vim.notify("No recall session found for '" .. alias .. "' keys ago.", vim.log.levels.ERROR)
+      vim.notify("No recall session found for '" .. alias .. "' commands ago.", vim.log.levels.ERROR)
     else
       vim.notify(
         "No recall session found within '" .. alias .. "'. " ..

@@ -5,7 +5,8 @@ export module vf.Optimizer.TransformOptimizer.TransformTransitionDispatcher;
 
 import std.compat;
 import vf.Optimizer.FrontierCommon;
-export import vf.Optimizer.TransformOptimizer.TransformOptimizer;
+export import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
+export import vf.Optimizer.TransformOptimizer.TransformResult;
 export import vf.Optimizer.SearchStats;
 export import vf.Optimizer.TransformOptimizer.TransformState;
 export import vf.Optimizer.TransformOptimizer.GoalHandlerTypes;

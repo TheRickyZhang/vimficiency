@@ -1,5 +1,12 @@
 # Neovim vim.on_key Issues
 
+> **Superseded for capture.** Manual sessions, recall, and the Watch/Suggest
+> triggers now capture through the `CmdAtom` autocmd (Neovim 0.13-dev / nightly),
+> which reports one resolved, replayable unit per command and sidesteps every
+> issue below. See `dev/lua/atom-capture.md`. This document remains as the
+> rationale for that migration and still applies to `capture/key_tracking.lua`,
+> which lives on only for interactive Explore's frontier replay.
+
 This document describes known issues with `vim.on_key()` for capturing complete key sequences, particularly in operator-pending mode.
 
 ## Background
@@ -197,7 +204,7 @@ the mapping in a single input pass with no pending-state excursion.
 
 | Binding shape                 | Events | `typed`         | `key`                   | Dedup rule drops it? |
 |-------------------------------|--------|-----------------|-------------------------|----------------------|
-| Lua callback (`vimfy.map`)    | 1      | full LHS        | Lua-callback sentinel   | Yes                  |
+| Lua callback (`vimfy.keymap`)    | 1      | full LHS        | Lua-callback sentinel   | Yes                  |
 | String RHS (`"<Nop>"`, Ex)    | 1      | full LHS        | first expansion key     | Yes                  |
 | `<Plug>`-remapped             | 1      | full LHS        | Lua-callback sentinel   | Yes                  |
 | Unbound (literal keystrokes)  | N      | key per event   | equal to `typed`        | No — recorded        |

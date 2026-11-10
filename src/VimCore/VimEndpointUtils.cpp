@@ -6,7 +6,6 @@ module vf.VimCore.VimEndpointUtils;
 import std.compat;
 import vf.VimCore.CharMask;
 import vf.VimCore.VimCore;
-import vf.VimCore.VimEditUtils;
 import vf.VimCore.VimMotionUtils;
 import vf.Types.CursorPos;
 

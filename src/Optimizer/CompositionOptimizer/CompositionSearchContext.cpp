@@ -5,7 +5,6 @@ module;
 module vf.Optimizer.CompositionOptimizer.CompositionSearchContext;
 
 import std.compat;
-import vf.Optimizer.CompositionOptimizer.PlannedEditArtifacts;
 import vf.Optimizer.DiffPlanner.VimDiff;
 import vf.Optimizer.DiffPlanner.DiffAlgorithm;
 import vf.Optimizer.DiffPlanner.MyersDiff;

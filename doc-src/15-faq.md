@@ -6,9 +6,9 @@ title: "FAQ"
 
 ## Does Vimfy slow down Neovim?
 
-No. Key capture is a small Lua append per keystroke. The optimizer only
-runs on `finish` (or an auto-trigger), in C++, over a snapshot. Recall is
-always on and the per-key overhead stays flat.
+No. Capture is a small Lua append per command, on the `CmdAtom` autocmd.
+The optimizer only runs on `finish` (or an auto-trigger), in C++, over a
+snapshot. Recall is always on and the per-command overhead stays flat.
 
 ## Can I use it with Colemak / Dvorak / custom layouts?
 
@@ -26,8 +26,8 @@ are simplified; see [13. Limitations](13-limitations.md).
 
 A few common reasons:
 - The optimizer's search budget truncated before reaching it.
-- A motion it would have used isn't modeled (text-object final char,
-  `gj`/`gk`, certain plugin mappings).
+- A motion it would have used isn't modeled (`gj`/`gk`, or a mapping to
+  a Lua callback).
 - Your `shiftwidth` is different from the one the optimizer is configured
   with, so indent-aware motions score differently.
 

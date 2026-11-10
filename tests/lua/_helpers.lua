@@ -175,22 +175,6 @@ function M.silence_notify(fn)
   }, fn)
 end
 
---- Install a temporary keymap via `vimfy.map`, run `fn`, clean up the
---- mapping on exit. Accepts the same spec forms as `vimfy.map`.
----@param mode string
----@param lhs string
----@param spec string|function
----@param fn fun()
----@param opts table|nil  Forwarded to vimfy.map.
-function M.with_temp_map(mode, lhs, spec, fn, opts)
-  local vimfy = require("vimficiency")
-  pcall(vim.keymap.del, mode, lhs)
-  vimfy.map(mode, lhs, spec, opts)
-  local ok, err = pcall(fn)
-  pcall(vim.keymap.del, mode, lhs)
-  if not ok then error(err, 2) end
-end
-
 --- Seed a recall record in the store. `backdate_s` backdates
 --- `time_started` so `Ns` queries can resolve the record deterministically.
 ---@param opts { buf?: integer, lines?: string[], id?: string, backdate_s?: number }|nil
@@ -204,7 +188,7 @@ function M.seed_recall(opts)
   local win = vim.api.nvim_get_current_win()
   local id = opts.id or util.new_id(buf)
   local rec = session_store.new_active_session(
-    id, -1, win, buf,
+    id, nil, win, buf,
     {
       row = 0,
       col = 0,
@@ -218,7 +202,6 @@ function M.seed_recall(opts)
     },
     "auto", "manual"
   )
-  rec.first_mode = "n"
   if opts.backdate_s then
     rec.time_started = vim.uv.hrtime() - opts.backdate_s * 1e9
   end

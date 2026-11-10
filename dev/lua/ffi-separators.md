@@ -33,8 +33,8 @@ carry UTF-8 or control bytes).
 
 - Lua encoder: `encode_string_list` in `lua/vimficiency/ffi.lua`.
 - C++ decoder: `payload::decodeLengthPrefixedStrings` in
-  `src/LuaExports/UtilityExports.cpp`, with typed wrappers
-  `decodeLineArray`, `decodeRecallRecordMeta`.
+  `src/LuaExports/UtilityExports.cpp`, with the typed wrapper
+  `decodeLineArray`.
 
 Pros: collision-free by construction. The length tells the decoder
 exactly how many bytes to consume, so no content byte is ever
@@ -143,54 +143,16 @@ the end of the stream. The body-line framing inside each record
 
 ## Numeric field encoding across the FFI
 
-Integer payloads carried as text fields (e.g. `time_started` in the
-recall-record meta stream) have their own failure mode: Lua's
-`tostring(n)` emits scientific notation for numbers large enough to
-lose representational precision as decimals. For an hrtime-scale value
-(~1.07e14 ns on a mid-uptime box), `tostring` produces
-`"1.0710102841774e+14"`. C++'s `from_chars<int64_t>` does not accept
-scientific notation, silently fails, and the payload decoder returns
-an error — which, in the `.value_or(0)` wrapper pattern, turns
-into a zero return that Lua maps to nil. The symptom is a "query
-returns nothing" that looks like a logic bug but is actually an
-encoding bug.
-
-**Rule.** When an integer-valued Lua number crosses the FFI as a text
-field, encode it with the `encode_int64` helper in `ffi.lua`, not
-`tostring`. The helper uses `string.format("%.0f", n)` which always
-emits decimal form without scientific notation.
-
-```lua
--- WRONG: breaks silently for large hrtime values.
-parts[#parts + 1] = tostring(rec.time_started)
-
--- RIGHT:
-parts[#parts + 1] = encode_int64(rec.time_started)
-```
-
-This only applies to numbers serialized into text payloads. Direct
-FFI arguments typed as `int64_t` in the cdef (e.g. the
-`target_hrtime` parameter of `vimficiency_resolve_recall_cutoff`)
-convert correctly via LuaJIT's automatic Lua-number → int64_t coercion
-— no helper needed there.
-
-### A better architecture (when it's worth it)
-
-The `encode_int64` helper is a workaround for two underlying facts:
-(1) we serialize numeric payloads as decimal text, and (2) Lua doubles
-can't losslessly represent int64 values above 2^53 (~104 days of ns
-uptime). The workaround is adequate because our comparisons are
-relative — small drifts above 2^53 affect both the record and the
-target identically. But if an int64-identity-preserving payload is
-ever needed, the structural fix is:
-
-1. Use LuaJIT's `ffi.new("int64_t", n)` cdata to carry the value, and
-2. Change the wire format from length-prefixed text to a binary
-   layout that passes int64s by their native 8-byte representation.
-
-Both changes are invasive relative to the current codebase, so we
-default to the `encode_int64` helper and flag this block for future
-reference.
+No numeric field currently crosses the FFI as text — the int64 values that
+cross (e.g. `last_key_time_ns`/`now_ns` in `vimficiency_manual_evict_reason`)
+are direct cdef `int64_t` args, which LuaJIT coerces from a Lua number
+correctly. If you ever serialize an int64 *into a text payload*, do not use
+`tostring(n)`: for hrtime-scale values (~1e14) it emits scientific notation
+(`"1.07e+14"`), which C++'s `from_chars<int64_t>` rejects — the decode fails
+silently and the query "returns nothing". Format with `string.format("%.0f", n)`
+instead, and note that Lua doubles can't losslessly hold int64 above 2^53
+(~104 days of ns uptime), so an identity-preserving payload would need
+`ffi.new("int64_t", n)` + a binary wire format.
 
 ## Anti-patterns and why they keep appearing
 
@@ -212,4 +174,4 @@ reference.
 - **`tostring(n)` on large Lua numbers before FFI encode.** See the
   numeric-field section above. `tostring` produces scientific notation
   at ~1e14 and above; `from_chars<int64_t>` rejects it; the payload
-  silently fails to decode. Always use `encode_int64`.
+  silently fails to decode. Use `string.format("%.0f", n)`.

@@ -27,7 +27,7 @@ require('vimficiency').setup({
 Watch currently supports the `idle` trigger only. The `keys` and
 `cost` triggers [shipped for Suggest](06-suggest.md#triggers) don't
 yet apply here — the manual-start side of Watch doesn't benefit from
-keystroke-count or cost-ratio firing the way Suggest's auto-start side
+command-count or cost-ratio firing the way Suggest's auto-start side
 does. Ask if you'd use them and we can extend.
 
 - Configuration parameters: see [Idle end-detection](09-configuration.md#idle-end-detection)

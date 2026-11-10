@@ -16,12 +16,12 @@ local NS_PER_SEC = 1e9
 
 --- Build a minimal fake record with just the fields the predicate reads.
 ---@param start_row integer
----@param last_key_t integer|nil  hrtime of last key event; nil for empty seq
----@param key_seq_nil boolean|nil  If true, set key_seq = nil instead of empty {}
+---@param last_key_t integer|nil  hrtime of last atom; nil for empty seq
+---@param atoms_nil boolean|nil  If true, set atoms = nil instead of empty {}
 ---@return table
-local function fake_session(start_row, last_key_t, key_seq_nil)
+local function fake_session(start_row, last_key_t, atoms_nil)
   local seq
-  if key_seq_nil then
+  if atoms_nil then
     seq = nil
   elseif last_key_t then
     seq = { { t = last_key_t } }
@@ -30,7 +30,7 @@ local function fake_session(start_row, last_key_t, key_seq_nil)
   end
   return {
     start_state = { row = start_row },
-    key_seq = seq,
+    atoms = seq,
   }
 end
 
@@ -74,7 +74,7 @@ test("manual_should_evict: cursor drift beyond search window evicts", function()
   assert_eq(session.manual_should_evict(boundary, config.MAX_SEARCH_LINES - 1, now), nil)
 end)
 
-test("manual_should_evict: drift wins over idle and nil key_seq is safe", function()
+test("manual_should_evict: drift wins over idle and nil atoms is safe", function()
   local now = 1e15
   local stale = now - (config.MANUAL_IDLE_TIMEOUT_SECONDS + 10) * NS_PER_SEC
   local s = fake_session(0, stale)

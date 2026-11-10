@@ -123,7 +123,7 @@ nonempty only for future per-planned-edit views.
 When the file is loaded back by `fetch` (or by the implicit fallback in
 `sim`), `register_fetched_result` wraps it in a minimal `SessionRecord`
 with `status = "finished"`, `start_kind = end_kind = "manual"`,
-`finish_alias = <target alias>`, and `key_nsid = -1` (no key tracking).
+`finish_alias = <target alias>`, and no `capture_sub` (no live atom capture).
 
 ## Invariants worth preserving
 

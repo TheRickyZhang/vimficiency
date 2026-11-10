@@ -124,20 +124,6 @@ VFByteSlice vf_compute_search_region(
           }));
 }
 
-int vf_resolve_recall_cutoff(
-    const char *encoded_records,
-    size_t encoded_records_len,
-    int64_t target_hrtime,
-    int budget) {
-  CHECK(budget >= 0, "budget must be non-negative");
-  return helpers::requiredBytes(encoded_records, encoded_records_len, "encoded_records")
-      .and_then(payload::decodeRecallRecordMeta)
-      .transform([&](const vector<payload::RecallRecordMeta>& records) {
-        return logic::resolveRecallCutoffIndex(records, target_hrtime, budget);
-      })
-      .value_or(0);
-}
-
 int vf_manual_evict_reason(
     int start_row,
     int cursor_row,

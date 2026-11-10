@@ -79,7 +79,7 @@ return {
   },
 
   recall = {
-    desc = "Finish a retrospective recall window (N keys ago or Ns)",
+    desc = "Finish a retrospective recall window (N commands ago or Ns)",
     usage = "recall <N|Ns>",
     min_args = 1,
     complete = function() return alias_mod.TIME_HINTS end,

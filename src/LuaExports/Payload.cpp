@@ -58,29 +58,6 @@ Result<Lines> decodeLineArray(string_view encoded) {
   });
 }
 
-Result<vector<RecallRecordMeta>> decodeRecallRecordMeta(string_view encoded) {
-  return decodeLengthPrefixedStrings(encoded).and_then([](const vector<string>& parts)
-      -> Result<vector<RecallRecordMeta>> {
-    if (parts.size() % 2 != 0) {
-      return helpers::unexpectedError("invalid recall metadata payload");
-    }
-
-    vector<RecallRecordMeta> records;
-    records.reserve(parts.size() / 2);
-    for (size_t i = 0; i < parts.size(); i += 2) {
-      int64_t parsed = 0;
-      const char* begin = parts[i].data();
-      const char* end = begin + parts[i].size();
-      const auto [ptr, ec] = from_chars(begin, end, parsed);
-      if (ec != errc{} || ptr != end) {
-        return helpers::unexpectedError("invalid recall timestamp");
-      }
-      records.push_back({ parsed, parts[i + 1] });
-    }
-    return records;
-  });
-}
-
 Result<vector<KeyTrackingEvent>> decodeKeyTrackingEvents(string_view encoded) {
   vector<KeyTrackingEvent> events;
   size_t start = 0;

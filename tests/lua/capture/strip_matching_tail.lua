@@ -1,9 +1,7 @@
 -- tests/lua/capture/strip_matching_tail.lua
--- Pure-function tests for `key_tracking.strip_matching_tail`. The same
--- helper is used by the per-session on_key handler (inline) and by
--- `session_store.strip_recall_pre_resolution` (via fan-out) — testing it
--- directly here means a regression shows up against the shared helper
--- rather than split across both call sites.
+-- Pure-function tests for `key_tracking.strip_matching_tail`, the helper
+-- interactive Explore uses to drop a resolved mapping's LHS bytes from its
+-- raw on_key event buffer.
 
 local key_tracking = require("vimficiency.capture.key_tracking")
 
@@ -44,18 +42,6 @@ test("strip_matching_tail: no-op cases leave sequence intact", function()
     assert_eq(popped, 0, case.msg)
     assert_eq(#case.seq, original_len, case.msg .. " should not mutate seq")
   end
-end)
-
-test("pop_trigger: removes only a trailing Lua-mapping trigger", function()
-  local trigger = ev("Z")
-  trigger.key_sent_raw = key_tracking.LUA_KEY
-  local seq = { ev("j"), ev("w"), trigger }
-  assert_eq(key_tracking.pop_trigger(seq), 1, "trigger popped")
-  assert_eq(#seq, 2, "motion survives")
-
-  assert_eq(key_tracking.pop_trigger(seq), 0, "plain key is not a trigger")
-  assert_eq(#seq, 2, "seq intact")
-  assert_eq(key_tracking.pop_trigger({}), 0, "empty seq")
 end)
 
 test("strip_matching_tail: handles multi-byte key_typed_raw at the boundary", function()

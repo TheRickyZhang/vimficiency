@@ -11,15 +11,15 @@ local h       = require("_helpers")
 local function fake_active(buf, win)
   return {
     id = "test-" .. tostring(vim.uv.hrtime()),
-    key_nsid = -1,
+    capture_sub = nil,
     win = win,
     buf = buf,
     start_state = util.capture_state(buf, win),
     time_started = vim.uv.hrtime(),
     status = "active",
-    key_seq = {},
+    atoms = {},
     key_count = 0,
-    first_mode = "n",
+    had_mouse = false,
     result = nil,
   }
 end
@@ -91,13 +91,13 @@ test("compute_result_for_active: includes capture key debug", function()
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_cursor(win, { 1, 8 })
   local active = fake_active(buf, win)
-  active.key_seq = {
-    { t = 1000, mode = "n",  key_sent = "c", key_sent_raw = "c", key_typed = "c", key_typed_raw = "c", win = win, buf = buf },
-    { t = 2000, mode = "no", key_sent = "W", key_sent_raw = "W", key_typed = "W", key_typed_raw = "W", win = win, buf = buf },
-    { t = 3000, mode = "i",  key_sent = "W", key_sent_raw = "W", key_typed = "W", key_typed_raw = "W", win = win, buf = buf },
-    { t = 4000, mode = "i",  key_sent = "2", key_sent_raw = "2", key_typed = "2", key_typed_raw = "2", win = win, buf = buf },
+  -- One atom per command: CmdAtom has already resolved operator-pending, so the
+  -- replayable `keys` are just concatenated (no reduction, no mode tracking).
+  active.atoms = {
+    { t = 1000, type = "insert",   keys = "cwW2<Esc>", lhs = "cwW2<Esc>", win = win, buf = buf },
+    { t = 2000, type = "operator", keys = "dl",        lhs = "x",         win = win, buf = buf },
   }
-  active.key_count = #active.key_seq
+  active.key_count = #active.atoms
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "cout << W2 << endl;" })
 
   local result
@@ -109,13 +109,13 @@ test("compute_result_for_active: includes capture key debug", function()
     result = assert(session.compute_result_for_active(active))
   end)
 
-  assert_eq(result.user_seq, "cWW2")
-  assert_eq(result.capture_debug.raw_joined, "cWW2")
-  assert_eq(result.capture_debug.reduced_sequence, "cWW2")
-  assert_eq(result.capture_debug.normalized_sequence, "cWW2")
-  assert_eq(result.capture_debug.event_count, 4)
-  assert_eq(result.capture_debug.events[2].mode, "no")
-  assert_eq(result.capture_debug.events[3].key_typed, "W")
+  assert_eq(result.user_seq, "cwW2<Esc>dl")
+  assert_eq(result.capture_debug.raw_joined, "cwW2<Esc>dl")
+  assert_eq(result.capture_debug.reduced_sequence, "cwW2<Esc>dl")
+  assert_eq(result.capture_debug.normalized_sequence, "cwW2<Esc>dl")
+  assert_eq(result.capture_debug.event_count, 2)
+  assert_eq(result.capture_debug.events[1].type, "insert")
+  assert_eq(result.capture_debug.events[2].keys, "dl")
 
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
 end)

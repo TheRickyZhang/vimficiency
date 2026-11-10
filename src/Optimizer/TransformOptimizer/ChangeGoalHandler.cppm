@@ -1,7 +1,8 @@
 export module vf.Optimizer.TransformOptimizer.ChangeGoalHandler;
 
 import std.compat;
-export import vf.Optimizer.TransformOptimizer.TransformOptimizer;
+export import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
+export import vf.Optimizer.TransformOptimizer.TransformResult;
 export import vf.Optimizer.SearchStats;
 export import vf.Boundary.TransformBoundary;
 export import vf.Effort.RunningEffort;

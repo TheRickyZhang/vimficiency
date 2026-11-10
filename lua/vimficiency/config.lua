@@ -25,7 +25,6 @@ local fields = {
   KEY_SESSION_CAPACITY = 200,
   MAX_RETENTION_SECONDS = 120,
   MANUAL_IDLE_TIMEOUT_SECONDS = 300,
-  SNAP_LOOKBACK_KEYS = 20,
 
   -- Session features
   auto_suggest = {

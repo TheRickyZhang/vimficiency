@@ -12,7 +12,7 @@ local function seed_finished(alias, finish_alias, result)
   local id = "test-special-" .. alias
   ---@diagnostic disable-next-line: missing-fields
   session_store.store_manual(alias, {
-    id = id, key_nsid = -1, status = "active", key_seq = {},
+    id = id, capture_sub = nil, status = "active", atoms = {},
   })
   session_store.finish_session(
     id, result or h.fake_result({ user_seq = "" }), finish_alias, nil, "manual")

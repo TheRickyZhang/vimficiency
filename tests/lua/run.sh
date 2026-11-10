@@ -50,16 +50,28 @@ run_phase() {
   "$@" || status=$?
 }
 
-run_phase "main batch" nvim --headless -u NONE -U NONE -l "$here/runner.lua"
+# Neovim binary. CmdAtom-dependent phases need a nightly (0.13-dev+); override
+# with VF_NVIM to point the whole suite at one. Defaults to `nvim` on PATH.
+nvim_bin="${VF_NVIM:-nvim}"
+
+run_phase "main batch" "$nvim_bin" --headless -u NONE -U NONE -l "$here/runner.lua"
 
 run_phase "on_key_mapping_probe.lua (isolated)" \
   env VF_TEST_FILE="$here/capture/on_key_mapping_probe.lua" \
   VF_TEST_SUMMARY_FILE="$summary" \
-  nvim --headless -u NONE -U NONE -l "$here/runner.lua"
+  "$nvim_bin" --headless -u NONE -U NONE -l "$here/runner.lua"
 
 run_phase "simulate/integration.lua (isolated)" \
-  nvim --headless -u NONE -U NONE \
+  "$nvim_bin" --headless -u NONE -U NONE \
   --cmd 'set noswapfile' -c "luafile $here/simulate/integration.lua"
+
+# CmdAtom capture characterization. Needs a running main loop (deferred event +
+# real input), so it runs via `-c luafile`, not `-l`. Self-skips (0/0) when the
+# Neovim lacks `##CmdAtom`.
+run_phase "capture/atoms.lua (isolated)" \
+  env VF_TEST_SUMMARY_FILE="$summary" \
+  "$nvim_bin" --headless -u NONE -U NONE \
+  --cmd 'set noswapfile' -c "luafile $here/capture/atoms.lua"
 
 # Aggregate the per-phase summary lines.
 grand_passed=0
@@ -79,10 +91,10 @@ printf '\n'
 # denominator means nothing failed. On failures the line reads
 # "X/N passed, Y FAILED" so the failure count is hard to miss.
 if [[ $grand_failed -eq 0 ]]; then
-  printf '[==========] %d/%d tests passed across 3 processes.\n' \
+  printf '[==========] %d/%d tests passed across 4 processes.\n' \
     "$grand_passed" "$grand_tests"
 else
-  printf '[==========] %d/%d tests passed across 3 processes — %d FAILED.\n' \
+  printf '[==========] %d/%d tests passed across 4 processes — %d FAILED.\n' \
     "$grand_passed" "$grand_tests" "$grand_failed"
 fi
 

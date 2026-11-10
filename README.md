@@ -28,7 +28,10 @@ https://therickyzhang.github.io/vimficiency/docs/how-it-works/
 
 ## Requirements
 
-- Neovim 0.11+
+- **Neovim nightly (0.13-dev).** Session capture (mark/watch/recall/suggest)
+  runs off the `CmdAtom` event, which only recent nightlies expose. On stable
+  Neovim (0.11+) the commands and replay views still load, but capture is
+  disabled with a one-time warning until you upgrade.
 - **Linux or macOS.** Windows is not yet supported.
 - Prebuilt libraries are published for Linux x86_64, Linux aarch64, and
   macOS arm64 (Linux builds need glibc 2.36+ and bundle the C++ runtime; the

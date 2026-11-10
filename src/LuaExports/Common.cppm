@@ -146,14 +146,8 @@ struct KeyTrackingEvent {
   std::string keyTyped;
 };
 
-struct RecallRecordMeta {
-  int64_t timeStarted = 0;
-  std::string firstMode;
-};
-
 Result<std::vector<std::string>> decodeLengthPrefixedStrings(std::string_view encoded);
 Result<Lines> decodeLineArray(std::string_view encoded);
-Result<std::vector<RecallRecordMeta>> decodeRecallRecordMeta(std::string_view encoded);
 Result<std::vector<KeyTrackingEvent>> decodeKeyTrackingEvents(std::string_view encoded);
 
 // One record per diff, EVENT_FIELD_SEP between fields, '\n' after each record:
@@ -177,10 +171,6 @@ std::pair<int, int> computeSearchRegion(
     const Lines& startLines,
     const Lines& endLines,
     int padding);
-int resolveRecallCutoffIndex(
-    const std::vector<payload::RecallRecordMeta>& records,
-    int64_t targetHrtime,
-    int budget);
 int manualEvictReason(
     int startRow,
     int cursorRow,

@@ -15,7 +15,7 @@ local function lines_for_active(item)
       "",
       "The ring is populated on every keystroke; entries are not directly",
       "actionable from this picker. Resolve a specific window via:",
-      "  :Vimfy recall N    — N keys ago",
+      "  :Vimfy recall N    — N commands ago",
       "  :Vimfy recall Ns   — N seconds ago",
     }
   end

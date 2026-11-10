@@ -24,10 +24,6 @@ namespace VF::LuaExports::logic {
 
 namespace {
 
-bool isCleanBoundaryMode(string_view mode) {
-  return mode.starts_with('n') && !mode.starts_with("no");
-}
-
 string_view modePrefix(string_view mode) {
   return mode.substr(0, 2);
 }
@@ -111,33 +107,6 @@ pair<int, int> computeSearchRegion(
   const int regionStart = max(0, minRow - padding);
   const int regionEnd = min(bufferLen - 1, maxRow + padding);
   return {regionStart, regionEnd};
-}
-
-int resolveRecallCutoffIndex(
-    const vector<payload::RecallRecordMeta>& records,
-    int64_t targetHrtime,
-    int budget) {
-  int lo = 0;
-  int hi = ssize(records) - 1;
-  int best = -1;
-  while (lo <= hi) {
-    const int mid = (lo + hi) / 2;
-    if (records[mid].timeStarted <= targetHrtime) {
-      best = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  if (best < 0) return 0;
-
-  int steps = 0;
-  for (int i = best; i >= 0 && steps <= budget; --i, ++steps) {
-    if (isCleanBoundaryMode(records[i].firstMode)) {
-      return i + 1;
-    }
-  }
-  return 0;
 }
 
 int manualEvictReason(

@@ -27,12 +27,6 @@ export {
 
 namespace VimCore {
 
-// Convert an inclusive character position into a same-line half-open endpoint.
-inline CursorPos onePastOnSameLine(const Lines& lines, const CursorPos& inclusivePos) {
-  int lineLen = static_cast<int>(lines[inclusivePos.line].size());
-  return CursorPos(inclusivePos.line, std::min(inclusivePos.col + 1, lineLen));
-}
-
 // Linewise change with autoindent: shared mechanics for cc/S, cj, and ck.
 //
 // Replaces the inclusive line range [firstLine, lastLine] with a single new
@@ -202,23 +196,6 @@ struct ResolvedDeleteRange {
 // Resolve a raw exclusive [begin, end) range into an explicit characterwise
 // CharRange or linewise LineRange. For change-like operators, handle their
 // linewise replacement case before calling this with `allowLinewise=false`.
-inline bool hasOnlyBlankPrefix(std::string_view line, int endCol, int contentStartCol = 0) {
-  int begin = std::clamp(contentStartCol, 0, static_cast<int>(line.size()));
-  int end = std::clamp(endCol, begin, static_cast<int>(line.size()));
-  for (int col = begin; col < end; col++) {
-    if (!CharMask::isWhitespace(line[col])) return false;
-  }
-  return true;
-}
-
-inline bool hasOnlyBlankSuffix(std::string_view line, int beginCol) {
-  int begin = std::clamp(beginCol, 0, static_cast<int>(line.size()));
-  for (int col = begin; col < static_cast<int>(line.size()); col++) {
-    if (!CharMask::isWhitespace(line[col])) return false;
-  }
-  return true;
-}
-
 // Returns 1 if TRUE exclusive-linewise (`:help exclusive-linewise`),
 // 2 if op_delete result-is-blank promotion (Vim's ops.c:741-757), 0 otherwise.
 // Distinguishes the two because their post-delete cursor targetCol semantics
@@ -321,16 +298,6 @@ inline ResolvedDeleteRange resolveExclusiveChangeRange(CharRange range, const Li
 //
 // contentStartCol: offset for effective-line coordinate systems (e.g.,
 // leftColOffset on line 0 in TransformExplorer). Defaults to 0 for real buffers.
-
-inline CharRange buildBackwardExclusiveCharRange(
-    const CursorPos& endpoint, const CursorPos& cursor, const Lines& lines,
-    int contentStartCol = 0) {
-  if (cursor.col == contentStartCol && endpoint.line < cursor.line) {
-    int prevLine = cursor.line - 1;
-    return CharRange(endpoint, CursorPos(prevLine, static_cast<int>(lines[prevLine].size())));
-  }
-  return CharRange(endpoint, cursor);
-}
 
 inline ResolvedDeleteRange resolveBackwardExclusiveWordDeleteRange(
     const CursorPos& endpoint, const CursorPos& cursor, const Lines& lines,

@@ -61,7 +61,7 @@ local function format_events(events)
 end
 
 --- Characterize `on_key` output across binding-shape variants of `<Space>ve`.
-test("on_key: Lua-callback mapping (vimfy.map shape) emits ONE resolution event", function()
+test("on_key: Lua-callback mapping emits ONE resolution event", function()
   vim.keymap.set("n", "<Space>ve", function() end)
   local events = record_events_for(" ve")
   vim.keymap.del("n", "<Space>ve")
@@ -91,7 +91,7 @@ test("on_key: <Plug>-remapped mapping behavior", function()
   trace("<Plug>-remap trace:\n" .. format_events(events) .. "\n")
 end)
 
-test("on_key: vimfy.map-style wrap actually suppresses the event when it fires", function()
+test("on_key: a wrapping Lua callback suppresses events while it runs", function()
   -- Record whether any event fires during the wrapped callback's ignore window.
   local ignoring = false
   local events = {}

@@ -4,10 +4,9 @@ title: "Known limitations"
 
 # Known limitations
 
-- **Text-object final character** is sometimes missing from the recorded
-  sequence (e.g., `ciw` may record as `c`+`i`). The optimizer still analyzes
-  the resulting state correctly, but your `user:` sequence in the output may
-  look truncated.
+- **Session capture needs Neovim nightly (0.13-dev).** Capture runs off the
+  `CmdAtom` event. On stable Neovim the commands and replay views still work,
+  but mark/watch/recall/suggest are disabled with a one-time warning.
 
 - **Screen-line motions** `gj`/`gk` are approximated as `j`/`k`. Exact on
   unwrapped lines; off by a little when wrapping is in play.
@@ -24,29 +23,15 @@ title: "Known limitations"
 - **Long sessions** may hit the optimizer's search budget; expect diminishing
   suggestion quality beyond roughly a dozen lines of edits.
 
-- **Mappings that invoke Vimfy without `vimfy.map()` / `<Plug>`** have
-  their trigger keypress counted as motion. See
-  [8. Keymaps](08-keymaps.md) for the fix.
+- **Mappings to Lua callbacks can't be audited as motion.** A key mapped to a
+  Lua function that edits the buffer produces an unreplayable capture event; a
+  session spanning it is dropped as untrustworthy. Mappings whose RHS is a key
+  sequence are fine — they are captured as the resolved post-mapping keys. Type
+  the underlying keys directly when you want a specific motion audited.
 
-- **Keys produced by a mapping's RHS are invisible.** If `<leader>V` is
-  mapped to `V$%`, the `V$%` bytes never reach the capture — `vim.on_key`
-  delivers only a single resolution event that the plugin strips to
-  avoid leaking the LHS. The session records whatever you type *after*
-  the mapping from a stale starting mode, which often tokenizes into
-  something that looks nothing like what you did. Type the underlying
-  keys directly when you want a motion audited.
-
-- **Recall may include the final char of a `<Plug>`-mapped LHS** on
-  occasion, because `vim.on_key` fires for that char before Neovim
-  resolves the mapping. If you target `:Vimfy recall N` precisely,
-  count `N` accordingly — or use time recall (`Ns`), which rolls past
-  the extra key without noticing.
-
-- **Recall only records keystrokes typed in normal file buffers**
-  (`&buftype == ""`). Keys typed in help, quickfix, terminal, prompt,
-  or scratch buffers are skipped — they aren't meaningful for nav or
-  transform optimization, and recording them would cause recall queries to fail
-  with buffer-mismatch when you return to your file. If you bind a
-  Vimfy action that opens an async floating-input prompt (e.g.
-  `vim.ui.input` overridden by dressing.nvim), the `2` / `<CR>` you
-  type into that prompt are filtered automatically.
+- **Recall only records actions in normal file buffers** (`&buftype == ""`).
+  Actions in help, quickfix, terminal, prompt, or scratch buffers are skipped —
+  they aren't meaningful for nav or transform optimization, and recording them
+  would cause recall queries to fail with buffer-mismatch when you return to
+  your file. Input typed into an async floating prompt (e.g. `vim.ui.input`
+  overridden by dressing.nvim) is filtered automatically.

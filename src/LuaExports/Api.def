@@ -121,11 +121,6 @@ VFByteSlice vf_compute_search_region(
   int start_row,
   int end_row,
   int padding);
-int vf_resolve_recall_cutoff(
-  const char* encoded_records,
-  size_t encoded_records_len,
-  int64_t target_hrtime,
-  int budget);
 int vf_manual_evict_reason(
   int start_row,
   int cursor_row,

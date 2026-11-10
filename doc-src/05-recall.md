@@ -8,7 +8,7 @@ Recall lets you look backward without any previous marking setup by querying a c
 
 ```vim
 " ... edit normally ...
-:Vimfy recall 6       " Analyze the last 6 keystrokes
+:Vimfy recall 6       " Analyze the last 6 commands
 :Vimfy recall 3s      " Analyze the last 3 seconds
 ```
 
@@ -19,13 +19,13 @@ retrospective windows go through `:Vimfy recall`.
 
 | Syntax   | Meaning                    | Use when                                     |
 |----------|----------------------------|----------------------------------------------|
-| `N`      | Last N keystrokes          | You can estimate how many keys the edit took |
+| `N`      | Last N commands            | You can estimate how many commands the edit took |
 | `Ns`     | Last N seconds of activity | You can estimate time better than key count  |
 
 Both forms are measured back from *now*, and name the **whole span** up to
 that point — not a fixed-size window floating in the past. `3s` analyzes
 everything typed in the last 3 seconds (the range from 3s-ago through the
-present), and `50` the last 50 keystrokes. The number sets how far *back* the
+present), and `50` the last 50 commands. The number sets how far *back* the
 range reaches; the range always ends at the current cursor.
 
 Mixing forms (`3m`, `3ms`, `2h`, etc.) is not supported. Seconds is the
@@ -37,12 +37,12 @@ queue, `N` and `Ns` are how you name it.
 
 ## Implementation Details
 
-Each keystroke is tagged with a timestamp. `:Vimfy recall Ns` resolves
-to the `K` most recent keys typed within the last `N` seconds, with the
-window start snapped backward to the nearest normal-mode command
-boundary.
+Each command is tagged with a timestamp. `:Vimfy recall Ns` resolves to
+the most recent commands run within the last `N` seconds. Because every
+ring entry is already a complete command (one `CmdAtom` event), no
+boundary snapping is needed.
 
-The optimizer runs only when you invoke a recall command, so per-key
+The optimizer runs only when you invoke a recall command, so per-command
 overhead is O(1).
 
 

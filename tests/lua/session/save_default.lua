@@ -20,9 +20,9 @@ local function seed_and_finish_manual(alias, finish_alias)
   ---@diagnostic disable-next-line: missing-fields
   session_store.store_manual(alias, {
     id = id,
-    key_nsid = -1,   -- skip key_tracking.detach in finish_session
+    capture_sub = nil,   -- no live subscriber to detach in finish_session
     status = "active",
-    key_seq = {},
+    atoms = {},
   })
   session_store.finish_session(id, h.fake_result({ user_seq = "" }), finish_alias, nil, "manual")
   return id
