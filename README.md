@@ -34,10 +34,10 @@ https://therickyzhang.github.io/vimficiency/docs/how-it-works/
   disabled with a one-time warning until you upgrade.
 - **Linux or macOS.** Windows is not yet supported.
 - Prebuilt libraries are published for Linux x86_64, Linux aarch64, and
-  macOS arm64 (Linux builds need glibc 2.36+ and bundle the C++ runtime; the
+  macOS arm64 (Linux builds need glibc 2.38+ and bundle the C++ runtime; the
   macOS build runs on 14.0+). On other systems, or
   when installing from an untagged commit, the install step builds from
-  source and needs a C++23 compiler with the standard library module (GCC 15+
+  source and needs a C++23 compiler with the standard library module (GCC 16+
   or Clang 19+ with libc++), CMake 4.3+ and Ninja.
 
 ## Installation

@@ -18,7 +18,7 @@ hook (next section) on the maintainer's machine, where hardware is stable.
 
 Shared dependency setup is centralized in `.github/actions/setup-ci-deps/action.yml`.
 
-- Runs inside the `gcc:15` container (Ubuntu 24.04 has no GCC 15 package) and installs Ninja and a pinned CMake
+- Runs inside the `gcc:16` container (Ubuntu 24.04 has no GCC 16 package) and installs Ninja and a pinned CMake
 - Optionally installs Neovim (version-controlled by workflow env `NEOVIM_VERSION`)
 - Caches extracted Neovim under `~/.local/neovim/<version>` with key `neovim-<os>-<version>`
 - Adds cached Neovim to `PATH` when enabled

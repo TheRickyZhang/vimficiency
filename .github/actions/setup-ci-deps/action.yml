@@ -1,5 +1,5 @@
 name: Setup CI deps
-description: Install build tools and optional cached Neovim. Jobs run in the gcc:15-bookworm container, which already provides the compiler.
+description: Install build tools and optional cached Neovim. Jobs run in the gcc:16-trixie container, which already provides the compiler.
 
 inputs:
   install-neovim:

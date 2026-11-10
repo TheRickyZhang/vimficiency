@@ -13,7 +13,7 @@ has run.
 The native library is missing from `build/` in the plugin directory. Your
 plugin manager's build step did not run or failed — run it again
 (`:Lazy build vimficiency`, or `./scripts/install.sh` from the plugin
-directory) and read its output. Building from source needs GCC 15+ or Clang
+directory) and read its output. Building from source needs GCC 16+ or Clang
 19+ with libc++, CMake 4.3+
 and Ninja; pinning a release tag avoids the compile by downloading a
 prebuilt library instead.

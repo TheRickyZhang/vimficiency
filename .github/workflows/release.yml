@@ -15,11 +15,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04
-            container: gcc:15-bookworm
+            container: gcc:16-trixie
             asset: libvimficiency-linux-x86_64.so
             lib: libvimficiency.so
           - os: ubuntu-24.04-arm
-            container: gcc:15-bookworm
+            container: gcc:16-trixie
             asset: libvimficiency-linux-aarch64.so
             lib: libvimficiency.so
           - os: macos-15
@@ -27,7 +27,7 @@ jobs:
             lib: libvimficiency.dylib
     runs-on: ${{ matrix.os }}
     # Linux builds in the official gcc image: hosted Ubuntu stops at GCC 14 and
-    # the module build needs 15. bookworm keeps the glibc floor at 2.36.
+    # the module build needs 16. The trixie image puts the glibc floor at 2.38.
     container: ${{ matrix.container }}
     steps:
       - uses: actions/checkout@v4
@@ -42,16 +42,16 @@ jobs:
       - name: Setup deps (macOS)
         # Apple Clang has no `import std`; Homebrew GCC does.
         if: runner.os == 'macOS'
-        run: brew install cmake ninja neovim gcc@15
+        run: brew install cmake ninja neovim gcc
 
       - name: Build library
         run: |
           # The C++ runtime is linked in statically so the prebuilt loads on
-          # systems whose libstdc++ predates GCC 15.
+          # systems whose libstdc++ predates GCC 16.
           flags=(-DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_BUILD_TESTS=OFF
                  -DCMAKE_SHARED_LINKER_FLAGS=-static-libstdc++)
           if [ "$RUNNER_OS" = macOS ]; then
-            flags+=(-DCMAKE_C_COMPILER=gcc-15 -DCMAKE_CXX_COMPILER=g++-15
+            flags+=(-DCMAKE_C_COMPILER=gcc-16 -DCMAKE_CXX_COMPILER=g++-16
                     -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0)
           fi
           cmake -G Ninja -B build "${flags[@]}"

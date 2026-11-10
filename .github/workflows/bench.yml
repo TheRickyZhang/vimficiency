@@ -37,11 +37,11 @@ jobs:
   # expression inside an assertion body (missing method, typo, wrong type)
   # is invisible. A dedicated Debug build catches that class of bug on every
   # push. One matrix entry, ~2 min extra with ccache; cheap insurance.
-  # Hosted Ubuntu images stop at GCC 14; the module build needs GCC 15, so
-  # both build jobs run in the official gcc image (glibc 2.36 via bookworm).
+  # Hosted Ubuntu images stop at GCC 14; the module build needs GCC 16, so
+  # both build jobs run in the official gcc image.
   debug-build:
     runs-on: ubuntu-latest
-    container: gcc:15-bookworm
+    container: gcc:16-trixie
     needs: dependency-lint
     steps:
       - uses: actions/checkout@v4
@@ -84,7 +84,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    container: gcc:15-bookworm
+    container: gcc:16-trixie
     needs: dependency-lint
     steps:
       - uses: actions/checkout@v4
