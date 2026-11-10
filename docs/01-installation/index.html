@@ -81,9 +81,8 @@ That is the canonical install reference; this page only covers what comes
 <a href="../examples/config.lua"><code dir="auto">examples/config.lua</code></a> as the canonical sample.</p>
 <p>You can pass config overrides to <code dir="auto">setup{}</code> — see
 <a href="/vimficiency/docs/09-configuration/">9. Configuration</a>.</p>
-<p>Bindings must route through <code dir="auto">vimfy.map()</code>, <code dir="auto">&#x3C;Plug>Vimfy*</code>, or <code dir="auto">wrap()</code>;
-see the keymap contract in the <a href="/vimficiency/docs/">Index</a> and the full writeup
-in <a href="/vimficiency/docs/08-keymaps/">8. Keymaps</a>.</p>
+<p>Bind keys with a <code dir="auto">&#x3C;Cmd>Vimfy ...&#x3C;CR></code> map or a <code dir="auto">&#x3C;Plug>Vimfy*</code> map; see
+the full writeup in <a href="/vimficiency/docs/08-keymaps/">8. Keymaps</a>.</p>
 <h2 id="verifying-installation">Verifying installation</h2>
 <div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="vim"><code><div class="ec-line"><div class="code"><span style="--0:#D6DEEB;--1:#403F53">:Vimfy help</span></div></div></code></pre><div class="copy"><button title="Copy to clipboard" data-copied="Copied!" data-code=":Vimfy help"><div></div></button></div></figure></div>
 <p>If this prints the command list, you’re ready.</p>

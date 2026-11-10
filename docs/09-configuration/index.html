@@ -169,9 +169,9 @@ values actually in effect with <code dir="auto">:Vimfy config</code>.</p>
 a higher <code dir="auto">distanceWeight</code> searches faster but may miss the cheapest sequence;
 <code dir="auto">distanceWeight = 0</code> recovers optimality at the cost of speed.</p>
 <h2 id="recall-and-session-safety">Recall and session safety</h2>
-<p><a href="/vimficiency/docs/05-recall/">Recall</a> keeps a rolling ring of recent keystrokes so you can
-analyze “N keys / Ns ago” after the fact. These knobs bound that ring and the
-lifetime of in-progress sessions.</p>
+<p><a href="/vimficiency/docs/05-recall/">Recall</a> keeps a rolling ring of recent commands so you can
+analyze “N commands / Ns ago” after the fact. These knobs bound that ring and
+the lifetime of in-progress sessions.</p>
 
 
 
@@ -197,14 +197,9 @@ lifetime of in-progress sessions.</p>
 
 
 
-
-
-
-
-
-<table><thead><tr><th>Field</th><th>Default</th><th>Meaning</th></tr></thead><tbody><tr><td><code dir="auto">KEY_SESSION_CAPACITY</code></td><td><code dir="auto">200</code></td><td>Maximum keystrokes retained in the recall ring.</td></tr><tr><td><code dir="auto">MAX_RETENTION_SECONDS</code></td><td><code dir="auto">120</code></td><td>Maximum age of recall history. The oldest entries are evicted once <strong>both</strong> the capacity and the age limit are exceeded.</td></tr><tr><td><code dir="auto">MANUAL_IDLE_TIMEOUT_SECONDS</code></td><td><code dir="auto">300</code></td><td>A manual (<code dir="auto">start</code>/<code dir="auto">finish</code>) session left idle this long is auto-ended with a warning.</td></tr><tr><td><code dir="auto">SNAP_LOOKBACK_KEYS</code></td><td><code dir="auto">20</code></td><td>When resolving a recall window, snap its start to a nearby clean key boundary lying within this many keys.</td></tr></tbody></table>
+<table><thead><tr><th>Field</th><th>Default</th><th>Meaning</th></tr></thead><tbody><tr><td><code dir="auto">KEY_SESSION_CAPACITY</code></td><td><code dir="auto">200</code></td><td>Maximum commands retained in the recall ring.</td></tr><tr><td><code dir="auto">MAX_RETENTION_SECONDS</code></td><td><code dir="auto">120</code></td><td>Maximum age of recall history. The oldest entries are evicted once <strong>both</strong> the capacity and the age limit are exceeded.</td></tr><tr><td><code dir="auto">MANUAL_IDLE_TIMEOUT_SECONDS</code></td><td><code dir="auto">300</code></td><td>A manual (<code dir="auto">start</code>/<code dir="auto">finish</code>) session left idle this long is auto-ended with a warning.</td></tr></tbody></table>
 <h2 id="idle-end-detection">Idle end-detection</h2>
-<p>Two features auto-fire on keystroke idleness: <a href="/vimficiency/docs/04-watch/">Watch</a>
+<p>Two features auto-fire on command idleness: <a href="/vimficiency/docs/04-watch/">Watch</a>
 (ends a manual session once you pause) and <a href="/vimficiency/docs/06-suggest/">Suggest</a>’s
 <code dir="auto">idle</code> / <code dir="auto">cost</code> triggers (run the optimizer on a window of the recall
 queue). Both use the same engine but run independently — each owns
@@ -230,13 +225,13 @@ its own timer and cooldown, configured under its own key.</p>
 
 
 
-<table><thead><tr><th>Parameter</th><th>Meaning</th></tr></thead><tbody><tr><td><code dir="auto">watch.idle.ms</code> / <code dir="auto">auto_suggest.idle.ms</code></td><td>Real keystroke idleness, in ms, before the trigger fires.</td></tr><tr><td><code dir="auto">auto_suggest.cost.ms</code></td><td>Same semantic as <code dir="auto">idle.ms</code> but dedicated to the cost trigger.</td></tr><tr><td><code dir="auto">watch.cooldown_ms</code> / <code dir="auto">auto_suggest.cooldown_ms</code></td><td>Minimum time between consecutive fires. Safety rail for low <code dir="auto">idle.ms</code>.</td></tr></tbody></table>
-<p>“Real keystroke” excludes cmdline input and Vimfy admin
-keystrokes, so <code dir="auto">:Vimfy</code> commands and <code dir="auto">vimfy.map</code>-routed bindings don’t
-reset the idle timer.</p>
+<table><thead><tr><th>Parameter</th><th>Meaning</th></tr></thead><tbody><tr><td><code dir="auto">watch.idle.ms</code> / <code dir="auto">auto_suggest.idle.ms</code></td><td>Real command idleness, in ms, before the trigger fires.</td></tr><tr><td><code dir="auto">auto_suggest.cost.ms</code></td><td>Same semantic as <code dir="auto">idle.ms</code> but dedicated to the cost trigger.</td></tr><tr><td><code dir="auto">watch.cooldown_ms</code> / <code dir="auto">auto_suggest.cooldown_ms</code></td><td>Minimum time between consecutive fires. Safety rail for low <code dir="auto">idle.ms</code>.</td></tr></tbody></table>
+<p>“Real command” excludes cmdline input and Vimfy admin actions, so
+<code dir="auto">:Vimfy</code> commands and <code dir="auto">&#x3C;Cmd>Vimfy</code>/<code dir="auto">&#x3C;Plug></code>-routed bindings don’t reset
+the idle timer.</p>
 <p>A bare <code dir="auto">ms</code> inside any trigger object universally means “idle
 threshold” — fire only after N ms of no activity. <code dir="auto">keys.every</code> is the
-one exception: it counts keystrokes, not time, so it has no <code dir="auto">ms</code>.</p>
+one exception: it counts commands, not time, so it has no <code dir="auto">ms</code>.</p>
 <h2 id="inspect-what-the-c-layer-is-using">Inspect what the C++ layer is using</h2>
 <div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="vim"><code><div class="ec-line"><div class="code"><span style="--0:#D6DEEB;--1:#403F53">:Vimfy config</span></div></div></code></pre><div class="copy"><button title="Copy to clipboard" data-copied="Copied!" data-code=":Vimfy config"><div></div></button></div></figure></div>
 <p>Opens a scratch buffer with the full current configuration, including the

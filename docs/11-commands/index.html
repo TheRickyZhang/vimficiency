@@ -218,7 +218,7 @@
 
 
 
-<table><thead><tr><th>Form</th><th>Means</th></tr></thead><tbody><tr><td><code dir="auto">a</code>, <code dir="auto">foo</code></td><td>Alphabetic → a manual session name.</td></tr><tr><td><code dir="auto">6</code></td><td>Digits → recall N keys ago.</td></tr><tr><td><code dir="auto">3s</code></td><td>Digits + <code dir="auto">s</code> → recall N seconds ago (see <a href="/vimficiency/docs/05-recall/">5. Recall</a>).</td></tr></tbody></table>
+<table><thead><tr><th>Form</th><th>Means</th></tr></thead><tbody><tr><td><code dir="auto">a</code>, <code dir="auto">foo</code></td><td>Alphabetic → a manual session name.</td></tr><tr><td><code dir="auto">6</code></td><td>Digits → recall N commands ago.</td></tr><tr><td><code dir="auto">3s</code></td><td>Digits + <code dir="auto">s</code> → recall N seconds ago (see <a href="/vimficiency/docs/05-recall/">5. Recall</a>).</td></tr></tbody></table>
 <p><code dir="auto">save</code> accepts the full grammar plus <code dir="auto">@</code>, which resolves to the most
 recently finished session — handy when the session you want to keep is a
 recall window whose alias (<code dir="auto">3s</code>) is moving out from under you:</p>
@@ -238,7 +238,7 @@ sessions) and <strong>Saved</strong> (files under <code dir="auto">stdpath("data
 — and a live-filter prompt at the bottom. <code dir="auto">&#x3C;Tab></code> toggles between panes.</p>
 <p>Ongoing sessions always sit in a pinned <strong>Ongoing</strong> section at the top,
 regardless of sort mode. Auto-generated recall ring entries (one per
-keystroke) are folded into a single <code dir="auto">recall ring (N)</code> summary row — the
+command) are folded into a single <code dir="auto">recall ring (N)</code> summary row — the
 per-entry aliases drift, so they’re not individually actionable from the
 picker; resolve a specific window with <code dir="auto">:Vimfy recall N</code> or <code dir="auto">:Vimfy recall Ns</code> instead.</p>
 
@@ -331,7 +331,7 @@ Watch’s idle trigger fire) and try again.</p>
 <p>Sections:</p>
 <ul>
 <li><strong>Lifetime</strong> — total finished sessions, broken down by type (mark /
-watch / recall / suggest), and total captured keystrokes.</li>
+watch / recall / suggest), and total captured commands.</li>
 <li><strong>Efficiency</strong> — a score out of 100, defined per session as
 <code dir="auto">min(best_optimizer_cost / user_cost, 1) × 100</code> (capped at 100 so a
 beat doesn’t inflate the average). Aggregated as a geometric mean.
@@ -377,9 +377,9 @@ stored; Top-N alternatives are not retained at log-write time.</p>
 </ul>
 <h2 id="plug-mappings"><code dir="auto">&#x3C;Plug></code> mappings</h2>
 <p>For each subcommand above, a <code dir="auto">&#x3C;Plug>VimfyX...</code> map is also registered so
-you can bind keys without having to type <code dir="auto">:Vimfy ...</code> (which would count
-as admin activity anyway). See <a href="/vimficiency/docs/08-keymaps/">8. Keymaps</a> for the full
-list and the binding contract.</p>
+you can bind keys without having to type <code dir="auto">:Vimfy ...</code> (cmdline input is
+never counted as motion either way). See <a href="/vimficiency/docs/08-keymaps/">8. Keymaps</a> for
+the full list and the binding contract.</p>
 <h2 id="scratch-output-buffer-keys">Scratch output buffer keys</h2>
 <p>Press <code dir="auto">:h g?</code> in a Vimfy scratch output buffer to open this section
 directly. This applies to buffers opened by <code dir="auto">:Vimfy help</code> and other
