@@ -57,6 +57,9 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 4.0)
   set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 endif()
 
+# Keep dependency TUs out of compile_commands.json: clangd's module scanner
+# preprocesses every entry on each module build, and they were ~2/3 of it.
+set(CMAKE_EXPORT_COMPILE_COMMANDS OFF)
 FetchContent_MakeAvailable(
   googletest
   msgpack-c
@@ -65,6 +68,7 @@ FetchContent_MakeAvailable(
   ApprovalTests
   fuzztest
 )
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(CMAKE_VERSION VERSION_GREATER_EQUAL 4.0)
   set(CMAKE_POLICY_VERSION_MINIMUM "${VIMFY_CMAKE_POLICY_VERSION_MINIMUM_PREV}")

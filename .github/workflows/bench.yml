@@ -13,8 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install lint tools
+        run: sudo apt-get install -y ripgrep gawk
       - name: Lint module dependencies
         run: ./scripts/lint-module-deps.sh
+      - name: Lint module inline rule
+        run: ./scripts/lint-module-inline.sh
 
   doc-lint:
     runs-on: ubuntu-latest

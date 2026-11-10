@@ -38,22 +38,22 @@ struct PlannedEditView {
 struct CompositionResult : BaseOptimizerResult<> {
   CompositionResult() = default;
 
-  const CompositionSearchStats& getStats() const { return stats_; }
+  inline const CompositionSearchStats& getStats() const { return stats_; }
 
   // Low-level/raw plan access for optimizer internals, diagnostics, and tests.
   // Explore-style consumers should prefer `plannedEditAt(...)` so the per-edit
   // compatibility boundary is explicit.
-  const CompositionPlan& getPlan() const { return plan_; }
+  inline const CompositionPlan& getPlan() const { return plan_; }
   // The user-supplied goal cursor position; the search treats this as the
   // terminal target after all edits have been applied.
-  const CursorPos& getGoalPos() const { return plan_.finalGoalPos; }
+  inline const CursorPos& getGoalPos() const { return plan_.finalGoalPos; }
   // Raw diff list for diagnostics and tests. Consumers that need a specific
   // edit should prefer `plannedEditAt(...)`.
-  const std::vector<DiffState>& getDiffs() const { return plan_.diffs; }
-  int totalEdits() const { return plan_.totalEdits(); }
+  inline const std::vector<DiffState>& getDiffs() const { return plan_.diffs; }
+  inline int totalEdits() const { return plan_.totalEdits(); }
   // Explicit compatibility boundary for consumers like Explore: one typed
   // per-edit view instead of reassembling aligned data from parallel vectors.
-  [[nodiscard]] PlannedEditView plannedEditAt(int editIndex) const {
+  [[nodiscard]] inline PlannedEditView plannedEditAt(int editIndex) const {
     assert(editIndex >= 0 && editIndex < totalEdits() &&
            "CompositionResult::plannedEditAt index out of range");
     return PlannedEditView{
@@ -64,8 +64,8 @@ struct CompositionResult : BaseOptimizerResult<> {
         .transformResult = editResults_[static_cast<size_t>(editIndex)],
     };
   }
-  const std::vector<CompositionExploredState>& getExploredStates() const { return exploredStates_; }
-  std::vector<CompositionExploredState>& getExploredStates() { return exploredStates_; }
+  inline const std::vector<CompositionExploredState>& getExploredStates() const { return exploredStates_; }
+  inline std::vector<CompositionExploredState>& getExploredStates() { return exploredStates_; }
 
   // Prints diff legend with {n} placeholders, then results with typed text substituted.
   friend std::ostream& operator<<(std::ostream& os, const CompositionResult& cr);
@@ -73,21 +73,12 @@ struct CompositionResult : BaseOptimizerResult<> {
   // Public construction so the CompositionOptimizer.cpp implementation can
   // build it without coupling every helper through friendship. The contained
   // invariants (one extra fencepost, one TransformResult per diff) are
-  // enforced by the asserts in the body.
+  // enforced by the asserts in the body. Out of line: GCC 16 writes an
+  // unreadable BMI when this constructor is defined inline here.
   CompositionResult(std::vector<Result> results, CompositionSearchStats stats,
                     CompositionPlan plan,
                     std::vector<CompositionExploredState> exploredStates,
-                    std::vector<TransformResult> transformResults)
-    : BaseOptimizerResult(std::move(results)),
-      stats_(std::move(stats)),
-      plan_(std::move(plan)),
-      exploredStates_(std::move(exploredStates)),
-      editResults_(std::move(transformResults)) {
-    assert(plan_.fenceposts.size() == plan_.diffs.size() + 1 &&
-           "CompositionResult requires one more fencepost than diffs");
-    assert(editResults_.size() == plan_.diffs.size() &&
-           "CompositionResult requires one TransformResult per diff");
-  }
+                    std::vector<TransformResult> transformResults);
 
 private:
   CompositionSearchStats stats_;
@@ -119,7 +110,7 @@ struct CompositionTraceResult {
 struct CompositionOptimizer {
   Config config;
 
-  explicit CompositionOptimizer(const Config& config) : config(config) {}
+  inline explicit CompositionOptimizer(const Config& config) : config(config) {}
 
   // Composes edit transitions + movement. Pre-computes edit regions, then searches for optimal sequence.
   // Much slower; ~ O(n^2) + Sigma (m_i)^3, higher constant factor.

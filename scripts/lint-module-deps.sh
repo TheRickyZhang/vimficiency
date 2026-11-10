@@ -4,6 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# mawk lacks 3-arg match(); without rg the extractor is silently empty.
+command -v rg >/dev/null
+command -v gawk >/dev/null
+
 is_known_module() {
   case "$1" in
     Types|Optimizer|Interpreter|Session|Effort|Keyboard|VimCore|Boundary|Utils) return 0 ;;
@@ -16,7 +20,7 @@ is_allowed_edge() {
     "Optimizer->Types"|"Optimizer->Utils"|"Optimizer->Keyboard"|"Optimizer->VimCore"|"Optimizer->Boundary"|"Optimizer->Interpreter"|"Optimizer->Effort") return 0 ;;
     "Effort->Keyboard") return 0 ;;
     "Interpreter->Types"|"Interpreter->VimCore"|"Interpreter->Keyboard"|"Interpreter->Utils") return 0 ;;
-    "Session->Types") return 0 ;;
+    "Session->Types"|"Session->Utils"|"Session->Interpreter") return 0 ;;
     "VimCore->Types"|"VimCore->Utils"|"VimCore->Boundary") return 0 ;;
     "Keyboard->Types"|"Keyboard->Utils") return 0 ;;
     "Boundary->Types"|"Boundary->Utils") return 0 ;;
@@ -48,7 +52,7 @@ while IFS=$'\t' read -r src_mod dst_mod location include_path; do
     bad_details["$edge"]+=$'\n'"  - ${location} -> ${include_path}"
   fi
 done < <(
-  rg -n -e '#include "([^"]+)"' -e '^\s*(export\s+)?import\s+vf\.' src | awk '
+  rg -n -e '#include "([^"]+)"' -e '^\s*(export\s+)?import\s+vf\.' src | gawk '
     match($0, /^([^:]+):([0-9]+):#include "([^"]+)"/, m) {
       split(m[1], fparts, "/");
       split(m[3], iparts, "/");

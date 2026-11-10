@@ -17,7 +17,7 @@ struct NavOptimizerParams : OptimizerParamsBase {
 #undef VF_PARAMS_SELF
 
   // C++20 designated init can't reach base-class fields, so chained setters.
-  static NavOptimizerParams dijkstra(int maxResults = 20, int maxNodesPopped = 50000) {
+  inline static NavOptimizerParams dijkstra(int maxResults = 20, int maxNodesPopped = 50000) {
     return NavOptimizerParams{}
         .withMaxResults(maxResults)
         .withMaxNodesPopped(maxNodesPopped)

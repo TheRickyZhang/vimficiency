@@ -16,7 +16,7 @@ struct CompositionOptimizerParams : OptimizerParamsBase {
   COMPOSITION_FIELDS(VF_PARAMS_WITH_SETTER)
 #undef VF_PARAMS_SELF
 
-  CompositionOptimizerParams& withNavLinePadding(int v) {
+  inline CompositionOptimizerParams& withNavLinePadding(int v) {
     navPaddingAbove = navPaddingBelow = v;
     return *this;
   }

@@ -16,7 +16,7 @@ struct TransformOptimizerParams : OptimizerParamsBase {
   TRANSFORM_FIELDS(VF_PARAMS_WITH_SETTER)
 #undef VF_PARAMS_SELF
 
-  static TransformOptimizerParams dijkstra(int maxResults = 20, int maxNodesPopped = 50000) {
+  inline static TransformOptimizerParams dijkstra(int maxResults = 20, int maxNodesPopped = 50000) {
     return TransformOptimizerParams{}
         .withMaxResults(maxResults)
         .withMaxNodesPopped(maxNodesPopped)

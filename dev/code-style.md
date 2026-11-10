@@ -66,7 +66,7 @@ inline constexpr bool DEBUG_ENABLED = true;
 - One named module per former header: `Name.cppm` is `export module vf.<Dir>.<Name>;`, `Name.cpp` is `module vf.<Dir>.<Name>;`
 - Unit order: `module;` + the `#include`s that must stay textual (`<cassert>`, X-macro `.inc` files) → module declaration → `import std.compat;` → `export import` / `import` lines
 - Export with one `export { ... }` block; member definitions written outside the class body go after it (Clang rejects them inside `export {}`)
-- Member functions defined in a class body are **not** implicitly inline in a named module. Write `inline` on every in-class member function definition, or importers call it out of line (measured 1.2–2.5× slower searches before the rule was applied)
+- Member functions defined in a class body are **not** implicitly inline in a named module (`static` ones too; `constexpr` and class-template members are exempt). Write `inline` on every in-class member function definition, or importers call it out of line (measured 1.2–2.5× slower searches before the rule was applied). `scripts/lint-module-inline.sh` enforces this over `src/` and runs in CI; a definition that should not be inline belongs in the `.cpp`
 - Anonymous `namespace {}` in `.cpp` for file-local helpers (not `static`)
 
 ### Comments

@@ -31,7 +31,7 @@ the few remaining `#include "..."` lines are X-macro `.inc`/`.h` fragments.
 - `Effort` -> `Keyboard`
 - `VimCore` -> `Types`, `Utils`, `Boundary`
 - `Interpreter` -> `Types`, `VimCore`, `Keyboard`, `Utils`
-- `Session` -> `Types`
+- `Session` -> `Types`, `Utils`, `Interpreter` (result formatting via `SequenceDisplay`/`PrettyText`)
 - `Boundary` -> `Types`, `Utils`
 - `Optimizer` -> `Types`, `Utils`, `Keyboard`, `VimCore`, `Boundary`, `Interpreter`, `Effort`
 - `Explore` -> `Types`, `Keyboard`, `Effort`, `Boundary`, `VimCore`, `Interpreter`, `Optimizer`

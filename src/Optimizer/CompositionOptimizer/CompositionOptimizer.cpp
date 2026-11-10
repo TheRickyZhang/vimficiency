@@ -603,6 +603,21 @@ optimizeImpl(
 
 } // anonymous namespace (templated optimizeImpl)
 
+CompositionResult::CompositionResult(vector<Result> results, CompositionSearchStats stats,
+                                     CompositionPlan plan,
+                                     vector<CompositionExploredState> exploredStates,
+                                     vector<TransformResult> transformResults)
+    : BaseOptimizerResult(std::move(results)),
+      stats_(std::move(stats)),
+      plan_(std::move(plan)),
+      exploredStates_(std::move(exploredStates)),
+      editResults_(std::move(transformResults)) {
+  assert(plan_.fenceposts.size() == plan_.diffs.size() + 1 &&
+         "CompositionResult requires one more fencepost than diffs");
+  assert(editResults_.size() == plan_.diffs.size() &&
+         "CompositionResult requires one TransformResult per diff");
+}
+
 // Build a CompositionResult from the search outputs plus the precomputed
 // per-edit data still owned by `ctx`. Consumes `ctx.edits` (moves diffStates
 // and transformResults out) and `ctx`'s explored states; do not touch ctx
