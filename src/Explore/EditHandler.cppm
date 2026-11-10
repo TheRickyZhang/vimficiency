@@ -6,7 +6,6 @@ export import vf.Optimizer.TransformOptimizer.TransformOptimizer;
 export import vf.Explore.Rejected;
 export import vf.Types.CursorPos;
 export import vf.Types.Lines;
-export import vf.Types.Mode;
 
 export {
 
@@ -22,15 +21,10 @@ export {
 namespace Explore::EditHandler {
 
 // Buffer-state validation under the strict (b) policy.
-//   advance == true : newLines matches nextFencepost (advance phase).
-//   advance == false: newLines matches currentFencepost
-//                     (no-op — native undo or re-sync).
-// Reject (Rejected) : drift outside the planned edit scope.
-struct BufferStateSuccess {
-  bool advance = false;
-};
-
-std::expected<BufferStateSuccess, Rejected> validateBufferState(
+//   true  : newLines matches nextFencepost (advance phase).
+//   false : newLines matches currentFencepost (no-op — native undo or re-sync).
+// Rejected: drift outside the planned edit scope.
+std::expected<bool, Rejected> validateBufferState(
     const Lines& newLines,
     const Lines& currentFencepost,
     const Lines& nextFencepost);
@@ -43,16 +37,14 @@ std::expected<BufferStateSuccess, Rejected> validateBufferState(
 // Simulates via the canonical Vim interpreter (Edit::applyEdit) so the
 // post-state is identical to live Vim execution.
 //
-//   postLines / postCursor / postMode  : simulated post-token state.
-//   reachesPostFencepost               : post-state matches the planned
-//                                        post-fencepost (caller advances
-//                                        to the next edit).
-//   entersInsert                       : token transitioned to Insert mode
-//                                        (caller switches to Insert phase).
+//   postLines / postCursor  : simulated post-token state.
+//   reachesPostFencepost    : post-state matches the planned post-fencepost
+//                             (caller advances to the next edit).
+//   entersInsert            : token transitioned to Insert mode
+//                             (caller switches to Insert phase).
 struct EditSuccess {
   Lines postLines;
   CursorPos postCursor{0, 0};
-  Mode postMode = Mode::Normal;
   bool reachesPostFencepost = false;
   bool entersInsert = false;
 };

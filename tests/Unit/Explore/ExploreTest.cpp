@@ -26,9 +26,9 @@ TEST_F(ExploreViewTest, PureMotionGoalStartsInNavigate) {
   EXPECT_EQ(Explore::phaseIndex(view.phase()), 0);
   EXPECT_EQ(view.totalEdits(), 0);
 
-  auto range = view.currentTargetRange();
-  EXPECT_EQ(range.first, CursorPos(0, 4));
-  EXPECT_EQ(range.second, CursorPos(0, 4));
+  CharRange range = view.currentTargetRange();
+  EXPECT_EQ(range.begin, CursorPos(0, 4));
+  EXPECT_EQ(range.end, CursorPos(0, 4));
 
   auto recs = view.recommendations(5);
   ASSERT_FALSE(recs.empty());
@@ -55,10 +55,7 @@ TEST_F(ExploreViewTest, ReconfigurePlanKeepsStateWhenPlanIsUnchanged) {
   ASSERT_TRUE(view.applyMovement("w").has_value());
   ASSERT_TRUE(view.canUndo());
 
-  Explore::PlanReconfigureResult result =
-      view.reconfigurePlan(CompositionOptimizerParams{});
-
-  EXPECT_FALSE(result.resetState);
+  EXPECT_FALSE(view.reconfigurePlan(CompositionOptimizerParams{}));
   EXPECT_EQ(view.state().seq, "w");
   EXPECT_EQ(view.state().cursor, CursorPos(0, 4));
   EXPECT_TRUE(view.canUndo());
@@ -73,9 +70,7 @@ TEST_F(ExploreViewTest, ReconfigurePlanResetsWhenPlanResultsChange) {
 
   CompositionOptimizerParams params;
   params.withMaxResults(1);
-  Explore::PlanReconfigureResult result = view.reconfigurePlan(params);
-
-  EXPECT_TRUE(result.resetState);
+  EXPECT_TRUE(view.reconfigurePlan(params));
   EXPECT_EQ(view.state().seq, "");
   EXPECT_EQ(view.state().cursor, CursorPos(0, 0));
   EXPECT_FALSE(view.canUndo());

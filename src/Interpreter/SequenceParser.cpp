@@ -36,12 +36,6 @@ const unordered_set<string> VISUAL_BARE = {
     "v", "V", "gh", "gH"
 };
 
-// Special change commands that don't need a motion
-const unordered_set<string> CHANGE_SPECIAL = {
-    "C",   // change to end of line
-    "cc",  // change whole line
-};
-
 // Text objects (inner and around variants)
 const unordered_set<string> TEXT_OBJECTS = {
     // Word
@@ -336,9 +330,8 @@ pair<string, size_t> parseTypedText(string_view sv, size_t i) {
 }  // namespace
 
 expected<vector<TaggedToken>, SequenceParseError>
-parseSequence(string_view seq) {
+parseSequence(string_view sv) {
   vector<TaggedToken> tokens;
-  string_view sv(seq);
   size_t i = 0;
   bool inInsertMode = false;
 

@@ -298,8 +298,8 @@ static void BM_MotionExploreDispatch(benchmark::State& state,
     unordered_map<Pos, double> costMap;
     const double maxEffort = numeric_limits<double>::max();
 
-    auto isInGoalRange = [&](CursorPos pos) {
-      return c.goalRange.containsPos(pos);
+    auto isInGoalRange = [&](const NavState& s) {
+      return c.goalRange.containsPos(s.getPos());
     };
     auto scoreState = [&](CursorPos pos, double effort) {
       double distance = NavHeuristic::distanceToRange(c.goalRange, pos);

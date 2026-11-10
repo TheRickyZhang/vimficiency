@@ -398,22 +398,9 @@ TEST_F(NeovimOracleDebug, DISABLED_TraceSentenceMixedContentFailure) {
   CursorPos ep = sentenceMotionEndpoint(CursorPos(3, 20), subBuffer, false);
   cerr << "sentenceMotionEndpoint((3,20), backward) = (" << ep.line << ", " << ep.col << ")" << endl;
 
-  // Test what findCurrentSentenceStart returns
-  cerr << "\n=== findCurrentSentenceStart trace ===" << endl;
-  auto [sl, sc] = VimCore::findCurrentSentenceStart(subBuffer, 3, 20);
-  cerr << "findCurrentSentenceStart((3,20)) = (" << sl << ", " << sc << ")" << endl;
-
   // What char is at position (3, 20)?
   cerr << "\nChar at (3,20): '" << subBuffer[3][20] << "'" << endl;
   cerr << "Line 3: \"" << subBuffer[3] << "\"" << endl;
-
-  // Analyze sentence boundaries on line 3
-  cerr << "\n=== Sentence ends on line 3 ===" << endl;
-  for (int c = 0; c < (int)subBuffer[3].size(); c++) {
-    if (VimCore::isSentenceEndAt(subBuffer, 3, c)) {
-      cerr << "Sentence end at (3, " << c << ") = '" << subBuffer[3][c] << "'" << endl;
-    }
-  }
 
   EXPECT_TRUE(false) << "Debug test - check output above";
 }

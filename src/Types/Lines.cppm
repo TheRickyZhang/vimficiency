@@ -4,10 +4,7 @@ module;
 export module vf.Types.Lines;
 
 import std.compat;
-export import vf.Types.CharRange;
 export import :CharInterval;
-export import vf.Types.CharLineRange;
-export import vf.Types.LineCharRange;
 export import vf.Types.CursorPos;
 
 export {
@@ -81,20 +78,13 @@ struct Lines final : std::vector<Line> {
   inline bool isEmpty() const { return size() == 1 && data()[0].empty(); }
 
   inline CursorPos getNextPos(CursorPos pos) const {
-    if (pos.col + 1 < static_cast<int>((*this)[pos.line].size())) {
+    if (pos.col < (*this)[pos.line].lastCol()) {
       return CursorPos(pos.line, pos.col + 1);
     }
-    if (pos.line + 1 < static_cast<int>(size())) {
+    if (pos.line < lastLine()) {
       return CursorPos(pos.line + 1, 0);
     }
     return pos;
-  }
-
-  inline CursorPos getNextPosUnbounded(CursorPos pos) const {
-    if (pos.col + 1 < static_cast<int>((*this)[pos.line].size())) {
-      return CursorPos(pos.line, pos.col + 1);
-    }
-    return CursorPos(pos.line + 1, 0);
   }
 
   inline CursorPos getPrevPos(CursorPos pos) const {
@@ -103,8 +93,7 @@ struct Lines final : std::vector<Line> {
     }
     if (pos.line > 0) {
       int prevLine = pos.line - 1;
-      int prevCol = (*this)[prevLine].empty() ? 0 : static_cast<int>((*this)[prevLine].size()) - 1;
-      return CursorPos(prevLine, prevCol);
+      return CursorPos(prevLine, (*this)[prevLine].lastCol());
     }
     return pos;
   }
@@ -112,31 +101,22 @@ struct Lines final : std::vector<Line> {
   inline CursorPos lastPos() const { return CursorPos(lastLine(), back().lastCol()); }
   inline CursorPos endPos() const { return CursorPos(lastLine(), back().effectiveSize()); }
 
-  // True iff `pos` is a valid normal-mode cursor target — line is in range and
-  // col is on a real character. This is what most callers actually want when
-  // they ask "does this position exist?"; `endPos()`-style past-the-end values
-  // are NOT contained.
+  // True iff `pos` is a valid cursor target
   inline bool contains(const CursorPos& pos) const {
-    if (pos.line < 0 || pos.line >= static_cast<int>(size())) return false;
+    if (pos.line < 0 || pos.line > lastLine()) return false;
     const auto& line = data()[pos.line];
-    const int maxCol = line.empty() ? 0 : static_cast<int>(line.size()) - 1;
-    return pos.col >= 0 && pos.col <= maxCol;
+    return pos.col >= 0 && pos.col <= line.lastCol();
   }
 
-  // Nearest position that `contains()` accepts: clamp the line into range, then
-  // the column onto a real character of that line. Input boundaries use this
-  // because Neovim can hand back an insert-mode / 'virtualedit' cursor sitting
-  // one past end-of-line, which is not a valid normal-mode target.
+  // Nearest position that `contains()` accepts
   inline CursorPos clamp(const CursorPos& pos) const {
-    if (empty()) return CursorPos(0, 0);
     const int line = std::clamp(pos.line, 0, lastLine());
     const auto& l = data()[line];
-    const int maxCol = l.empty() ? 0 : static_cast<int>(l.size()) - 1;
-    return CursorPos(line, std::clamp(pos.col, 0, maxCol));
+    return CursorPos(line, std::clamp(pos.col, 0, l.lastCol()));
   }
 
   inline char get(const CursorPos& pos) const {
-    assert(pos.line < static_cast<int>(size()) && "Lines::get() position out of bounds");
+    assert(pos.line <= lastLine() && "Lines::get() position out of bounds");
     return data()[pos.line].get(pos.col);
   }
 
@@ -154,22 +134,6 @@ struct Lines final : std::vector<Line> {
     return result;
   }
 
-  inline int spanSize(const CursorPos& begin, const CursorPos& end) const {
-    if (begin.line == end.line) {
-      return end.col - begin.col;
-    }
-    int count = std::max(1, static_cast<int>(data()[begin.line].size()) - begin.col);
-    for (int i = begin.line + 1; i < end.line; i++) {
-      count += std::max(1, static_cast<int>(data()[i].size()));
-    }
-    count += end.col;
-    return count;
-  }
-
-  inline int spanSize(const CharRange& range) const {
-    return spanSize(range.begin, range.end);
-  }
-
   inline int spanSize(const CharInterval& interval) const {
     assert(interval.isValid());
     if (interval.first.line == interval.last.line) {
@@ -183,23 +147,6 @@ struct Lines final : std::vector<Line> {
     return count;
   }
 
-  inline int spanSize(const CharLineRange& range) const {
-    assert(range.isValid());
-    if (range.begin.line + 1 == range.endLine) {
-      return std::max(1, static_cast<int>(data()[range.begin.line].size()) - range.begin.col);
-    }
-    int count = std::max(1, static_cast<int>(data()[range.begin.line].size()) - range.begin.col);
-    for (int i = range.begin.line + 1; i < range.endLine; i++) {
-      count += std::max(1, static_cast<int>(data()[i].size()));
-    }
-    return count;
-  }
-
-  inline int spanSize(const LineCharRange& range) const {
-    assert(range.isValid());
-    return spanSize(CursorPos(range.beginLine, 0), range.end);
-  }
-
   inline int totalPositions() const {
     int count = 0;
     for (const auto& line : *this) {
@@ -211,26 +158,14 @@ struct Lines final : std::vector<Line> {
   // Same indexing model as totalPositions(): empty lines contribute col 0.
   inline CursorPos cursorFromFlatIndexClamped(int flatIndex) const {
     int remaining = std::clamp(flatIndex, 0, totalPositions() - 1);
-    for (int line = 0; line < static_cast<int>(size()); line++) {
+    for (int line = 0; line <= lastLine(); line++) {
       int lineSize = data()[line].effectiveSize();
       if (remaining < lineSize) {
-        return CursorPos(line, data()[line].empty() ? 0 : remaining);
+        return CursorPos(line, remaining);
       }
       remaining -= lineSize;
     }
     return lastPos();
-  }
-
-  inline static bool sameLineLengths(const Lines& x, const Lines& y) {
-    if (x.size() != y.size()) {
-      return false;
-    }
-    for (size_t i = 0; i < x.size(); i++) {
-      if (x[i].size() != y[i].size()) {
-        return false;
-      }
-    }
-    return true;
   }
 
   inline Lines getLineRange(int beginLine, int endLine) const {

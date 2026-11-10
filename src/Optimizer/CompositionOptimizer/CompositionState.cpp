@@ -13,13 +13,12 @@ void CompositionState::appendSequence(string_view s, const PhysicalKeys& keys,
 
 void CompositionState::applyEditTransitionImpl(
     const Sequence& editSequence,
-    const CursorPos& newPos, Mode newMode,
+    const CursorPos& newPos,
     const Config& config) {
   pos = newPos;
   editsCompleted++;
   PhysicalKeys keys = globalSequenceToKeys().tokenize(editSequence.view());
   appendSequence(editSequence.view(), keys, config);
-  mode = newMode;
 }
 
 void CompositionState::applyNavResultImpl(

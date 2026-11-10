@@ -23,11 +23,10 @@ public:
   // ends.
   std::string_view motion;
 
-  inline ParsedMovement(std::string_view motion, int count)
+  inline ParsedMovement(std::string_view motion, int count = 0)
       : motion(motion), count(count) {}
-  inline ParsedMovement(std::string_view motion) : motion(motion), count(0) {}
 
-  inline bool hasCount() const { return count ? true : false; }
+  inline bool hasCount() const { return count != 0; }
   // IMPORTANT to call this when standard treatment.
   inline uint32_t effectiveCount() const { return count ? count : 1; }
 };
@@ -50,13 +49,12 @@ std::string formatMovementParseError(const MovementParseError& error);
 std::expected<std::vector<ParsedMovement>, MovementParseError>
 parseMovements(std::string_view seq);
 
-void applyParsedMovement(CursorPos& pos, Mode& mode, 
-                       const ParsedMovement& motion, const Lines& lines,
-                      const NavContext& navContext);
+void applyParsedMovement(CursorPos& pos, const ParsedMovement& motion,
+                         const Lines& lines, const NavContext& navContext);
 
 // External entry point for applying a single motion in optimizer state updates.
-void applySingleMovement(CursorPos& pos, Mode& mode, std::string_view motion,
-                       const Lines& lines, const NavContext& navContext);
+void applySingleMovement(CursorPos& pos, std::string_view motion,
+                         const Lines& lines, const NavContext& navContext);
 
 // Parses the motion sequence, and returns the result if they are applied to the
 // current state

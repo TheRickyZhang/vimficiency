@@ -40,8 +40,6 @@ public:
 
   double append(const PhysicalKeys& keys, const Config& model);
 
-  void reset();
-
   // Merge two effort segments in O(1), pricing the bigram at the seam.
   static RunningEffort merge(const RunningEffort& a, const RunningEffort& b,
                              const Config& model);

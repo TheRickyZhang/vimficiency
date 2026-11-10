@@ -157,7 +157,7 @@ struct JoinSimulation {
     CursorPos pos(0, 0);
 
     for (int l = begin + 1; l < end; l++) {
-      VimCore::joinLines(workLines, pos, addSpace);
+      VimCore::joinLineRange(workLines, pos, 2, addSpace);
       sim.cursorCols.push_back(pos.col);
     }
     sim.joinedLine = workLines[0];
@@ -353,20 +353,28 @@ optional<JoinPlan> computeJoinPlanForDiff(
     }
   }
 
+  struct GroupJoin {
+    JoinSimulation sim;
+    bool useGJ;
+  };
+  vector<GroupJoin> groupJoins;
+  groupJoins.reserve(targetLineCount);
   for (int g = 0; g < targetLineCount; g++) {
     auto [begin, end] = partition[g];
-    if (end - begin <= 1) continue;
-
     auto simJ = JoinSimulation::simulate(srcLines, begin, end, /*addSpace=*/true);
     auto simGJ = JoinSimulation::simulate(srcLines, begin, end, /*addSpace=*/false);
     int matchJ = joinSimMatchScore(simJ.joinedLine, fullTargetLines[g]);
     int matchGJ = joinSimMatchScore(simGJ.joinedLine, fullTargetLines[g]);
-    const auto& best = matchGJ > matchJ ? simGJ : simJ;
-    int commonLen = max(matchJ, matchGJ);
-    int maxLen = max(static_cast<int>(best.joinedLine.size()),
-                     static_cast<int>(fullTargetLines[g].size()));
-    double matchRatio = maxLen > 0 ? static_cast<double>(commonLen) / maxLen : 1.0;
-    if (matchRatio < 0.3) return nullopt;
+    bool useGJ = matchGJ > matchJ;
+    const auto& best = useGJ ? simGJ : simJ;
+    if (end - begin > 1) {
+      int commonLen = max(matchJ, matchGJ);
+      int maxLen = max(static_cast<int>(best.joinedLine.size()),
+                       static_cast<int>(fullTargetLines[g].size()));
+      double matchRatio = maxLen > 0 ? static_cast<double>(commonLen) / maxLen : 1.0;
+      if (matchRatio < 0.3) return nullopt;
+    }
+    groupJoins.push_back({best, useGJ});
   }
 
   auto [entryBegin, entryEnd] = partition[0];
@@ -388,14 +396,10 @@ optional<JoinPlan> computeJoinPlanForDiff(
     //     curswant from the prior group's exit, so the residual edit (e.g.
     //     `C`) runs from the wrong column.
     if (g > 0) fullSeq.append("j0");
-    auto simJ = JoinSimulation::simulate(srcLines, begin, end, /*addSpace=*/true);
-    auto simGJ = JoinSimulation::simulate(srcLines, begin, end, /*addSpace=*/false);
-    bool useGJ = joinSimMatchScore(simGJ.joinedLine, fullTargetLines[g]) >
-                 joinSimMatchScore(simJ.joinedLine, fullTargetLines[g]);
+    const auto& [sim, useGJ] = groupJoins[g];
     std::string_view joinCmd = useGJ ? "gJ" : "J";
     for (int j = 0; j < numJoins; j++) fullSeq.append(joinCmd);
 
-    const auto& sim = useGJ ? simGJ : simJ;
     int cursorCol = numJoins > 0 ? sim.cursorCols.back() : 0;
 
     if (sim.joinedLine != fullTargetLines[g]) {
@@ -409,8 +413,7 @@ optional<JoinPlan> computeJoinPlanForDiff(
           srcFirstLine + end < static_cast<int>(preEditLines.size());
       TransformBoundary groupBoundary =
           TransformBoundary::joinResidualBoundary(hasLinesAbove, hasLinesBelow);
-      CursorPos residualGoalPos(
-          0, fullTargetLines[g].empty() ? 0 : static_cast<int>(fullTargetLines[g].size()) - 1);
+      CursorPos residualGoalPos(0, fullTargetLines[g].lastCol());
       TransformOptimizerParams residualParams =
           TransformOptimizerParams{}
               .withMinCountRepeat(params.minPrefixCount)

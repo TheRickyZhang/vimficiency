@@ -37,8 +37,7 @@ Two passes, in order:
 
 2. **Lowercase the modifier letter.** `keytrans` emits `"<C-U>"`
    (uppercase), but the registered tokens in
-   `src/Keyboard/ToKeys/MovementToKeysPrimitives.cppm` and
-   `src/Keyboard/ToKeys/EditToKeys.cpp` are **lowercase** (`"<C-u>"`).
+   `src/Keyboard/ToKeys/MovementToKeys.cpp` are **lowercase** (`"<C-u>"`).
    See the token tables for the full list. Without lowercasing,
    `keytrans` output misses the table.
 

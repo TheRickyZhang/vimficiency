@@ -44,7 +44,7 @@ We completed a structural cleanup to enforce explicit module boundaries in `src/
   placement rule.)
 - Grouped keyboard command-to-key mapping declarations under
   `src/Keyboard/ToKeys/` (`CharToKeys`, `CommandToKeys`, `CountToKeys`,
-  `MovementToKeys`, `EditToKeys`, and primitives) to separate mapping catalogs
+  `MovementToKeys`, and primitives) to separate mapping catalogs
   from keyboard value types.
 - Renamed `SequenceTokenizer` to `SequenceToKeys` and moved it to
   `src/Keyboard/ToKeys/` to clarify that this layer maps command strings to
@@ -95,12 +95,10 @@ Internal callers receive optimizer-produced sequences and are
 entitled to assert — a failure there is a real bug, not a user
 error.
 
-Two callers are explicitly *tolerant* rather than `.value()` because
-their inputs are not optimizer-produced:
+One caller is explicitly *tolerant* rather than `.value()` because
+its input is not optimizer-produced (`formatSequenceForDisplay` was a
+second such caller until its Lua consumer went away and it was removed):
 
-- `formatSequenceForDisplay` (consumer: Lua's `format_sequence` on
-  captured `user_seq`). Falls back to printing the raw string on
-  parse failure so the user still sees their keystrokes.
 - `CompositionOptimizer`'s human-approval printer. The optimizer
   emits visual-selection strategies (`v{motion}d`, see
   `TransformOptimizer.cpp`'s `Sequence visualSeq("v")` site) that

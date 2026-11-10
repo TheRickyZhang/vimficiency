@@ -65,17 +65,15 @@ LinewiseChangeShape linewiseChangeShapeForCommand(
 }  // namespace
 
 ChangeGoalHandler::ChangeGoalHandler(
-    const Lines& effectiveLines, int leftColOffset, int rightColOffset,
+    const Lines& effectiveLines, int leftColOffset, int,
     double effortWeight, const Config& config,
-    const TransformBoundary& transformBoundary, const Lines& initialLines,
+    const TransformBoundary&, const Lines& initialLines,
     const Lines& goalLines, const string& pre,
     const string& suf, const string& preSuf)
     : effectiveLines(effectiveLines),
       leftColOffset(leftColOffset),
-      rightColOffset(rightColOffset),
       effortWeight(effortWeight),
       config(config),
-      transformBoundary(transformBoundary),
       initialLines(initialLines),
       goalLines(goalLines),
       pre(pre),
@@ -85,7 +83,7 @@ ChangeGoalHandler::ChangeGoalHandler(
   typedEffort = RunningEffort(typed.keys, config);
 
   if constexpr (VimOptions::autoindent()) {
-    goalFirstIndentLen = leadingSpaceCount(goalLines[0]);
+    goalFirstIndentLen = ssize(leadingWhitespace(goalLines[0]));
     if (goalFirstIndentLen > 0) {
       typedAfterIndent = buildTypedCommands(
           goalLines, leadingWhitespace(goalLines[0]), pre, suf);
@@ -190,11 +188,6 @@ KeyedSequence ChangeGoalHandler::withOptionalCount(int count, const KeyedSequenc
   return KeyedSequence(count, base);
 }
 
-string ChangeGoalHandler::formatCountedCommand(int count, string_view baseCmd) {
-  if (count <= 0) return string(baseCmd);
-  return to_string(count) + string(baseCmd);
-}
-
 KeyedSequence ChangeGoalHandler::deleteToChangeChar(const SequenceBinding& sourceCmd) {
   int count = sourceCmd.count;
   const KeyedSequence& baseKS = sourceCmd.base;
@@ -255,52 +248,16 @@ RunningEffort ChangeGoalHandler::mergeGoalSuffixEffort(
 
 CursorPos ChangeGoalHandler::seedPositionForStart(int startIndex, const Lines& initialLines,
                                                   int leftColOffset) {
-  int remaining = startIndex;
-  for (int line = 0; line < static_cast<int>(initialLines.size()); line++) {
-    int lineSize = initialLines[line].empty() ? 1 : static_cast<int>(initialLines[line].size());
-    if (remaining < lineSize) {
-      return CursorPos(line, remaining + (line == 0 ? leftColOffset : 0));
-    }
-    remaining -= lineSize;
-  }
-  return CursorPos(-1, -1);
-}
-
-// Build change prefix overloads
-
-KeyedSequence ChangeGoalHandler::buildChangePrefix(
-    const SequenceBinding& sourceCmd,
-    const Lines& postDelLines, const CursorPos& postDelPos,
-    const Lines&, const CharRange&) const {
-  int totalLines = static_cast<int>(postDelLines.size());
-  int cursorLine = postDelPos.line;
-
-  KeyedSequence prefix = deleteToChangeChar(sourceCmd);
-  prefix += buildCollapseSequence(totalLines, cursorLine);
-  return prefix;
+  CursorPos pos = initialLines.cursorFromFlatIndexClamped(startIndex);
+  if (pos.line == 0) pos.setCol(pos.col + leftColOffset);
+  return pos;
 }
 
 KeyedSequence ChangeGoalHandler::buildChangePrefix(
     const SequenceBinding& sourceCmd,
-    const Lines& postDelLines, const CursorPos& postDelPos,
-    const Lines&, const CharLineRange&) const {
-  int totalLines = static_cast<int>(postDelLines.size());
-  int cursorLine = postDelPos.line;
-
+    const Lines& postDelLines, const CursorPos& postDelPos) {
   KeyedSequence prefix = deleteToChangeChar(sourceCmd);
-  prefix += buildCollapseSequence(totalLines, cursorLine);
-  return prefix;
-}
-
-KeyedSequence ChangeGoalHandler::buildChangePrefix(
-    const SequenceBinding& sourceCmd,
-    const Lines& postDelLines, const CursorPos& postDelPos,
-    const Lines&, const LineCharRange&) const {
-  int totalLines = static_cast<int>(postDelLines.size());
-  int cursorLine = postDelPos.line;
-
-  KeyedSequence prefix = deleteToChangeChar(sourceCmd);
-  prefix += buildCollapseSequence(totalLines, cursorLine);
+  prefix += buildCollapseSequence(postDelLines.size(), postDelPos.line);
   return prefix;
 }
 
@@ -339,7 +296,7 @@ SuffixValue ChangeGoalHandler::buildSuffixValueForNextIndex(
     return SuffixValue(suffixProgram, nextIndex, rawSuffixEfforts[nextIndex]);
   }
 
-  string expectedDotCmd = formatCountedCommand(lastEdit.count, lastEdit.base);
+  string expectedDotCmd = countedCommandString(lastEdit.count, lastEdit.base);
   KeyedSequence expandedPrefix = buildExpandedDotPrefix(
       *suffixProgram, nextIndex, dotIndex, expectedDotCmd);
   RunningEffort expandedPrefixEffort(expandedPrefix.keys, config);
@@ -491,22 +448,20 @@ GoalStates ChangeGoalHandler::emitLinewiseChangeGoal(
     const TransformEditorState& afterDel, const TransformState& base,
     const SequenceBinding& sourceCmd, int line,
     int ccLineCount, const KeyedSequence& changeCmd,
-    bool applyAutoindent, bool collapseLines) {
+    bool applyAutoindent) {
   bool isDot = isDotRepeat(base, sourceCmd);
   int autoindentLen = 0;
   if constexpr (VimOptions::autoindent()) {
     if (applyAutoindent) {
-      autoindentLen = leadingSpaceCount(base.getLines()[line]);
+      autoindentLen = ssize(leadingWhitespace(base.getLines()[line]));
     }
   }
 
   KeyedSequence changePrefix = changeCmd;
   bool useAfterIndent = false;
-  bool bsInCollapse = collapseLines && ccLineCount > 1 && line > 0;
+  bool bsInCollapse = ccLineCount > 1 && line > 0;
   if constexpr (VimOptions::autoindent()) {
-    if (!collapseLines) {
-      useAfterIndent = false;
-    } else if (applyAutoindent && !bsInCollapse) {
+    if (applyAutoindent && !bsInCollapse) {
       changePrefix += computeIndentAdjustment(autoindentLen, goalFirstIndentLen);
       changePrefix += buildCollapseSequence(ccLineCount, line);
       useAfterIndent = goalFirstIndentLen > 0;
@@ -518,9 +473,7 @@ GoalStates ChangeGoalHandler::emitLinewiseChangeGoal(
       changePrefix += buildCollapseSequence(ccLineCount, line);
     }
   } else {
-    if (collapseLines) {
-      changePrefix += buildCollapseSequence(ccLineCount, line);
-    }
+    changePrefix += buildCollapseSequence(ccLineCount, line);
   }
 
   const auto& suffixTyped = useAfterIndent ? typedAfterIndent : typed;
@@ -541,8 +494,7 @@ GoalStates ChangeGoalHandler::onLinewiseGoal(
   LinewiseChangeShape shape =
       linewiseChangeShapeForCommand(base, range);
   return emitLinewiseChangeGoal(afterDel, base, sourceCmd, shape.cursorLine,
-                                shape.lineCount, changeCmd, applyAutoindent,
-                                true);
+                                shape.lineCount, changeCmd, applyAutoindent);
 }
 
 GoalStates ChangeGoalHandler::onCountedLinewiseGoal(
@@ -553,8 +505,7 @@ GoalStates ChangeGoalHandler::onCountedLinewiseGoal(
   LinewiseChangeShape shape =
       linewiseChangeShapeForCommand(base, range);
   return emitLinewiseChangeGoal(
-      afterDel, base, sourceCmd, shape.cursorLine, shape.lineCount, changeCmd, true,
-      true);
+      afterDel, base, sourceCmd, shape.cursorLine, shape.lineCount, changeCmd, true);
 }
 
 GoalStates ChangeGoalHandler::onJoinGoal(

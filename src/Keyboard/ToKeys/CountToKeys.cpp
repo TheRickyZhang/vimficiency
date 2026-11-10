@@ -24,19 +24,10 @@ const std::array<PhysicalKeys, CountPrefixLimits::MAX_PREFIX_COUNT + 1> PREFIX_K
   return table;
 }();
 
-const std::array<std::string, CountPrefixLimits::MAX_PREFIX_COUNT + 1> PREFIX_TEXT_STORAGE = [] {
+const std::array<std::string, CountPrefixLimits::MAX_PREFIX_COUNT + 1> PREFIX_TEXT = [] {
   std::array<std::string, CountPrefixLimits::MAX_PREFIX_COUNT + 1> table;
-  table[0] = "";
   for (int count = 1; count <= CountPrefixLimits::MAX_PREFIX_COUNT; ++count) {
     table[count] = std::to_string(count);
-  }
-  return table;
-}();
-
-const std::array<std::string_view, CountPrefixLimits::MAX_PREFIX_COUNT + 1> PREFIX_TEXT = [] {
-  std::array<std::string_view, CountPrefixLimits::MAX_PREFIX_COUNT + 1> table;
-  for (int count = 0; count <= CountPrefixLimits::MAX_PREFIX_COUNT; ++count) {
-    table[count] = PREFIX_TEXT_STORAGE[count];
   }
   return table;
 }();

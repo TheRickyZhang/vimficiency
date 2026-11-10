@@ -1,9 +1,9 @@
 // tests/Unit/Misc/KeyboardConfigConsistencyTest.cpp
 //
 // Each keyboard layout assigns every key a (hand, finger). The two must agree:
-// RunningEffort uses KeyInfo::hand for hand-alternation but the finger's hand
-// (sameHand) for rolls, so a key whose finger belongs to the other hand is
-// scored as both a same-hand roll and a cross-hand alternation.
+// RunningEffort gates rolls on KeyInfo::hand but scores them by finger
+// position, so a key whose finger belongs to the other hand would be rolled
+// against fingers it cannot roll with.
 //
 // Run: ./build/tests/vimfy_unit_tests --gtest_filter="KeyboardConfigConsistency.*"
 
@@ -32,7 +32,10 @@ TEST(KeyboardConfigConsistency, EveryKeyHandMatchesFinger) {
   for (const auto& layout : layouts) {
     for (int i = 0; i < KEY_COUNT; ++i) {
       const KeyInfo& ki = layout.cfg.keyInfo[i];
-      if (ki.hand == Hand::None || ki.finger == Finger::None) continue;
+      // The roll gate in bigramEffort keys on hand and then reads finger.
+      EXPECT_EQ(ki.hand == Hand::None, ki.finger == Finger::None)
+          << layout.name << " key index " << i;
+      if (ki.hand == Hand::None) continue;
       EXPECT_EQ(fingerToHand(ki.finger), ki.hand)
           << layout.name << " key index " << i;
     }

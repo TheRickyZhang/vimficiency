@@ -18,7 +18,6 @@ namespace {
 
 using Explore::View;
 using Explore::Outcome;
-using Explore::PlanReconfigureResult;
 using VF::LuaExports::ViewRegistry;
 using VF::LuaExports::AsyncJob;
 using VF::LuaExports::JobRegistry;
@@ -27,35 +26,12 @@ ViewRegistry g_registry;
 
 using payload::encodeField;
 using payload::encodeFields;
-using payload::intField;
-using payload::doubleField;
-
-struct PhaseWireFields {
-  string_view kind;
-  int editIndex;
-};
-PhaseWireFields phaseWireFields(const Explore::Phase& phase) {
-  return {
-      Explore::phaseName(phase),
-      Explore::phaseIndex(phase),
-  };
-}
+using payload::encodeStringList;
 
 SuggestionSortMode parseSuggestionSortMode(string_view text) {
   if (text == "distance") return SuggestionSortMode::Distance;
   if (text == "score") return SuggestionSortMode::Score;
   return SuggestionSortMode::Effort;
-}
-
-VF::LuaExports::Result<OptimizerParamOverrides> parseOverrides(
-    string_view text) {
-  auto parsed = parseOptimizerParamOverrides(text);
-  if (!parsed) {
-    return helpers::unexpectedError(
-        VF::LuaExports::ExportErrorKind::InvalidValue,
-        formatOptimizerParamOverrideErrors(parsed.error()));
-  }
-  return std::move(*parsed);
 }
 
 // State payload. Length-prefixed fields so raw bytes in `seq` survive
@@ -64,52 +40,52 @@ VF::LuaExports::Result<OptimizerParamOverrides> parseOverrides(
 // four ints carry the current target range; the UI decides whether to
 // render it based on phase (e.g. hidden during Insert).
 string encodeState(const View& v) {
-  const auto [targetBegin, targetEnd] = v.currentTargetRange();
+  const CharRange target = v.currentTargetRange();
   const Explore::State& st = v.state();
-  const PhaseWireFields phase = phaseWireFields(st.phase);
   return encodeFields(
-      phase.kind,
-      string_view(intField(phase.editIndex)),
-      string_view(intField(v.isCompleted() ? 1 : 0)),
-      string_view(intField(st.cursor.line)),
-      string_view(intField(st.cursor.col)),
-      string_view(intField(v.totalEdits())),
-      string_view(doubleField(st.cost)),
+      Explore::phaseName(st.phase),
+      Explore::phaseIndex(st.phase),
+      v.isCompleted() ? 1 : 0,
+      st.cursor.line,
+      st.cursor.col,
+      v.totalEdits(),
+      st.cost,
       string_view(st.seq),
-      string_view(intField(v.canUndo() ? 1 : 0)),
-      string_view(intField(v.canRedo() ? 1 : 0)),
-      string_view(intField(targetBegin.line)),
-      string_view(intField(targetBegin.col)),
-      string_view(intField(targetEnd.line)),
-      string_view(intField(targetEnd.col)));
+      v.canUndo() ? 1 : 0,
+      v.canRedo() ? 1 : 0,
+      target.begin.line,
+      target.begin.col,
+      target.end.line,
+      target.end.col);
 }
 
 // Apply-result payload. Two fields: status ("Applied" | "Rejected") and
 // reason (empty on Applied). The new view state is read separately via
 // vf_explore_state — Lua callers refresh state after every action anyway.
 string encodeOutcome(const Outcome& outcome) {
-  const char* status = outcome.has_value() ? "Applied" : "Rejected";
-  const string& reason = outcome.has_value() ? string() : outcome.error().reason;
-  return encodeFields(string_view(status), string_view(reason));
+  const string_view status = outcome.has_value() ? "Applied" : "Rejected";
+  const string_view reason =
+      outcome.has_value() ? string_view{} : string_view(outcome.error().reason);
+  return encodeFields(status, reason);
 }
 
-// Wire encoder for one recommendation. 6 fields — Lua's
+// Wire encoder for one recommendation. 7 fields — Lua's
 // parse_explore_recommendations must match the field count. The recommendation's
 // "kind" (motion vs edit-structural vs typed-text) is implicit in the view's
 // current phase, which Lua already reads off `state.phase.kind`.
 string encodeSuggestion(const Suggestion& item) {
   return encodeFields(
       string_view(item.token),
-      string_view(doubleField(item.costDiff)),
-      string_view(doubleField(item.distance)),
-      string_view(doubleField(item.score)),
-      string_view(intField(item.landingPos.line)),
-      string_view(intField(item.landingPos.col)),
+      item.costDiff,
+      item.distance,
+      item.score,
+      item.landingPos.line,
+      item.landingPos.col,
       string_view(item.literalText));
 }
 
 string encodeSuggestions(const vector<Suggestion>& recs) {
-  string out = encodeField(intField(static_cast<int>(recs.size())));
+  string out = encodeField(recs.size());
   for (const auto& r : recs) out += encodeSuggestion(r);
   return out;
 }
@@ -126,13 +102,12 @@ string encodeSuggestions(const vector<Suggestion>& recs) {
 //     col_i_count, row_0, row_1, ..., row_{col_i_count-1}
 string encodeHeaderRows(const View& v) {
   const auto rows = v.headerRows();
-  string out;
-  out += encodeField(intField(static_cast<int>(rows.explored.size())));
-  for (const auto& row : rows.explored) out += encodeField(string_view(row));
-  out += encodeField(intField(static_cast<int>(rows.optimal.size())));
+  string out = encodeField(rows.explored.size());
+  out += encodeStringList(rows.explored);
+  out += encodeField(rows.optimal.size());
   for (const auto& col : rows.optimal) {
-    out += encodeField(intField(static_cast<int>(col.size())));
-    for (const auto& row : col) out += encodeField(string_view(row));
+    out += encodeField(col.size());
+    out += encodeStringList(col);
   }
   return out;
 }
@@ -193,7 +168,7 @@ VF::LuaExports::Result<StartInputs> decodeStartInputs(
       optimizer_overrides_len,
       "optimizer_overrides");
   if (!overridesText) return unexpected(overridesText.error());
-  auto overridesResult = parseOverrides(*overridesText);
+  auto overridesResult = helpers::parseOverrides(*overridesText);
   if (!overridesResult) return unexpected(overridesResult.error());
   const OptimizerParamOverrides overrides = std::move(*overridesResult);
 
@@ -202,13 +177,9 @@ VF::LuaExports::Result<StartInputs> decodeStartInputs(
   in.goalLines = std::move(*goalLinesRes);
   in.initialPos = CursorPos(start_row, start_col);
   in.goalPos = CursorPos(end_row, end_col);
-  in.boundary = NavBoundary(
-      in.initialLines,
-      CursorPos(0, boundary_first_col),
-      CursorPos(static_cast<int>(in.initialLines.size()) - 1,
-                boundary_last_col + 1),
-      has_lines_above,
-      has_lines_below);
+  in.boundary = helpers::sliceBoundary(
+      in.initialLines, boundary_first_col, boundary_last_col,
+      has_lines_above, has_lines_below);
   in.navContext = NavContext(window_height, scroll_amount);
   in.userSeq.assign(*userSeqRes);
   in.compositionParams =
@@ -374,7 +345,7 @@ VFByteSlice vf_explore_recommendations(
   auto sortModeText = helpers::requiredBytes(sort_mode, sort_mode_len, "sort_mode");
   if (!sortModeText) return helpers::storeBytes(storage, unexpected(sortModeText.error()));
 
-  auto overridesResult = parseOverrides(*overridesText);
+  auto overridesResult = helpers::parseOverrides(*overridesText);
   if (!overridesResult) {
     return helpers::storeBytes(storage, unexpected(overridesResult.error()));
   }
@@ -396,50 +367,20 @@ VFByteSlice vf_explore_reconfigure_plan(
       "optimizer_overrides");
   if (!overridesText) return helpers::storeBytes(storage, unexpected(overridesText.error()));
 
-  auto overridesResult = parseOverrides(*overridesText);
+  auto overridesResult = helpers::parseOverrides(*overridesText);
   if (!overridesResult) {
     return helpers::storeBytes(storage, unexpected(overridesResult.error()));
   }
   const OptimizerParamOverrides overrides = std::move(*overridesResult);
   CompositionOptimizerParams compositionParams =
       OptimizerParamOverrides::resolved<CompositionOptimizerParams>(&overrides);
-  const PlanReconfigureResult result =
-      v.reconfigurePlan(std::move(compositionParams));
-  storage = result.resetState ? "1" : "0";
+  storage = v.reconfigurePlan(std::move(compositionParams)) ? "1" : "0";
   return helpers::byteSlice(storage);
-}
-
-VFByteSlice vf_explore_apply_movement(
-    int view_id,
-    const char* movement_text,
-    size_t movement_text_len) {
-  static string storage;
-  View& v = g_registry.get(view_id);
-  return helpers::storeBytes(storage, helpers::requiredBytes(
-          movement_text,
-          movement_text_len,
-          "movement_text").transform(
-      [&](string_view text) {
-        return encodeOutcome(v.applyMovement(text));
-      }));
-}
-
-VFByteSlice vf_explore_apply_edit(int view_id, const char* text, size_t text_len) {
-  static string storage;
-  View& v = g_registry.get(view_id);
-  return helpers::storeBytes(storage, helpers::requiredBytes(text, text_len, "text").transform(
-      [&](string_view edit_text) {
-        return encodeOutcome(v.applyEdit(edit_text));
-      }));
 }
 
 VFByteSlice vf_explore_current_lines(int view_id) {
   static string storage;
-  View& v = g_registry.get(view_id);
-  storage.clear();
-  for (const auto& line : v.state().lines) {
-    storage += encodeField(string_view(line));
-  }
+  storage = encodeStringList(g_registry.get(view_id).state().lines);
   return helpers::byteSlice(storage);
 }
 

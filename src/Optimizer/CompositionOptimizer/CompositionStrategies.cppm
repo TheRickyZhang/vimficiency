@@ -71,6 +71,53 @@ struct BracketQuote {
   CursorPos goalPos;
 };
 
+// Typed payload after the structural entry (trailing `<Esc>` included) and
+// the Normal-mode cursor it leaves.
+struct TypedInsertion {
+  KeyedSequence typed;
+  CursorPos exitCursor;
+};
+
+// `o` from `fromLine`; `body` is the insert minus its boundary newline.
+inline TypedInsertion typedInsertionBelow(const Lines& lines, int fromLine,
+                                          std::string_view body) {
+  std::string_view sourceIndent = VimOptions::autoindent()
+      ? leadingWhitespace(lines[fromLine])
+      : std::string_view{};
+  Lines insertLines = Lines::unflatten(std::string(body));
+  return {buildTypedCommands(insertLines, sourceIndent),
+          typedCommandsExitCursor(CursorPos(fromLine + 1, 0), insertLines)};
+}
+
+// `i a I A` at `insertPos`: the structural only picks the entry, the payload
+// is the same for all of them.
+inline TypedInsertion typedInsertionAt(const Lines& lines, CursorPos insertPos,
+                                       const Lines& insertLines) {
+  std::string_view lineText = lines[insertPos.line];
+  std::string_view prefix = lineText.substr(0, insertPos.col);
+  std::string_view suffix = lineText.substr(insertPos.col);
+  return {buildTypedCommands(insertLines, "", prefix, suffix),
+          typedCommandsExitCursor(insertPos, insertLines, suffix)};
+}
+
+// Trailing `\n` at col 0 of a later line: the line is wholly new content, so
+// `o` is the only entry.
+inline bool opensLineBelowOnly(const DiffState& diff) {
+  return diff.isNewLineInsertion() && diff.beginPos.col == 0 &&
+         diff.beginPos.line > 0;
+}
+
+// The single payload for a pure insertion once Insert has been entered: the
+// `o` form when it is the only entry, else the column form (a leading-`\n`
+// append is typed as `<CR>...` from the column, not via `o`).
+inline TypedInsertion typedInsertion(const DiffState& diff, const Lines& lines) {
+  if (opensLineBelowOnly(diff)) {
+    return typedInsertionBelow(lines, diff.beginPos.line - 1,
+                               diff.insertedTextBody());
+  }
+  return typedInsertionAt(lines, diff.beginPos, diff.insertedLines());
+}
+
 // Enumerate every Insertion strategy for `diff` against `lines`. No-op
 // when `diff` is not a pure insertion.
 template <class OnStrategy>
@@ -85,7 +132,7 @@ void enumerateInsertions(const DiffState& diff, const Lines& lines, OnStrategy&&
   // "\nX" after it) — the latter is also the only form for an end-of-buffer
   // append. Either way `o` runs from the line above the new line and the body is
   // the insert minus that one boundary newline.
-  const bool trailingNl = diff.isNewLineInsertion() && insertPos.col == 0 && insertPos.line > 0;
+  const bool trailingNl = opensLineBelowOnly(diff);
   const bool leadingNl = !ins.empty() && ins.front() == '\n' &&
                          insertPos.col == lines[insertPos.line].effectiveSize();
   if (trailingNl || leadingNl) {
@@ -93,53 +140,39 @@ void enumerateInsertions(const DiffState& diff, const Lines& lines, OnStrategy&&
     const int oFromLineEnd = lines[oFromLine].effectiveSize();
     std::string_view body = trailingNl ? diff.insertedTextBody()
                                        : std::string_view(ins).substr(1);
-    std::string_view sourceIndent = VimOptions::autoindent()
-        ? leadingWhitespace(lines[oFromLine])
-        : std::string_view{};
-    Lines insertLines = Lines::unflatten(std::string(body));
-    KeyedSequence typed = buildTypedCommands(insertLines, sourceIndent);
-    cb(Insertion{
-        oFromLine, 0, oFromLineEnd, "o", "o" + typed.seq.str(),
-        typedCommandsExitCursor(CursorPos(oFromLine + 1, 0), insertLines)});
-    if (trailingNl) return;  // at col 0 the line is wholly new content; `o` is the only form
+    TypedInsertion below = typedInsertionBelow(lines, oFromLine, body);
+    cb(Insertion{oFromLine, 0, oFromLineEnd, "o", "o" + below.typed.seq.str(),
+                 below.exitCursor});
+    if (trailingNl) return;
   }
 
   // I/A/i/a family.
   const int line = insertPos.line;
   const int fnb = VimCore::firstNonBlankColInLine(lines[line]);
-  const int lineLen = static_cast<int>(lines[line].size());
+  const int lineLen = lines.getSize(line);
   const int lineEnd = lines[line].effectiveSize();
-  const int lastContentCol = lineEnd - 1;
-  std::string_view lineText(lines[line].data(), lines[line].size());
-  Lines insertLines = Lines::unflatten(diff.insertedText);
+  TypedInsertion at = typedInsertionAt(lines, insertPos, diff.insertedLines());
+  const std::string escaped = at.typed.seq.str();
 
-  if (insertPos.col == fnb) {
-    std::string_view prefix = lineText.substr(0, fnb);
-    std::string_view suffix = lineText.substr(fnb);
-    KeyedSequence escaped = buildTypedCommands(insertLines, "",
-        prefix, suffix);
-    CursorPos goalPos = typedCommandsExitCursor(insertPos, insertLines, suffix);
-    // `I` lands at first non-blank; on an all-whitespace line Vim instead
-    // moves past the indent (col == size), so `I` cannot prepend at col 0.
-    if (!VimCore::isBlankLine(lineText)) {
-      cb(Insertion{line, 0, lineEnd, "I", "I" + escaped.seq.str(), goalPos});
-    }
+  // `I` lands at the first non-blank, or past the indent (col == size) on an
+  // all-whitespace line.
+  const int iCol = VimCore::isBlankLine(lines[line]) ? lineLen : fnb;
+  if (insertPos.col == iCol) {
+    cb(Insertion{line, 0, lineEnd, "I", "I" + escaped, at.exitCursor});
+  }
+  if (insertPos.col == lineLen) {
+    cb(Insertion{line, 0, lineEnd, "A", "A" + escaped, at.exitCursor});
+  }
+  // `a` from the character before the insert point (col 0 on an empty line).
+  if (insertPos.col > 0 || lineLen == 0) {
+    const int aCol = std::max(insertPos.col - 1, 0);
+    cb(Insertion{line, aCol, aCol + 1, "a", "a" + escaped, at.exitCursor});
+  }
+  // `i` needs the cursor on the insert column, which is unreachable one past
+  // a non-empty line.
+  if (insertPos.col < lineEnd) {
     cb(Insertion{line, insertPos.col, insertPos.col + 1,
-                 "i", "i" + escaped.seq.str(), goalPos});
-  } else if (insertPos.col == lineLen) {
-    KeyedSequence escaped = buildTypedCommands(insertLines, "", lines[line]);
-    CursorPos goalPos = typedCommandsExitCursor(insertPos, insertLines);
-    cb(Insertion{line, 0, lineEnd, "A", "A" + escaped.seq.str(), goalPos});
-    cb(Insertion{line, lastContentCol, lastContentCol + 1,
-                 "a", "a" + escaped.seq.str(), goalPos});
-  } else {
-    std::string_view prefix = lineText.substr(0, insertPos.col);
-    std::string_view suffix = lineText.substr(insertPos.col);
-    KeyedSequence escaped = buildTypedCommands(insertLines, "",
-        prefix, suffix);
-    cb(Insertion{line, insertPos.col, insertPos.col + 1,
-                 "i", "i" + escaped.seq.str(),
-                 typedCommandsExitCursor(insertPos, insertLines, suffix)});
+                 "i", "i" + escaped, at.exitCursor});
   }
 }
 

@@ -7,7 +7,6 @@ import std.compat;
 
 using namespace std;
 
-// TODO: how does this work??
 namespace VF::LuaExports::payload {
 
 Result<vector<string>> decodeLengthPrefixedStrings(string_view encoded) {
@@ -16,36 +15,17 @@ Result<vector<string>> decodeLengthPrefixedStrings(string_view encoded) {
   while (pos < encoded.size()) {
     const size_t colon = encoded.find(':', pos);
     if (colon == string_view::npos) {
-      return helpers::unexpectedError(
-          ExportErrorKind::InvalidPayload,
-          "invalid length-prefixed payload");
-    }
-    const string_view lenText = encoded.substr(pos, colon - pos);
-    if (lenText.empty()) {
-      return helpers::unexpectedError(
-          ExportErrorKind::InvalidPayload,
-          "invalid length-prefixed payload");
+      return helpers::unexpectedError("invalid length-prefixed payload");
     }
     size_t len = 0;
-    for (char c : lenText) {
-      if (c < '0' || c > '9') {
-        return helpers::unexpectedError(
-            ExportErrorKind::InvalidPayload,
-            "invalid length-prefixed payload");
-      }
-      const size_t digit = static_cast<size_t>(c - '0');
-      if (len > (numeric_limits<size_t>::max() - digit) / 10) {
-        return helpers::unexpectedError(
-            ExportErrorKind::PayloadTooLarge,
-            "length-prefixed payload too large");
-      }
-      len = len * 10 + digit;
+    const char* lenEnd = encoded.data() + colon;
+    const auto [ptr, ec] = from_chars(encoded.data() + pos, lenEnd, len);
+    if (ec != errc{} || ptr != lenEnd) {
+      return helpers::unexpectedError("invalid length-prefixed payload");
     }
     pos = colon + 1;
-    if (pos + len > encoded.size()) {
-      return helpers::unexpectedError(
-          ExportErrorKind::TruncatedPayload,
-          "truncated length-prefixed payload");
+    if (len > encoded.size() - pos) {
+      return helpers::unexpectedError("truncated length-prefixed payload");
     }
     parts.emplace_back(encoded.substr(pos, len));
     pos += len;
@@ -58,7 +38,6 @@ Result<Lines> decodeLineArray(string_view encoded) {
       -> Result<Lines> {
     if (parts.empty()) {
       return helpers::unexpectedError(
-          ExportErrorKind::InvalidPayload,
           "line array payload must contain at least one line");
     }
     Lines lines;
@@ -67,13 +46,11 @@ Result<Lines> decodeLineArray(string_view encoded) {
       const auto& part = parts[i];
       if (part.find('\n') != string::npos) {
         return helpers::unexpectedError(
-            ExportErrorKind::InvalidPayload,
-            string("line array payload contains newline byte at line ") + to_string(i));
+            "line array payload contains newline byte at line " + to_string(i));
       }
       if (part.find('\0') != string::npos) {
         return helpers::unexpectedError(
-            ExportErrorKind::InvalidPayload,
-            string("line array payload contains NUL byte at line ") + to_string(i));
+            "line array payload contains NUL byte at line " + to_string(i));
       }
       lines.push_back(part);
     }
@@ -85,9 +62,7 @@ Result<vector<RecallRecordMeta>> decodeRecallRecordMeta(string_view encoded) {
   return decodeLengthPrefixedStrings(encoded).and_then([](const vector<string>& parts)
       -> Result<vector<RecallRecordMeta>> {
     if (parts.size() % 2 != 0) {
-      return helpers::unexpectedError(
-          ExportErrorKind::InvalidPayload,
-          "invalid recall metadata payload");
+      return helpers::unexpectedError("invalid recall metadata payload");
     }
 
     vector<RecallRecordMeta> records;
@@ -98,9 +73,7 @@ Result<vector<RecallRecordMeta>> decodeRecallRecordMeta(string_view encoded) {
       const char* end = begin + parts[i].size();
       const auto [ptr, ec] = from_chars(begin, end, parsed);
       if (ec != errc{} || ptr != end) {
-        return helpers::unexpectedError(
-            ExportErrorKind::InvalidValue,
-            "invalid recall timestamp");
+        return helpers::unexpectedError("invalid recall timestamp");
       }
       records.push_back({ parsed, parts[i + 1] });
     }
@@ -120,9 +93,7 @@ Result<vector<KeyTrackingEvent>> decodeKeyTrackingEvents(string_view encoded) {
     if (!record.empty()) {
       const size_t sep = record.find(EVENT_FIELD_SEP);
       if (sep == string_view::npos) {
-        return helpers::unexpectedError(
-            ExportErrorKind::InvalidPayload,
-            "invalid key event payload");
+        return helpers::unexpectedError("invalid key event payload");
       }
       events.push_back({
           string(record.substr(0, sep)),

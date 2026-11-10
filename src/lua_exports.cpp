@@ -31,24 +31,10 @@ static const char* g_finger_names[] = {
 };
 
 static const char* g_count_class_names[] = {
-  "MovementChar",
-  "MovementWord",
-  "MovementBigWord",
-  "MovementLine",
-  "MovementParagraph",
-  "MovementSentence",
-  "MovementJump",
-  "EditChar",
-  "EditWord",
-  "EditBigWord",
-  "EditLine",
-  "EditParagraph",
-  "EditSentence",
-  "Join",
+#define X(name, str) str,
+#include "Optimizer/XMacroCountClass.inc"
+#undef X
 };
-
-static_assert(sizeof(g_count_class_names) / sizeof(g_count_class_names[0]) == CountClassCOUNT,
-              "Count class name table must match CountClass enum");
 static_assert(sizeof(VFConfig{}.keys) / sizeof(VFKeyInfo) == KEY_COUNT,
               "C ABI key array size must match Key enum");
 static_assert(
@@ -70,6 +56,8 @@ VFConfig defaultConfigFfi() {
 
 VFConfig g_config_ffi = defaultConfigFfi();
 Config g_config_internal = Config::uniform();
+
+namespace {
 
 void sync_config() {
   switch (g_config_ffi.default_keyboard) {
@@ -125,6 +113,8 @@ void sync_config() {
   }
 }
 
+}  // namespace
+
 }  // namespace VF::LuaExports
 
 using namespace VF::LuaExports;
@@ -176,7 +166,6 @@ VFByteSlice vf_get_warnings() {
   return helpers::byteSlice(warning_storage);
 }
 
-int vf_version() { return 1; }
 const char *vf_version_string() { return VIMF_VERSION; }
 
 const char *vf_abi_hash() { return VF_ABI_HASH; }

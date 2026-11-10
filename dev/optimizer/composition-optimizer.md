@@ -62,7 +62,7 @@ For a diff with N source lines -> M target lines (N > M):
 1. **Partition** N source lines into M contiguous groups, where group k maps to target line k
 2. **Match quality check** -- if joined group content is too different from target (common prefix+suffix ratio < 0.3), skip J for this diff
 3. **Entry gate**: skip the plan unless the first group needs at least one `J`
-4. **Per group**: simulate J joins using `VimCore::joinLines` semantics, then run TransformOptimizer on the single-line residual (joined line vs target line)
+4. **Per group**: simulate J joins using `VimCore::joinLineRange` semantics, then run TransformOptimizer on the single-line residual (joined line vs target line)
 5. **Assemble**: concatenate all groups' sequences (J's + residual + `j` between groups) into one `JoinPlan`
 
 **Partition finding:**
@@ -104,7 +104,7 @@ A* naturally picks whichever path (regular transform, J plan, or text object) pr
 
 ### J simulation fidelity
 
-J plan computation uses `VimCore::joinLines` which matches Neovim's semantics:
+J plan computation uses `VimCore::joinLineRange` which matches Neovim's semantics:
 - Strips leading whitespace from the joined line
 - Adds a space between lines (unless current line ends with whitespace or joined line is empty)
 - Cursor lands at original line length (position where join occurred)
@@ -134,10 +134,11 @@ J plan efforts are included in `computeSuffixEditCosts()` alongside regular tran
 - Because a pure insertion has no starting point, we must handle it from the higher composition level.
 - We perform a similar movement search, but augmented with the option of using o/O if we need a new line, and I/A in place of a final $/^ movement, and i/a otherwise.
 - Each strategy defines a range of valid cursor positions from which its mode-entry command produces the correct edit:
-  - `o`: any column on the line above (for new-line insertions at col 0)
-  - `I`: any column on the target line (inserts at first non-blank)
+  - `o`: any column on the line above (new-line insertions, whether anchored as a trailing `\n` at col 0 or a leading `\n` at end-of-line)
+  - `I`: any column on the target line, when the insert point is where `I` lands (first non-blank, or past the indent on an all-whitespace line)
   - `A`: any column on the target line (appends at end-of-line)
-  - `i`: exact insertion column only (fallback)
+  - `a`: the column before the insert point (col 0 on an empty line)
+  - `i`: exact insertion column only
 - The mode-entry command determines the actual insert position independent of where in the range we land, so the final cursor position after typing + Esc is always `transformResult.goalPos`.
 - When navigating to the valid range, the `NavBoundary` must use the full subset extent, not the target range (see `dev/optimizer/buffer-slicing.md` § Boundary vs Target Range).
 

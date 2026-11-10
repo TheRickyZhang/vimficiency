@@ -6,34 +6,43 @@ export {
 
 namespace Search {
 
-template<class State, class PriorityQueue, class CostMap, class InGoalFn>
-inline bool enqueueRangeState(State&& state,
-                              PriorityQueue& pq,
-                              CostMap& costMap,
-                              double maxEffort,
-                              InGoalFn&& isGoalState) {
+// Shared A* admission for range-goal searches: effort cap, then cost-map
+// relaxation. Terminal states are never cached so distinct paths to the same
+// goal cell can each emit a result.
+template<class State, class CostMap, class IsTerminalFn>
+inline bool admitRangeState(const State& state,
+                            CostMap& costMap,
+                            double maxEffort,
+                            IsTerminalFn&& isTerminal) {
   if (state.getEffort() > maxEffort) return false;
 
   const double newCost = state.getCost();
-  const auto key = state.getKey();
-  auto it = costMap.find(key);
-  const bool stateInGoal = isGoalState(state.getPos());
+  auto it = costMap.find(state.getKey());
 
   if (it == costMap.end()) {
-    if (!stateInGoal) {
-      costMap.emplace(key, newCost);
+    if (!isTerminal(state)) {
+      costMap.emplace(state.getKey(), newCost);
     }
-    pq.push(std::move(state));
     return true;
   }
 
   if (newCost <= it->second) {
     it->second = newCost;
-    pq.push(std::move(state));
     return true;
   }
 
   return false;
+}
+
+template<class State, class PriorityQueue, class CostMap, class IsTerminalFn>
+inline bool enqueueRangeState(State&& state,
+                              PriorityQueue& pq,
+                              CostMap& costMap,
+                              double maxEffort,
+                              IsTerminalFn&& isTerminal) {
+  if (!admitRangeState(state, costMap, maxEffort, isTerminal)) return false;
+  pq.push(std::move(state));
+  return true;
 }
 
 template<class State, class PriorityQueue, class CostMap, class PendingByStart,

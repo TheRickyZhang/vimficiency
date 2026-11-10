@@ -44,10 +44,7 @@ optional<CompositionRangeMotionSearch> buildCompositionRangeMotionSearch(
   CursorPos localRangeEnd(targetLine - beginLine, endCol);
   CharInterval motionRange(CharRange(localRangeBegin, localRangeEnd), subset);
 
-  CursorPos subsetFirst(0, 0);
-  CursorPos subsetEnd(static_cast<int>(subset.size()) - 1,
-      subset.back().effectiveSize());
-  NavBoundary subsetBoundary(subset, subsetFirst, subsetEnd,
+  NavBoundary subsetBoundary(subset, CursorPos(0, 0), subset.endPos(),
       beginLine > 0 || boundary.hasLinesAbove(),
       endLine <= lines.lastLine() || boundary.hasLinesBelow());
   auto bufferIndexWindow = buildCompositionBufferIndexWindow(lines, beginLine, endLine);
@@ -55,7 +52,6 @@ optional<CompositionRangeMotionSearch> buildCompositionRangeMotionSearch(
   return CompositionRangeMotionSearch{
       std::move(subset),
       beginLine,
-      endLine,
       localCursor,
       localRangeBegin,
       localRangeEnd,

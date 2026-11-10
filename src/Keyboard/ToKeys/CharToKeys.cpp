@@ -2,7 +2,7 @@ module vf.Keyboard.ToKeys.CharToKeys;
 
 import std.compat;
 
-namespace CharMappings {
+namespace {
 
 const CharToKeys letters = {
   {'a', {Key::Key_A}}, {'A', {Key::Key_Shift, Key::Key_A}},
@@ -85,8 +85,7 @@ const CharToKeys digitSymbols = {
   {')', {Key::Key_Shift, Key::Key_0}},
 };
 
-// Helper to merge CharToKeys maps
-static CharToKeys merge(std::initializer_list<const CharToKeys*> maps) {
+CharToKeys merge(std::initializer_list<const CharToKeys*> maps) {
   CharToKeys result;
   for (const auto* m : maps) {
     result.insert(m->begin(), m->end());
@@ -94,18 +93,13 @@ static CharToKeys merge(std::initializer_list<const CharToKeys*> maps) {
   return result;
 }
 
-const CharToKeys allPunctuationAndSymbols = merge({
+}  // namespace
+
+const CharToKeys CHAR_TO_KEYS = merge({
+  &letters,
+  &digits,
+  &whitespace,
   &topPunctuation,
   &mainPunctuation,
   &digitSymbols,
-});
-
-} // namespace CharMappings
-
-// Global CHAR_TO_KEYS combining all character categories
-const CharToKeys CHAR_TO_KEYS = CharMappings::merge({
-  &CharMappings::letters,
-  &CharMappings::digits,
-  &CharMappings::whitespace,
-  &CharMappings::allPunctuationAndSymbols,
 });

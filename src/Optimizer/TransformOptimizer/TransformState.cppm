@@ -1,9 +1,11 @@
 export module vf.Optimizer.TransformOptimizer.TransformState;
 
 import std.compat;
+import vf.Utils.HashCombine;
 export import vf.Keyboard.Config;
 export import vf.Effort.RunningEffort;
 export import vf.Interpreter.EditInterpreter;
+export import vf.Optimizer.SequenceBinding;
 export import vf.Types.CharLineRange;
 export import vf.Types.LineCharRange;
 export import vf.Types.LineRange;
@@ -92,11 +94,11 @@ struct TransformStateKey {
 struct TransformStateKeyHash {
   inline size_t operator()(const TransformStateKey& k) const {
     size_t h = k.linesHash;
-    h ^= std::hash<int>{}(k.lineCount) + 0x9e3779b9 + (h << 6) + (h >> 2);
-    h ^= std::hash<int>{}(k.line) + 0x9e3779b9 + (h << 6) + (h >> 2);
-    h ^= std::hash<int>{}(k.col) + 0x9e3779b9 + (h << 6) + (h >> 2);
-    h ^= std::hash<int>{}(static_cast<int>(k.mode)) + 0x9e3779b9 + (h << 6) + (h >> 2);
-    h ^= std::hash<int>{}(k.startIndex) + 0x9e3779b9 + (h << 6) + (h >> 2);
+    hashCombine(h, k.lineCount);
+    hashCombine(h, k.line);
+    hashCombine(h, k.col);
+    hashCombine(h, static_cast<int>(k.mode));
+    hashCombine(h, k.startIndex);
     return h;
   }
 };
@@ -153,36 +155,6 @@ struct TransformPathStep {
 
 // Pure editor mutations used by optimizer exploration and replay verification.
 class TransformSimulator {
-  inline static void applyDeletion(
-      Lines& lines, const CharRange& range, CursorPos& pos,
-      VimCore::LineDeleteContext context) {
-    VimCore::deleteRangeAndUpdatePos(lines, range, pos, Mode::Normal, context);
-  }
-
-  inline static void applyDeletion(
-      Lines& lines, const CharLineRange& range, CursorPos& pos,
-      VimCore::LineDeleteContext context) {
-    VimCore::deleteCharLineRangeAndUpdatePos(
-        lines, range, pos, Mode::Normal, context);
-  }
-
-  inline static void applyDeletion(
-      Lines& lines, const LineCharRange& range, CursorPos& pos,
-      VimCore::LineDeleteContext context) {
-    VimCore::deleteLineCharRangeAndUpdatePos(
-        lines, range, pos, Mode::Normal, context);
-  }
-
-  template<class RangeT>
-  static TransformEditorState afterDeletionImpl(
-      const TransformEditorState& state, const RangeT& range,
-      VimCore::LineDeleteContext context) {
-    TransformEditorState newState = state;
-    applyDeletion(newState.lines_, range, newState.pos_, context);
-    newState.refreshHash();
-    return newState;
-  }
-
 public:
   [[nodiscard]] inline static TransformEditorState withPos(
       const TransformEditorState& state, CursorPos newPos) {
@@ -194,19 +166,11 @@ public:
   [[nodiscard]] inline static TransformEditorState afterDeletion(
       const TransformEditorState& state, const CharRange& range,
       VimCore::LineDeleteContext context = {}) {
-    return afterDeletionImpl(state, range, context);
-  }
-
-  [[nodiscard]] inline static TransformEditorState afterCharLineDeletion(
-      const TransformEditorState& state, const CharLineRange& range,
-      VimCore::LineDeleteContext context = {}) {
-    return afterDeletionImpl(state, range, context);
-  }
-
-  [[nodiscard]] inline static TransformEditorState afterLineCharDeletion(
-      const TransformEditorState& state, const LineCharRange& range,
-      VimCore::LineDeleteContext context = {}) {
-    return afterDeletionImpl(state, range, context);
+    TransformEditorState newState = state;
+    VimCore::deleteRangeAndUpdatePos(
+        newState.lines_, range, newState.pos_, Mode::Normal, context);
+    newState.refreshHash();
+    return newState;
   }
 
   [[nodiscard]] inline static TransformEditorState afterLinewiseDeletion(
@@ -224,16 +188,6 @@ public:
       VimCore::LineDeleteContext context = {}) {
     TransformEditorState newState = state;
     VimCore::deleteLineRangeAndUpdatePos(newState.lines_, range, newState.pos_, context);
-    newState.refreshHash();
-    return newState;
-  }
-
-  [[nodiscard]] inline static TransformEditorState afterOperatorLinewiseDeletion(
-      const TransformEditorState& state, LineRange range,
-      VimCore::LineDeleteContext context = {}) {
-    TransformEditorState newState = state;
-    VimCore::deleteOperatorLineRangeAndUpdatePos(
-        newState.lines_, range, newState.pos_, context);
     newState.refreshHash();
     return newState;
   }
@@ -263,7 +217,7 @@ public:
   [[nodiscard]] inline static TransformEditorState afterJoin(
       const TransformEditorState& state, bool addSpace) {
     TransformEditorState newState = state;
-    VimCore::joinLines(newState.lines_, newState.pos_, addSpace);
+    VimCore::joinLineRange(newState.lines_, newState.pos_, 2, addSpace);
     newState.refreshHash();
     return newState;
   }
@@ -273,7 +227,7 @@ public:
     TransformEditorState newState = state;
     int lineCount = std::max(count, 2);
     if (lineCount == 2) {
-      VimCore::joinLines(newState.lines_, newState.pos_, addSpace);
+      VimCore::joinLineRange(newState.lines_, newState.pos_, 2, addSpace);
     } else {
       VimCore::joinLineRange(
           newState.lines_, newState.pos_, lineCount, addSpace);
@@ -334,15 +288,6 @@ public:
   inline const RunningEffort& getRunningEffort() const { return runningEffort; }
   inline std::shared_ptr<const TransformPathStep> getPathTail() const { return pathTail_; }
 
-  // -----------------------------------------------------------------------------
-  // Debug/Output
-  // -----------------------------------------------------------------------------
-  inline std::string toString() const {
-    std::ostringstream oss;
-    oss << *this;
-    return oss.str();
-  }
-
   inline friend std::ostream& operator<<(std::ostream& os, const TransformState& state) {
     os << state.seq_ << " (cost=" << state.cost_ << ")";
     return os;
@@ -354,11 +299,6 @@ public:
 class TransformStateFactory {
   const Config& config;
   double effortWeight;
-
-  inline static std::string countedCommandString(int count, std::string_view baseCmd) {
-    if (count <= 0) return std::string(baseCmd);
-    return std::to_string(count) + std::string(baseCmd);
-  }
 
   inline static void recordPathStep(TransformState& state,
                              const TransformState& base,

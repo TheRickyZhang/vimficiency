@@ -93,16 +93,10 @@ LandingNavResult NavOptimizer::optimize(
   int totalPops = 0;
   const double maxEffort = userEffort * params.exploreFactor;
 
-  auto scoreState = [&](CursorPos pos, double effort) {
-    double distance = NavHeuristic::distanceToRange(range, pos);
-    return params.effortWeight * effort + params.distanceWeight * distance;
-  };
+  auto isInGoalRange = [&](const NavState& s) { return range.containsPos(s.getPos()); };
 
-  auto isInGoalRange = [&](CursorPos pos) {
-    return range.containsPos(pos);
-  };
-
-  NavStateFactory states(config, scoreState);
+  NavStateFactory states(
+      config, NavHeuristic::StateScorer{range, params.effortWeight, params.distanceWeight});
   NavState initialState = states.initial(startPos);
   pq.push(initialState);
   costMap[initialState.getKey()] = initialState.getCost();
@@ -124,7 +118,7 @@ LandingNavResult NavOptimizer::optimize(
       stats.incrementNodesExplored();
       double effort = s.getRunningEffort().getEffort();
 
-      if ((params.maxResultsPerEndPos > 1)) {
+      if (params.maxResultsPerEndPos > 1) {
         allResults.emplace_back(s.getSequence(), effort, pos);
         uniquePositionsSeen.insert(stateKey);
         if (allResults.size() >= static_cast<size_t>(params.maxResults)) {
@@ -154,7 +148,7 @@ LandingNavResult NavOptimizer::optimize(
 
     stats.incrementNodesExplored();
     debug("\"" + s.getSequence().str() + "\"", s.getCost());
-    stats.maybeRecordExploredState(pos.line, pos.col, s.getEffort(), s.getSequence());
+    stats.maybeRecordExploredState(pos.line, pos.col, s.getEffort(), s.getSequence().str());
 
     auto onStatic = [&](KSId motionId, const KeyedSequence& ks, CursorPos endpoint) {
           NavState next = states.afterMotion(s, ks, bank[motionId], endpoint);
@@ -180,16 +174,18 @@ LandingNavResult NavOptimizer::optimize(
     explorer.exploreCountedMotions(s, onCounted, onFMotion);
   }
 
-  debug("---costMap---");
-  map<Pos, double> tempMap(costMap.begin(), costMap.end());
-  for (auto [state, cost] : tempMap) {
-    auto [l, c] = state;
-    debug(l, c, cost);
+  if constexpr (DEBUG_ENABLED) {
+    debug("---costMap---");
+    map<Pos, double> tempMap(costMap.begin(), costMap.end());
+    for (auto [state, cost] : tempMap) {
+      auto [l, c] = state;
+      debug(l, c, cost);
+    }
   }
 
   vector<LandingResult> results;
   int uniqueCount;
-  if ((params.maxResultsPerEndPos > 1)) {
+  if (params.maxResultsPerEndPos > 1) {
     results = std::move(allResults);
     uniqueCount = static_cast<int>(uniquePositionsSeen.size());
   } else {

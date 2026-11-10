@@ -45,8 +45,6 @@ VF::LuaExports::Result<string> computeDiffsImpl(
     diffs = VimDiff::calculate(initialLines, goalLines, g_config_internal).diffs;
   } else if (diff_algorithm == DiffAlgorithm::MyersDiff) {
     diffs = MyersDiff::calculate(initialLines, goalLines);
-  } else {
-    diffs = {};
   }
   return payload::encodeDiffRegions(diffs);
 }

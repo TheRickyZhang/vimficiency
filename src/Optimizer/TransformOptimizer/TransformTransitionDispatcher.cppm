@@ -4,6 +4,7 @@ module;
 export module vf.Optimizer.TransformOptimizer.TransformTransitionDispatcher;
 
 import std.compat;
+import vf.Optimizer.FrontierCommon;
 export import vf.Optimizer.TransformOptimizer.TransformOptimizer;
 export import vf.Optimizer.SearchStats;
 export import vf.Optimizer.TransformOptimizer.TransformState;
@@ -36,21 +37,6 @@ struct TransformStateComparator {
 
 using TransformPriorityQueue = std::priority_queue<TransformState, std::vector<TransformState>, TransformStateComparator>;
 using TransformCostMap = std::unordered_map<TransformStateKey, double, TransformStateKeyHash>;
-
-inline double weightedHeuristicCost(const Lines& lines, int leftColOffset, int rightColOffset,
-                                    double distanceWeight) {
-  int total = 0;
-  for (size_t i = 0; i < lines.size(); i++) {
-    int lineLen = static_cast<int>(lines[i].size());
-    if (i == 0) lineLen -= leftColOffset;
-    if (i == lines.size() - 1) lineLen -= rightColOffset;
-    total += std::max(0, lineLen);
-  }
-  total += (static_cast<int>(lines.size()) - 1) * 2;
-  return distanceWeight * static_cast<double>(total);
-}
-
-// Forward declarations for concept signatures — avoids pulling in TransformOptimizer.h.
 
 // GoalHandlerCore: the shared contract between DeletionGoalHandler and
 // ChangeGoalHandler.  Both are consumed by optimizeImpl and
@@ -117,8 +103,7 @@ struct TransformTransitionDispatcher {
   const std::vector<char>& startActive;
   const EffortBank& bank;
   const TransformBoundary& transformBoundary;
-  const Config& config;
-  double effortWeight;
+  const TransformStateFactory& states;
   double distanceWeight;
   int leftColOffset;
   int rightColOffset;
@@ -130,20 +115,16 @@ struct TransformTransitionDispatcher {
         std::move(state), pq, costMap, pendingByStart, startActive);
   }
 
-  TransformStateFactory stateFactory() const {
-    return TransformStateFactory(config, effortWeight);
-  }
-
   void continueWithEdit(TransformEditorState&& next, const SequenceBinding& sourceCmd, double hCost) {
     const DotRepeat& last = baseState.getLastEdit();
     bool isDot = !last.empty() &&
                  last.count == sourceCmd.count &&
                  last.base == sourceCmd.base.seq.view();
     if (isDot) {
-      emitState(stateFactory().afterCommand(
+      emitState(states.afterCommand(
           baseState, std::move(next), ".", bank[KSId::Period], hCost));
     } else {
-      emitState(stateFactory().afterEditCommand(
+      emitState(states.afterEditCommand(
           baseState, std::move(next), sourceCmd.count, sourceCmd.base.seq.view(),
           sourceCmd.effort, hCost));
     }
@@ -153,10 +134,10 @@ struct TransformTransitionDispatcher {
     assert(motionCmd.count == 0 && "Boundary motions should not carry counts");
     TransformEditorState next = TransformSimulator::withPos(
         baseState.getEditorState(), newPos);
-    emitState(stateFactory().afterCommand(
+    emitState(states.afterCommand(
         baseState, std::move(next), motionCmd.base.seq.view(), motionCmd.effort,
-        weightedHeuristicCost(baseState.getLines(), leftColOffset,
-                              rightColOffset, distanceWeight)));
+        distanceWeight * textDistanceEstimate(baseState.getLines(), leftColOffset,
+                                              rightColOffset)));
   }
 
   void emitChangeGoalForResolved(const TransformEditorState& afterDeletion,
@@ -167,10 +148,6 @@ struct TransformTransitionDispatcher {
         case VimCore::ResolvedDeleteRangeKind::Characterwise:
           emitGoalStates(mode.onDeletionGoal(
               afterDeletion, baseState, resolved.charRange, sourceCmd));
-          return;
-        case VimCore::ResolvedDeleteRangeKind::CharLine:
-          emitGoalStates(mode.onDeletionGoal(
-              afterDeletion, baseState, resolved.charLineRange, sourceCmd));
           return;
         case VimCore::ResolvedDeleteRangeKind::LineChar:
           emitGoalStates(mode.onDeletionGoal(
@@ -200,7 +177,7 @@ struct TransformTransitionDispatcher {
     bool deleteReachedGoal = false;
     if (action.deleteEffectValid) {
       afterDeletion = TransformSimulator::afterResolvedDeletion(
-          baseState.getEditorState(), deleteEffect, lineDeleteContext());
+          baseState.getEditorState(), deleteEffect, lineDeleteContext(transformBoundary));
       deleteReachedGoal = finishTransition(*afterDeletion, sourceCmd);
     }
     if constexpr (PureDeletion) {
@@ -212,7 +189,7 @@ struct TransformTransitionDispatcher {
       if (action.changeEffectValid) {
         TransformEditorState afterChangeDeletion =
             TransformSimulator::afterResolvedChangeDeletion(
-                baseState.getEditorState(), changeEffect, lineDeleteContext());
+                baseState.getEditorState(), changeEffect, lineDeleteContext(transformBoundary));
         if (canEmitGoalFrom(afterChangeDeletion)) {
           emitChangeGoalForResolved(afterChangeDeletion, changeEffect, sourceCmd);
           return;
@@ -230,7 +207,7 @@ struct TransformTransitionDispatcher {
     }
     TransformEditorState afterDeletion =
         TransformSimulator::afterMultiLinewiseDeletion(
-            baseState.getEditorState(), range, lineDeleteContext());
+            baseState.getEditorState(), range, lineDeleteContext(transformBoundary));
     if (!finishTransition(afterDeletion, sourceCmd)) return;
     if constexpr (PureDeletion) {
       continueWithEdit(std::move(afterDeletion), sourceCmd, 0.0);
@@ -280,7 +257,7 @@ private:
     continueWithEdit(
         std::move(next),
         sourceCmd,
-        weightedHeuristicCost(nextLines, leftColOffset, rightColOffset, distanceWeight));
+        distanceWeight * textDistanceEstimate(nextLines, leftColOffset, rightColOffset));
     return false;
   }
 
@@ -299,13 +276,6 @@ private:
     } else {
       return mode.isGoalReached(state);
     }
-  }
-
-  VimCore::LineDeleteContext lineDeleteContext() const {
-    return {
-        .hasLinesAbove = transformBoundary.hasLinesAbove(),
-        .hasLinesBelow = transformBoundary.hasLinesBelow(),
-    };
   }
 
   bool cursorOutsideEditableRegion(const TransformEditorState& state) const {

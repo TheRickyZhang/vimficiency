@@ -18,15 +18,9 @@ See `boundary-logic.md` for when to use each variant.
 
 String manipulation helpers, including `flattenLines()` for buffer-to-string conversion used in edit distance analysis.
 
-## Sequence Formatting (`Interpreter/SequenceFormatting.cppm`)
+## Sequence Parsing (`Interpreter/SequenceParser.cppm`)
 
-Formatting utility for Vim command sequence display:
-
-```cpp
-std::string formatSequenceForDisplay(std::string_view seq);
-```
-
-**Tokenization**: Uses `parseSequenceStrings()` from `SequenceParser.cppm` which splits sequences into:
+`parseSequence()` / `parseSequenceStrings()` split sequences into:
 - Motions: `w`, `3j`, `fa`, `;`, `<C-d>`
 - Edits/Changes: `ciw`, `dd`, `D`, `s`
 - Typed text: Characters typed in insert mode (between change command and `<Esc>`)
@@ -45,11 +39,7 @@ The error channel is consumed only at the FFI boundary
 optimizer-produced sequences and call `.value()`. See the ADR
 section "Error-handling boundary" for the rationale.
 
-`formatSequenceForDisplay` is an exception to the assert-fast rule:
-it's fed captured user keystrokes via Lua and falls back to the raw
-string on parse failure.
-
-**Usage**: FFI output and debug display. Raw sequences are used internally for execution and cost calculation.
+**Usage**: FFI tokenization and `SequenceDisplay`. Raw sequences are used internally for execution and cost calculation.
 
 ## Debug (`Debug.cppm`)
 

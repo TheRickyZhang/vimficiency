@@ -37,10 +37,6 @@ void motionGe(CursorPos& pos, const Lines& lines, bool big);
 void motionParagraphPrev(CursorPos& pos, const Lines& lines);
 void motionParagraphNext(CursorPos& pos, const Lines& lines);
 
-// Helpers for paragraph edges (used internally and by text objects)
-void moveToParagraphStart(CursorPos& pos, const Lines& lines);
-void moveToParagraphEnd(CursorPos& pos, const Lines& lines);
-
 // =============================================================================
 // Sentence Motions
 // =============================================================================
@@ -48,10 +44,11 @@ void moveToParagraphEnd(CursorPos& pos, const Lines& lines);
 void motionSentencePrev(CursorPos& pos, const Lines& lines);
 void motionSentenceNext(CursorPos& pos, const Lines& lines);
 
-// Operator-pending sentence motion: runs Neovim's findsent and leaves cursor
-// at the raw motion target (potentially col == lines[line].size() to represent
-// the NUL/past-EOL position). Returns true on success, false if findsent
-// would FAIL (operator should not apply). Used by sentenceOperatorEndpoint.
+// Port of Neovim's findsent: leaves cursor at the raw motion target
+// (potentially col == lines[line].size() to represent the NUL/past-EOL
+// position). Returns true on success, false if findsent would FAIL (operator
+// should not apply). Motions clamp the result; sentenceOperatorEndpoint and
+// the sentence text object use it raw.
 bool findSentenceForOperator(CursorPos& cursor, const Lines& lines, bool forward, int count);
 
 // Operator-pending word motions: faithful ports of Neovim's fwd_word /
@@ -60,8 +57,6 @@ bool findSentenceForOperator(CursorPos& cursor, const Lines& lines, bool forward
 // rule that the non-operator motions don't.
 void motionWForOperator(CursorPos& pos, const Lines& lines, bool big);
 void motionEForOperator(CursorPos& pos, const Lines& lines, bool big);
-void motionBForOperator(CursorPos& pos, const Lines& lines, bool big);
-void motionGeForOperator(CursorPos& pos, const Lines& lines, bool big);
 
 // Count-aware operator-pending word motions. Mirror Vim's bck_word /
 // bckend_word / fwd_word / end_word with a count; return `false` when the
@@ -96,7 +91,6 @@ CurrentWordResult currentWord(CursorPos cursor, const Lines& lines,
 // Returns destination column, or -1 if target not found
 // forward: true for f/t, false for F/T
 // till: true for t/T (stop one short), false for f/F (land on target)
-int findCharInLine(char target, std::string_view line, int startCol, bool forward, bool till);
 int findCharInLine(char target, std::string_view line, int startCol,
                    bool forward, bool till, int count, bool repeat);
 

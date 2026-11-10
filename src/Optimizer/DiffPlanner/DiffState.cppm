@@ -42,14 +42,9 @@ struct DiffState {
   inline Lines deletedLines() const { return Lines::unflatten(deletedText); }
   inline Lines insertedLines() const { return Lines::unflatten(insertedText); }
 
-  // Derived accessors
-  inline int origLineStart() const { return beginPos.line; }
-  inline int origLineCount() const { return deletedLines().size(); }
   inline int newLineStart() const { return beginPos.line; }
-  inline int newLineCount() const { return insertedLines().size(); }
 
   inline int origCharCount() const { return static_cast<int>(deletedText.size()); }
-  inline int newCharCount() const { return static_cast<int>(insertedText.size()); }
 
   // Convenience: is this a pure insertion, deletion, or replacement?
   // With half-open semantics: empty range (beginPos == endPos) means no deleted content
@@ -96,8 +91,6 @@ std::optional<DiffState> calculateContiguousResidualDiff(
 
 class OriginalDiffMapper {
 public:
-  int mapFlatIndex(int originalFlat) const;
-
   DiffState mapDiffToCurrent(
       const DiffState& originalDiff,
       const Lines& originalLines,
@@ -114,6 +107,8 @@ private:
     int delta = 0;
   };
   std::vector<AppliedSpan> applied_;
+
+  int mapFlatIndex(int originalFlat) const;
 };
 
 }  // export

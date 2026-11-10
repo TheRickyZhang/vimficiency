@@ -193,8 +193,7 @@ vector<string> lines(string_view seq, Options opts) {
 
 string inlineText(string_view seq, Options opts) {
   opts.sectionize = false;
-  const vector<string> rendered = tokenizedLines(seq, opts);
-  return rendered.empty() ? "" : rendered.front();
+  return tokenizedLines(seq, opts).front();
 }
 
 string typedChunksInline(const vector<TypedChunk>& chunks, bool tokenize) {
@@ -221,9 +220,8 @@ vector<string> prefixedLines(
     Options opts,
     string_view suffix) {
   vector<string> rendered = lines(seq, opts);
-  const string first = rendered.empty() ? "" : rendered.front();
   vector<string> out;
-  out.push_back(string(prefix) + first + string(suffix));
+  out.push_back(string(prefix) + rendered.front() + string(suffix));
 
   const string continuation(prefix.size(), ' ');
   for (size_t i = 1; i < rendered.size(); i++) {

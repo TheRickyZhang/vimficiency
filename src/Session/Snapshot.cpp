@@ -15,8 +15,8 @@ string formatSnapshotParseError(const SnapshotParseError& error) {
       return "bad header";
     case SnapshotParseErrorKind::UnsupportedVersion:
       return "unsupported version";
-    case SnapshotParseErrorKind::MissingFilename:
-      return "No filename";
+    case SnapshotParseErrorKind::MissingFiletype:
+      return "No filetype";
     case SnapshotParseErrorKind::MissingBufferName:
       return "No buffer name";
     case SnapshotParseErrorKind::MissingCursorPosition:
@@ -53,11 +53,11 @@ expected<Snapshot, SnapshotParseError> parseSnapshot(string_view bytes) {
     return unexpected(SnapshotParseError{SnapshotParseErrorKind::UnsupportedVersion});
   }
 
-  string filename;
-  if(!getline(in, filename)) {
-    return unexpected(SnapshotParseError{SnapshotParseErrorKind::MissingFilename});
+  string filetype;
+  if(!getline(in, filetype)) {
+    return unexpected(SnapshotParseError{SnapshotParseErrorKind::MissingFiletype});
   }
-  
+
   string bufname;
   if(!getline(in, bufname)) {
     return unexpected(SnapshotParseError{SnapshotParseErrorKind::MissingBufferName});
@@ -98,9 +98,8 @@ expected<Snapshot, SnapshotParseError> parseSnapshot(string_view bytes) {
     lines.push_back("");
   }
 
-  Snapshot s(std::move(bufname), std::move(filename), row, col,
-             topRow, bottomRow, windowHeight, scrollAmount, std::move(lines));
-  return s;
+  return Snapshot{std::move(bufname), std::move(filetype), row, col,
+                  topRow, bottomRow, windowHeight, scrollAmount, std::move(lines)};
 }
 
 expected<Snapshot, SnapshotParseError> load_snapshot(const std::filesystem::path& path) {

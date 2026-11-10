@@ -7,15 +7,13 @@ export import vf.Keyboard.PhysicalKeys;
 export {
 
 // Used for physical key presses (calculating effort) only!
-// For semantic tokenization, see parseMovements() in Motion.h
+// For semantic tokenization, see parseMovements() in MovementInterpreter.
 
 class SequenceToKeys {
 public:
-  // std::less<> enables transparent comparison (lookup with string_view without allocation)
-
-  // Build from action + motion maps (they must outlive the tokenizer).
-  SequenceToKeys(const CommandToKeys &actions,
-                    const CommandToKeys &motions);
+  // `notations` are the multi-char tokens matched longest-first; every other
+  // byte falls back to CHAR_TO_KEYS. The map must outlive the tokenizer.
+  explicit SequenceToKeys(const CommandToKeys &notations);
 
   PhysicalKeys tokenize(std::string_view s) const;
 

@@ -8,18 +8,28 @@ import vf.Interpreter.SequenceParser;
 
 using namespace std;
 
+namespace VF::LuaExports::helpers {
+
+Result<OptimizerParamOverrides> parseOverrides(string_view text) {
+  auto parsed = parseOptimizerParamOverrides(text);
+  if (!parsed) {
+    return unexpectedError(formatOptimizerParamOverrideErrors(parsed.error()));
+  }
+  return std::move(*parsed);
+}
+
+}  // namespace VF::LuaExports::helpers
+
 namespace VF::LuaExports::logic {
 
 namespace {
 
 bool isCleanBoundaryMode(string_view mode) {
-  if (mode.empty()) return false;
-  if (mode.substr(0, min<size_t>(2, mode.size())) == "no") return false;
-  return mode.front() == 'n';
+  return mode.starts_with('n') && !mode.starts_with("no");
 }
 
-string modePrefix(string_view mode) {
-  return string(mode.substr(0, min<size_t>(2, mode.size())));
+string_view modePrefix(string_view mode) {
+  return mode.substr(0, 2);
 }
 
 bool endsWithOperatorEdit(const string& sequence) {
@@ -32,14 +42,13 @@ bool endsWithOperatorEdit(const string& sequence) {
 pair<int, int> findDiffRange(const Lines& a, const Lines& b) {
   int firstDiff = -1;
   int lastDiff = -1;
-  const size_t maxLen = max(a.size(), b.size());
-  for (size_t i = 0; i < maxLen; ++i) {
-    const string* lhs = i < a.size() ? &a[i] : nullptr;
-    const string* rhs = i < b.size() ? &b[i] : nullptr;
-    if (lhs == rhs) continue;
+  const int maxLen = max(ssize(a), ssize(b));
+  for (int i = 0; i < maxLen; ++i) {
+    const string* lhs = i < ssize(a) ? &a[i] : nullptr;
+    const string* rhs = i < ssize(b) ? &b[i] : nullptr;
     if (!lhs || !rhs || *lhs != *rhs) {
-      if (firstDiff < 0) firstDiff = static_cast<int>(i);
-      lastDiff = static_cast<int>(i);
+      if (firstDiff < 0) firstDiff = i;
+      lastDiff = i;
     }
   }
   return {firstDiff, lastDiff};
@@ -59,8 +68,8 @@ Result<string> buildKeySequence(string_view encoded) {
       if (i + 1 < events.size()) {
         const auto& next = events[i + 1];
         const bool sameKey = curr.keyTyped == next.keyTyped;
-        const string currMode = modePrefix(curr.mode);
-        const string nextMode = modePrefix(next.mode);
+        const string_view currMode = modePrefix(curr.mode);
+        const string_view nextMode = modePrefix(next.mode);
         if (sameKey && currMode == "no" && nextMode == "no" &&
             endsWithOperatorEdit(out + curr.keyTyped)) {
           out += curr.keyTyped;
@@ -98,7 +107,7 @@ pair<int, int> computeSearchRegion(
     maxRow = max(maxRow, lastDiff);
   }
 
-  const int bufferLen = static_cast<int>(max(startLines.size(), endLines.size()));
+  const int bufferLen = max(ssize(startLines), ssize(endLines));
   const int regionStart = max(0, minRow - padding);
   const int regionEnd = min(bufferLen - 1, maxRow + padding);
   return {regionStart, regionEnd};
@@ -109,7 +118,7 @@ int resolveRecallCutoffIndex(
     int64_t targetHrtime,
     int budget) {
   int lo = 0;
-  int hi = static_cast<int>(records.size()) - 1;
+  int hi = ssize(records) - 1;
   int best = -1;
   while (lo <= hi) {
     const int mid = (lo + hi) / 2;
@@ -142,7 +151,7 @@ int manualEvictReason(
   if (abs(cursorRow - startRow) + 1 > maxSearchLines) {
     return MANUAL_EVICT_DRIFT;
   }
-  if (hasLastKey && nowNs - lastKeyTimeNs > static_cast<int64_t>(manualIdleTimeoutSeconds) * 1000000000LL) {
+  if (hasLastKey && nowNs - lastKeyTimeNs > manualIdleTimeoutSeconds * 1000000000LL) {
     return MANUAL_EVICT_IDLE;
   }
   return MANUAL_EVICT_NONE;

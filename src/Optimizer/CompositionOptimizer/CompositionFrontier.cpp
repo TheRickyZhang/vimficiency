@@ -1,67 +1,17 @@
-module;
-#include "Utils/CheckMacro.h"
-
 module vf.Optimizer.CompositionOptimizer.CompositionFrontier;
 
 import std.compat;
-import vf.Effort.RunningEffort;
-import vf.Keyboard.ToKeys.MovementToKeys;
 import vf.Optimizer.CompositionOptimizer.CompositionOptimizerParams;
 import vf.Optimizer.CompositionOptimizer.CompositionStrategies;
-import vf.Optimizer.DiffPlanner.DiffState;
-import vf.Optimizer.DiffPlanner.MyersDiff;
 import vf.Optimizer.CompositionOptimizer.PlannedEditArtifacts;
-import vf.Optimizer.FrontierCommon;
-import vf.Optimizer.OptimizerParamOverrides;
-import vf.Types.Lines;
-import vf.Utils.Debug;
-import vf.VimCore.VimEditUtils;
 
 using namespace std;
 
 namespace {
 
-// Same single-token + duplicate-CHECK shape as TransformFrontier::EditEmitter.
-// Each emitting site below must produce a token disjoint from every other; a
-// duplicate is a programmer error and aborts in release.
-struct CompositionEmitter {
-  vector<Suggestion>& items;
-  unordered_set<string> emittedTokens;
-  const RunningEffort& acceptedEffort;
-  double acceptedCost;
-  double effortWeight;
-  double distanceWeight;
-  const Config& config;
-
-  double costDiffFor(string_view token) const {
-    RunningEffort candidate(globalSequenceToKeys().tokenize(token), config);
-    RunningEffort merged = RunningEffort::merge(acceptedEffort, candidate, config);
-    return merged.getEffort() - acceptedCost;
-  }
-
-  void emit(string_view token, CursorPos landingPos, double distance = 0.0) {
-    Suggestion suggestion{
-        .token = Token{token},
-        .landingPos = landingPos,
-    };
-    updateSuggestionMetrics(
-        suggestion, costDiffFor(token), distance,
-        effortWeight, distanceWeight);
-    CHECK(emittedTokens.insert(string(suggestion.token)).second,
-          "duplicate CompositionFrontier token; fix enumerator overlap");
-    items.push_back(std::move(suggestion));
-  }
-};
-
-bool cursorInInsertionRange(CursorPos cursor, int targetLine,
-                            int beginCol, int endCol) {
-  return cursor.line == targetLine &&
-         cursor.col >= beginCol && cursor.col < endCol;
-}
-
 void emitInsertionStrategy(const CompositionFrontierQuery& query,
                            const CompositionStrategies::Insertion& s,
-                           CompositionEmitter& emitter) {
+                           SuggestionEmitter& emitter) {
   if (!cursorInInsertionRange(query.cursor, s.targetLine, s.beginCol, s.endCol)) {
     return;
   }
@@ -70,46 +20,17 @@ void emitInsertionStrategy(const CompositionFrontierQuery& query,
 
 void emitBracketQuoteStrategy(const CompositionFrontierQuery& query,
                               const CompositionStrategies::BracketQuote& s,
-                              CompositionEmitter& emitter) {
+                              SuggestionEmitter& emitter) {
   if (query.cursor.line != s.line || query.cursor.col != s.col) return;
   emitter.emit(s.structural, s.goalPos);
 }
 
-double diffDistance(const DiffState& diff) {
-  return textDistanceEstimate(diff.deletedLines()) +
-         textDistanceEstimate(diff.insertedLines());
-}
-
-double residualDistanceAfter(const Lines& before,
-                             const Lines& afterStep,
-                             const DiffState& diff) {
-  Lines target = MyersDiff::applyDiffState(diff, before);
-  auto residual = DiffText::calculateContiguousResidualDiff(afterStep, target);
-  if (!residual) return 0.0;
-  return textDistanceEstimate(residual->deletedLines()) +
-         textDistanceEstimate(residual->insertedLines());
-}
-
-// Bare `J` is composition-emitted from any column on the join entry line, as
-// long as one `J` makes progress on the diff without exactly reaching the
-// post-edit fencepost. The fencepost-equal case is owned by TransformFrontier's
-// explorer J lane, so this stays disjoint with that lane too.
+// Activation gate: any column on the join plan's entry line.
 void emitJoinAction(const CompositionFrontierQuery& query,
                     const JoinPlan& joinPlan,
-                    CompositionEmitter& emitter) {
+                    SuggestionEmitter& emitter) {
   if (query.cursor.line != joinPlan.entryLine) return;
-  if (query.cursor.line + 1 >= static_cast<int>(query.lines.size())) return;
-
-  Lines afterLines = query.lines;
-  CursorPos afterPos = query.cursor;
-  VimCore::joinLines(afterLines, afterPos, /*addSpace=*/true);
-  if (afterLines == query.lines) return;
-  if (afterLines == MyersDiff::applyDiffState(query.diff, query.lines)) return;
-
-  double remaining = residualDistanceAfter(query.lines, afterLines, query.diff);
-  if (remaining >= diffDistance(query.diff)) return;
-
-  emitter.emit("J", afterPos, remaining);
+  emitProgressJoin(query.lines, query.cursor, query.diff, emitter);
 }
 
 }  // namespace
@@ -122,7 +43,7 @@ vector<Suggestion> rankCompositionFrontier(
   const double acceptedCost = acceptedEffort.getEffort();
   CompositionOptimizerParams params =
       OptimizerParamOverrides::resolved<CompositionOptimizerParams>(query.overrides);
-  CompositionEmitter emitter{
+  SuggestionEmitter emitter{
       items, {}, acceptedEffort, acceptedCost,
       params.effortWeight, params.distanceWeight, config};
 

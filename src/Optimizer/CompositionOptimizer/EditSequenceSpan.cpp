@@ -15,7 +15,7 @@ std::vector<std::string> rowsFromEditSpans(
   auto pushIfNonEmpty = [&](uint32_t begin, uint32_t end) {
     assert(begin <= end && "row byte range is inverted");
     assert(end <= total && "row byte range exceeds sequence length");
-    if (end > begin && end <= total) {
+    if (end > begin) {
       rows.emplace_back(seq.substr(begin, end - begin));
     }
   };

@@ -7,22 +7,19 @@ import vf.Optimizer.CompositionOptimizer.CompositionStrategies;
 import vf.Optimizer.CompositionOptimizer.PlannedEditArtifacts;
 import vf.Optimizer.DiffPlanner.MyersDiff;
 import vf.Optimizer.FrontierCommon;
+import vf.Types.Mode;
 import vf.VimCore.VimEditUtils;
 
 using namespace std;
 
 namespace Explore::EditHandler {
 
-std::expected<BufferStateSuccess, Rejected> validateBufferState(
+std::expected<bool, Rejected> validateBufferState(
     const Lines& newLines,
     const Lines& currentFencepost,
     const Lines& nextFencepost) {
-  if (newLines == nextFencepost) {
-    return BufferStateSuccess{.advance = true};
-  }
-  if (newLines == currentFencepost) {
-    return BufferStateSuccess{.advance = false};
-  }
+  if (newLines == nextFencepost) return true;
+  if (newLines == currentFencepost) return false;
   return std::unexpected(
       Rejected{"buffer state drifted outside the planned edit scope"});
 }
@@ -72,21 +69,6 @@ bool tokenInBracketQuoteScope(
   return found;
 }
 
-double diffDistance(const DiffState& diff) {
-  return textDistanceEstimate(diff.deletedLines()) +
-         textDistanceEstimate(diff.insertedLines());
-}
-
-double residualDistanceAfter(const Lines& before,
-                             const Lines& afterStep,
-                             const DiffState& diff) {
-  Lines target = MyersDiff::applyDiffState(diff, before);
-  auto residual = DiffText::calculateContiguousResidualDiff(afterStep, target);
-  if (!residual) return 0.0;
-  return textDistanceEstimate(residual->deletedLines()) +
-         textDistanceEstimate(residual->insertedLines());
-}
-
 bool tokenInJoinScope(const DiffState& diff, const Lines& lines,
                       CursorPos cursor, std::string_view text,
                       const CompositionOptimizerParams& params,
@@ -95,10 +77,10 @@ bool tokenInJoinScope(const DiffState& diff, const Lines& lines,
   auto joinPlan = computeJoinPlanForDiff(diff, lines, params, config);
   if (!joinPlan) return false;
   if (cursor.line != joinPlan->entryLine) return false;
-  if (cursor.line + 1 >= static_cast<int>(lines.size())) return false;
+  if (cursor.line >= lines.lastLine()) return false;
   Lines after = lines;
   CursorPos afterPos = cursor;
-  VimCore::joinLines(after, afterPos, /*addSpace=*/true);
+  VimCore::joinLineRange(after, afterPos, 2, /*addSpace=*/true);
   if (after == lines) return false;
 
   // Accept J whether it partially progresses the diff or fully completes it
@@ -152,15 +134,13 @@ std::expected<EditSuccess, Rejected> applyEdit(
     Edit::applyEdit(simLines, simPos, simMode, e, &lastEdit);
   }
 
-  EditSuccess result{
+  const bool reachesPostFencepost = simLines == pedView.postFencepost;
+  return EditSuccess{
       .postLines = std::move(simLines),
       .postCursor = simPos,
-      .postMode = simMode,
-      .reachesPostFencepost = false,
-      .entersInsert = (simMode == Mode::Insert),
+      .reachesPostFencepost = reachesPostFencepost,
+      .entersInsert = simMode == Mode::Insert,
   };
-  result.reachesPostFencepost = (result.postLines == pedView.postFencepost);
-  return result;
 }
 
 }  // namespace Explore::EditHandler

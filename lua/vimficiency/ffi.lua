@@ -5,7 +5,6 @@ local M = {
   Finger = core.Finger,
   Hand = core.Hand,
   CountClass = core.CountClass,
-  version = core.version,
   version_string = core.version_string,
   debug_config = core.debug_config,
 }

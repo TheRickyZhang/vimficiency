@@ -1,6 +1,3 @@
-module;
-#include <cassert>
-
 module vf.Keyboard.ToKeys.CommandToKeys;
 
 import std.compat;
@@ -24,34 +21,4 @@ CommandToKeys combineAll(initializer_list<reference_wrapper<const CommandToKeys>
     }
   }
   return res;
-}
-
-CharToKeys combineAllToCharKeySeq(initializer_list<reference_wrapper<const CommandToKeys>> maps) {
-  CharToKeys res;
-  for (const auto& mpref : maps) {
-    const auto& mp = mpref.get();
-    for (const auto& [k, v] : mp) {
-      if (k.size() != 1) assert(false && "key must be length 1");
-      char c = k[0];
-      auto [it, inserted] = res.try_emplace(c, v);
-      if (!inserted) {
-        if (it->second != v) {
-          cerr << "conflict for key '" << c << "'\n";
-        }
-        it->second = v;
-      }
-    }
-  }
-  return res;
-}
-
-vector<string> combineAllToList(initializer_list<reference_wrapper<const CommandToKeys>> maps) {
-  set<string> res;
-  for (const auto& mpref : maps) {
-    const auto& mp = mpref.get();
-    for (const auto& [k, _] : mp) {
-      res.insert(k);
-    }
-  }
-  return vector<string>(res.begin(), res.end());
 }

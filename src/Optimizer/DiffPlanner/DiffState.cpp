@@ -44,8 +44,8 @@ CursorPos flatIndexToPosition(int idx, const Lines& lines) {
     }
     remaining -= lineLen + 1;
   }
-  const int lastLine = static_cast<int>(lines.size()) - 1;
-  return CursorPos(lastLine, static_cast<int>(lines[lastLine].size()));
+  const int lastLine = lines.lastLine();
+  return CursorPos(lastLine, lines.getSize(lastLine));
 }
 
 int positionToFlatIndex(const CursorPos& pos, const Lines& lines) {

@@ -53,15 +53,9 @@ struct CursorPos : Pos {
   // Prefer this over implicit slicing when the intent is to discard targetCol.
   constexpr Pos pos() const { return {line, col}; }
 
-  inline void swap(CursorPos& other) noexcept {
-    std::swap(line, other.line);
-    std::swap(col, other.col);
-    std::swap(targetCol, other.targetCol);
-  }
-
   inline friend std::ostream& operator<<(std::ostream& os, const CursorPos& pos) {
     os << "(" << pos.line << ", " << pos.col << ")";
-    if(pos.targetCol != pos.col) os << "[" << pos.targetCol << "]" << "\n";
+    if(pos.targetCol != pos.col) os << "[" << pos.targetCol << "]";
     return os;
   }
 };

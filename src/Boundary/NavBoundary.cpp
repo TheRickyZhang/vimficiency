@@ -1,19 +1,10 @@
 module vf.Boundary.NavBoundary;
 
 import std.compat;
-import vf.Boundary.TransformBoundary;
 
-const NavBoundary& NavBoundary::noParent() {
-  static const NavBoundary instance{};
-  return instance;
-}
+NavBoundary::NavBoundary(const Lines& lines, CursorPos beginPos, CursorPos endPos)
+    : NavBoundary(lines, beginPos, endPos, false, false) {}
 
-// Construct from buffer context, optionally inheriting from parent
-NavBoundary::NavBoundary(const Lines& lines, CursorPos beginPos, CursorPos endPos,
-                               const NavBoundary& parent)
-    : ctx_(lines, beginPos, endPos, parent.ctx_) {}
-
-// Construct with explicit external context flags (for FFI)
 NavBoundary::NavBoundary(const Lines& lines, CursorPos beginPos, CursorPos endPos,
                                bool hasLinesAbove, bool hasLinesBelow)
     : ctx_(lines, beginPos, endPos, hasLinesAbove, hasLinesBelow) {}

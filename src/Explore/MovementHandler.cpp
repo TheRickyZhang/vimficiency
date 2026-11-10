@@ -12,20 +12,15 @@ namespace {
 expected<MotionSuccess, Rejected> finishMove(
     const Lines& lines,
     CursorPos newCursor,
-    string appendedSeq,
     const NavBoundary& boundary) {
   if (!lines.contains(newCursor)) {
     return unexpected(Rejected{"motion landed outside the current buffer"});
   }
-  const int lastLine = static_cast<int>(lines.size()) - 1;
-  const int lastLineLength = static_cast<int>(lines[lastLine].size());
-  if (!boundary.isPositionInBounds(newCursor, lastLine, lastLineLength)) {
+  if (!boundary.isPositionInBounds(newCursor, lines.lastLine(),
+                                   lines.back().size())) {
     return unexpected(Rejected{"motion landed outside the allowed boundary"});
   }
-  return MotionSuccess{
-      .newCursor = newCursor,
-      .appendedSeq = std::move(appendedSeq),
-  };
+  return MotionSuccess{.newCursor = newCursor};
 }
 
 }  // namespace
@@ -44,18 +39,14 @@ std::expected<MotionSuccess, Rejected> applyMovement(
         formatMovementParseError(parsed.error())});
   }
   return finishMove(
-      lines,
-      simulateMovements(cursor, text, lines, navContext),
-      string(text),
-      boundary);
+      lines, simulateMovements(cursor, text, lines, navContext), boundary);
 }
 
 std::expected<MotionSuccess, Rejected> acceptCursorMove(
     const Lines& lines,
     CursorPos newCursor,
-    std::string_view rawKeys,
     const NavBoundary& boundary) {
-  return finishMove(lines, newCursor, string(rawKeys), boundary);
+  return finishMove(lines, newCursor, boundary);
 }
 
 } // namespace Explore::MovementHandler

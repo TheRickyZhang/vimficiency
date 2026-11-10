@@ -16,11 +16,6 @@ struct CharLineRange {
   inline bool isValid() const {
     return begin.isValid() && endLine > begin.line;
   }
-
-  inline int lineCountTouched() const {
-    if (!isValid()) return 0;
-    return endLine - begin.line;
-  }
 };
 
 constexpr CharLineRange CHAR_LINE_RANGE_OUTSIDE_BOUNDARY(

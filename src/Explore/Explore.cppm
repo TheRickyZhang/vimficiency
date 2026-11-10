@@ -58,19 +58,15 @@ inline int phaseIndex(const Phase& p) {
 
 // Per-State edit span list, sized to the composition optimizer's hard cap of
 // 16 edits. Fixed storage keeps undo/redo snapshots allocation-free at the
-// cost of ~128 bytes per snapshot. Equality intentionally compares only the
-// active prefix `[0, size)` so trailing zero-initialized entries don't break
-// State::operator==.
+// cost of ~128 bytes per snapshot. Equality compares only the active prefix
+// `[0, size)` so trailing zero-initialized entries don't break State equality.
 struct EditSpanList {
   std::array<EditSequenceSpan, 16> spans{};
   uint8_t size = 0;
 
   inline bool operator==(const EditSpanList& other) const {
-    if (size != other.size) return false;
-    for (uint8_t i = 0; i < size; ++i) {
-      if (!(spans[i] == other.spans[i])) return false;
-    }
-    return true;
+    return size == other.size &&
+           std::equal(spans.begin(), spans.begin() + size, other.spans.begin());
   }
 
   inline void push(EditSequenceSpan s) {
@@ -93,11 +89,12 @@ struct State {
   // Plan-aligned byte spans for completed edits; undo/redo pops in lockstep.
   EditSpanList editSpans;
 
-  bool operator==(const State&) const = default;
-};
+  inline uint32_t seqEnd() const { return seq.size(); }
+  inline uint32_t spanBegin() const {
+    return hasPartialEditSpan ? partialEditSpanBegin : seqEnd();
+  }
 
-struct PlanReconfigureResult {
-  bool resetState = false;
+  bool operator==(const State&) const = default;
 };
 
 // Action outcomes. Successful transitions return void; the new live state
@@ -142,14 +139,11 @@ public:
 
   bool isCompleted() const;
 
-  inline const Lines& goalLines() const { return goalLines_; }
-  inline CursorPos goalPos() const { return goalPos_; }
-
   // Half-open [begin, end) target for the current phase: edit diff range for
   // Navigate/Transform/Insert(i), final goal point for Navigate(totalEdits).
   // Insert(i) reports the same diff range as Navigate/Transform(i); whether
   // to render it is a UI policy decision (see tags.lua).
-  std::pair<CursorPos, CursorPos> currentTargetRange() const;
+  CharRange currentTargetRange() const;
 
   // `overrides` carries the explore-session's optimizer tweaks (resolved
   // from sidecar + user setup); null = use C++ defaults. Same blob shape
@@ -158,8 +152,8 @@ public:
       int maxCount,
       const OptimizerParamOverrides* overrides = nullptr,
       SuggestionSortMode sortMode = SuggestionSortMode::Effort) const;
-  PlanReconfigureResult reconfigurePlan(
-      CompositionOptimizerParams compositionParams);
+  // Returns true when the new plan differs and live state was reset.
+  bool reconfigurePlan(CompositionOptimizerParams compositionParams);
 
   // Explored/optimal rows are plan-aligned; user input has no such boundary.
   struct HeaderRows {
@@ -268,8 +262,6 @@ private:
   // post-final-edit nav segment still accepts cursor movement.
   std::expected<int, Rejected> requireNavigateOrTransform(
       std::string_view action) const;
-
-  std::expected<int, Rejected> requireTransform(std::string_view action) const;
 
   // Edit-bearing gate: succeed iff phase is Navigate/Transform and the index
   // references a real planned edit. Use this before plannedEditAt(...).

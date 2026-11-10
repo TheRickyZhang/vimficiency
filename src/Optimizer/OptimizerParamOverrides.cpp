@@ -1,5 +1,4 @@
 module;
-#include <fast_float/fast_float.h>
 #include "Optimizer/OptimizerParamFields.h"
 
 module vf.Optimizer.OptimizerParamOverrides;
@@ -8,22 +7,9 @@ import std.compat;
 import vf.Optimizer.CompositionOptimizer.CompositionOptimizerParams;
 import vf.Optimizer.NavOptimizer.NavOptimizerParams;
 import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
+import vf.Utils.ParseNumber;
 
 namespace {
-
-std::optional<int> parseInt(std::string_view s) {
-  int v = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), v);
-  if (ec != std::errc{} || ptr != s.data() + s.size()) return std::nullopt;
-  return v;
-}
-
-std::optional<double> parseDouble(std::string_view s) {
-  double v = 0.0;
-  auto [ptr, ec] = fast_float::from_chars(s.data(), s.data() + s.size(), v);
-  if (ec != std::errc{} || ptr != s.data() + s.size()) return std::nullopt;
-  return v;
-}
 
 std::optional<bool> parseBool(std::string_view s) {
   if (s == "1" || s == "true") return true;

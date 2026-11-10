@@ -742,6 +742,19 @@ function M.strip_recall_pre_resolution(typed_raw)
   end
 end
 
+--- Drop the Vimfy trigger key from every active recall record.
+function M.uncount_recall_trigger()
+  for _, id in ipairs(recall_id_order) do
+    local rec = session_records[id]
+    if rec and rec.status == "active" and rec.key_seq then
+      local popped = key_tracking.pop_trigger(rec.key_seq)
+      if popped > 0 then
+        rec.key_count = math.max(0, (rec.key_count or 0) - popped)
+      end
+    end
+  end
+end
+
 -- Test-only pure helpers.
 M._pure = {
   resolve_recall_cutoff = resolve_recall_cutoff_pure,

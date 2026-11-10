@@ -159,10 +159,6 @@ function M.decode_string_list(encoded)
   return out
 end
 
-function M.version()
-  return M.lib.vf_version()
-end
-
 function M.version_string()
   return ffi.string(M.lib.vf_version_string())
 end

@@ -4,7 +4,6 @@
 import std.compat;
 import vf.LuaExports.Common;
 import vf.Interpreter.MovementInterpreter;
-import vf.Interpreter.SequenceFormatting;
 import vf.Interpreter.SequenceParser;
 import vf.Optimizer.CompositionOptimizer.CompositionOptimizerParams;
 import vf.Optimizer.NavOptimizer.NavOptimizerParams;
@@ -17,7 +16,6 @@ namespace helpers = VF::LuaExports::helpers;
 namespace payload = VF::LuaExports::payload;
 namespace logic = VF::LuaExports::logic;
 using VF::LuaExports::ExportError;
-using VF::LuaExports::ExportErrorKind;
 using VF::LuaExports::Result;
 
 namespace {
@@ -52,8 +50,7 @@ VFByteSlice vf_tokenize_movements(const char *seq, size_t seq_len) {
   return helpers::storeBytes(result_storage,
       helpers::requiredBytes(seq, seq_len, "seq")
           .and_then([](string_view seqText) -> Result<string> {
-            const string owned(seqText);
-            return parseMovements(owned)
+            return parseMovements(seqText)
           .transform([](const vector<ParsedMovement>& motions) {
             // All motion-parser output is TokenKind::Movement by construction.
             vector<string> rows;
@@ -66,10 +63,7 @@ VFByteSlice vf_tokenize_movements(const char *seq, size_t seq_len) {
             return helpers::joinWithTrailingNewline(rows);
           })
           .transform_error([](const MovementParseError& error) {
-            return ExportError{
-                .kind = ExportErrorKind::InvalidValue,
-                .message = formatMovementParseError(error),
-            };
+            return ExportError{formatMovementParseError(error)};
           });
           }));
 }
@@ -89,10 +83,7 @@ VFByteSlice vf_tokenize_sequence(const char *seq, size_t seq_len) {
             return helpers::joinWithTrailingNewline(rows);
           })
           .transform_error([](const SequenceParseError& error) {
-            return ExportError{
-                .kind = ExportErrorKind::InvalidValue,
-                .message = formatSequenceParseError(error),
-            };
+            return ExportError{formatSequenceParseError(error)};
           });
           }));
 }
@@ -139,12 +130,12 @@ int vf_resolve_recall_cutoff(
     int64_t target_hrtime,
     int budget) {
   CHECK(budget >= 0, "budget must be non-negative");
-  return helpers::storeIntOr(0,
-      helpers::requiredBytes(encoded_records, encoded_records_len, "encoded_records")
-          .and_then(payload::decodeRecallRecordMeta)
-          .transform([&](const vector<payload::RecallRecordMeta>& records) {
-            return logic::resolveRecallCutoffIndex(records, target_hrtime, budget);
-          }));
+  return helpers::requiredBytes(encoded_records, encoded_records_len, "encoded_records")
+      .and_then(payload::decodeRecallRecordMeta)
+      .transform([&](const vector<payload::RecallRecordMeta>& records) {
+        return logic::resolveRecallCutoffIndex(records, target_hrtime, budget);
+      })
+      .value_or(0);
 }
 
 int vf_manual_evict_reason(
@@ -165,15 +156,6 @@ int vf_manual_evict_reason(
       now_ns,
       max_search_lines,
       manual_idle_timeout_seconds);
-}
-
-VFByteSlice vf_format_sequence(const char *seq, size_t seq_len) {
-  static string result_storage;
-  return helpers::storeBytes(result_storage,
-      helpers::requiredBytes(seq, seq_len, "seq")
-          .transform([](string_view seqText) {
-            return formatSequenceForDisplay(seqText);
-          }));
 }
 
 // Lua settings_schema consumes these defaults without mirroring C++ values.
@@ -246,33 +228,6 @@ VFByteSlice vf_get_optimizer_defaults() {
     cached = out.str();
   }
   return helpers::byteSlice(cached);
-}
-
-VFByteSlice vf_simulate_movements(
-    const char *encoded_lines,
-    size_t encoded_lines_len,
-    int start_row,
-    int start_col,
-    const char *seq,
-    size_t seq_len) {
-  static string result_storage;
-  return helpers::storeBytes(result_storage,
-      helpers::requiredBytes(encoded_lines, encoded_lines_len, "encoded_lines")
-          .and_then(payload::decodeLineArray)
-          .and_then([&](const Lines& lines) {
-            return helpers::requiredBytes(seq, seq_len, "seq")
-                .and_then([&](string_view movementSeq) -> Result<std::string> {
-                  // Validate before simulateMovements (which .value()s the
-                  // parse): an exception must never cross this extern "C" ABI.
-                  if (!parseMovements(movementSeq)) {
-                    return helpers::unexpectedError(
-                        ExportErrorKind::InvalidValue, "invalid movement sequence");
-                  }
-                  CursorPos pos(start_row, start_col);
-                  const CursorPos landed = simulateMovements(pos, movementSeq, lines, NavContext());
-                  return helpers::packInts(landed.line, landed.col);
-                });
-          }));
 }
 
 }

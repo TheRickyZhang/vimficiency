@@ -15,7 +15,7 @@ export {
 class ParsedEdit {
   // 0 -> no count, OK since it is impossible for 0 to be a count.
   // important to distinguish since 1{action} sometimes != action!
-  uint32_t count;
+  int count;
 
 public:
   std::string_view edit;  // The edit string (e.g., "x", "dd", "ciw", "dfa")
@@ -37,41 +37,11 @@ struct DotRepeat {
 
   inline bool empty() const { return base.empty(); }
   inline ParsedEdit asEdit() const { return ParsedEdit{base, count}; }
-
-  bool operator==(const DotRepeat&) const = default;
 };
 
 // Edit operations that modify the buffer.
 // All functions modify lines and pos in place.
 namespace Edit {
-
-// -----------------------------------------------------------------------------
-// Operator + CharRange operations (d{range}, c{range}, y{range})
-// Called directly with a pre-computed CharRange from motion or text object.
-// -----------------------------------------------------------------------------
-
-// d{range} - delete range (Normal mode only)
-void deleteRange(Lines& lines, CursorPos& pos, Mode mode, const CharRange& range);
-void deleteRange(Lines& lines, CursorPos& pos, Mode mode, const CharLineRange& range);
-void deleteRange(Lines& lines, CursorPos& pos, Mode mode, const LineCharRange& range);
-
-// c{range} - change range (Normal -> Insert)
-void changeRange(Lines& lines, CursorPos& pos, Mode& mode, const CharRange& range);
-void changeRange(Lines& lines, CursorPos& pos, Mode& mode, const CharLineRange& range);
-void changeRange(Lines& lines, CursorPos& pos, Mode& mode, const LineCharRange& range);
-
-// y{range} - yank range (Normal mode only, no buffer change)
-void yankRange(Lines& lines, CursorPos& pos, Mode mode, const CharRange& range);
-void yankRange(Lines& lines, CursorPos& pos, Mode mode, const CharLineRange& range);
-void yankRange(Lines& lines, CursorPos& pos, Mode mode, const LineCharRange& range);
-
-// Edit dispatcher
-// Routes parsed edit commands to appropriate operations.
-// -----------------------------------------------------------------------------
-
-bool updatesDotRepeat(Mode mode, std::string_view edit);
-bool isValidNormalEditOnEmptyLine(std::string_view edit);
-std::optional<DotRepeat> dotRepeatFor(Mode mode, const ParsedEdit& edit);
 
 // Apply a single parsed edit. If lastEdit is non-null, '.' repeats the
 // last buffer-modifying command stored there, and buffer-modifying commands
@@ -110,9 +80,6 @@ std::string formatEditParseError(const EditParseError& error);
 // IMPORTANT: Returned ParsedEdits contain string_views into seq - caller must ensure seq outlives usage.
 std::expected<std::vector<ParsedEdit>, EditParseError> parseEdits(std::string_view seq);
 
-void simulateEdits(CursorPos& pos, Mode& mode, const NavContext& navContext,
-                          std::string_view movementSeq,
-                          const Lines& lines);
 } // namespace Edit
 
 }  // export

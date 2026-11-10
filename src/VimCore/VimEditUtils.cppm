@@ -14,6 +14,7 @@ export import vf.Types.Lines;
 export import vf.VimCore.VimCore;
 export import vf.VimCore.VimEndpointUtils;
 export import vf.VimCore.VimOptions;
+import vf.VimCore.CharMask;
 
 export {
 
@@ -25,20 +26,6 @@ export {
 // - No redundant wrappers (inline trivial operations at call sites)
 
 namespace VimCore {
-
-// =============================================================================
-// CursorPos Clamping Helpers
-// =============================================================================
-
-// Clamp col to valid normal mode range: [0, line.size()-1] or 0 if empty
-inline void clampCol(const std::string& line, int& col) {
-  col = line.empty() ? 0 : std::min(col, static_cast<int>(line.size()) - 1);
-}
-
-// Clamp col to valid insert mode range: [0, line.size()] (cursor can be after last char)
-inline void clampInsertCol(const std::string& line, int& col) {
-  col = std::min(col, static_cast<int>(line.size()));
-}
 
 // Convert an inclusive character position into a same-line half-open endpoint.
 inline CursorPos onePastOnSameLine(const Lines& lines, const CursorPos& inclusivePos) {
@@ -72,7 +59,7 @@ inline CursorPos onePastOnSameLine(const Lines& lines, const CursorPos& inclusiv
 // from the replay/edit path and the optimizer's one from the goal-shape path.
 inline std::string_view leadingIndent(std::string_view s) {
   size_t i = 0;
-  while (i < s.size() && (s[i] == ' ' || s[i] == '\t')) i++;
+  while (i < s.size() && CharMask::isWhitespace(s[i])) i++;
   return s.substr(0, i);
 }
 
@@ -151,7 +138,6 @@ inline void linewiseChangeWithAutoindent(Lines& lines,
 
 enum class ResolvedDeleteRangeKind {
   Characterwise,
-  CharLine,
   LineChar,
   Linewise,
 };
@@ -170,7 +156,6 @@ enum class DeleteCursorPolicy {
 struct ResolvedDeleteRange {
   ResolvedDeleteRangeKind kind;
   CharRange charRange;
-  CharLineRange charLineRange;
   LineCharRange lineCharRange;
   LineRange lineRange;
   LinewiseDeleteCursorPolicy linewiseCursorPolicy;
@@ -189,22 +174,14 @@ struct ResolvedDeleteRange {
       DeleteCursorPolicy cursorPolicy = DeleteCursorPolicy::Default,
       int firstContentCol = 0) {
     return {ResolvedDeleteRangeKind::Characterwise, range,
-            CHAR_LINE_RANGE_OUTSIDE_BOUNDARY,
             LINE_CHAR_RANGE_OUTSIDE_BOUNDARY, LineRange(0, 0),
             LinewiseDeleteCursorPolicy::LinewiseCommand,
             CursorPos(-1, -1), cursorPolicy, firstContentCol, -1};
   }
 
-  inline static ResolvedDeleteRange charLine(CharLineRange range) {
-    return {ResolvedDeleteRangeKind::CharLine, CharRange(),
-            range, LINE_CHAR_RANGE_OUTSIDE_BOUNDARY, LineRange(0, 0),
-            LinewiseDeleteCursorPolicy::LinewiseCommand,
-            CursorPos(-1, -1), DeleteCursorPolicy::Default, 0, -1};
-  }
-
   inline static ResolvedDeleteRange lineChar(LineCharRange range) {
     return {ResolvedDeleteRangeKind::LineChar, CharRange(),
-            CHAR_LINE_RANGE_OUTSIDE_BOUNDARY, range, LineRange(0, 0),
+            range, LineRange(0, 0),
             LinewiseDeleteCursorPolicy::LinewiseCommand,
             CursorPos(-1, -1), DeleteCursorPolicy::Default, 0, -1};
   }
@@ -216,7 +193,6 @@ struct ResolvedDeleteRange {
       int firstContentCol = 0,
       int exclusiveMotionEndCol = -1) {
     return {ResolvedDeleteRangeKind::Linewise, CharRange(),
-            CHAR_LINE_RANGE_OUTSIDE_BOUNDARY,
             LINE_CHAR_RANGE_OUTSIDE_BOUNDARY, range,
             cursorPolicy, motionBegin, deleteCursorPolicy, firstContentCol,
             exclusiveMotionEndCol};
@@ -230,8 +206,7 @@ inline bool hasOnlyBlankPrefix(std::string_view line, int endCol, int contentSta
   int begin = std::clamp(contentStartCol, 0, static_cast<int>(line.size()));
   int end = std::clamp(endCol, begin, static_cast<int>(line.size()));
   for (int col = begin; col < end; col++) {
-    char c = line[col];
-    if (c != ' ' && c != '\t') return false;
+    if (!CharMask::isWhitespace(line[col])) return false;
   }
   return true;
 }
@@ -239,8 +214,7 @@ inline bool hasOnlyBlankPrefix(std::string_view line, int endCol, int contentSta
 inline bool hasOnlyBlankSuffix(std::string_view line, int beginCol) {
   int begin = std::clamp(beginCol, 0, static_cast<int>(line.size()));
   for (int col = begin; col < static_cast<int>(line.size()); col++) {
-    char c = line[col];
-    if (c != ' ' && c != '\t') return false;
+    if (!CharMask::isWhitespace(line[col])) return false;
   }
   return true;
 }
@@ -270,37 +244,6 @@ inline int classifyExclusiveDeleteLinewisePromotion(
     return 2;
   }
   return 0;
-}
-
-inline bool exclusiveDeletePromotesToLinewise(CharRange range, const Lines& lines) {
-  range.normalize();
-  bool spansForwardLines = range.begin.line < range.end.line;
-  bool endAtLineStart = range.end.col == 0;
-  bool consumesBufferTail = !endAtLineStart &&
-      range.end.line == lines.lastLine() &&
-      range.end.col >= static_cast<int>(lines[range.end.line].size());
-
-  if (spansForwardLines &&
-      hasOnlyBlankPrefix(lines[range.begin.line], range.begin.col) &&
-      (endAtLineStart || consumesBufferTail)) {
-    return true;
-  }
-
-  // Vim's op_delete (ops.c:741-757) extra promotion rule: when a char-wise
-  // delete spans multi-line and the result would be a blank line, promote.
-  // Result-is-blank requires:
-  //   - cols [0, begin.col) on begin's line are all whitespace, AND
-  //   - chars after end.col on end's line are all whitespace.
-  // Exclusive motion's end is past the last char to delete, so we check
-  // hasOnlyBlankSuffix from end.col (no +inclusive shift since inclusive
-  // is false for exclusive motions).
-  if (spansForwardLines &&
-      hasOnlyBlankPrefix(lines[range.begin.line], range.begin.col) &&
-      hasOnlyBlankSuffix(lines[range.end.line], range.end.col)) {
-    return true;
-  }
-
-  return false;
 }
 
 inline LineRange exclusiveMotionLinewiseRange(CharRange range) {
@@ -342,26 +285,10 @@ inline ResolvedDeleteRange resolveExclusiveDeleteRange(
   }
 
   if (range.end.col != 0 || range.end.line <= range.begin.line) {
-    if (allowLinewise && range.begin.col == 0 &&
-        range.begin.line < range.end.line &&
-        hasOnlyBlankSuffix(lines[range.end.line], range.end.col)) {
-      return ResolvedDeleteRange::linewise(
-          LineRange(range.begin.line, range.end.line + 1),
-          LinewiseDeleteCursorPolicy::ExclusiveMotion,
-          range.begin);
-    }
     if (range.begin.col == 0 && range.begin.line < range.end.line) {
       return ResolvedDeleteRange::lineChar(LineCharRange(range.begin.line, range.end));
     }
     return ResolvedDeleteRange::characterwise(range);
-  }
-
-  if (allowLinewise &&
-      hasOnlyBlankPrefix(lines[range.begin.line], range.begin.col)) {
-    return ResolvedDeleteRange::linewise(
-        LineRange(range.begin.line, range.end.line),
-        LinewiseDeleteCursorPolicy::ExclusiveMotion,
-        range.begin);
   }
 
   if (!allowLinewise &&
@@ -369,15 +296,7 @@ inline ResolvedDeleteRange resolveExclusiveDeleteRange(
     range.begin.col = firstNonBlankColInLine(lines[range.begin.line]);
   }
 
-  if (range.begin.col == 0) {
-    return ResolvedDeleteRange::characterwise(
-        CharRange(range.begin,
-                  CursorPos(range.end.line - 1,
-                            static_cast<int>(lines[range.end.line - 1].size()))));
-  }
-
-  range.end = CursorPos(range.end.line - 1,
-                        static_cast<int>(lines[range.end.line - 1].size()));
+  range.end = CursorPos(range.end.line - 1, lines.getSize(range.end.line - 1));
   return ResolvedDeleteRange::characterwise(range);
 }
 
@@ -599,10 +518,9 @@ void deleteOperatorLineRangeAndUpdatePos(Lines& lines, const LineRange& range, C
 // After insert, pos is at end of inserted text.
 void insertText(Lines& lines, CursorPos& pos, std::string_view text);
 
-// J/gJ - join current line with next
+// {count}J/gJ - join `lineCount` (>= 2) lines starting at pos.line
 // addSpace=true: strip next-line indent, preserving existing trailing whitespace
 // addSpace=false: simple concatenation (gJ)
-void joinLines(Lines& lines, CursorPos& pos, bool addSpace);
 void joinLineRange(Lines& lines, CursorPos& pos, int lineCount, bool addSpace);
 
 // o - open new line below current, pos moves to new line col 0

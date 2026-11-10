@@ -14,15 +14,8 @@ struct Pos {
   constexpr bool isValid() const { return line >= 0; }
 
   // Lexicographic ordering on (line, col).
-  constexpr bool operator==(const Pos& o) const { return line == o.line && col == o.col; }
-  constexpr bool operator!=(const Pos& o) const { return !(*this == o); }
-  constexpr bool operator<(const Pos& o) const {
-    if (line != o.line) return line < o.line;
-    return col < o.col;
-  }
-  constexpr bool operator>(const Pos& o) const { return o < *this; }
-  constexpr bool operator<=(const Pos& o) const { return !(o < *this); }
-  constexpr bool operator>=(const Pos& o) const { return !(*this < o); }
+  constexpr bool operator==(const Pos&) const = default;
+  constexpr auto operator<=>(const Pos&) const = default;
 
   inline friend std::ostream& operator<<(std::ostream& os, const Pos& p) {
     os << "(" << p.line << ", " << p.col << ")";

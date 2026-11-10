@@ -14,6 +14,7 @@ import vf.Optimizer.TransformOptimizer.ChangeGoalHandler;
 import vf.Optimizer.TransformOptimizer.TransformExplorer;
 import vf.Optimizer.TransformOptimizer.TransformPostExplorerEmissions;
 import vf.Optimizer.TransformOptimizer.TransformTransitionDispatcher;
+import vf.Optimizer.FrontierCommon;
 import vf.Effort.EffortBank;
 import vf.Keyboard.KeyedSequence;
 
@@ -31,7 +32,6 @@ TransformResult::TransformResult(vector<vector<Result>> results, TransformSearch
       stats_(std::move(stats)),
       goalPos_(goalPos),
       beginLine_(bufferBeginLine),
-      beginCol_(bufferBeginCol),
       resultGoalPositions_(std::move(resultGoalPositions)) {
   if (!resultGoalPositions_.empty()) {
     assert(resultGoalPositions_.size() == results_.size() &&
@@ -47,24 +47,20 @@ TransformResult::TransformResult(vector<vector<Result>> results, TransformSearch
 
   lineBaseIndex_.reserve(initialLines.size());
   int cumSum = 0;
-  for (size_t i = 0; i < initialLines.size(); i++) {
-    int colOffset = (i == 0) ? beginCol_ : 0;
+  for (int line = 0; line <= initialLines.lastLine(); line++) {
+    int colOffset = (line == 0) ? bufferBeginCol : 0;
     lineBaseIndex_.push_back(cumSum - colOffset);
-    int positions = initialLines[i].empty() ? 1 : static_cast<int>(initialLines[i].size());
-    cumSum += positions;
+    cumSum += initialLines[line].effectiveSize();
   }
 
-  for (int line = 0; line < static_cast<int>(initialLines.size()); line++) {
-    const int positions = initialLines[line].empty()
-        ? 1
-        : static_cast<int>(initialLines[line].size());
-    const int firstCol = (line == 0) ? beginCol_ : 0;
+  for (int line = 0; line <= initialLines.lastLine(); line++) {
+    const int positions = initialLines[line].effectiveSize();
+    const int firstCol = (line == 0) ? bufferBeginCol : 0;
     for (int localCol = 0; localCol < positions; localCol++) {
       const int bufferCol = firstCol + localCol;
       const int idx = resultIndexAt(bufferBeginLine + line, bufferCol);
-      if (idx >= 0 && idx < static_cast<int>(results_.size())) {
-        indexToBufferPos_[static_cast<size_t>(idx)] =
-            CursorPos(bufferBeginLine + line, bufferCol);
+      if (idx >= 0) {
+        indexToBufferPos_[idx] = CursorPos(bufferBeginLine + line, bufferCol);
       }
     }
   }
@@ -103,26 +99,18 @@ TransformResult::TransformResult(vector<vector<Result>> results, TransformSearch
 
 void TransformResult::rebuildStartPositions() {
   startPositions_.clear();
-  for (size_t idx = 0; idx < results_.size(); idx++) {
-    if (!isValidStartIndex(static_cast<int>(idx))) continue;
+  for (int idx = 0; idx < std::ssize(results_); idx++) {
+    if (!isValidStartIndex(idx)) continue;
     if (results_[idx].empty()) continue;
-    CursorPos pos = indexToBufferPos_.empty()
-        ? CursorPos(-1, -1)
-        : indexToBufferPos_[idx];
+    CursorPos pos = indexToBufferPos_[idx];
     if (pos.isValid()) startPositions_.push_back(pos);
   }
 }
 
 void TransformResult::restrictValidStartRegion(CharRange validStartRegion) {
   validStartRegion.normalize();
-  if (validStartByIndex_.empty()) {
-    validStartByIndex_.assign(results_.size(), true);
-  }
-
   for (size_t idx = 0; idx < validStartByIndex_.size(); idx++) {
-    CursorPos pos = indexToBufferPos_.empty()
-        ? CursorPos(-1, -1)
-        : indexToBufferPos_[idx];
+    CursorPos pos = indexToBufferPos_[idx];
     validStartByIndex_[idx] =
         pos.isValid() && pos >= validStartRegion.begin && pos < validStartRegion.end;
   }
@@ -263,13 +251,13 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
   TransformSearchStats stats;
 
   const double startPriority =
-      weightedHeuristicCost(effectiveLines, leftColOffset, rightColOffset, distanceWeight);
+      distanceWeight * textDistanceEstimate(effectiveLines, leftColOffset, rightColOffset);
   TransformStateFactory states(config, effortWeight);
   int startIndex = 0;
-  for (int line = 0; line < static_cast<int>(initialLines.size()); line++) {
+  for (int line = 0; line <= initialLines.lastLine(); line++) {
     for (int col = 0; col < initialLines[line].effectiveSize(); col++) {
       int effCol = col + (line == 0 ? leftColOffset : 0);
-      int effLineLen = static_cast<int>(effectiveLines[line].size());
+      int effLineLen = effectiveLines.getSize(line);
       if (effLineLen > 0 && effCol >= effLineLen) {
         startIndex++;
         continue;
@@ -387,7 +375,7 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
     DispatchType dispatch{
         mode,         s,           stats,         pq,
         costMap,      pendingByStart, startActive, bank,
-        transformBoundary, config,      effortWeight, distanceWeight,
+        transformBoundary, states,   distanceWeight,
         leftColOffset, rightColOffset, params.allowLinewisePureDeletion};
 
     auto onDeletion = [&](const ResolvedEditAction& action,
@@ -398,9 +386,9 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
 
     bool inSuffixRegion = pos.line == lines.lastLine() &&
                           rightColOffset > 0 &&
-                          pos.col + rightColOffset >= static_cast<int>(lines.getSize(pos.line));
+                          pos.col + rightColOffset >= lines.getSize(pos.line);
     if (inSuffixRegion) {
-      int firstSuffixCol = static_cast<int>(lines.getSize(pos.line)) - rightColOffset;
+      int firstSuffixCol = lines.getSize(pos.line) - rightColOffset;
       if (pos.col == firstSuffixCol && firstSuffixCol > 0) {
         explorer.exploreWordEdits(
             Edit::EXCLUSIVE_BACKWARD_WORD_EDITS, pos, lines, onDeletion);
@@ -417,7 +405,7 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
       continue;
     }
     if (pos.line == 0 && pos.col < leftColOffset) {
-      if (pos.col < static_cast<int>(lines[0].size()) - 1) {
+      if (pos.col < lines[0].lastCol()) {
         dispatch.moveByMotion(CursorPos(0, pos.col + 1),
                               SequenceBinding(KeyedSequence::l, bank[KSId::l]));
       }
@@ -442,8 +430,7 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
     ::maybeMarkStartExhausted(pendingByStart, startActive, terminalStarts, activeStart);
   }
 
-  stats.finalize(stats.nodesExplored(),
-                            totalPops,
+  stats.finalize(totalPops,
                             resultsFound,
                             uniquePositionsCovered,
                             static_cast<int>(pq.size()),

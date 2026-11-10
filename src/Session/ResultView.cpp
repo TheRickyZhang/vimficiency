@@ -59,7 +59,7 @@ vector<string> formatBody(
   vector<string> lines;
   if (!result.userSeq.empty()) {
     const string cost =
-        result.userCost ? costSuffix(*result.userCost) : "";
+        result.hasUserCost ? costSuffix(result.userCost) : "";
     appendAll(lines, SequenceDisplay::prefixedLines(
         "  user: ",
         result.userSeq,
@@ -93,7 +93,7 @@ vector<string> formatSavedLines(
     const Result& result,
     SequenceDisplay::Options displayOptions) {
   const string userCost =
-      result.userCost ? costSuffix(*result.userCost, "cost: ") : "";
+      result.hasUserCost ? costSuffix(result.userCost, "cost: ") : "";
 
   vector<string> outputLines{
       "=== " + string(name) + " ===",

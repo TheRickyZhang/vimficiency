@@ -19,7 +19,8 @@ struct Result {
   int endRow = 0;
   int endCol = 0;
   std::string userSeq;
-  std::optional<double> userCost;
+  bool hasUserCost = false;
+  double userCost = 0.0;
   std::string finishReason;
   std::vector<Recommendation> optimalResults;
 };

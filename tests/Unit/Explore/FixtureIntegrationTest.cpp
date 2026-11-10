@@ -11,6 +11,7 @@ import std.compat;
 import vf.Boundary.NavBoundary;
 import vf.Keyboard.Config;
 import vf.Explore.Explore;
+import vf.LuaExports.Common;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
 import vf.Types.NavContext;
@@ -22,15 +23,8 @@ namespace {
 
 Explore::View viewFromFixture(const ExploreFixtures::Fixture& f,
                               NavContext navContext, Config config) {
-  const int lastLine = max(0, static_cast<int>(f.lines.size()) - 1);
-  const int lastLineSize = f.lines.empty()
-      ? 0
-      : static_cast<int>(f.lines[lastLine].size()) + 1;
-  NavBoundary boundary(f.lines,
-                          CursorPos(0, 0),
-                          CursorPos(lastLine, lastLineSize),
-                          f.hasLinesAbove,
-                          f.hasLinesBelow);
+  NavBoundary boundary = VF::LuaExports::helpers::sliceBoundary(
+      f.lines, 0, f.lines.back().size(), f.hasLinesAbove, f.hasLinesBelow);
   return Explore::View(f.lines, f.startPos, f.goalLines, f.endPos,
                        std::move(boundary), navContext, config,
                        /*userSequence=*/"");
@@ -87,10 +81,15 @@ TEST_F(ExploreFixtureTest, InsertFixtureDrivesForwardUntilCompletion) {
       break;
     }
 
-    // Navigate phase emits motions; Transform phase emits edits. This test
-    // only walks the motion frontier, so break out once we hit Transform.
+    // Navigate phase emits motions plus single-action composition
+    // structurals (`A`, `a`, ...); Transform phase emits edits. This test
+    // only walks the motion frontier, so break out once we hit Transform
+    // and step along the best motion.
     if (!std::holds_alternative<Explore::Navigate>(view.phase())) break;
-    ASSERT_TRUE(view.applyMovement(recs.front().token).has_value());
+    const bool moved = any_of(recs.begin(), recs.end(), [&](const Suggestion& s) {
+      return view.applyMovement(s.token).has_value();
+    });
+    ASSERT_TRUE(moved) << "no motion among the top recommendations at step " << steps;
     steps++;
   }
 

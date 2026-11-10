@@ -4,14 +4,15 @@ module;
 export module vf.LuaExports.Common;
 
 import std.compat;
+export import vf.Boundary.NavBoundary;
 export import vf.Keyboard.Config;
 export import vf.Keyboard.Finger;
 export import vf.Keyboard.Hand;
 export import vf.Keyboard.Key;
 export import vf.Optimizer.CountPenalty;
 export import vf.Optimizer.DiffPlanner.DiffState;
+export import vf.Optimizer.OptimizerParamOverrides;
 export import vf.Types.Lines;
-export import vf.Utils.CoutCapture;
 
 export {
 
@@ -26,16 +27,7 @@ inline constexpr int MANUAL_EVICT_NONE = 0;
 inline constexpr int MANUAL_EVICT_DRIFT = 1;
 inline constexpr int MANUAL_EVICT_IDLE = 2;
 
-enum class ExportErrorKind {
-  MissingInput,
-  InvalidPayload,
-  PayloadTooLarge,
-  TruncatedPayload,
-  InvalidValue,
-};
-
 struct ExportError {
-  ExportErrorKind kind;
   std::string message;
 };
 
@@ -54,13 +46,8 @@ extern Config g_config_internal;
 
 namespace helpers {
 
-inline std::unexpected<ExportError> unexpectedError(
-    ExportErrorKind kind,
-    std::string message) {
-  return std::unexpected<ExportError>{ ExportError{
-      .kind = kind,
-      .message = std::move(message),
-  } };
+inline std::unexpected<ExportError> unexpectedError(std::string message) {
+  return std::unexpected<ExportError>{ExportError{std::move(message)}};
 }
 
 inline Result<std::string_view> requiredBytes(
@@ -68,11 +55,20 @@ inline Result<std::string_view> requiredBytes(
     size_t len,
     std::string_view name) {
   if (!data && len > 0) {
-    return unexpectedError(
-        ExportErrorKind::MissingInput,
-        "missing " + std::string(name));
+    return unexpectedError("missing " + std::string(name));
   }
   return data ? std::string_view(data, len) : std::string_view{};
+}
+
+Result<OptimizerParamOverrides> parseOverrides(std::string_view text);
+
+// Boundary for a sliced buffer: `lastCol` is inclusive, so the exclusive end
+// is one past it on the last line.
+inline NavBoundary sliceBoundary(const Lines& lines, int firstCol, int lastCol,
+                                 bool hasLinesAbove, bool hasLinesBelow) {
+  return NavBoundary(lines, CursorPos(0, firstCol),
+                     CursorPos(lines.lastLine(), lastCol + 1),
+                     hasLinesAbove, hasLinesBelow);
 }
 
 inline VFByteSlice byteSlice(const std::string& storage) {
@@ -89,11 +85,6 @@ inline VFByteSlice storeBytes(std::string& storage, Result<std::string> result) 
   }
   storage = std::move(*result);
   return byteSlice(storage);
-}
-
-inline int storeIntOr(int fallback, Result<int> result) {
-  if (!result) return fallback;
-  return *result;
 }
 
 inline std::string packInts(int first, int second) {
@@ -119,14 +110,10 @@ inline std::string encodeField(std::string_view field) {
   return std::to_string(field.size()) + ":" + std::string(field);
 }
 
-template <typename... Fields>
-std::string encodeFields(const Fields&... fields) {
-  std::string out;
-  ((out += encodeField(fields)), ...);
-  return out;
+template <std::integral T>
+std::string encodeField(T v) {
+  return encodeField(std::string_view(std::to_string(v)));
 }
-
-inline std::string intField(int v) { return std::to_string(v); }
 
 inline std::string doubleField(double v) {
   std::ostringstream oss;
@@ -134,6 +121,24 @@ inline std::string doubleField(double v) {
   oss.precision(6);
   oss << v;
   return oss.str();
+}
+
+inline std::string encodeField(double v) {
+  return encodeField(std::string_view(doubleField(v)));
+}
+
+template <typename... Fields>
+std::string encodeFields(const Fields&... fields) {
+  std::string out;
+  ((out += encodeField(fields)), ...);
+  return out;
+}
+
+template <typename Strings>
+std::string encodeStringList(const Strings& values) {
+  std::string out;
+  for (std::string_view value : values) out += encodeField(value);
+  return out;
 }
 
 struct KeyTrackingEvent {
@@ -186,8 +191,6 @@ int manualEvictReason(
     int manualIdleTimeoutSeconds);
 
 }  // namespace logic
-
-void sync_config();
 
 }  // namespace VF::LuaExports
 

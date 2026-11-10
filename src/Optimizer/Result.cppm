@@ -8,11 +8,10 @@ export {
 struct Result {
   Result() = default;
   inline Result(Sequence seq, double c) : sequence_(std::move(seq)), keyCost_(c) {}
-  inline Result(const std::string& s, double c) : sequence_(s), keyCost_(c) {}
-  inline Result(std::string&& s, double c) : sequence_(std::move(s)), keyCost_(c) {}
 
   inline const Sequence& getSequence() const { return sequence_; }
   inline double getCost() const { return keyCost_; }
+  bool operator==(const Result&) const = default;
 
   inline std::string to_string() {
     std::ostringstream oss;

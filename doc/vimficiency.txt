@@ -1,4 +1,4 @@
-*vimficiency.txt*  *vimficiency*       For Neovim >= 0.11       Last change: 2026 November 01
+*vimficiency.txt*  *vimficiency*       For Neovim >= 0.11       Last change: 2026 November 09
 
 ==============================================================================
 Table of Contents                              *vimficiency-table-of-contents*
@@ -44,7 +44,7 @@ as the canonical sample.
 
 You can pass config overrides to `setup{}` — see 9. Configuration.
 
-Bindings must route through `vimfy.map()`, `<Plug>Vimfy*`, or `wrap()`; see the
+Bind keys through `vimfy.map()` or `<Plug>Vimfy*` with a multi-key LHS; see the
 keymap contract in the Index and the full writeup in 8. Keymaps.
 
 
@@ -97,10 +97,10 @@ outlined here:
   ------------------------------------------------------------------------
 See the per-type pages for details:
 
-- 1. Mark — manual start, manual end.
-- 1. Watch — manual start, auto end.
-- 1. Recall — auto start, manual end.
-- 1. Suggest — auto start, auto end.
+- 3. Mark — manual start, manual end.
+- 4. Watch — manual start, auto end.
+- 5. Recall — auto start, manual end.
+- 6. Suggest — auto start, auto end.
 
 
 WHERE A SESSION LIVES
@@ -136,9 +136,9 @@ Alternatively, you can call `vim :Vimfy close a` to drop the session manually.
 
 SEE ALSO
 
-- 1. Inspecting results — how to read the output and replay
+- 7. Inspecting results — how to read the output and replay
     the suggestions.
-- 1. Binding keys — use `<Plug>VimfyStartA` /
+- 8. Binding keys — use `<Plug>VimfyStartA` /
     `<Plug>VimfyFinishA` so your session markers don’t need typing `:Vimfy ...`.
 
 
@@ -178,8 +178,8 @@ Suggest’s auto-start side does. Ask if you’d use them and we can extend.
 
 SEE ALSO
 
-- 1. Binding keys — `<Plug>VimfyWatchA` / `<Plug>VimfyWatchB`.
-- 1. Configuration — full shape of the `watch` key in `setup{}`.
+- 8. Binding keys — `<Plug>VimfyWatchA` / `<Plug>VimfyWatchB`.
+- 9. Configuration — full shape of the `watch` key in `setup{}`.
 
 
 ==============================================================================
@@ -281,9 +281,9 @@ moving out from under you:
 
 SEE ALSO
 
-- 1. Suggest — surface results automatically
+- 6. Suggest — surface results automatically
     without calling `finish`.
-- 1. Inspecting results — what the output looks like
+- 7. Inspecting results — what the output looks like
     and how to replay it.
 
 
@@ -553,11 +553,12 @@ Press |g?| in a saved-result buffer to open this section directly.
 ==============================================================================
 8. Binding keys to Vimfy actions   *vimficiency-binding-keys-to-vimfy-actions*
 
-Vimfy measures the keys you type, so a key that _invokes_ Vimfy must announce
-itself as admin activity — otherwise the invoking keystroke counts as motion.
-`vim.on_key` fires for the LHS before Neovim resolves the mapping, and we
-can’t retroactively uncount; the caller has to announce. Three ways to bind
-correctly, one ergonomic way that doesn’t:
+Vimfy measures the keys you type, so a key that _invokes_ Vimfy should not
+itself count as motion. For a mapping whose RHS is a Lua callback, the tracker
+recognizes the resolution event and strips the LHS it had just recorded —
+provided the LHS is more than one key (`<leader>vs`, `<F4>`, `jk`). A
+single-key LHS such as `Z` is indistinguishable from a plain keystroke at that
+point and is recorded. Two ways to bind, one ergonomic way that doesn’t work:
 
 
 1. VIMFY.MAP() (RECOMMENDED)
@@ -586,15 +587,15 @@ BINDING ARBITRARY LUA ~
 Pass a function instead of a string when you need to branch or compose:
 
 >lua
-    vimfy.map('n', 'Z', function()
+    vimfy.map('n', '<leader>vz', function()
       if vim.bo.buftype == "" then
         vim.cmd('Vimfy start a')
       end
     end)
 <
 
-The callback is wrapped with `M.wrap` internally, so any `:Vimfy` or
-plugin-level calls you make from it are announced as admin activity.
+This is plain `vim.keymap.set(mode, lhs, fn, opts)`; `vimfy.map` adds the
+string-spec parsing and the `silent`/`desc` defaults.
 
 
 2. <PLUG> MAPS
@@ -638,24 +639,9 @@ name. Bind with `remap = true` (or `nmap` in vimscript):
 arbitrary args, e.g. `save @ quick`, which no `<Plug>` name exposes directly).
 
 
-3. REQUIRE('VIMFICIENCY').WRAP(FN) (LOW-LEVEL)
-
-`vimfy.map(mode, lhs, fn, opts)` is shorthand for `vim.keymap.set(mode, lhs,
-wrap(fn), opts)`. If you need to attach your Lua callback somewhere other than
-a keymap — an autocommand, a command, a UI callback — call `wrap` directly:
-
->lua
-    local vimfy = require('vimficiency')
-    vim.api.nvim_create_autocmd('User', {
-      pattern = 'MyEvent',
-      callback = vimfy.wrap(function() vim.cmd('Vimfy finish a') end),
-    })
-<
-
-
 DIRECT :VIMFY ... TYPING
 
-Works as-is. Cmdline input is never counted as motion, so nothing to wrap.
+Works as-is. Cmdline input is never counted as motion.
 
 
 WHAT DOESN’T WORK
@@ -674,8 +660,8 @@ resolves — we can’t retroactively uncount it. To fix: move the binding into
 At setup, Vimfy scans pre-existing mappings for this pattern and emits a
 one-shot warning listing each offender. The scan can’t see mappings defined
 _after_ setup (or Lua-callback RHS, or buffer-local mappings added later) —
-if an LHS keeps showing up as motion, check that the binding is routed through
-`vimfy.map()` / `<Plug>` / `wrap()`.
+if an LHS keeps showing up as motion, check that the binding is a Lua-callback
+mapping (`vimfy.map()` / `<Plug>`) with a multi-key LHS.
 
 
 ==============================================================================
@@ -898,7 +884,7 @@ GLOBAL WEIGHTS (WEIGHTS) ~
     require('vimficiency').setup({
       weights = {
         key_weight         = 1.0,   -- baseline per-keystroke cost
-        same_finger_weight = 1.0,   -- penalty for consecutive same-finger
+        same_finger_weight = 1.0,   -- penalty for two different keys on one finger
         same_key_weight    = 1.0,   -- penalty for the same key twice
         alt_hand_weight    = 1.0,   -- bonus for alternating hands
         good_roll_weight   = 1.0,   -- bonus for inward rolls
@@ -1090,7 +1076,7 @@ list cursor without leaving insert mode; `<CR>` opens the current entry;
 - `r` / `y` — on Saved, renames/duplicates the file. On Active, renames
     the manual alias / registers a duplicate finished record under a new
     alias. Only entries with a stable manual alias are renameable this
-    way; for recall and auto-suggest results, save to disk first (`:Vimfy   save <alias> <name>`) and then rename from the Saved pane.
+    way; for recall and auto-suggest results, save to disk first (`:Vimfy save <alias> <name>`) and then rename from the Saved pane.
 
 **Blocked on in-progress sessions:** `<CR>`, `r`, `y` all refuse to run on a
 still-accumulating session. Finish it with `:Vimfy finish` (or let Watch’s
@@ -1158,8 +1144,9 @@ Works on:
 <PLUG> MAPPINGS
 
 For each subcommand above, a `<Plug>VimfyX...` map is also registered so you
-can bind keys without having to type `:Vimfy ...` (which would count as admin
-activity anyway). See 8. Keymaps for the full list and the binding contract.
+can bind keys without having to type `:Vimfy ...` (cmdline input is never
+counted as motion either way). See 8. Keymaps for the full list and the binding
+contract.
 
 
 SCRATCH OUTPUT BUFFER KEYS
@@ -1271,8 +1258,9 @@ want to show a colleague.
     split the edit up or increase the limit if you really want this.
 - **Long sessions** may hit the optimizer’s search budget; expect diminishing
     suggestion quality beyond roughly a dozen lines of edits.
-- **Unwrapped mappings that invoke Vimfy** have their trigger keypress counted as
-    motion. See 8. Keymaps for the fix.
+- **Ex-command mappings and single-key LHS mappings that invoke Vimfy** have
+    their trigger keypress counted as motion. See
+    8. Keymaps for the fix.
 - **Keys produced by a mapping’s RHS are invisible.** If `<leader>V` is mapped
     to `V$%`, the `V$%` bytes never reach the capture — `vim.on_key` delivers
     only a single resolution event that the plugin strips to avoid leaking the LHS.
@@ -1305,9 +1293,9 @@ has run.
 The native library is missing from `build/` in the plugin directory. Your
 plugin manager’s build step did not run or failed — run it again (`:Lazy
 build vimficiency`, or `./scripts/install.sh` from the plugin directory) and
-read its output. Building from source needs a C++23 compiler and CMake 3.20+;
-pinning a release tag avoids the compile by downloading a prebuilt library
-instead.
+read its output. Building from source needs GCC 15+ or Clang 19+ with libc++,
+CMake 4.3+ and Ninja; pinning a release tag avoids the compile by downloading a
+prebuilt library instead.
 
 If you set `VIMFICIENCY_LIB_PATH`, it is tried first; make sure it points at an
 existing `libvimficiency.so` / `.dylib`.
@@ -1354,8 +1342,9 @@ SUGGESTIONS LOOK WRONG OR WORSE THAN WHAT I DID
 
 A KEY I BOUND TO VIMFY IS SHOWING UP AS MOTION
 
-Your mapping isn’t announcing itself as admin activity. Route it through
-`<Plug>` or `wrap()` — see 8. Keymaps.
+Either the mapping’s RHS is a literal Ex command, or its LHS is a single key.
+Route it through `vimfy.map()` or `<Plug>` with a multi-key LHS — see 8.
+Keymaps.
 
 
 “UNKNOWN CONFIG KEYS IGNORED” WARNING

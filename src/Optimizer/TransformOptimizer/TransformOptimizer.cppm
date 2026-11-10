@@ -41,9 +41,8 @@ struct TransformResult : BaseOptimizerResult<std::vector<Result>> {
   inline std::span<const Result> resultsAt(int bufferLine, int bufferCol) const {
     int idx = resultIndexAt(bufferLine, bufferCol);
     if (idx < 0) return {};
-    if (idx >= static_cast<int>(results_.size())) return {};
     if (!isValidStartIndex(idx)) return {};
-    const auto& bucket = results_[static_cast<size_t>(idx)];
+    const auto& bucket = results_[idx];
     return {bucket.data(), bucket.size()};
   }
 
@@ -56,9 +55,8 @@ struct TransformResult : BaseOptimizerResult<std::vector<Result>> {
       int bufferLine, int bufferCol, std::size_t resultIndex = 0) const {
     if (!resultGoalPositions_.empty()) {
       int idx = resultIndexAt(bufferLine, bufferCol);
-      if (idx >= 0 && idx < static_cast<int>(resultGoalPositions_.size()) &&
-          isValidStartIndex(idx)) {
-        const auto& bucket = resultGoalPositions_[static_cast<size_t>(idx)];
+      if (idx >= 0 && isValidStartIndex(idx)) {
+        const auto& bucket = resultGoalPositions_[idx];
         if (resultIndex < bucket.size()) return bucket[resultIndex];
       }
     }
@@ -88,7 +86,6 @@ private:
   TransformSearchStats stats_;
   CursorPos goalPos_;
   int beginLine_ = 0;
-  int beginCol_ = 0;
   std::vector<int> lineBaseIndex_;
   std::vector<CursorPos> indexToBufferPos_;
   std::vector<char> validStartByIndex_;
@@ -96,8 +93,7 @@ private:
   std::vector<CursorPos> startPositions_;
 
   inline bool isValidStartIndex(int idx) const {
-    return validStartByIndex_.empty() ||
-           validStartByIndex_[static_cast<size_t>(idx)];
+    return validStartByIndex_[idx];
   }
   void rebuildStartPositions();
 
@@ -110,7 +106,7 @@ std::ostream& operator<<(std::ostream& os, const TransformResult& transformResul
 struct TransformOptimizer {
   Config config;
 
-  inline TransformOptimizer(const Config& config) : config(std::move(config)) {}
+  inline TransformOptimizer(const Config& config) : config(config) {}
 
   // Historical name retained: this is the transform-layer optimizer.
   // Finds optimal sequences to transform initialLines to goalLines.

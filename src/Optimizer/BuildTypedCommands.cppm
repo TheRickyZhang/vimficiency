@@ -7,16 +7,16 @@ export import vf.Types.CursorPos;
 export import vf.Types.Lines;
 export import vf.VimCore.VimOptions;
 
-export {
-
 inline int restoredSuffixSpacesForTypedCommands(
     const Lines& goalLines,
     std::string_view suffix) {
   if constexpr (VimOptions::autoindent()) {
-    return goalLines.size() > 1 ? leadingSpaceCount(suffix) : 0;
+    return goalLines.size() > 1 ? std::ssize(leadingWhitespace(suffix)) : 0;
   }
   return 0;
 }
+
+export {
 
 inline CursorPos typedCommandsExitCursor(
     CursorPos insertPos,
@@ -25,14 +25,14 @@ inline CursorPos typedCommandsExitCursor(
   int suffixSpaces = restoredSuffixSpacesForTypedCommands(goalLines, suffix);
 
   if (goalLines.size() == 1) {
-    int typedLen = static_cast<int>(goalLines[0].size());
+    int typedLen = goalLines.getSize(0);
     int col = typedLen == 0 ? insertPos.col : insertPos.col + typedLen - 1;
     return CursorPos(insertPos.line, col);
   }
 
-  int finalLine = insertPos.line + static_cast<int>(goalLines.size()) - 1;
-  int finalLineChars = static_cast<int>(goalLines.back().size()) + suffixSpaces;
-  int col = finalLineChars == 0 ? 0 : finalLineChars - 1;
+  int finalLine = insertPos.line + goalLines.lastLine();
+  int finalLineChars = goalLines.getSize(goalLines.lastLine()) + suffixSpaces;
+  int col = std::max(0, finalLineChars - 1);
   return CursorPos(finalLine, col);
 }
 
@@ -145,13 +145,9 @@ inline KeyedSequence buildTypedCommands(
   }
 
   // Restore suffix leading whitespace stripped by <CR> (see suffix param docs).
-  if constexpr (VimOptions::autoindent()) {
-    if (goalLines.size() > 1) {
-      int suffixSpaces = restoredSuffixSpacesForTypedCommands(goalLines, suffix);
-      if (suffixSpaces > 0) {
-        ks.append(' ', suffixSpaces);
-      }
-    }
+  int suffixSpaces = restoredSuffixSpacesForTypedCommands(goalLines, suffix);
+  if (suffixSpaces > 0) {
+    ks.append(' ', suffixSpaces);
   }
 
   ks += KeyedSequence::Esc;

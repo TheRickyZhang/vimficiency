@@ -1,5 +1,3 @@
-// Debug.h
-
 module;
 #include <cstdio>
 
@@ -67,11 +65,6 @@ inline std::string consume_warning_output() {
   wout().clear();
   return result;
 }
-
-// inline void clear_debug_output() {
-//     dout().str("");
-//     dout().clear();
-// }
 
 // Format like this so headers are always recognized as needed.
 namespace VF::detail {

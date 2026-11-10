@@ -6,7 +6,6 @@ export import vf.Types.CursorPos;
 export {
 
 // Character-wise half-open: [begin, end).
-// TODO
 struct CharRange {
   CursorPos begin;
   CursorPos end;
@@ -17,7 +16,7 @@ struct CharRange {
   // Ensure begin <= end (lexicographic on line/col).
   inline void normalize() {
     if (begin > end) {
-      begin.swap(end);
+      std::swap(begin, end);
     }
   }
 
@@ -30,16 +29,7 @@ struct CharRange {
   }
 
   inline bool isEmpty() const {
-    return begin.line == end.line && begin.col == end.col;
-  }
-
-  inline bool containsPos(const CursorPos& p) const {
-    return begin <= p && p < end;
-  }
-
-  inline int size() const {
-    if (!isValid() || isEmpty()) return 0;
-    return end.line - begin.line + 1;
+    return begin == end;
   }
 };
 

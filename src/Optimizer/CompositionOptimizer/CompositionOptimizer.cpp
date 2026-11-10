@@ -13,6 +13,7 @@ import vf.Optimizer.CompositionOptimizer.EditSequenceSpan;
 import vf.Optimizer.BuildTypedCommands;
 import vf.Optimizer.DiffPlanner.MyersDiff;
 import vf.Optimizer.SearchControl;
+import vf.Optimizer.SearchFrontier;
 import vf.Optimizer.NavOptimizer.NavOptimizer;
 import vf.Optimizer.NavOptimizer.NavRangeConversion;
 import vf.Effort.RunningEffort;
@@ -175,8 +176,7 @@ CursorPos clampGoalPosToLines(const CursorPos& pos, const Lines& lines) {
 
   int line = clamp(pos.line, 0, lines.lastLine());
   int wantedCol = pos.targetCol >= 0 ? pos.targetCol : pos.col;
-  int maxCol = lines[line].empty() ? 0 : static_cast<int>(lines[line].size()) - 1;
-  int col = clamp(wantedCol, 0, maxCol);
+  int col = clamp(wantedCol, 0, lines[line].lastCol());
   return CursorPos(line, col, wantedCol);
 }
 
@@ -234,44 +234,24 @@ optimizeImpl(
   using Entry = QueueEntry<Trace>;
   std::priority_queue<Entry, vector<Entry>, std::greater<Entry>> pq;
 
-  auto scoreState = [&](const CompositionState& state) {
-    return ctx.heuristic(state, state.getEditsCompleted());
-  };
-  CompositionStateFactory states(config, scoreState);
+  CompositionStateFactory states(
+      config, [&](const CompositionState& state) { return ctx.heuristic(state); });
 
   CompositionState startingState = states.initial(initialPos);
   pq.push(Entry{startingState, trace.onSearchStart()});
   ctx.costMap[startingState.getKey()] = startingState.getCost();
 
+  // Terminal states (all edits done AND cursor at goalPos) are not cached so
+  // multiple distinct paths to goal can each emit a result. Post-final-edit
+  // nav states (all edits done but cursor still moving toward goalPos) ARE
+  // cached, same as inter-edit nav, to avoid redundant exploration.
+  auto isTerminal = [&](const CompositionState& s) {
+    return s.getEditsCompleted() == ctx.totalEdits() && s.getPos() == ctx.goalPos;
+  };
   auto enqueueState = [&](CompositionState&& newState,
                           typename Trace::State traceState) {
-    if (newState.getEffort() > ctx.maxEffort) {
-      debug("  pruned (effort", newState.getEffort(), ">", ctx.maxEffort, "):",
-            "\"" + newState.getSequence().str() + "\"");
-      return;
-    }
-
-    double newCost = newState.getCost();
-    const CompositionStateKey newKey = newState.getKey();
-    // Terminal states (all edits done AND cursor at goalPos) are not cached so
-    // multiple distinct paths to goal can each emit a result. Post-final-edit
-    // nav states (all edits done but cursor still moving toward goalPos) ARE
-    // cached, same as inter-edit nav, to avoid redundant exploration.
-    const bool isTerminal = (newState.getEditsCompleted() == ctx.totalEdits() &&
-                             newState.getPos() == ctx.goalPos);
-    auto it = ctx.costMap.find(newKey);
-
-    if (it == ctx.costMap.end()) {
-      if (!isTerminal) {
-        ctx.costMap.emplace(newKey, newCost);
-      }
+    if (Search::admitRangeState(newState, ctx.costMap, ctx.maxEffort, isTerminal)) {
       pq.push(Entry{std::move(newState), traceState});
-    } else if (newCost <= it->second) {
-      it->second = newCost;
-      pq.push(Entry{std::move(newState), traceState});
-    } else {
-      debug("  not enqueued (cost", newCost, ">=", it->second, "):",
-            "\"" + newState.getSequence().str() + "\"");
     }
   };
   // editOffset splits a transition sequence whose prefix is motion (Navigate)
@@ -280,14 +260,14 @@ optimizeImpl(
   // the recorded edit span cover only the insertion suffix.
   auto enqueueEditTransition = [&](const Entry& parent,
                                    const Sequence& editSequence,
-                                   const CursorPos& goalPos,
+                                   const CursorPos& newPos,
                                    int editsAfter,
                                    uint32_t editOffset = 0) {
     const uint32_t base = static_cast<uint32_t>(parent.state.getSequence().size());
     const uint32_t seqLen = static_cast<uint32_t>(editSequence.size());
     assert(editOffset <= seqLen && "editOffset must lie inside transition sequence");
     CompositionState newState = states.afterEditTransition(
-        parent.state, editSequence, goalPos, Mode::Normal);
+        parent.state, editSequence, newPos);
     const int editIndex = editsAfter - 1;
     typename Trace::State childTrace = trace.onEditTransition(
         parent.trace, editIndex, base + editOffset, base + seqLen);
@@ -295,9 +275,9 @@ optimizeImpl(
   };
   auto enqueueMotionTransition = [&](const Entry& parent,
                                      const Sequence& moveSequence,
-                                     const CursorPos& goalPos) {
+                                     const CursorPos& newPos) {
     CompositionState newState = states.afterNavResult(
-        parent.state, moveSequence, goalPos);
+        parent.state, moveSequence, newPos);
     enqueueState(std::move(newState), trace.onMotionTransition(parent.trace));
   };
 
@@ -320,10 +300,7 @@ optimizeImpl(
         params.navPaddingAbove, params.navPaddingBelow);
     Lines subset = fromLines.getLineRange(beginLine, endLine);
     CursorPos localPos(pos.line - beginLine, pos.col, pos.targetCol);
-    CursorPos subsetFirst(0, 0);
-    CursorPos subsetEnd(static_cast<int>(subset.size()) - 1,
-        subset.back().effectiveSize());
-    NavBoundary subsetBoundary(subset, subsetFirst, subsetEnd,
+    NavBoundary subsetBoundary(subset, CursorPos(0, 0), subset.endPos(),
         beginLine > 0 || boundary.hasLinesAbove(),
         endLine <= fromLines.lastLine() || boundary.hasLinesBelow());
     auto bufferIndexWindow = buildCompositionBufferIndexWindow(
@@ -368,9 +345,9 @@ optimizeImpl(
 
     for (const LandingResult& movResult : navResult.getResults()) {
       if (movResult.getSequence().empty()) continue;
-      CursorPos goalPos = movResult.getGoalPos();
-      goalPos.line += slice.beginLine;
-      enqueueMotionTransition(parent, movResult.getSequence(), goalPos);
+      CursorPos landing = movResult.getGoalPos();
+      landing.line += slice.beginLine;
+      enqueueMotionTransition(parent, movResult.getSequence(), landing);
     }
   };
 
@@ -555,9 +532,7 @@ optimizeImpl(
             current, pos, entryLine, entryLine, currentLines, /*maxResults=*/1,
             /*keepMultiplePerLanding=*/false,
             [&](const Lines& subset, int beginLine) -> CharInterval {
-              int localLine = entryLine - beginLine;
-              return CharInterval(CursorPos(localLine, 0),
-                                  CursorPos(localLine, subset[localLine].lastCol()));
+              return wholeLineMotionInterval(subset, entryLine - beginLine);
             });
       }
 

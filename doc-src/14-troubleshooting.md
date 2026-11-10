@@ -57,8 +57,9 @@ errored — see the two sections above.
 
 ## A key I bound to Vimfy is showing up as motion
 
-Your mapping isn't announcing itself as admin activity. Route it through
-`<Plug>` or `wrap()` — see [8. Keymaps](08-keymaps.md).
+The mapping's RHS is a literal Ex command or a plain `vim.keymap.set`
+function. Route it through `vimfy.map()` or `<Plug>` — see
+[8. Keymaps](08-keymaps.md).
 
 ## "unknown config keys ignored" warning
 

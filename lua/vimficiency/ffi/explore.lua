@@ -164,18 +164,6 @@ function M.explore_reconfigure_plan(view_id, optimizer_overrides)
   return { reset = payload == "1" }
 end
 
-function M.explore_apply_movement(view_id, movement_text)
-  local payload = require_non_error(core.slice_to_string(
-    lib.vf_explore_apply_movement(view_id, movement_text, #movement_text)))
-  return parse_explore_apply_result(payload)
-end
-
-function M.explore_apply_edit(view_id, text)
-  local payload = require_non_error(core.slice_to_string(
-    lib.vf_explore_apply_edit(view_id, text, #text)))
-  return parse_explore_apply_result(payload)
-end
-
 function M.explore_current_lines(view_id)
   local payload = require_non_error(core.slice_to_string(lib.vf_explore_current_lines(view_id)))
   return core.decode_string_list(payload)

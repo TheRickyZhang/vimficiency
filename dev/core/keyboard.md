@@ -79,45 +79,27 @@ keys.push_back(Key::Key_W);
 
 ### CharToKeys (`ToKeys/CharToKeys.cppm`)
 
-Maps single printable characters to their physical key sequences:
-
-```cpp
-// Organized by category in CharMappings namespace:
-CharMappings::letters      // 'a' -> {Key_A}, 'A' -> {Key_Shift, Key_A}
-CharMappings::digits       // '5' -> {Key_5}
-CharMappings::whitespace   // ' ' -> {Key_Space}
-CharMappings::digitSymbols // '!' -> {Key_Shift, Key_1}
-```
+`CHAR_TO_KEYS` is the single char → keys table: every printable ASCII byte plus `\t`, `\n`, `\r` (`'a' -> {Key_A}`, `'!' -> {Key_Shift, Key_1}`). It is the sole source of key sequences for plain characters; command tokens like `gg` or `dw` price as the concatenation of their chars.
 
 ### CommandToKeys (`ToKeys/CommandToKeys.cppm`)
 
-Maps multi-character command tokens (like `<C-d>`, `<Esc>`, `gJ`) to key sequences. Uses transparent hashing for efficient `string_view` lookups without allocation.
-
-## Motion and Edit Mappings
+`std::unordered_map<string, PhysicalKeys>` with transparent hashing for `string_view` lookups. Used for the `<...>` key notations (`<Esc>`, `<C-d>`, `<lt>`), whose keys are not derivable from their chars.
 
 ### MovementToKeys (`ToKeys/MovementToKeys.cppm`)
 
-Several maps for different purposes:
+| Symbol | Purpose |
+|--------|---------|
+| `ALL_MOTIONS` | `MotionSet` of supported motion tokens, for parser validation (`SequenceParser`, `MovementInterpreter`) |
+| `KEY_NOTATIONS` | File-local `CommandToKeys` of `<...>` notations, feeding `globalSequenceToKeys()` |
 
-| Map | Purpose |
-|-----|---------|
-| `ACTION_MOTIONS_TO_KEYS` | Physical actions for tokenizing raw input |
-| `ALL_MOTIONS` | All supported vim motions for parsing/validation |
-| `EXPLORABLE_MOTIONS` | Context-free motions (no target char needed), combined into `ALL_MOTIONS` |
-
-`EXPLORABLE_MOTIONS` is **not** the optimizer's search set despite the name — nothing outside `MovementToKeys.cpp` reads it; it exists only as the base of `ALL_MOTIONS`. The actual NavOptimizer search enumerates motions via `MovementToSpec` specs (`WORD_MOTIONS`, `PARAGRAPH_MOTIONS`, `SENTENCE_MOTIONS`, `SCROLL_MOTIONS`, …) and the count-search pair specs (`w/b`, `e/ge`, paragraph categories) in `Optimizer/NavOptimizer/CountableMovementPair.cppm`, not this map. Counted sentence motions are stateful scans in NavExplorer, not `BufferIndex` categories. Note `SCROLL_MOTIONS` is `<C-d>`/`<C-u>` only — `<C-f>`/`<C-b>` are excluded as viewport-dependent (see `MovementToSpec.cpp`).
-
-### EditToKeys (`ToKeys/EditToKeys.cppm`)
-
-Similar structure for edit commands. Organized by `TransformBoundary` level (see `boundary-logic.md`).
+`ALL_MOTIONS` is not the optimizer's search set. NavOptimizer enumerates motions via `MovementToSpec` specs and the count-search pair specs in `Optimizer/NavOptimizer/CountableMovementPair.cppm`. Note `SCROLL_MOTIONS` is `<C-d>`/`<C-u>` only — `<C-f>`/`<C-b>` are excluded as viewport-dependent (see `MovementToSpec.cpp`).
 
 ## Sequence Tokenization
 
-The `SequenceToKeys` tokenizer converts a Vim command sequence string into `PhysicalKeys`:
+`SequenceToKeys::tokenize` matches `KEY_NOTATIONS` longest-first at each position, otherwise prices the byte via `CHAR_TO_KEYS` (unknown bytes warn and are skipped). `tests/Unit/Misc/SequenceToKeysTest.cpp` pins that every non-notation token is charwise.
 
 ```
 Sequence "l3wfD;"
-  -> Tokens: ["l", "3", "w", "f", "D", ";"]
   -> Keys: {Key_L, Key_3, Key_W, Key_F, Key_Shift, Key_D, Key_Semicolon}
 ```
 
@@ -150,9 +132,9 @@ and does not rely on it.
 ## Adding New Keys or Commands
 
 1. **New physical key**: Add to `XMacroKey.inc`, update any related key metadata in `Config`
-2. **New character mapping**: Add to appropriate `CharMappings` category
-3. **New motion**: Add to `ToKeys/MovementToKeysPrimitives.cppm` and relevant motion maps
-4. **New edit**: Add to `ToKeys/EditToKeysPrimitives.cpp` and relevant edit maps
+2. **New character mapping**: Add to the matching category map in `ToKeys/CharToKeys.cpp`
+3. **New `<...>` notation**: Add to `KEY_NOTATIONS` in `ToKeys/MovementToKeys.cpp`
+4. **New motion**: Add the token to `ALL_MOTIONS`; its keys derive from `CHAR_TO_KEYS`
 
 ## Semantics
 Note that append(thing, count) -> append count copies of thing, while append(count, thing) -> append count as chars literally, then thing

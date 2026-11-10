@@ -47,41 +47,4 @@ function M.tokenize_sequence(seq)
   return parse_kinded_tokens(result_str), nil
 end
 
----@param seq string
----@return string
-function M.format_sequence(seq)
-  if not seq or seq == "" then
-    return ""
-  end
-  return core.slice_to_string(lib.vf_format_sequence(seq, #seq))
-end
-
----@param lines string[]
----@param start_row integer
----@param start_col integer
----@param seq string
----@return integer|nil row
----@return integer|nil col
----@return string|nil err
-function M.simulate_movements(lines, start_row, start_col, seq)
-  if not seq or seq == "" then
-    return start_row, start_col, nil
-  end
-  local lines_payload = core.encode_line_array(lines, "lines")
-  local result_str = core.slice_to_string(lib.vf_simulate_movements(
-    lines_payload,
-    #lines_payload,
-    start_row,
-    start_col,
-    seq,
-    #seq
-  ))
-  if result_str:sub(1, 6) == "ERROR:" then
-    return nil, nil, result_str
-  end
-  local parts = vim.split(result_str, core.EVENT_FIELD_SEP, { plain = true, trimempty = true })
-  assert(#parts == 2, "vf_simulate_movements returned malformed payload")
-  return tonumber(parts[1]), tonumber(parts[2]), nil
-end
-
 return M

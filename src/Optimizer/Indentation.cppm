@@ -23,11 +23,6 @@ inline std::string_view leadingWhitespace(std::string_view s) {
   return s.substr(0, i);
 }
 
-// Count leading spaces in a string
-inline int leadingSpaceCount(std::string_view s) {
-  return static_cast<int>(leadingWhitespace(s).size());
-}
-
 // Compute number of <BS> presses to reduce indent from `from` to `to` spaces.
 // In autoindent context, <BS> deletes to the previous shiftwidth boundary, not
 // just 1 space. Returns -1 if <BS> overshoots past `to` (can't land exactly).

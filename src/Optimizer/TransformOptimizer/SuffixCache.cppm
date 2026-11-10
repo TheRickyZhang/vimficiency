@@ -4,6 +4,7 @@ module;
 export module vf.Optimizer.TransformOptimizer.SuffixCache;
 
 import std.compat;
+import vf.Utils.HashCombine;
 export import vf.Interpreter.EditInterpreter;
 export import vf.Keyboard.KeyedSequence;
 export import vf.Effort.RunningEffort;
@@ -30,9 +31,6 @@ struct SuffixKey {
   int col;
   Mode mode;
 
-  inline SuffixKey(uint64_t lh, int lc, int ln, int c, Mode m)
-      : linesHash(lh), lineCount(lc), line(ln), col(c), mode(m) {}
-
   inline SuffixKey(uint64_t lh, int lc, CursorPos p, Mode m)
       : linesHash(lh), lineCount(lc), line(p.line), col(p.col), mode(m) {}
 
@@ -46,10 +44,10 @@ struct SuffixKey {
 struct SuffixKeyHash {
   inline size_t operator()(const SuffixKey& k) const {
     size_t h = k.linesHash;
-    h ^= std::hash<int>{}(k.lineCount) + 0x9e3779b9 + (h << 6) + (h >> 2);
-    h ^= std::hash<int>{}(k.line) + 0x9e3779b9 + (h << 6) + (h >> 2);
-    h ^= std::hash<int>{}(k.col) + 0x9e3779b9 + (h << 6) + (h >> 2);
-    h ^= std::hash<int>{}(static_cast<int>(k.mode)) + 0x9e3779b9 + (h << 6) + (h >> 2);
+    hashCombine(h, k.lineCount);
+    hashCombine(h, k.line);
+    hashCombine(h, k.col);
+    hashCombine(h, static_cast<int>(k.mode));
     return h;
   }
 };

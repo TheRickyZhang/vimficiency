@@ -1,3 +1,6 @@
+module;
+#include <cassert>
+
 export module vf.VimCore.VimCore;
 
 import std.compat;
@@ -37,16 +40,6 @@ int caretTargetColInLine(std::string_view s, int currentCol);
 // 2. CursorPos Stepping
 // =============================================================================
 
-// Modern CursorPos-based API (inline)
-inline CursorPos step(const Lines& lines, CursorPos pos, bool forward) {
-  return forward ? lines.getNextPos(pos) : lines.getPrevPos(pos);
-}
-
-inline CursorPos stepBack(const Lines& lines, CursorPos pos, bool forward) {
-  return forward ? lines.getPrevPos(pos) : lines.getNextPos(pos);
-}
-
-// Templated versions for compile-time dispatch (no runtime branch)
 template<bool Forward>
 inline CursorPos step(const Lines& lines, CursorPos pos) {
   if constexpr (Forward) return lines.getNextPos(pos);
@@ -59,9 +52,59 @@ inline CursorPos stepBack(const Lines& lines, CursorPos pos) {
   else return lines.getNextPos(pos);
 }
 
-char getChar(const Lines& lines, int line, int col);
-bool stepFwd(const Lines& lines, int& line, int& col);
-bool stepBack(const Lines& lines, int& line, int& col);
+// Ports of Neovim's position steppers (inc/incl/dec/decl) and gchar_pos. Vim's
+// line model has a NUL slot at col == size, which these treat as a visitable
+// position: `inc` returns 2 when landing on it, `incl`/`decl` step over it on
+// non-empty lines, and `gchar` reads it as 0. They mutate `col` directly, so
+// callers that establish a cursor position must `setCol` afterwards.
+//
+// Return codes: -1 at end/start of buffer (pos unchanged), 0 moved within the
+// line, 1 crossed a line boundary, 2 (`inc` only) moved onto the NUL slot.
+inline int gchar(const Lines& lines, CursorPos pos) {
+  assert(pos.line >= 0 && pos.line <= lines.lastLine() && pos.col >= 0);
+  const Line& line = lines[pos.line];
+  if (pos.col >= static_cast<int>(line.size())) return 0;
+  return static_cast<unsigned char>(line[pos.col]);
+}
+
+inline int inc(const Lines& lines, CursorPos& pos) {
+  int len = static_cast<int>(lines[pos.line].size());
+  if (pos.col < len) {
+    pos.col++;
+    return pos.col < len ? 0 : 2;
+  }
+  if (pos.line < lines.lastLine()) {
+    pos.line++;
+    pos.col = 0;
+    return 1;
+  }
+  return -1;
+}
+
+inline int incl(const Lines& lines, CursorPos& pos) {
+  int r = inc(lines, pos);
+  if (r >= 1 && pos.col != 0) r = inc(lines, pos);
+  return r;
+}
+
+inline int dec(const Lines& lines, CursorPos& pos) {
+  if (pos.col > 0) {
+    pos.col--;
+    return 0;
+  }
+  if (pos.line > 0) {
+    pos.line--;
+    pos.col = static_cast<int>(lines[pos.line].size());
+    return 1;
+  }
+  return -1;
+}
+
+inline int decl(const Lines& lines, CursorPos& pos) {
+  int r = dec(lines, pos);
+  if (r == 1 && pos.col != 0) r = dec(lines, pos);
+  return r;
+}
 
 // =============================================================================
 // 3. Word Motion Core (depends on stepping + char classification)
@@ -74,20 +117,9 @@ bool stepBack(const Lines& lines, int& line, int& col);
 //   - Backward from whitespace: returns CursorPos(line, 0) instead of crossing to prev line
 //   - Forward through whitespace: returns CursorPos(line, lastCol) instead of crossing to next line
 //   Used by daw text object which doesn't cross lines from indentation.
-
-// Templated version for compile-time dispatch on Forward and Edge
 template<bool Forward, EdgeType Edge>
 CursorPos motionWordCore(CursorPos pos,
                         const Lines& lines,
-                        bool big,
-                        bool skipCurrent,
-                        bool lineBounded = false);
-
-// Runtime dispatch version (for compatibility with existing code)
-CursorPos motionWordCore(CursorPos pos,
-                        const Lines& lines,
-                        bool forward,
-                        EdgeType edgeType,
                         bool big,
                         bool skipCurrent,
                         bool lineBounded = false);
@@ -101,23 +133,6 @@ int paragraphStartLine(const Lines& lines, int lineIdx);
 
 // Returns the last line index of the paragraph containing lineIdx.
 int paragraphEndLine(const Lines& lines, int lineIdx);
-
-// =============================================================================
-// 5. Sentence Helpers (depends on char classification + stepping)
-// =============================================================================
-
-// Check if position is a sentence end: [.!?] + optional closers + (whitespace or EOL)
-bool isSentenceEndAt(const Lines& lines, int line, int col);
-
-// From sentence end, skip past closers and whitespace to find next sentence start.
-// Returns (line, col) of next sentence start.
-std::pair<int, int> skipToSentenceStart(const Lines& lines,
-                                        int line, int col);
-
-// Find the start of the sentence containing position (line, col).
-// Returns (line, col) of sentence start.
-std::pair<int, int> findCurrentSentenceStart(const Lines& lines,
-                                              int line, int col);
 
 } // namespace VimCore
 

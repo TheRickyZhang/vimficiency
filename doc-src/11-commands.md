@@ -177,9 +177,9 @@ Works on:
 ## `<Plug>` mappings
 
 For each subcommand above, a `<Plug>VimfyX...` map is also registered so
-you can bind keys without having to type `:Vimfy ...` (which would count
-as admin activity anyway). See [8. Keymaps](08-keymaps.md) for the full
-list and the binding contract.
+you can bind keys without having to type `:Vimfy ...` (cmdline input is
+never counted as motion either way). See [8. Keymaps](08-keymaps.md) for
+the full list and the binding contract.
 
 ## Scratch output buffer keys
 

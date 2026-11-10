@@ -16,7 +16,6 @@ export {
 struct CompositionRangeMotionSearch {
   Lines subset;
   int beginLine;
-  int endLine;
   CursorPos localCursor;
   CursorPos localRangeBegin;
   CursorPos localRangeEnd;
@@ -24,11 +23,6 @@ struct CompositionRangeMotionSearch {
   NavBoundary subsetBoundary;
   BufferIndex bufferIndex;
   int bufferIndexLineOffset;
-
-  inline CursorPos toBufferPos(CursorPos local) const {
-    local.line += beginLine;
-    return local;
-  }
 };
 
 struct CompositionBufferIndexWindow {

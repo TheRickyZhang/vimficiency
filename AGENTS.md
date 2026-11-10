@@ -132,7 +132,7 @@ Architecture and style:
 - `dev/architecture/todo.md` - When touching `CMakeLists.txt`, build flags, or `bench.yml`; check whether a deferred item's threshold has been met
 - `dev/code-style.md` - Before writing new C++ if naming or formatting conventions are unclear
 - `dev/code-semantics.md` - Before naming new types or identifiers, to match the meaning existing names carry
-- `dev/decisions.md` - Before reversing an existing design choice, and when recording a new one
+- `dev/decisions.md` - Before reversing an existing design choice, and when recording a new one; also the C++20 modules rationale and clangd setup
 
 Core:
 - `dev/core/boundary-logic.md` - Before changing word/paragraph/sentence endpoints, boundary crossing, or the NavBoundary/TransformBoundary APIs

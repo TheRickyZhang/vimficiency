@@ -17,7 +17,6 @@ namespace Explore::MovementHandler {
 
 struct MotionSuccess {
   CursorPos newCursor{0, 0};
-  std::string appendedSeq;
 };
 
 // Parse `text`, simulate from `cursor`, report where the cursor lands.
@@ -28,11 +27,10 @@ std::expected<MotionSuccess, Rejected> applyMovement(
     const NavBoundary& boundary,
     const NavContext& navContext);
 
-// Cursor sync from live Vim state. `rawKeys` is recorded as typed input.
+// Cursor sync from live Vim state.
 std::expected<MotionSuccess, Rejected> acceptCursorMove(
     const Lines& lines,
     CursorPos newCursor,
-    std::string_view rawKeys,
     const NavBoundary& boundary);
 
 }  // namespace Explore::MovementHandler

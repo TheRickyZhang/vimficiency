@@ -4,29 +4,6 @@ import std.compat;
 
 using namespace std;
 
-void fillQwerty(Config& cfg);
-void fillColemakDh(Config& cfg);
-void fillUniform(Config& cfg);
-
-Config Config::qwerty() {
-  Config c;
-  fillQwerty(c);
-  return c;
-}
-
-Config Config::colemakDh() {
-  Config c;
-  fillColemakDh(c);
-  return c;
-}
-Config Config::uniform() {
-  Config c;
-  fillUniform(c);
-  return c;
-}
-
-
-
 // ---------------------------------------------------------------------------
 // Regular Qwerty
 // Q W E R T   Y U I O P
@@ -41,11 +18,10 @@ Config Config::uniform() {
 //                            0.8 
 //
 
-void fillQwerty(Config &model) {
-  std::array<KeyInfo, KEY_COUNT> &keyInfo = model.keyInfo;
-
+Config Config::qwerty() {
+  Config model;
   auto set_key = [&](Key k, Hand h, Finger f, double base_cost) {
-    keyInfo[static_cast<size_t>(k)] = {h, f, base_cost};
+    model.keyInfo[static_cast<uint8_t>(k)] = {h, f, base_cost};
   };
 
   // Left-hand letters
@@ -127,6 +103,7 @@ void fillQwerty(Config &model) {
   set_key(Key::Key_Down,  Hand::Right, Finger::Rm, 3.0);
   set_key(Key::Key_Right, Hand::Right, Finger::Ri, 3.0);
   set_key(Key::Key_Up,    Hand::Right, Finger::Rm, 3.0);
+  return model;
 }
 
 
@@ -145,11 +122,10 @@ void fillQwerty(Config &model) {
 //                      0.8  1.0    1.0  0.8
 //
 // ---------------------------------------------------------------------------
-void fillColemakDh(Config &model) {
-  auto &keyInfo = model.keyInfo;
-
+Config Config::colemakDh() {
+  Config model;
   auto set_key = [&](Key k, Hand h, Finger f, double base_cost) {
-    keyInfo[static_cast<size_t>(k)] = {h, f, base_cost};
+    model.keyInfo[static_cast<uint8_t>(k)] = {h, f, base_cost};
   };
 
   // Left-hand letters
@@ -231,24 +207,17 @@ void fillColemakDh(Config &model) {
   set_key(Key::Key_Down,  Hand::Right, Finger::Rm, 1.7);
   set_key(Key::Key_Right, Hand::Right, Finger::Ri, 1.7);
   set_key(Key::Key_Up,    Hand::Right, Finger::Rm, 2.0);
+  return model;
 }
 
-/*
-* Equal weights for testing purposes
-* 
-* Everything 1.0, no complex score weights
-*/
-
-const vector<Key> modifierKeys = {
-  Key::Key_Shift, Key::Key_Ctrl
-};
-
-void fillUniform(Config& cfg) {
-  for(auto &ki : cfg.keyInfo) {
+// Equal weights for testing: every key 1.0, modifiers free, no bigram weights.
+Config Config::uniform() {
+  Config cfg;
+  for (auto& ki : cfg.keyInfo) {
     ki.base_cost = 1.0;
   }
-  for(Key k : modifierKeys) {
-    cfg.keyInfo[static_cast<int>(k)].base_cost = 0.0;
+  for (Key k : {Key::Key_Shift, Key::Key_Ctrl}) {
+    cfg.keyInfo[static_cast<uint8_t>(k)].base_cost = 0.0;
   }
-  cfg.weights = ScoreWeights();
+  return cfg;
 }

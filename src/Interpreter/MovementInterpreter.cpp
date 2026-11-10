@@ -28,19 +28,16 @@ bool isFindCommand(char c) {
   return c == 'f' || c == 'F' || c == 't' || c == 'T';
 }
 
-bool parseFindTarget(string_view motion, char& target) {
-  if (motion.size() < 2) return false;
+char parseFindTarget(string_view motion) {
   if (motion[1] == '<') {
     size_t close = motion.find('>', 1);
     if (close != string_view::npos) {
       if (auto parsed = parseDisplayChar(motion.substr(1, close)); parsed.has_value()) {
-        target = *parsed;
-        return true;
+        return *parsed;
       }
     }
   }
-  target = motion[1];
-  return true;
+  return motion[1];
 }
 
 }  // namespace
@@ -67,8 +64,7 @@ std::string formatMovementParseError(const MovementParseError& error) {
 // IMPORTANT: Returned ParsedMovements contain string_views into seq - caller must ensure seq outlives usage.
 
   // TODO: Once the motions we support are stable, and if it makes sense in how we implement vim's object model, consider representing motions as an enum instead of string. Then it would be no return, as harder to read/debug, but more efficient.
-std::expected<std::vector<ParsedMovement>, MovementParseError> parseMovements(std::string_view seq) {
-  std::string_view sv(seq);  // Create view to avoid allocations
+std::expected<std::vector<ParsedMovement>, MovementParseError> parseMovements(std::string_view sv) {
   std::vector<ParsedMovement> result;
   size_t i = 0;
   while (i < sv.size()) {
@@ -180,13 +176,12 @@ std::expected<std::vector<ParsedMovement>, MovementParseError> parseMovements(st
 // Directly modifies the position and mode passed in. 
 // We may think of passing in BufferIndex to improve simulating certain count motions.
 // However, I am not sure if it is worth it, as count > 1 is called only in simulateMotion(). It is helpful to compare vs repeated applications as well.
-static void applyParsedMovementWithState(CursorPos& pos, Mode& mode,
+static void applyParsedMovementWithState(CursorPos& pos,
                        const ParsedMovement& parsedMotion,
                        const Lines& lines,
                        const NavContext& navContext,
                        CharFindState& charFind) {
-  (void)mode;  // Currently unused but kept for API consistency
-  int n = static_cast<int>(lines.size());
+  int n = lines.lastLine() + 1;
   std::string_view motion = parsedMotion.motion;
   bool hasCount = parsedMotion.hasCount();
   int count = parsedMotion.effectiveCount();
@@ -214,10 +209,9 @@ static void applyParsedMovementWithState(CursorPos& pos, Mode& mode,
         pos.line = targetLine;
       }
     }
-    int len = static_cast<int>(lines[pos.line].size());
     // Set col to end of line, but targetCol to TARGETCOL_EOL so subsequent
     // vertical movements keep cursor at end of each line (Vim's curswant behavior)
-    pos.col = len == 0 ? 0 : len - 1;
+    pos.col = lines[pos.line].lastCol();
     pos.targetCol = TARGETCOL_EOL;
   } else if (motion == "^") {
     pos.setCol(VimCore::caretTargetColInLine(lines[pos.line], pos.col));
@@ -276,8 +270,7 @@ static void applyParsedMovementWithState(CursorPos& pos, Mode& mode,
   // f/F/t/T motions.
   else if (motion.size() >= 2 && isFindCommand(motion[0])) {
     char cmd = motion[0];
-    char target = '\0';
-    if (!parseFindTarget(motion, target)) return;
+    char target = parseFindTarget(motion);
     bool forward = (cmd == 'f' || cmd == 't');
     bool till = (cmd == 't' || cmd == 'T');
     const string &line = lines[pos.line];
@@ -360,16 +353,16 @@ static void applyParsedMovementWithState(CursorPos& pos, Mode& mode,
   }
 }
 
-void applyParsedMovement(CursorPos& pos, Mode& mode,
-                       const ParsedMovement& parsedMotion,
-                       const Lines& lines,
-                       const NavContext& navContext) {
+void applyParsedMovement(CursorPos& pos,
+                         const ParsedMovement& parsedMotion,
+                         const Lines& lines,
+                         const NavContext& navContext) {
   CharFindState charFind;
-  applyParsedMovementWithState(pos, mode, parsedMotion, lines, navContext, charFind);
+  applyParsedMovementWithState(pos, parsedMotion, lines, navContext, charFind);
 }
 
-void applySingleMovement(CursorPos& pos, Mode& mode, string_view motion, const Lines& lines, const NavContext& navContext) {
-  applyParsedMovement(pos, mode, ParsedMovement(motion, 0), lines, navContext);
+void applySingleMovement(CursorPos& pos, string_view motion, const Lines& lines, const NavContext& navContext) {
+  applyParsedMovement(pos, ParsedMovement(motion), lines, navContext);
 }
 
 // Return the result if we were to simulate movementSeq at current state
@@ -377,7 +370,6 @@ void applySingleMovement(CursorPos& pos, Mode& mode, string_view motion, const L
 CursorPos simulateMovements(CursorPos pos, std::string_view movementSeq, const Lines& lines,
                          const NavContext& navContext) {
   assert(!lines.empty() && "Lines can't be empty");
-  Mode mode = Mode::Normal;  // Motions don't change mode, so use dummy
   // Test-only helper: inputs are hand-authored valid motion strings, so
   // `.value()` is the right precondition check. In debug it's an assert;
   // in release it throws `std::bad_expected_access` rather than UB on a
@@ -385,7 +377,7 @@ CursorPos simulateMovements(CursorPos pos, std::string_view movementSeq, const L
   auto motions = parseMovements(movementSeq).value();
   CharFindState charFind;
   for (const auto& motion : motions) {
-    applyParsedMovementWithState(pos, mode, motion, lines, navContext, charFind);
+    applyParsedMovementWithState(pos, motion, lines, navContext, charFind);
   }
   return pos;
 }

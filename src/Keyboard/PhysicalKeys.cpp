@@ -3,7 +3,7 @@ module vf.Keyboard.PhysicalKeys;
 import std.compat;
 
 PhysicalKeys& PhysicalKeys::append(const PhysicalKeys& ks, size_t cnt) {
-  if (cnt <= 0 || ks.size() == 0) return *this;
+  if (cnt == 0 || ks.empty()) return *this;
   keys.reserve(keys.size() + ks.size() * cnt);
   for (size_t i = 0; i < cnt; i++) {
     keys.insert(keys.end(), ks.begin(), ks.end());

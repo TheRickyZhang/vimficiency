@@ -16,11 +16,6 @@ struct CompositionOptimizerParams : OptimizerParamsBase {
   COMPOSITION_FIELDS(VF_PARAMS_WITH_SETTER)
 #undef VF_PARAMS_SELF
 
-  inline CompositionOptimizerParams& withNavLinePadding(int v) {
-    navPaddingAbove = navPaddingBelow = v;
-    return *this;
-  }
-
   inline static CompositionOptimizerParams dijkstra(int maxResults = 20, int maxNodesPopped = 50000) {
     return CompositionOptimizerParams{}
         .withMaxResults(maxResults)

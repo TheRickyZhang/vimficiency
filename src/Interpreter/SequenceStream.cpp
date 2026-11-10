@@ -15,7 +15,7 @@ std::ostream& operator<<(std::ostream& os, const Sequence& seq) {
     os << VF::prettify(seq.str());
     return os;
   }
-  std::vector<TaggedToken> tokens = *parsed;
+  const auto& tokens = *parsed;
 
   for (size_t i = 0; i < tokens.size(); i++) {
     os << VF::prettify(tokens[i].token);

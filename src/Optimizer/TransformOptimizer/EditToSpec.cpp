@@ -4,10 +4,6 @@ import std.compat;
 
 using namespace std;
 
-// =============================================================================
-// Edit Operation Specs - constexpr tables for TransformOptimizer
-// =============================================================================
-
 namespace Edit {
 using VimCore::WordOperatorTarget;
 
@@ -50,28 +46,15 @@ const vector<TextObjectEditSpec> TEXT_OBJECT_EDITS = {
     {KSId::daW, false, true},
 };
 
-// Line motion edits: ks{cmd, keys}, forward
 const vector<LineEditSpec> HALF_LINE_EDITS = {
-    // Forward (to line end)
-    {KSId::D, true},
-    // Backward (to line start)
-    {KSId::d0, false},
+    {KSId::D},
+    {KSId::d0},
 };
 
-// Full line edits: ks{cmd, keys}
 const vector<FullLineEditSpec> FULL_LINE_EDITS = {
     {KSId::dd},
 };
 
-const vector<FullLineEditSpec> EMPTYLINE_FULL_LINE_EDITS = FULL_LINE_EDITS;
-
-// Paragraph motion edits: ks{cmd, keys}, forward
-const vector<ParagraphEditSpec> PARAGRAPH_EDITS = {
-    {KSId::dRBrace, true},
-    {KSId::dLBrace, false},
-};
-
-// Split by Forward for templated dispatch: ks{cmd, keys}
 const vector<ParagraphEditSpecNoDir> FORWARD_PARAGRAPH_EDITS = {
     {KSId::dRBrace},
 };
@@ -79,13 +62,6 @@ const vector<ParagraphEditSpecNoDir> BACKWARD_PARAGRAPH_EDITS = {
     {KSId::dLBrace},
 };
 
-// Sentence motion edits: ks{cmd, keys}, forward
-const vector<SentenceEditSpec> SENTENCE_EDITS = {
-    {KSId::dRParen, true},
-    {KSId::dLParen, false},
-};
-
-// Split by Forward for templated dispatch: ks{cmd, keys}
 const vector<SentenceEditSpecNoDir> FORWARD_SENTENCE_EDITS = {
     {KSId::dRParen},
 };

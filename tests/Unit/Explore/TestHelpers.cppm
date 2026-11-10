@@ -9,6 +9,7 @@ export import vf.Effort.RunningEffort;
 export import vf.Explore.Explore;
 export import vf.Interpreter.SequenceParser;
 export import vf.Keyboard.Config;
+export import vf.LuaExports.Common;
 export import vf.Optimizer.CompositionOptimizer.CompositionOptimizerParams;
 export import vf.Optimizer.NavOptimizer.NavOptimizer;
 export import vf.Optimizer.NavOptimizer.NavRangeConversion;
@@ -28,10 +29,8 @@ protected:
 
   Explore::View makeView(Lines initial, CursorPos initialPos, Lines goal,
                          CursorPos goalPos) {
-    NavBoundary boundary(
-        initial, CursorPos(0, 0),
-        CursorPos(static_cast<int>(initial.size()) - 1,
-                  static_cast<int>(initial.back().size()) + 1),
+    NavBoundary boundary = VF::LuaExports::helpers::sliceBoundary(
+        initial, 0, initial.back().size(),
         /*hasLinesAbove=*/false,
         /*hasLinesBelow=*/false);
     return Explore::View(std::move(initial), initialPos, std::move(goal),

@@ -1,93 +1,88 @@
 module vf.Keyboard.ToKeys.MovementToKeys;
 
 import std.compat;
-import vf.Keyboard.ToKeys.MovementToKeysPrimitives;
-import vf.Utils.Debug;
 
 using namespace std;
 
+namespace {
 
-// =============================================================================
-// Global Tokenizer
-// =============================================================================
+// <...> notations whose keys are not the concatenation of their chars'
+// CHAR_TO_KEYS entries. See :h key-notation, :h keytrans()
+const CommandToKeys specialWithBracket = {
+  {"<lt>", {Key::Key_Shift, Key::Key_Comma}},
+  {"<LT>", {Key::Key_Shift, Key::Key_Comma}},
 
-const SequenceToKeys& globalSequenceToKeys() {
-  static SequenceToKeys tok(ACTION_MOTIONS_TO_KEYS, ALL_MOTIONS);
-  return tok;
-}
+  {"<Space>", {Key::Key_Space}},
+  {"<Tab>", {Key::Key_Tab}},
+  {"<CR>", {Key::Key_Enter}},
+  {"<Enter>", {Key::Key_Enter}},
+  {"<Return>", {Key::Key_Enter}},
+  {"<Esc>", {Key::Key_Esc}},
+  {"<BS>", {Key::Key_Backspace}},
+  {"<Del>", {Key::Key_Delete}},
 
-// =============================================================================
-// ACTION_MOTIONS_TO_KEYS - Physical key mappings for tokenizing raw input
-// =============================================================================
-// See :h key-notation, :h keytrans()
+  {"<Up>", {Key::Key_Up}},
+  {"<Down>", {Key::Key_Down}},
+  {"<Left>", {Key::Key_Left}},
+  {"<Right>", {Key::Key_Right}},
 
-const MovementToKeys ACTION_MOTIONS_TO_KEYS = combineAll({
-  cref(letters),
-  cref(digits), 
-  cref(whitespace), 
-  cref(topPunctuation),
-  cref(mainPunctuation),
-  cref(digitSymbols),
+  {"<Home>", {Key::Key_Home}},
+  {"<End>", {Key::Key_End}},
+};
+
+const CommandToKeys ctrlCombinations = {
+  {"<C-a>", {Key::Key_Ctrl, Key::Key_A}},
+  {"<C-b>", {Key::Key_Ctrl, Key::Key_B}},
+  {"<C-c>", {Key::Key_Ctrl, Key::Key_C}},
+  {"<C-d>", {Key::Key_Ctrl, Key::Key_D}},
+  {"<C-e>", {Key::Key_Ctrl, Key::Key_E}},
+  {"<C-f>", {Key::Key_Ctrl, Key::Key_F}},
+  {"<C-g>", {Key::Key_Ctrl, Key::Key_G}},
+  {"<C-h>", {Key::Key_Ctrl, Key::Key_H}},
+  {"<C-i>", {Key::Key_Ctrl, Key::Key_I}},
+  {"<C-j>", {Key::Key_Ctrl, Key::Key_J}},
+  {"<C-k>", {Key::Key_Ctrl, Key::Key_K}},
+  {"<C-l>", {Key::Key_Ctrl, Key::Key_L}},
+  {"<C-m>", {Key::Key_Ctrl, Key::Key_M}},
+  {"<C-n>", {Key::Key_Ctrl, Key::Key_N}},
+  {"<C-o>", {Key::Key_Ctrl, Key::Key_O}},
+  {"<C-p>", {Key::Key_Ctrl, Key::Key_P}},
+  {"<C-q>", {Key::Key_Ctrl, Key::Key_Q}},
+  {"<C-r>", {Key::Key_Ctrl, Key::Key_R}},
+  {"<C-s>", {Key::Key_Ctrl, Key::Key_S}},
+  {"<C-t>", {Key::Key_Ctrl, Key::Key_T}},
+  {"<C-u>", {Key::Key_Ctrl, Key::Key_U}},
+  {"<C-v>", {Key::Key_Ctrl, Key::Key_V}},
+  {"<C-w>", {Key::Key_Ctrl, Key::Key_W}},
+  {"<C-x>", {Key::Key_Ctrl, Key::Key_X}},
+  {"<C-y>", {Key::Key_Ctrl, Key::Key_Y}},
+  {"<C-z>", {Key::Key_Ctrl, Key::Key_Z}},
+
+  {"<C-Space>", {Key::Key_Ctrl, Key::Key_Space}},
+  {"<C-BS>", {Key::Key_Ctrl, Key::Key_Backspace}},
+  {"<C-CR>", {Key::Key_Ctrl, Key::Key_Enter}},
+  {"<C-Tab>", {Key::Key_Ctrl, Key::Key_Tab}},
+};
+
+const CommandToKeys KEY_NOTATIONS = combineAll({
   cref(specialWithBracket),
   cref(ctrlCombinations),
 });
 
-// =============================================================================
-// EXPLORABLE_MOTIONS - Motions directly explorable in optimizer search
-// =============================================================================
-// These motions can be applied without additional context (no target char needed)
-const MovementToKeys EXPLORABLE_MOTIONS = combineAll({
-  cref(hjkl),
-  cref(line_col),
-  cref(words),
-  cref(ggG),
-  cref(brackets),
-    cref(scrolls)
-});
+}  // namespace
 
-
-// =============================================================================
-// CHARACTER_FIND_MOTIONS - Motions requiring special handling
-// =============================================================================
-// These need target characters (f/F/t/T) or prior motion context (;/,)
-// They are handled specially in the optimizer, not in the main exploration loop
-
-static const MovementToKeys CHARACTER_FIND_MOTIONS = {
-  {"f",  {Key::Key_F}},                         // find char forward
-  {"F",  {Key::Key_Shift, Key::Key_F}},         // find char backward
-  {"t",  {Key::Key_T}},                         // till char forward
-  {"T",  {Key::Key_Shift, Key::Key_T}},         // till char backward
-  {";",  {Key::Key_Semicolon}},                 // repeat f/F/t/T same direction
-  {",",  {Key::Key_Comma}},                     // repeat f/F/t/T opposite direction
+const MotionSet ALL_MOTIONS = {
+  "h", "j", "k", "l",
+  "0", "^", "$",
+  "w", "b", "e", "ge", "W", "B", "E", "gE",
+  "gg", "G",
+  "{", "}", "(", ")",
+  "<C-f>", "<C-b>", "<C-d>", "<C-u>",
+  // Need a target char (f/F/t/T) or prior find context (;/,)
+  "f", "F", "t", "T", ";", ",",
 };
 
-// =============================================================================
-// ALL_MOTIONS - Union of all supported vim motions (for parsing/validation)
-// =============================================================================
-
-static MovementToKeys buildAllMotions() {
-  MovementToKeys all = EXPLORABLE_MOTIONS;
-  all.insert(CHARACTER_FIND_MOTIONS.begin(), CHARACTER_FIND_MOTIONS.end());
-  return all;
-}
-
-const MovementToKeys ALL_MOTIONS = buildAllMotions();
-
-// CHAR_TO_KEYS is now defined in CharToKeys.cpp
-
-// =============================================================================
-// Utilities
-// =============================================================================
-
-MovementToKeys getSlicedMovementToKeys(vector<string> motions) {
-  MovementToKeys res;
-  for(const string& m : motions) {
-    auto it = ALL_MOTIONS.find(m);
-    if(it == ALL_MOTIONS.end()) {
-      debug("cannot find", m, "in ALL_MOTIONS");
-    } else {
-      res[m] = it->second;
-    }
-  }
-  return res;
+const SequenceToKeys& globalSequenceToKeys() {
+  static SequenceToKeys tok(KEY_NOTATIONS);
+  return tok;
 }

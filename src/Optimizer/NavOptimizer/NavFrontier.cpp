@@ -35,47 +35,43 @@ vector<Suggestion> rankNavFrontier(
   RunningEffort acceptedEffort(globalSequenceToKeys().tokenize(query.seq), config);
   const double acceptedCost = acceptedEffort.getEffort();
 
-  auto scoreState = [&](CursorPos pos, double effort) {
-    const double distance = NavHeuristic::distanceToRange(motionRange, pos);
-    return params.effortWeight * effort + params.distanceWeight * distance;
-  };
-  auto sortValue = [&](const NavState& s) {
-    const double effortDiff = s.getEffort() - acceptedCost;
-    const double distance = NavHeuristic::distanceToRange(motionRange, s.getPos());
-    switch (query.sortMode) {
-      case SuggestionSortMode::Effort:
-        return effortDiff;
-      case SuggestionSortMode::Distance:
-        return distance;
-      case SuggestionSortMode::Score:
-        return params.effortWeight * effortDiff + params.distanceWeight * distance;
-    }
-    return effortDiff;
-  };
-
-  NavStateFactory states(config, scoreState);
+  NavStateFactory states(
+      config, NavHeuristic::StateScorer{motionRange, params.effortWeight, params.distanceWeight});
   NavState base = states.initial(query.cursor, acceptedEffort);
+
+  auto sortValue = [&](const Suggestion& s) {
+    return suggestionSortValue(s, query.sortMode);
+  };
 
   // Cap up to `params.maxResultsPerEndPos` distinct tokens per landing
   // cell. Default 1 keeps just the cheapest token per cell; values > 1
   // surface multiple distinct paths to the same cell (e.g. `w` / `W` /
-  // `e` all reaching the same word start). Already clamped to ≥1 above.
+  // `e` all reaching the same word start).
   const int cap = params.maxResultsPerEndPos;
-  unordered_map<Pos, vector<NavState>> resultsByLanding;
+  unordered_map<Pos, vector<Suggestion>> resultsByLanding;
 
-  auto emit = [&](NavState s) {
+  auto emit = [&](const NavState& s) {
+    Suggestion suggestion{
+        .token = Token{s.getSequence().str()},
+        .landingPos = s.getPos(),
+    };
+    updateSuggestionMetrics(
+        suggestion, s.getEffort() - acceptedCost,
+        NavHeuristic::distanceToRange(motionRange, s.getPos()),
+        params.effortWeight, params.distanceWeight);
+
     auto& bucket = resultsByLanding[s.getPos().pos()];
-    if (static_cast<int>(bucket.size()) < cap) {
-      bucket.push_back(std::move(s));
+    if (ssize(bucket) < cap) {
+      bucket.push_back(std::move(suggestion));
       return;
     }
     // Bucket is full — replace the worst entry if the new one is cheaper.
     auto worst = std::max_element(bucket.begin(), bucket.end(),
-        [&](const NavState& a, const NavState& b) {
+        [&](const Suggestion& a, const Suggestion& b) {
           return sortValue(a) < sortValue(b);
         });
-    if (sortValue(s) < sortValue(*worst)) {
-      *worst = std::move(s);
+    if (sortValue(suggestion) < sortValue(*worst)) {
+      *worst = std::move(suggestion);
     }
   };
 
@@ -97,34 +93,9 @@ vector<Suggestion> rankNavFrontier(
   }
   explorer.exploreCountedMotions(base, onCounted, onFMotion);
 
-  // Flatten cap-N buckets into a single sorted successor list.
-  vector<NavState> successors;
-  for (auto& [_, bucket] : resultsByLanding) {
-    for (auto& s : bucket) successors.push_back(std::move(s));
-  }
-  stable_sort(successors.begin(), successors.end(),
-              [&](const NavState& a, const NavState& b) {
-                const double av = sortValue(a);
-                const double bv = sortValue(b);
-                if (av != bv) return av < bv;
-                return a.getSequence().str() < b.getSequence().str();
-              });
-
   vector<Suggestion> items;
-  items.reserve(successors.size());
-  for (const NavState& s : successors) {
-    string seq = s.getSequence().str();
-    if (seq.empty()) continue;
-    const double effortDiff = s.getEffort() - acceptedCost;
-    const double distance = NavHeuristic::distanceToRange(motionRange, s.getPos());
-    Suggestion suggestion{
-        .token = Token{std::move(seq)},
-        .landingPos = s.getPos(),
-    };
-    updateSuggestionMetrics(
-        suggestion, effortDiff, distance,
-        params.effortWeight, params.distanceWeight);
-    items.push_back(std::move(suggestion));
+  for (auto& [_, bucket] : resultsByLanding) {
+    for (auto& s : bucket) items.push_back(std::move(s));
   }
   sortAndCapSuggestions(items, query.maxCount, query.sortMode);
 

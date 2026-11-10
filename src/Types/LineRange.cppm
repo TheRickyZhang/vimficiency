@@ -16,14 +16,6 @@ struct LineRange {
       std::swap(beginLine, endLine);
     }
   }
-
-  inline bool isValid() const {
-    return beginLine >= 0 && endLine >= beginLine;
-  }
-
-  inline int lineCount() const {
-    return endLine - beginLine;
-  }
 };
 
 // Sentinel value for "line range outside boundary"

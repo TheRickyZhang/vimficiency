@@ -165,14 +165,11 @@ private:
   inline bool isValidLocalLandingPosition(const CursorPos& pos) const {
     if (!lines_.contains(pos)) return false;
     return boundary_.isPositionInBounds(
-        pos, lines_.lastLine(), static_cast<int>(lines_.back().size()));
+        pos, lines_.lastLine(), lines_.getSize(lines_.lastLine()));
   }
 
-  inline int scrollShift(bool isHalfMotion, bool forward) const {
-    int baseShift = isHalfMotion
-        ? navContext_.scrollAmount
-        : std::max(0, navContext_.windowHeight - 2);
-    return forward ? baseShift : -baseShift;
+  inline int scrollShift(bool forward) const {
+    return forward ? navContext_.scrollAmount : -navContext_.scrollAmount;
   }
 
   inline std::optional<PrefixRange> boundedPrefixRange(int cappedMax) const {
@@ -221,10 +218,7 @@ private:
     assert(cnt >= 0 && cnt <= CountPrefixLimits::MAX_PREFIX_COUNT);
     assert(isValidLocalLandingPosition(newPos) &&
            "counted motion producer emitted invalid landing position");
-    CountPenaltyInput in;
-    in.count = cnt;
-    in.span = cnt;
-    double penalty = runtimeCountPenalty<C>(in);
+    double penalty = runtimeCountPenalty<C>(CountPenaltyInput{cnt, cnt});
     onCounted(baseMotion, KeyedSequence::byId(baseMotion), cnt, newPos, penalty);
   }
 
@@ -338,22 +332,30 @@ private:
       emitMotion(KSId::Dollar, {pos.line, dollarCol, TARGETCOL_EOL}, onStatic);
   }
 
+  template<bool Down, class OnStatic>
+  void emitLineStep(const NavState& base, OnStatic& onStatic) {
+    CursorPos pos = base.getPos();
+    if (Down ? pos.line >= maxLineIndex() : pos.line <= 0) return;
+    int newLine = Down ? pos.line + 1 : pos.line - 1;
+    int newCol = clampTargetColToLine(pos.targetCol, newLine);
+    emitMotion(Down ? KSId::j : KSId::k, {newLine, newCol, pos.targetCol}, onStatic);
+  }
+
+  template<bool Top, class OnStatic>
+  void emitBufferEdge(const NavState& base, OnStatic& onStatic) {
+    if (Top ? hasLinesAboveBoundary() : hasLinesBelowBoundary()) return;
+    CursorPos pos = base.getPos();
+    int line = Top ? 0 : maxLineIndex();
+    int endpointCol = VimOptions::startOfLine()
+        ? firstNonBlankCol(line)
+        : clampTargetColToLine(pos.targetCol, line);
+    emitMotion(Top ? KSId::gg : KSId::G, {line, endpointCol, pos.targetCol}, onStatic);
+  }
+
   template<class OnStatic>
   void exploreVerticalMovements(const NavState& base, OnStatic& onStatic) {
-    CursorPos pos = base.getPos();
-    int lastLine = maxLineIndex();
-
-    if (pos.line < lastLine) {
-      int newLine = pos.line + 1;
-      int newCol = clampTargetColToLine(pos.targetCol, newLine);
-      emitMotion(KSId::j, {newLine, newCol, pos.targetCol}, onStatic);
-    }
-
-    if (pos.line > 0) {
-      int newLine = pos.line - 1;
-      int newCol = clampTargetColToLine(pos.targetCol, newLine);
-      emitMotion(KSId::k, {newLine, newCol, pos.targetCol}, onStatic);
-    }
+    emitLineStep<true>(base, onStatic);
+    emitLineStep<false>(base, onStatic);
   }
 
   inline static bool isForwardWordTarget(VimCore::WordMotionTarget target) {
@@ -362,7 +364,7 @@ private:
   }
 
   inline VimCore::WordBoundaryContext wordBoundaryForDirection(bool forward) const {
-    auto dirBoundary = forward ? boundaryForDirection(true) : boundaryForDirection(false);
+    auto dirBoundary = boundaryForDirection(forward);
     VimCore::WordBoundaryContext boundary;
     if (forward) {
       boundary.rightColOffset = dirBoundary.edgeOffset;
@@ -443,9 +445,8 @@ private:
     CursorPos pos = base.getPos();
 
     const auto& specs = Forward ? Movement::FORWARD_SCROLL_MOVEMENTS : Movement::BACKWARD_SCROLL_MOVEMENTS;
+    int shift = scrollShift(Forward);
     for (const auto& spec : specs) {
-      int shift = scrollShift(spec.isHalf, Forward);
-
       int targetLine = VimCore::scrollEndpoint(
           pos.line, maxLineIndex() + 1, shift,
           hasLinesAboveBoundary(), hasLinesBelowBoundary());
@@ -468,20 +469,8 @@ private:
 
   template<class OnStatic>
   void exploreJumpMotions(const NavState& base, OnStatic& onStatic) {
-    CursorPos pos = base.getPos();
-    if (!hasLinesAboveBoundary()) {
-      int endpointCol = VimOptions::startOfLine()
-          ? firstNonBlankCol(0)
-          : clampTargetColToLine(pos.targetCol, 0);
-      emitMotion(KSId::gg, {0, endpointCol, pos.targetCol}, onStatic);
-    }
-    if (!hasLinesBelowBoundary()) {
-      int lastLine = maxLineIndex();
-      int endpointCol = VimOptions::startOfLine()
-          ? firstNonBlankCol(lastLine)
-          : clampTargetColToLine(pos.targetCol, lastLine);
-      emitMotion(KSId::G, {lastLine, endpointCol, pos.targetCol}, onStatic);
-    }
+    emitBufferEdge<true>(base, onStatic);
+    emitBufferEdge<false>(base, onStatic);
   }
 
   template<bool Forward, class OnFMotion>
@@ -538,7 +527,6 @@ private:
     auto results = bufferIndex_.getClosestInRange<Forward>(
         LT, globalPos, globalRangeFirst, globalRangeLast, isAllowedEndpoint);
     for (const auto& r : results) {
-      if (!r.valid()) continue;
       if (!isValidPrefixCount(r.count)) continue;
 
       CursorPos localPos(r.pos.line - off, r.pos.col);
@@ -668,43 +656,16 @@ private:
 
   template<class OnStatic>
   void exploreUpMotions(const NavState& base, OnStatic& onStatic) {
-    CursorPos pos = base.getPos();
-
-    if (pos.line > 0) {
-      int newLine = pos.line - 1;
-      int newCol = clampTargetColToLine(pos.targetCol, newLine);
-      emitMotion(KSId::k, {newLine, newCol, pos.targetCol}, onStatic);
-    }
-
+    emitLineStep<false>(base, onStatic);
     exploreScrollMovements<false>(base, onStatic);
-
-    if (!hasLinesAboveBoundary()) {
-      int endpointCol = VimOptions::startOfLine()
-          ? firstNonBlankCol(0)
-          : clampTargetColToLine(pos.targetCol, 0);
-      emitMotion(KSId::gg, {0, endpointCol, pos.targetCol}, onStatic);
-    }
+    emitBufferEdge<true>(base, onStatic);
   }
 
   template<class OnStatic>
   void exploreDownMotions(const NavState& base, OnStatic& onStatic) {
-    CursorPos pos = base.getPos();
-    int lastLine = maxLineIndex();
-
-    if (pos.line < lastLine) {
-      int newLine = pos.line + 1;
-      int newCol = clampTargetColToLine(pos.targetCol, newLine);
-      emitMotion(KSId::j, {newLine, newCol, pos.targetCol}, onStatic);
-    }
-
+    emitLineStep<true>(base, onStatic);
     exploreScrollMovements<true>(base, onStatic);
-
-    if (!hasLinesBelowBoundary()) {
-      int endpointCol = VimOptions::startOfLine()
-          ? firstNonBlankCol(lastLine)
-          : clampTargetColToLine(pos.targetCol, lastLine);
-      emitMotion(KSId::G, {lastLine, endpointCol, pos.targetCol}, onStatic);
-    }
+    emitBufferEdge<false>(base, onStatic);
   }
 
   template<class OnStatic>

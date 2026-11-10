@@ -27,7 +27,6 @@ class QuoteFlags {
 public:
   inline void add(char c) { flags |= maskFor(c); }
   inline bool seen(char c) const { return flags & maskFor(c); }
-  inline void reset() { flags = 0; }
 
   static constexpr std::array<char, 3> ALL_QUOTES = {'"', '\'', '`'};
 };

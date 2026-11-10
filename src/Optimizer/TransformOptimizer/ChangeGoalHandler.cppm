@@ -25,10 +25,8 @@ export {
 struct ChangeGoalHandler {
   const Lines& effectiveLines;
   int leftColOffset;
-  int rightColOffset;
   double effortWeight;
   const Config& config;
-  const TransformBoundary& transformBoundary;
   const Lines& initialLines;
   const Lines& goalLines;
   const std::string& pre;
@@ -123,22 +121,13 @@ private:
   // Static helpers
   static void appendOptionalCount(KeyedSequence& out, int count, const KeyedSequence& base);
   static KeyedSequence withOptionalCount(int count, const KeyedSequence& base);
-  static std::string formatCountedCommand(int count, std::string_view baseCmd);
   static RunningEffort mergeGoalSuffixEffort(const KeyedSequence& prefix,
                                              const RunningEffort& typedSuffixEffort,
                                              double completionPenalty,
                                              const Config& config);
 
-  // Build change prefix overloads
-  KeyedSequence buildChangePrefix(const SequenceBinding& sourceCmd,
-                                  const Lines& postDelLines, const CursorPos& postDelPos,
-                                  const Lines& preDelLines, const CharRange& range) const;
-  KeyedSequence buildChangePrefix(const SequenceBinding& sourceCmd,
-                                  const Lines& postDelLines, const CursorPos& postDelPos,
-                                  const Lines& preDelLines, const CharLineRange& range) const;
-  KeyedSequence buildChangePrefix(const SequenceBinding& sourceCmd,
-                                  const Lines& postDelLines, const CursorPos& postDelPos,
-                                  const Lines& preDelLines, const LineCharRange& range) const;
+  static KeyedSequence buildChangePrefix(const SequenceBinding& sourceCmd,
+                                         const Lines& postDelLines, const CursorPos& postDelPos);
 
   // Suffix cache helpers
   std::vector<RunningEffort> buildRawSuffixEfforts(const SuffixProgram& program,
@@ -169,23 +158,22 @@ private:
                                     const TransformState& base,
                                     const SequenceBinding& sourceCmd, int line,
                                     int ccLineCount, const KeyedSequence& changeCmd,
-                                    bool applyAutoindent,
-                                    bool collapseLines = true);
+                                    bool applyAutoindent);
 
   static CursorPos seedPositionForStart(int startIndex, const Lines& initialLines, int leftColOffset);
 };
 
 }  // export
 
-// onDeletionGoal is the only template — stays in header (varies on RangeT).
+// The range type only selects the ChangeGoalEmitter overload; the change
+// prefix depends solely on the post-deletion state.
 template<class RangeT>
 GoalStates ChangeGoalHandler::onDeletionGoal(
-    const TransformEditorState& afterDel, const TransformState& base, const RangeT& range,
+    const TransformEditorState& afterDel, const TransformState& base, const RangeT&,
     const SequenceBinding& sourceCmd) {
   bool isDot = isDotRepeat(base, sourceCmd);
-  KeyedSequence goalCompletionCmd = buildChangePrefix(sourceCmd,
-                                                      afterDel.getLines(), afterDel.getPos(),
-                                                      base.getLines(), range);
+  KeyedSequence goalCompletionCmd =
+      buildChangePrefix(sourceCmd, afterDel.getLines(), afterDel.getPos());
   TypedGoalVariants typedVariants{{typed, typedEffort}, {typed, typedEffort}};
   return emitEditGoal(afterDel, base, sourceCmd, goalCompletionCmd, typedVariants, isDot);
 }

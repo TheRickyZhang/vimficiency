@@ -15,10 +15,6 @@ struct LandingResult : Result {
   LandingResult() = default;
   inline LandingResult(Sequence seq, double c, CursorPos p)
     : Result(std::move(seq), c), goalPos_(p) {}
-  inline LandingResult(const std::string& s, double c, CursorPos p)
-    : Result(s, c), goalPos_(p) {}
-  inline LandingResult(std::string&& s, double c, CursorPos p)
-    : Result(std::move(s), c), goalPos_(p) {}
 
   inline const CursorPos& getGoalPos() const { return goalPos_; }
 

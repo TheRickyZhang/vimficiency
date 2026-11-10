@@ -111,8 +111,7 @@ public:
   template<class OnDeletion>
   void exploreHalfLineEdits(
       const std::vector<Edit::LineEditSpec>& specs,
-      const CursorPos& cursor, const Lines& lines,
-      int contentStart, int contentEnd, OnDeletion&& onDeletion);
+      const CursorPos& cursor, const Lines& lines, OnDeletion&& onDeletion);
 
   template<class OnDeletion>
   void exploreFullLineEdits(
@@ -122,12 +121,11 @@ public:
   template<class OnDeletion>
   void exploreCharEdits(
       const CursorPos& cursor, const Lines& lines,
-      int contentStart, int contentEnd, int editContentLen,
+      int contentStart, int contentEnd,
       OnDeletion&& onDeletion);
 
 private:
   inline const RunningEffort& effortFor(KSId id) const { return bank_[id]; }
-  bool inBoundaryRegion(const CursorPos& pos, const Lines& lines) const;
   bool resolvedRangePreservesBoundary(
       const VimCore::ResolvedDeleteRange& resolved, const Lines& lines) const;
 
@@ -214,13 +212,6 @@ inline bool TransformExplorer::resolvedRangePreservesBoundary(
         }
         return !endPastSuffix(range.end);
       }
-    case VimCore::ResolvedDeleteRangeKind::CharLine:
-      if (boundary_.hasPrefix() && resolved.charLineRange.begin.line == 0 &&
-          resolved.charLineRange.begin.col < leftColOffset_) {
-        return false;
-      }
-      return !(boundary_.hasSuffix() &&
-               resolved.charLineRange.endLine > lines.lastLine());
     case VimCore::ResolvedDeleteRangeKind::LineChar:
       if (boundary_.hasPrefix() && resolved.lineCharRange.beginLine == 0) {
         return false;
@@ -304,7 +295,7 @@ void TransformExplorer::exploreTextObjectEdits(
 template<class OnDeletion>
 void TransformExplorer::exploreHalfLineEdits(
     const std::vector<Edit::LineEditSpec>& specs,
-    const CursorPos& cursor, const Lines& lines, int, int,
+    const CursorPos& cursor, const Lines& lines,
     OnDeletion&& onDeletion) {
   int lastEditLine = lines.lastLine();
 
@@ -365,7 +356,7 @@ void TransformExplorer::exploreFullLineEdits(
 template<class OnDeletion>
 void TransformExplorer::exploreCharEdits(
     const CursorPos& cursor, const Lines& lines, int contentStart, int contentEnd,
-    int, OnDeletion&& onDeletion) {
+    OnDeletion&& onDeletion) {
   if (contentStart <= cursor.col && cursor.col < contentEnd) {
     emitResolvedDeletion(
         VimCore::ResolvedDeleteRange::characterwise(
@@ -596,7 +587,7 @@ void TransformExplorer::exploreCountedWordEdits(
         break;
       }
       CursorPos nextPrev = lines.getPrevPos(range.end);
-      if (nextPrev == POSITION_OUTSIDE_BOUNDARY || nextPrev == prev) break;
+      if (nextPrev == prev) break;
       lastEnd = range.end;
       lastCount = count;
       prev = nextPrev;
@@ -691,12 +682,11 @@ void TransformExplorer::exploreAllDeletions(
   CursorPos cursor = state.getPos();
 
   auto [contentBegin, contentEnd] = computeTransformBounds(lines, cursor);
-  int editContentLen = contentEnd - contentBegin;
 
-  if (editContentLen <= 0) {
+  if (contentEnd <= contentBegin) {
     assert(lines[cursor.line].empty());
 
-    exploreFullLineEdits(Edit::EMPTYLINE_FULL_LINE_EDITS, cursor, lines, onDeletion);
+    exploreFullLineEdits(Edit::FULL_LINE_EDITS, cursor, lines, onDeletion);
     exploreWordEdits(
         Edit::EMPTYLINE_FORWARD_WORD_EDITS, cursor, lines, onDeletion);
     exploreWordEdits(
@@ -708,9 +698,9 @@ void TransformExplorer::exploreAllDeletions(
   exploreWordEdits(Edit::FORWARD_WORD_EDITS, cursor, lines, onDeletion);
   exploreWordEdits(Edit::BACKWARD_WORD_EDITS, cursor, lines, onDeletion);
   exploreTextObjectEdits(Edit::TEXT_OBJECT_EDITS, cursor, lines, onDeletion);
-  exploreHalfLineEdits(Edit::HALF_LINE_EDITS, cursor, lines, contentBegin, contentEnd, onDeletion);
+  exploreHalfLineEdits(Edit::HALF_LINE_EDITS, cursor, lines, onDeletion);
   exploreFullLineEdits(Edit::FULL_LINE_EDITS, cursor, lines, onDeletion);
-  exploreCharEdits(cursor, lines, contentBegin, contentEnd, editContentLen, onDeletion);
+  exploreCharEdits(cursor, lines, contentBegin, contentEnd, onDeletion);
   exploreParagraphEdits<true>(
       Edit::FORWARD_PARAGRAPH_EDITS, cursor, lines, onDeletion);
   exploreParagraphEdits<false>(

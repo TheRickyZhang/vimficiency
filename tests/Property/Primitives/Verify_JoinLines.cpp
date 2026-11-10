@@ -119,7 +119,7 @@ class VerifyJoinLines {
 
     Lines primitiveLines = lines;
     CursorPos primitivePos = cursor;
-    VimCore::joinLines(primitiveLines, primitivePos, spec.addSpace);
+    VimCore::joinLineRange(primitiveLines, primitivePos, 2, spec.addSpace);
 
     string seq = joinSequence(/*joinLineCount=*/2, spec.addSpace);
     SimulationResult nvim =
@@ -145,7 +145,7 @@ class VerifyJoinLines {
     Lines primitiveLines = lines;
     CursorPos primitivePos = cursor;
     if (joinLineCount == 2) {
-      VimCore::joinLines(primitiveLines, primitivePos, spec.addSpace);
+      VimCore::joinLineRange(primitiveLines, primitivePos, 2, spec.addSpace);
     } else {
       VimCore::joinLineRange(primitiveLines, primitivePos, joinLineCount, spec.addSpace);
     }

@@ -106,7 +106,6 @@ VFByteSlice vf_compute_diffs(
 VFByteSlice vf_get_debug();
 VFByteSlice vf_get_warnings();
 VFByteSlice vf_get_optimizer_defaults();
-int vf_version();
 const char* vf_version_string();
 const char* vf_abi_hash();
 VFByteSlice vf_debug_config();
@@ -135,7 +134,6 @@ int vf_manual_evict_reason(
   int64_t now_ns,
   int max_search_lines,
   int manual_idle_timeout_seconds);
-VFByteSlice vf_format_sequence(const char* seq, size_t seq_len);
 VFByteSlice vf_sequence_display_lines(
   const char* seq,
   size_t seq_len,
@@ -183,13 +181,6 @@ VFByteSlice vf_format_saved_result_lines(
   size_t encoded_result_len,
   bool tokenize,
   bool sectionize);
-VFByteSlice vf_simulate_movements(
-  const char* encoded_lines,
-  size_t encoded_lines_len,
-  int start_row,
-  int start_col,
-  const char* seq,
-  size_t seq_len);
 
 VFByteSlice vf_explore_start_async(
   const char* encoded_initial_lines,
@@ -226,11 +217,6 @@ VFByteSlice vf_explore_reconfigure_plan(
   int view_id,
   const char* optimizer_overrides,
   size_t optimizer_overrides_len);
-VFByteSlice vf_explore_apply_movement(
-  int view_id,
-  const char* movement_text,
-  size_t movement_text_len);
-VFByteSlice vf_explore_apply_edit(int view_id, const char* text, size_t text_len);
 VFByteSlice vf_explore_current_lines(int view_id);
 VFByteSlice vf_explore_accept_snapshot(
   int view_id,

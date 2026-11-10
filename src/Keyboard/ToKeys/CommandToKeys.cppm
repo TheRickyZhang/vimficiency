@@ -17,19 +17,8 @@ struct StringHash {
 
 using CommandToKeys = std::unordered_map<std::string, PhysicalKeys, StringHash, std::equal_to<>>;
 
-// =============================================================================
-// Combine Utilities
-// =============================================================================
-// Use reference_wrapper to avoid overhead of copying, while giving concrete
-// objects to initializer list
-
-// Merge multiple CommandToKeys maps into one
+// Merge multiple CommandToKeys maps into one. reference_wrapper avoids copying
+// while still giving the initializer list concrete objects.
 CommandToKeys combineAll(std::initializer_list<std::reference_wrapper<const CommandToKeys>> maps);
-
-// Convert CommandToKeys (single-char keys only) to CharToKeys
-CharToKeys combineAllToCharKeySeq(std::initializer_list<std::reference_wrapper<const CommandToKeys>> maps);
-
-// Extract all keys from multiple maps as a sorted list
-std::vector<std::string> combineAllToList(std::initializer_list<std::reference_wrapper<const CommandToKeys>> maps);
 
 }  // export

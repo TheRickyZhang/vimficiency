@@ -23,18 +23,13 @@ std::string hexWindow(std::string_view s, size_t start, size_t end) {
 
 using namespace std;
 
-SequenceToKeys::SequenceToKeys(const CommandToKeys &actions,
-                                     const CommandToKeys &motions) {
-  tokens_.reserve(actions.size() + motions.size());
-
-  for (const auto &p : actions) {
-    tokens_.push_back(TokenDef{p.first, &p.second});
-  }
-  for (const auto &p : motions) {
+SequenceToKeys::SequenceToKeys(const CommandToKeys &notations) {
+  tokens_.reserve(notations.size());
+  for (const auto &p : notations) {
     tokens_.push_back(TokenDef{p.first, &p.second});
   }
 
-  // Longest tokens first, so we greedily match "gg" before "g".
+  // Longest tokens first for greedy matching.
   sort(tokens_.begin(), tokens_.end(),
             [](const TokenDef &a, const TokenDef &b) {
               if (a.token.size() != b.token.size())
@@ -63,7 +58,6 @@ PhysicalKeys SequenceToKeys::tokenize(string_view s) const {
       }
     }
     if(!matched){
-      // Fallback: single character via CHAR_TO_KEYS (handles typed content)
       char ch = s[i];
       auto it = CHAR_TO_KEYS.find(ch);
       if (it != CHAR_TO_KEYS.end()) {

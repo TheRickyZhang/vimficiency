@@ -14,55 +14,38 @@ M.config = config
 --- Clearing on create keeps `setup()` idempotent.
 M.AUGROUP = "Vimficiency"
 
-local function set_cmd(name, fn, opts)
-  opts = opts or {}
-  pcall(vim.api.nvim_del_user_command, name)
-  vim.api.nvim_create_user_command(name, fn, opts)
-end
+-- Invocation roots: every `:Vimfy` and keymap invocation enters through one of these.
 
-local function handle_vf_command(opts)
-  local prev = key_tracking.begin_ignore()
-  local ok, err = pcall(function()
-    commands.handle(opts.args)
-  end)
-  key_tracking.end_ignore(prev)
+--- The only error boundary for `:Vimfy`. Everything below raises.
+local function cmdline_entry(opts)
+  local ok, err = pcall(commands.handle, opts.args)
   if not ok then
     vim.notify(tostring(err), vim.log.levels.ERROR)
   end
 end
 
----@param fn fun(...): any
----@return fun(...): any
-function M.wrap(fn)
+--- Every keymap-bound Vimfy entry point goes through here.
+---
+--- `vim.on_key` records the mapping's LHS before this callback runs.
+--- Multi-key triggers are already stripped by `key_tracking.uncount_trigger`.
+--- Retract the latest event for single-key triggers. `:Vimfy` needs no cleanup
+--- because command-line input is never recorded.
+---@param fn fun(...)
+---@return fun(...)
+local function keymap_entry(fn)
   return function(...)
-    local prev = key_tracking.begin_ignore()
-    local ok, err = pcall(fn, ...)
-    key_tracking.end_ignore(prev)
-    if not ok then
-      error(err)
-    end
+    key_tracking.uncount_trigger()
+    return fn(...)
   end
 end
 
----@param subcmd string
----@param subcmd_args string[]
----@param source string
----@return fun()
-local function build_subcmd_callback(subcmd, subcmd_args, source)
-  return M.wrap(function()
-    commands.run(subcmd, subcmd_args, source)
-  end)
-end
 
----@param name string
----@param subcmd string
----@param subcmd_args string[]
-local function register_plug(name, subcmd, subcmd_args)
-  vim.keymap.set("n", "<Plug>Vimfy" .. name,
-    build_subcmd_callback(subcmd, subcmd_args, "<Plug>Vimfy" .. name),
-    { silent = true, desc = "Vimfy " .. subcmd .. " " .. table.concat(subcmd_args, " ") })
-end
+-- Public API.
 
+--- Bind a key to a Vimfy subcommand (`"start a"`) or function so the trigger
+--- keystroke is excluded from active recordings. A plain `vim.keymap.set`
+--- would be counted as motion when the LHS is a single key; see
+--- `key_tracking.uncount_trigger`.
 ---@param mode string|string[]
 ---@param lhs string
 ---@param spec string|fun(): any
@@ -78,12 +61,17 @@ function M.map(mode, lhs, spec, opts)
       error("vimfy.map: empty spec string")
     end
     local subcmd = parts[1]
+    if not commands.has_subcommand(subcmd) then
+      error("vimfy.map(" .. lhs .. "): unknown subcommand '" .. subcmd .. "'")
+    end
     local subcmd_args = {}
     for i = 2, #parts do subcmd_args[#subcmd_args + 1] = parts[i] end
-    callback = build_subcmd_callback(subcmd, subcmd_args, "vimfy.map(" .. lhs .. ")")
+    callback = keymap_entry(function()
+      commands.dispatch_subcommand(subcmd, subcmd_args)
+    end)
     if not opts.desc then opts.desc = "Vimfy " .. spec end
   elseif type(spec) == "function" then
-    callback = M.wrap(spec)
+    callback = keymap_entry(spec)
     if not opts.desc then opts.desc = "Vimfy <fn>" end
   else
     error("vimfy.map: spec must be a string or function, got " .. type(spec))
@@ -91,6 +79,8 @@ function M.map(mode, lhs, spec, opts)
 
   vim.keymap.set(mode, lhs, callback, opts)
 end
+
+-- Lifecycle: setup, teardown, and dev reload.
 
 function M.setup(user_config)
   user_config = user_config or {}
@@ -127,32 +117,31 @@ function M.setup(user_config)
     )
   end
 
-  set_cmd("Vimfy", handle_vf_command, {
-    nargs = "*",
-    complete = commands.complete,
-    desc = "Vimfy movement optimizer",
-  })
+  for _, name in ipairs({ "Vimfy", "Vimficiency" }) do
+    vim.api.nvim_create_user_command(name, cmdline_entry, {
+      nargs = "*",
+      complete = commands.complete,
+      desc = "Vimfy movement optimizer",
+    })
+  end
 
-  set_cmd("Vimficiency", handle_vf_command, {
-    nargs = "*",
-    complete = commands.complete,
-    desc = "Vimfy movement optimizer",
-  })
-
+  local function register_plug(name, spec)
+    M.map("n", "<Plug>Vimfy" .. name, spec)
+  end
   for _, alias in ipairs({ "a", "b", "c", "d", "e" }) do
     local upper = alias:upper()
-    register_plug("Start" .. upper, "start", { alias })
-    register_plug("Watch" .. upper, "watch", { alias })
-    register_plug("Finish" .. upper, "finish", { alias })
-    register_plug("Close" .. upper, "close", { alias })
-    register_plug("Play" .. upper, "play", { alias })
+    register_plug("Start" .. upper, "start " .. alias)
+    register_plug("Watch" .. upper, "watch " .. alias)
+    register_plug("Finish" .. upper, "finish " .. alias)
+    register_plug("Close" .. upper, "close " .. alias)
+    register_plug("Play" .. upper, "play " .. alias)
   end
-  register_plug("SuggestOn", "suggest", { "on" })
-  register_plug("SuggestOff", "suggest", { "off" })
-  register_plug("SuggestToggle", "suggest", { "toggle" })
-  register_plug("List", "list", {})
-  register_plug("Config", "config", {})
-  register_plug("Help", "help", {})
+  register_plug("SuggestOn", "suggest on")
+  register_plug("SuggestOff", "suggest off")
+  register_plug("SuggestToggle", "suggest toggle")
+  register_plug("List", "list")
+  register_plug("Config", "config")
+  register_plug("Help", "help")
 
   recall_capture.install()
 

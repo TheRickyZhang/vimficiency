@@ -8,7 +8,6 @@ import vf.VimCore.CharMask;
 import vf.VimCore.VimCore;
 import vf.VimCore.VimEditUtils;
 import vf.VimCore.VimMotionUtils;
-import vf.Boundary.TransformBoundary;
 import vf.Types.CursorPos;
 
 using namespace std;
@@ -316,13 +315,8 @@ static CharRange wordTextObjectRangeImpl(CursorPos cursor,
       // The exclusive end is at or before EOL of its line, and everything
       // from endCol to EOL is whitespace. (If endCol >= size, the range
       // doesn't end in trailing whitespace — it's already past EOL.)
-      if (endCol < static_cast<int>(endLine.size())) {
-        bool allWhitespace = true;
-        for (int c = endCol; c < static_cast<int>(endLine.size()); c++) {
-          if (!CharMask::isWhitespace(endLine[c])) { allWhitespace = false; break; }
-        }
-        endsAtLineTrailingWhitespace = allWhitespace;
-      }
+      endsAtLineTrailingWhitespace = endCol < static_cast<int>(endLine.size()) &&
+                                     hasOnlyBlankSuffix(endLine, endCol);
     }
     if (!isInner && includeTrailingEmptyLine &&
         startsOnBlankLine && endsAtLineTrailingWhitespace) {
@@ -424,14 +418,9 @@ static CharRange wordTextObjectRangeImpl(CursorPos cursor,
           if (nextCol < static_cast<int>(lines[rawWordEnd.line].size())) {
             hasTrailingWhitespace =
                 CharMask::isWhitespace(lines[rawWordEnd.line][nextCol]);
-            trailingWhitespaceReachesLineEnd = hasTrailingWhitespace;
-            for (int col = nextCol + 1;
-                 trailingWhitespaceReachesLineEnd &&
-                 col < static_cast<int>(lines[rawWordEnd.line].size());
-                 col++) {
-              trailingWhitespaceReachesLineEnd =
-                  CharMask::isWhitespace(lines[rawWordEnd.line][col]);
-            }
+            trailingWhitespaceReachesLineEnd =
+                hasTrailingWhitespace &&
+                hasOnlyBlankSuffix(lines[rawWordEnd.line], nextCol + 1);
           }
         }
         if (hasTrailingWhitespace &&
@@ -570,10 +559,7 @@ static int findPrevQuote(const string& line, int colStart, char quote) {
 // count == 1. Returns the deletion range as a half-open CharRange.
 CharRange quoteTextObjectRange(CursorPos cursor, const Lines& lines, bool isInner,
                                char quote, int leftColOffset, int rightColOffset) {
-  int n = static_cast<int>(lines.size());
-  if (n == 0) return CHAR_RANGE_OUTSIDE_BOUNDARY;
-
-  int lineIdx = std::clamp(cursor.line, 0, n - 1);
+  int lineIdx = std::clamp(cursor.line, 0, lines.lastLine());
   const string& ln = lines[lineIdx];
   int len = static_cast<int>(ln.size());
   if (len == 0) return CHAR_RANGE_OUTSIDE_BOUNDARY;
@@ -606,11 +592,10 @@ CharRange quoteTextObjectRange(CursorPos cursor, const Lines& lines, bool isInne
 
   // Around: extend through trailing whitespace, or leading if no trailing.
   if (!isInner) {
-    auto isWs = [](char c) { return c == ' ' || c == '\t'; };
-    if (colEnd + 1 < len && isWs(ln[colEnd + 1])) {
-      while (colEnd + 1 < len && isWs(ln[colEnd + 1])) colEnd++;
+    if (colEnd + 1 < len && CharMask::isWhitespace(ln[colEnd + 1])) {
+      while (colEnd + 1 < len && CharMask::isWhitespace(ln[colEnd + 1])) colEnd++;
     } else {
-      while (colStart > 0 && isWs(ln[colStart - 1])) colStart--;
+      while (colStart > 0 && CharMask::isWhitespace(ln[colStart - 1])) colStart--;
     }
   }
 
@@ -725,52 +710,13 @@ foundOpenForward:
   return {CursorPos(-1, -1), CursorPos(-1, -1)};
 }
 
-// Port of Neovim's inc (memline.c). Returns true if advanced.
-static bool incPos(const Lines& lines, int& line, int& col) {
-  int n = static_cast<int>(lines.size());
-  if (line < 0 || line >= n) return false;
-  int len = static_cast<int>(lines[line].size());
-  if (col < len) { col++; return true; }
-  if (line + 1 < n) { line++; col = 0; return true; }
-  return false;
-}
-
-// Port of Neovim's incl: advance and skip past NUL positions.
-static bool inclPos(const Lines& lines, int& line, int& col) {
-  if (!incPos(lines, line, col)) return false;
-  if (line < static_cast<int>(lines.size()) &&
-      col >= static_cast<int>(lines[line].size())) {
-    if (!incPos(lines, line, col)) return false;
-  }
-  return true;
-}
-
-static bool decPos(const Lines& lines, int& line, int& col) {
-  if (col > 0) { col--; return true; }
-  if (line > 0) {
-    line--;
-    col = static_cast<int>(lines[line].size());
-    return true;
-  }
-  return false;
-}
-
-static bool declPos(const Lines& lines, int& line, int& col) {
-  if (!decPos(lines, line, col)) return false;
-  if (col >= static_cast<int>(lines[line].size())) {
-    if (!decPos(lines, line, col)) return false;
-  }
-  return true;
-}
-
 // Port of Neovim's inindent(extra=1): true iff cols [0, col] are all whitespace.
-static bool inIndent(const Lines& lines, int line, int col) {
-  if (line < 0 || line >= static_cast<int>(lines.size())) return false;
-  const string& ln = lines[line];
+static bool inIndent(const Lines& lines, CursorPos pos) {
+  const string& ln = lines[pos.line];
   int len = static_cast<int>(ln.size());
-  for (int i = 0; i <= col; i++) {
+  for (int i = 0; i <= pos.col; i++) {
     if (i >= len) return false;
-    if (ln[i] != ' ' && ln[i] != '\t') return false;
+    if (!CharMask::isWhitespace(ln[i])) return false;
   }
   return true;
 }
@@ -792,33 +738,33 @@ CharRange bracketTextObjectRange(CursorPos cursor, const Lines& lines, bool isIn
 
   // Inner: port of current_block (textobject.c:955). Start is incl past open;
   // cursor is decl from close, skipping leading indent on the close's line.
-  int sl = openPos.line, sc = openPos.col;
-  if (!inclPos(lines, sl, sc)) return CHAR_RANGE_OUTSIDE_BOUNDARY;
+  CursorPos start = openPos;
+  if (incl(lines, start) == -1) return CHAR_RANGE_OUTSIDE_BOUNDARY;
 
-  int cl = closePos.line, cc = closePos.col;
-  bool sol = (cc == 0);
-  if (!declPos(lines, cl, cc)) return CHAR_RANGE_OUTSIDE_BOUNDARY;
-  while (inIndent(lines, cl, cc)) {
+  CursorPos last = closePos;
+  bool sol = (last.col == 0);
+  if (decl(lines, last) == -1) return CHAR_RANGE_OUTSIDE_BOUNDARY;
+  while (inIndent(lines, last)) {
     sol = true;
-    if (!declPos(lines, cl, cc)) break;
+    if (decl(lines, last) == -1) break;
   }
 
   CharRange range;
   if (sol) {
     // Motion exclusive; advance cursor past indent line boundary.
-    int el = cl, ec = cc;
-    if (!inclPos(lines, el, ec)) {
+    CursorPos end = last;
+    if (incl(lines, end) == -1) {
       return CHAR_RANGE_OUTSIDE_BOUNDARY;
     }
-    range = CharRange(CursorPos(sl, sc), CursorPos(el, ec));
-  } else if (CursorPos(sl, sc) <= CursorPos(cl, cc)) {
+    range = CharRange(start, end);
+  } else if (start <= last) {
     // Inclusive end: one past cursor.
-    int el = cl, ec = cc;
-    incPos(lines, el, ec);
-    range = CharRange(CursorPos(sl, sc), CursorPos(el, ec));
+    CursorPos end = last;
+    inc(lines, end);
+    range = CharRange(start, end);
   } else {
     // Empty: no text between brackets; cursor lands at start_pos.
-    range = CharRange(CursorPos(sl, sc), CursorPos(sl, sc));
+    range = CharRange(start, start);
   }
 
   if (crossesColumnBoundary(range, lines, leftColOffset, rightColOffset)) {
@@ -835,9 +781,6 @@ CharRange bracketTextObjectRange(CursorPos cursor, const Lines& lines, bool isIn
 template<bool Forward, LineEdgeType Edge>
 static int motionParagraphEndpointCore(int cursorLine, const Lines& lines) {
   int n = static_cast<int>(lines.size());
-  if (n == 0)
-    return 0;
-
   cursorLine = std::clamp(cursorLine, 0, n - 1);
   bool cursorOnBlank = isParagraphSeparatorLine(lines[cursorLine]);
 
@@ -920,14 +863,13 @@ static int motionParagraphEndpointCore(int cursorLine, const Lines& lines) {
   return result;
 }
 
-// Templated version for compile-time dispatch on Forward and Edge
 template<bool Forward, LineEdgeType Edge>
 int motionParagraphEndpoint(int cursorLine, const Lines& lines, bool hasLinesOutside) {
   int result = motionParagraphEndpointCore<Forward, Edge>(cursorLine, lines);
 
   // Boundary check
   if (hasLinesOutside) {
-    int lastLine = static_cast<int>(lines.size()) - 1;
+    int lastLine = lines.lastLine();
     if constexpr (Forward) {
       if (result >= lastLine) {
         return LINE_OUTSIDE_BOUNDARY;
@@ -950,32 +892,6 @@ template int motionParagraphEndpoint<false, LineEdgeType::BlockEdge>(int, const 
 template int motionParagraphEndpoint<false, LineEdgeType::GapEdge>(int, const Lines&, bool);
 template int motionParagraphEndpoint<false, LineEdgeType::NextEdge>(int, const Lines&, bool);
 
-// Runtime dispatch version (for internal use in text object functions)
-int motionParagraphEndpoint(int cursorLine, const Lines& lines, bool forward,
-                            LineEdgeType edgeType) {
-  if (forward) {
-    switch (edgeType) {
-      case LineEdgeType::BlockEdge:
-        return motionParagraphEndpointCore<true, LineEdgeType::BlockEdge>(cursorLine, lines);
-      case LineEdgeType::GapEdge:
-        return motionParagraphEndpointCore<true, LineEdgeType::GapEdge>(cursorLine, lines);
-      case LineEdgeType::NextEdge:
-        return motionParagraphEndpointCore<true, LineEdgeType::NextEdge>(cursorLine, lines);
-      default: __builtin_unreachable();
-    }
-  } else {
-    switch (edgeType) {
-      case LineEdgeType::BlockEdge:
-        return motionParagraphEndpointCore<false, LineEdgeType::BlockEdge>(cursorLine, lines);
-      case LineEdgeType::GapEdge:
-        return motionParagraphEndpointCore<false, LineEdgeType::GapEdge>(cursorLine, lines);
-      case LineEdgeType::NextEdge:
-        return motionParagraphEndpointCore<false, LineEdgeType::NextEdge>(cursorLine, lines);
-      default: __builtin_unreachable();
-    }
-  }
-}
-
 LineRange paragraphTextObjectRange(int cursorLine, const Lines& lines,
                                    bool isInner, int topBoundary,
                                    int bottomBoundary) {
@@ -983,29 +899,18 @@ LineRange paragraphTextObjectRange(int cursorLine, const Lines& lines,
   // Differs from `}`/`{` motion: text object uses `linewhite` (whitespace-only
   // OR empty), motion uses strict empty-line check.
   int n = static_cast<int>(lines.size());
-  if (n == 0)
-    return LINE_RANGE_OUTSIDE_BOUNDARY;
-
-  auto linewhite = [&](int lnum) {
-    if (lnum < 0 || lnum >= n) return false;
-    const std::string& line = lines[lnum];
-    for (char c : line) {
-      if (c != ' ' && c != '\t') return false;
-    }
-    return true;
-  };
 
   int startLine = std::clamp(cursorLine, 0, n - 1);
-  bool whiteInFront = linewhite(startLine);
+  bool whiteInFront = isBlankLine(lines[startLine]);
 
   // Move start back through same-blankness lines.
-  while (startLine > 0 && linewhite(startLine - 1) == whiteInFront) {
+  while (startLine > 0 && isBlankLine(lines[startLine - 1]) == whiteInFront) {
     startLine--;
   }
 
   // Move end forward through same-blankness lines.
   int endLine = startLine;
-  while (endLine < n && linewhite(endLine) == whiteInFront) {
+  while (endLine < n && isBlankLine(lines[endLine]) == whiteInFront) {
     endLine++;
   }
   endLine--;
@@ -1021,27 +926,27 @@ LineRange paragraphTextObjectRange(int cursorLine, const Lines& lines,
     // paragraph that runs to buffer end.
     if (endLine >= n - 1) {
       if (whiteInFront) return LINE_RANGE_OUTSIDE_BOUNDARY;
-      while (startLine > 0 && linewhite(startLine - 1)) {
+      while (startLine > 0 && isBlankLine(lines[startLine - 1])) {
         startLine--;
       }
     } else {
       doWhite = true;
       int t = endLine + 1;
       while (t < n) {
-        if (linewhite(t) != prevStartIsWhite) {
+        if (isBlankLine(lines[t]) != prevStartIsWhite) {
           // The next block's blankness drives where the second forward-extend
           // loop runs. Cursor-on-white → entering non-white → doWhite=false →
           // extend through the non-white para. Cursor-on-non-white → entering
           // white → doWhite=true → extend through trailing blanks AND include
           // one extra line for the gap before the next non-white block.
-          doWhite = linewhite(t);
+          doWhite = isBlankLine(lines[t]);
           if (doWhite) endLine++;
           break;
         }
         t++;
       }
       endLine++;
-      while (endLine < n && linewhite(endLine) == doWhite) endLine++;
+      while (endLine < n && isBlankLine(lines[endLine]) == doWhite) endLine++;
       endLine--;
       prevStartIsWhite = doWhite;
 
@@ -1050,7 +955,7 @@ LineRange paragraphTextObjectRange(int cursorLine, const Lines& lines,
       if (!whiteInFront && startLine > 0) {
         bool startIsWhite = !prevStartIsWhite;
         while (startLine > 0 &&
-               linewhite(startLine - 1) == startIsWhite) {
+               isBlankLine(lines[startLine - 1]) == startIsWhite) {
           startLine--;
           startIsWhite = !startIsWhite;
         }
@@ -1071,202 +976,6 @@ LineRange paragraphTextObjectRange(int cursorLine, const Lines& lines,
 // =============================================================================
 // Sentence endpoint/range computation
 // =============================================================================
-
-namespace {
-
-struct SentenceExtent {
-  CursorPos start;
-  CursorPos sentenceEndExclusive;
-  CursorPos trailingEndExclusive;
-  CursorPos operatorEndpoint;
-};
-
-CursorPos clampSentencePos(CursorPos cursor, const Lines& lines) {
-  int line = std::clamp(cursor.line, 0, lines.lastLine());
-  int col = lines[line].empty()
-      ? 0
-      : std::clamp(cursor.col, 0, static_cast<int>(lines[line].size()) - 1);
-  return CursorPos(line, col);
-}
-
-CursorPos onePastSentenceEnd(const Lines& lines, CursorPos endInclusive) {
-  return VimCore::onePastOnSameLine(lines, endInclusive);
-}
-
-CursorPos firstSentenceStartAfterBlankRun(const Lines& lines, int line) {
-  int n = static_cast<int>(lines.size());
-  while (line < n && isBlankLine(lines[line])) {
-    line++;
-  }
-  if (line >= n) return POSITION_OUTSIDE_BOUNDARY;
-  return CursorPos(line, firstNonBlankColInLine(lines[line]));
-}
-
-// Vim's `d)` extends past EOF when forward sentence motion lands on the
-// last character of the buffer (unterminated tail). Detect that to convert
-// a motion endpoint into the operator endpoint.
-bool motionEndsAtLastBufferChar(CursorPos motionEnd, const Lines& lines) {
-  int lastLine = lines.lastLine();
-  if (motionEnd.line != lastLine) return false;
-  int len = static_cast<int>(lines[lastLine].size());
-  if (len == 0) return false;
-  return motionEnd.col == len - 1;
-}
-
-CursorPos currentSentenceStart(CursorPos cursor, const Lines& lines) {
-  CursorPos clamped = clampSentencePos(cursor, lines);
-  auto [line, col] = findCurrentSentenceStart(lines, clamped.line, clamped.col);
-  return CursorPos(line, col);
-}
-
-CursorPos previousSentenceStart(CursorPos sentenceStart, const Lines& lines) {
-  CursorPos clamped = clampSentencePos(sentenceStart, lines);
-  int line = clamped.line;
-  int col = clamped.col;
-  if (!stepBack(lines, line, col)) return clamped;
-
-  auto [prevLine, prevCol] = findCurrentSentenceStart(lines, line, col);
-  CursorPos previous(prevLine, prevCol);
-  return previous < clamped ? previous : clamped;
-}
-
-std::optional<CursorPos> sentenceGapEndpoint(CursorPos cursor, const Lines& lines) {
-  CursorPos clamped = clampSentencePos(cursor, lines);
-  char c = getChar(lines, clamped.line, clamped.col);
-  if (c != ' ' && c != '\t') return std::nullopt;
-
-  int l = clamped.line;
-  int k = clamped.col;
-  if (!stepBack(lines, l, k)) return std::nullopt;
-
-  while (true) {
-    char prev = getChar(lines, l, k);
-    if (!CharMask::isWhitespace(prev)) break;
-    if (!stepBack(lines, l, k)) return std::nullopt;
-  }
-
-  while (CharMask::isSentenceCloser(getChar(lines, l, k))) {
-    if (!stepBack(lines, l, k)) return std::nullopt;
-  }
-
-  if (!isSentenceEndAt(lines, l, k)) return std::nullopt;
-
-  l = clamped.line;
-  k = clamped.col;
-  while (true) {
-    char gap = getChar(lines, l, k);
-    if (!CharMask::isWhitespace(gap)) return CursorPos(l, k);
-    if (!stepFwd(lines, l, k)) {
-      return onePastSentenceEnd(lines, clamped);
-    }
-  }
-}
-
-std::optional<SentenceExtent> sentenceExtentAtOrAfter(CursorPos cursor,
-                                                      const Lines& lines) {
-  if (lines.empty()) return std::nullopt;
-
-  CursorPos scanStart = clampSentencePos(cursor, lines);
-  int line = scanStart.line;
-  int col = scanStart.col;
-  if (isBlankLine(lines[line])) {
-    scanStart = firstSentenceStartAfterBlankRun(lines, line);
-    if (scanStart == POSITION_OUTSIDE_BOUNDARY) return std::nullopt;
-    line = scanStart.line;
-    col = scanStart.col;
-  }
-
-  CursorPos start = currentSentenceStart(scanStart, lines);
-  int l = line;
-  int k = col;
-
-  while (true) {
-    if (isParagraphSeparatorLine(lines[l])) {
-      return SentenceExtent{
-          start, CursorPos(l, 0), CursorPos(l, 0), CursorPos(l, 0)};
-    }
-
-    if (isSentenceEndAt(lines, l, k)) {
-      int endLine = l;
-      int endCol = k;
-
-      if (!stepFwd(lines, l, k)) {
-        CursorPos sentenceEndExclusive =
-            onePastSentenceEnd(lines, CursorPos(endLine, endCol));
-        return SentenceExtent{
-            start, sentenceEndExclusive, sentenceEndExclusive, sentenceEndExclusive};
-      }
-
-      while (true) {
-        char c = getChar(lines, l, k);
-        if (!CharMask::isSentenceCloser(c)) break;
-        endLine = l;
-        endCol = k;
-        int tl = l;
-        int tk = k;
-        if (!stepFwd(lines, tl, tk)) {
-          l = endLine;
-          k = static_cast<int>(lines[endLine].size());
-          break;
-        }
-        if (tl != l) {
-          l = tl;
-          k = tk;
-          break;
-        }
-        l = tl;
-        k = tk;
-      }
-
-      CursorPos sentenceEndExclusive =
-          onePastSentenceEnd(lines, CursorPos(endLine, endCol));
-      CursorPos gapEndInclusive(l, k);
-      bool gapReachedEof = false;
-
-      // A blank line is a paragraph/sentence boundary in Vim; the trailing
-      // gap stops at the start of that line and does not span past it.
-      while (true) {
-        if (l >= static_cast<int>(lines.size())) break;
-        if (isParagraphSeparatorLine(lines[l])) break;
-        int len = static_cast<int>(lines[l].size());
-        if (k >= len) {
-          gapReachedEof = l == lines.lastLine();
-          break;
-        }
-        k = std::clamp(k, 0, len - 1);
-        char c = lines[l][k];
-        if (c == ' ' || c == '\t') {
-          gapEndInclusive = CursorPos(l, k);
-          if (!stepFwd(lines, l, k)) {
-            gapReachedEof = true;
-            break;
-          }
-          continue;
-        }
-        break;
-      }
-
-      CursorPos trailingEndExclusive = onePastSentenceEnd(lines, gapEndInclusive);
-      CursorPos operatorEndpoint = gapReachedEof
-          ? trailingEndExclusive
-          : l >= static_cast<int>(lines.size())
-          ? CursorPos(lines.lastLine(), 0)
-          : CursorPos(l, k);
-      return SentenceExtent{
-          start, sentenceEndExclusive, trailingEndExclusive, operatorEndpoint};
-    }
-
-    if (!stepFwd(lines, l, k)) return std::nullopt;
-  }
-}
-
-std::optional<SentenceExtent> sentenceExtentContaining(CursorPos cursor,
-                                                       const Lines& lines) {
-  if (lines.empty()) return std::nullopt;
-  return sentenceExtentAtOrAfter(currentSentenceStart(cursor, lines), lines);
-}
-
-}  // namespace
 
 static bool sentenceEndpointOutsideBoundary(CursorPos result, const Lines& lines,
                                             bool forward, int boundaryOffset,
@@ -1291,13 +1000,6 @@ static bool sentenceEndpointOutsideBoundary(CursorPos result, const Lines& lines
   return false;
 }
 
-static bool onlyWhitespaceToLineEnd(const Line& line, int col) {
-  for (; col < static_cast<int>(line.size()); col++) {
-    if (!CharMask::isWhitespace(line[col])) return false;
-  }
-  return true;
-}
-
 static bool sentenceOperatorEndpointOutsideBoundary(
     CursorPos result, const Lines& lines, bool forward, int boundaryOffset,
     bool hasLinesOutside) {
@@ -1313,7 +1015,7 @@ static bool sentenceOperatorEndpointOutsideBoundary(
     }
     if (hasLinesOutside && result.line == lastLine &&
         result.col < static_cast<int>(lines[lastLine].size()) &&
-        onlyWhitespaceToLineEnd(lines[lastLine], result.col)) {
+        hasOnlyBlankSuffix(lines[lastLine], result.col)) {
       return true;
     }
     if (result.line > lastLine) {
@@ -1337,8 +1039,6 @@ static bool sentenceOperatorEndpointOutsideBoundary(
 
 CursorPos sentenceMotionEndpoint(CursorPos cursor, const Lines& lines, bool forward,
                                  int boundaryOffset, bool hasLinesOutside) {
-  if (lines.empty()) return cursor;
-
   CursorPos result = cursor;
   if (forward) {
     motionSentenceNext(result, lines);
@@ -1359,9 +1059,7 @@ static CursorPos sentenceOperatorEndpointCore(CursorPos cursor, const Lines& lin
   // the raw past-EOL semantics, return the resulting position. If findsent
   // signals FAIL, return cursor unchanged so the interpreter applies no edit
   // (matches Vim's `clearopbeep`).
-  if (lines.empty()) return cursor;
-
-  CursorPos result = clampSentencePos(cursor, lines);
+  CursorPos result = lines.clamp(cursor);
   bool ok = findSentenceForOperator(result, lines, forward, 1);
   if (!ok) return cursor;
   return result;
@@ -1369,7 +1067,6 @@ static CursorPos sentenceOperatorEndpointCore(CursorPos cursor, const Lines& lin
 
 CursorPos sentenceOperatorEndpoint(CursorPos cursor, const Lines& lines, bool forward,
                                    int boundaryOffset, bool hasLinesOutside) {
-  if (lines.empty()) return cursor;
   CursorPos result = sentenceOperatorEndpointCore(cursor, lines, forward);
   if (sentenceOperatorEndpointOutsideBoundary(
           result, lines, forward, boundaryOffset, hasLinesOutside)) {
@@ -1378,41 +1075,27 @@ CursorPos sentenceOperatorEndpoint(CursorPos cursor, const Lines& lines, bool fo
   return result;
 }
 
-// Helpers ported from Neovim memline.c / textobject.c, used by current_sent
-// below. gcharPos returns 0 at NUL/past-end (matching Vim's gchar_pos).
-static int gcharPos(const Lines& lines, int line, int col) {
-  if (line < 0 || line >= static_cast<int>(lines.size())) return 0;
-  const string& ln = lines[line];
-  if (col < 0 || col >= static_cast<int>(ln.size())) return 0;
-  return static_cast<unsigned char>(ln[col]);
-}
-
-static bool isAsciiWhite(int c) { return c == ' ' || c == '\t'; }
+static bool isAsciiWhite(int c) { return CharMask::isWhitespace(static_cast<char>(c)); }
 
 // Port of Neovim's find_first_blank (textobject.c:553).
-static void findFirstBlank(const Lines& lines, int& line, int& col) {
+static void findFirstBlank(const Lines& lines, CursorPos& pos) {
   while (true) {
-    int sl = line, sc = col;
-    if (!declPos(lines, sl, sc)) return;
-    int c = gcharPos(lines, sl, sc);
-    if (!isAsciiWhite(c)) return;  // non-blank: don't update, leave where we were
-    line = sl;
-    col = sc;
+    CursorPos prev = pos;
+    if (decl(lines, prev) == -1) return;
+    if (!isAsciiWhite(gchar(lines, prev))) return;  // non-blank: stay put
+    pos = prev;
   }
 }
 
 // Port of Neovim's findsent_forward (textobject.c:567).
-static void findSentForward(const Lines& lines, int& line, int& col,
-                            int count, bool atStart) {
+static void findSentForward(const Lines& lines, CursorPos& pos, int count, bool atStart) {
   while (count--) {
-    CursorPos cp(line, col);
-    findSentenceForOperator(cp, lines, true, 1);
-    line = cp.line; col = cp.col;
+    findSentenceForOperator(pos, lines, true, 1);
     if (atStart) {
-      findFirstBlank(lines, line, col);
+      findFirstBlank(lines, pos);
     }
     if (count == 0 || atStart) {
-      declPos(lines, line, col);
+      decl(lines, pos);
     }
     atStart = !atStart;
   }
@@ -1431,72 +1114,57 @@ static void findSentForward(const Lines& lines, int& line, int& col,
 //     same line, which extends through the line's last char.
 CharRange sentenceTextObjectRange(CursorPos cursor, const Lines& lines, bool isInner,
                                   CursorPos leftBoundary, CursorPos rightBoundary) {
-  int n = static_cast<int>(lines.size());
-  if (n == 0) return CHAR_RANGE_OUTSIDE_BOUNDARY;
-
   bool include = !isInner;
-  int sl = cursor.line, sc = cursor.col;  // start_pos
-  int pl = sl, pc = sc;                   // pos (whitespace scan helper)
-  int cl = sl, cc = sc;                   // cursor (working)
+  CursorPos start = cursor;  // start_pos
+  CursorPos pos = cursor;    // whitespace scan helper
 
   // findsent(FORWARD, 1) — move to start of next sentence (or EOF).
-  {
-    CursorPos cp(cl, cc);
-    findSentenceForOperator(cp, lines, true, 1);
-    cl = cp.line; cc = cp.col;
-  }
+  findSentenceForOperator(cursor, lines, true, 1);
 
   // Scan pos forward through whitespace. If we land where findsent did,
   // the original cursor was inside a whitespace gap before the next sentence.
-  while (isAsciiWhite(gcharPos(lines, pl, pc))) {
-    if (!inclPos(lines, pl, pc)) break;
+  while (isAsciiWhite(gchar(lines, pos))) {
+    if (incl(lines, pos) == -1) break;
   }
   bool startBlank;
-  if (pl == cl && pc == cc) {
+  if (pos == cursor) {
     startBlank = true;
-    findFirstBlank(lines, sl, sc);
+    findFirstBlank(lines, start);
   } else {
     startBlank = false;
-    CursorPos cp(cl, cc);
-    findSentenceForOperator(cp, lines, false, 1);
-    cl = cp.line; cc = cp.col;
-    sl = cl; sc = cc;
+    findSentenceForOperator(cursor, lines, false, 1);
+    start = cursor;
   }
 
   int ncount = include ? 2 : 1;
   if (!include && startBlank) ncount--;
 
   if (ncount > 0) {
-    findSentForward(lines, cl, cc, ncount, true);
+    findSentForward(lines, cursor, ncount, true);
   } else {
-    declPos(lines, cl, cc);
+    decl(lines, cursor);
   }
 
   if (include) {
     if (startBlank) {
-      findFirstBlank(lines, cl, cc);
-      if (isAsciiWhite(gcharPos(lines, cl, cc))) {
-        declPos(lines, cl, cc);
+      findFirstBlank(lines, cursor);
+      if (isAsciiWhite(gchar(lines, cursor))) {
+        decl(lines, cursor);
       }
-    } else if (!isAsciiWhite(gcharPos(lines, cl, cc))) {
-      findFirstBlank(lines, sl, sc);
+    } else if (!isAsciiWhite(gchar(lines, cursor))) {
+      findFirstBlank(lines, start);
     }
   }
 
   // current_sent's final block: incl(cursor); if it returns -1, inclusive=true,
   // else inclusive=false. The incl call modifies cursor regardless of return.
-  int finalCl = cl, finalCc = cc;
-  bool inclSucceeded = inclPos(lines, finalCl, finalCc);
-  bool vimInclusive = !inclSucceeded;
+  bool vimInclusive = incl(lines, cursor) == -1;
 
   // Vim's nv_object → adjust_cursor_col: if cursor is at NUL of a non-empty
   // line and not in Visual mode, col--. This shifts the cursor back onto a
   // real char, which then lets op_delete compute the right deletion count.
-  if (finalCl >= 0 && finalCl < static_cast<int>(lines.size())) {
-    int lineSize = static_cast<int>(lines[finalCl].size());
-    if (finalCc > 0 && finalCc >= lineSize) {
-      finalCc--;
-    }
+  if (cursor.col > 0 && gchar(lines, cursor) == 0) {
+    cursor.col--;
   }
 
   // Vim's do_pending_operator normalizes (oap->start, curwin->w_cursor):
@@ -1504,8 +1172,8 @@ CharRange sentenceTextObjectRange(CursorPos cursor, const Lines& lines, bool isI
   // the deletion range is:
   //   inclusive=false → [start, end) half-open (chars [start.col, end.col))
   //   inclusive=true  → [start, end+1) half-open (chars [start.col, end.col])
-  CursorPos rangeStart(sl, sc);
-  CursorPos rangeEnd(finalCl, finalCc);
+  CursorPos rangeStart = start;
+  CursorPos rangeEnd = cursor;
   if (rangeStart > rangeEnd) {
     std::swap(rangeStart, rangeEnd);
   }
@@ -1558,54 +1226,6 @@ int scrollEndpoint(int cursorLine, int numLines, int shift, bool hasLinesAbove,
   }
 
   return targetLine;
-}
-
-// =============================================================================
-// Line endpoint/range computation
-// =============================================================================
-
-int motionLineEndpoint(CursorPos cursor, const Lines& lines, bool forward,
-                       const TransformBoundary& boundary) {
-  int n = static_cast<int>(lines.size());
-  if (n == 0)
-    return COL_OUTSIDE_BOUNDARY;
-
-  int line = std::clamp(cursor.line, 0, n - 1);
-  int lineLen = static_cast<int>(lines[line].size());
-
-  if (forward) {
-    if (line == n - 1 && boundary.hasSuffix()) {
-      return COL_OUTSIDE_BOUNDARY;
-    }
-    return lineLen > 0 ? lineLen - 1 : 0;
-  } else {
-    if (line == 0 && boundary.hasPrefix()) {
-      return COL_OUTSIDE_BOUNDARY;
-    }
-    return 0;
-  }
-}
-
-LineRange lineDeleteRange(CursorPos cursor, const Lines& lines,
-                          const TransformBoundary& boundary) {
-  int n = static_cast<int>(lines.size());
-  if (n == 0)
-    return LINE_RANGE_OUTSIDE_BOUNDARY;
-
-  int line = std::clamp(cursor.line, 0, n - 1);
-
-  // Middle lines are always safe, check first / last
-  bool onFirstLine = (line == 0);
-  bool onLastLine = (line == n - 1);
-
-  if (onFirstLine && boundary.hasPrefix()) {
-    return LINE_RANGE_OUTSIDE_BOUNDARY;
-  }
-  if (onLastLine && boundary.hasSuffix()) {
-    return LINE_RANGE_OUTSIDE_BOUNDARY;
-  }
-
-  return LineRange(line, line + 1);
 }
 
 } // namespace VimCore

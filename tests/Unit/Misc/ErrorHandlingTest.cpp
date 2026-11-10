@@ -8,7 +8,6 @@
 
 import std.compat;
 import vf.Interpreter.MovementInterpreter;
-import vf.Interpreter.SequenceFormatting;
 import vf.Interpreter.SequenceParser;
 import vf.Keyboard.ToKeys.SequenceToKeys;
 import vf.Keyboard.ToKeys.MovementToKeys;
@@ -83,11 +82,6 @@ TEST(ErrorHandlingTest, ParseSequenceKeepsDigitLeadingTypedTextInInsertMode) {
   EXPECT_EQ((*result)[1].kind, TokenKind::TypedText);
   EXPECT_EQ((*result)[2].token, "<Esc>");
   EXPECT_EQ((*result)[2].kind, TokenKind::Escape);
-}
-
-TEST(ErrorHandlingTest, FormatSequenceDisplaysDigitLeadingTypedText) {
-  EXPECT_EQ(formatSequenceForDisplay("s3<Esc>"), "s 3 <Esc>");
-  EXPECT_EQ(formatSequenceForDisplay("i123<Esc>"), "i 123 <Esc>");
 }
 
 TEST(ErrorHandlingTest, ParseSequenceAcceptsCanonicalLiteralLtTargets) {

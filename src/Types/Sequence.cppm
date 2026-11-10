@@ -5,7 +5,7 @@ import std.compat;
 export {
 
 // Represents a sequence of Vim commands/keys in notation form (e.g.
-// `<Space>`, `<CR>`, `<lt>`). See `Types/KeyNotation.h` for the convention.
+// `<Space>`, `<CR>`, `<lt>`). See `Types/KeyNotation.cppm` for the convention.
 class Sequence {
   std::string keys;
 public:
@@ -23,12 +23,7 @@ public:
   }
 
   inline bool operator==(const Sequence& other) const { return keys == other.keys; }
-  inline bool operator!=(const Sequence& other) const { return !(*this == other); }
-  inline bool operator==(const std::string& s) const { return keys == s; }
-  inline bool operator!=(const std::string& s) const { return keys != s; }
   inline bool operator==(const char* s) const { return keys == s; }
-  inline bool operator!=(const char* s) const { return keys != s; }
-  inline bool operator<(const Sequence& other) const { return keys < other.keys; }
 
   // Non-owning view for read-side consumers (streams, FFI, comparison).
   inline std::string_view view() const { return keys; }

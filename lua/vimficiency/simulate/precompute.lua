@@ -88,6 +88,9 @@ function M.states(tokens, lines, row, col, should_cancel, on_done)
     v.nvim_win_set_cursor(probe_win, { snap_row, safe_col })
   end
 
+  -- Replay feeds must never carry feedkeys' `t` flag: without it Neovim
+  -- reports the keys to `vim.on_key` with empty `typed`, which is how
+  -- key_tracking tells them apart from the user's own keystrokes.
   ---@param state VF.Replay.Snapshot
   local function restore_snapshot(state)
     if not v.nvim_win_is_valid(probe_win) then return end

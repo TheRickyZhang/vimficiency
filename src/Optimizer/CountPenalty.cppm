@@ -5,20 +5,9 @@ import std.compat;
 export {
 
 enum class CountClass {
-  MovementChar,
-  MovementWord,
-  MovementBigWord,
-  MovementLine,
-  MovementParagraph,
-  MovementSentence,
-  MovementJump,
-  EditChar,
-  EditWord,
-  EditBigWord,
-  EditLine,
-  EditParagraph,
-  EditSentence,
-  Join,
+#define X(name, str) name,
+#include "XMacroCountClass.inc"
+#undef X
   COUNT
 };
 
@@ -56,9 +45,9 @@ constexpr double countSlopeUnits(int extra) {
   return full + COUNT_HALF_SLOPE * half + COUNT_TAIL_SLOPE * tail;
 }
 
-// A switch feeding one primary template, not explicit specializations: GCC 16
-// does not emit inline variable-template specializations declared in a module
-// interface, so importers that odr-use them fail to link.
+// A switch, not variable-template specializations: GCC 16 does not emit
+// inline variable-template specializations declared in a module interface, so
+// importers that odr-use them fail to link.
 constexpr CountPenaltyParams countPenaltySpecOf(CountClass c) {
   switch (c) {
     case CountClass::MovementChar:      return {0.0, 0.5, 0.0};
@@ -79,9 +68,6 @@ constexpr CountPenaltyParams countPenaltySpecOf(CountClass c) {
   }
 }
 
-template<CountClass C>
-inline constexpr CountPenaltyParams CountPenaltySpec = countPenaltySpecOf(C);
-
 // BEGIN override logic
 struct PartialCountPenaltyParams {
   std::optional<double> base;
@@ -98,13 +84,13 @@ using CountPenaltyOverrideTable =
 struct CountPenalty final {
   template<CountClass C>
   static inline double value(const CountPenaltyInput& in) {
-    return eval(CountPenaltySpec<C>, in);
+    return eval(countPenaltySpecOf(C), in);
   }
 
   template<CountClass C>
   static inline double value(const CountPenaltyInput& in,
                              const CountPenaltyOverrideTable& overrides) {
-    CountPenaltyParams p = CountPenaltySpec<C>;
+    CountPenaltyParams p = countPenaltySpecOf(C);
     const auto& maybeOverride = overrides[toIndex(C)];
     if (maybeOverride) {
       p = applyOverrides(p, *maybeOverride);

@@ -1,6 +1,7 @@
 export module vf.Optimizer.CompositionOptimizer.CompositionState;
 
 import std.compat;
+import vf.Utils.HashCombine;
 export import vf.Keyboard.Config;
 export import vf.Keyboard.PhysicalKeys;
 export import vf.Effort.RunningEffort;
@@ -38,18 +39,12 @@ struct CompositionStateKey {
 struct CompositionStateKeyHash {
   inline size_t operator()(const CompositionStateKey& key) const {
     size_t h = 0;
-    combine(h, key.line);
-    combine(h, key.col);
-    combine(h, key.targetCol);
-    combine(h, static_cast<int>(key.mode));
-    combine(h, key.editsCompleted);
+    hashCombine(h, key.line);
+    hashCombine(h, key.col);
+    hashCombine(h, key.targetCol);
+    hashCombine(h, static_cast<int>(key.mode));
+    hashCombine(h, key.editsCompleted);
     return h;
-  }
-
-private:
-  template <typename T>
-  static void combine(size_t& h, const T& v) {
-    h ^= std::hash<T>{}(v) + 0x9e3779b9 + (h << 6) + (h >> 2);
   }
 };
 
@@ -108,7 +103,7 @@ public:
 private:
   // Internal: apply edit transition to this state (mutates)
   void applyEditTransitionImpl(const Sequence& editSequence,
-                               const CursorPos& newPos, Mode newMode,
+                               const CursorPos& newPos,
                                const Config& config);
 
   // Internal: apply motion result to this state (mutates)
@@ -129,12 +124,8 @@ public:
   inline CompositionStateFactory(const Config& config, CostFn computeCost)
       : config(config), computeCost(std::move(computeCost)) {}
 
-  [[nodiscard]] inline CompositionState initial(
-      CursorPos pos, Mode mode = Mode::Normal,
-      int editsCompleted = 0,
-      RunningEffort runningEffort = RunningEffort()) const {
-    double effort = runningEffort.getEffort();
-    CompositionState state(pos, mode, editsCompleted, std::move(runningEffort), effort, 0.0);
+  [[nodiscard]] inline CompositionState initial(CursorPos pos) const {
+    CompositionState state(pos, Mode::Normal, 0);
     state.cost = costFor(state);
     return state;
   }
@@ -142,9 +133,9 @@ public:
   [[nodiscard]] inline CompositionState afterEditTransition(
       const CompositionState& state,
       const Sequence& editSequence,
-      const CursorPos& newPos, Mode newMode) const {
+      const CursorPos& newPos) const {
     CompositionState newState = state;
-    newState.applyEditTransitionImpl(editSequence, newPos, newMode, config);
+    newState.applyEditTransitionImpl(editSequence, newPos, config);
     newState.cost = costFor(newState);
     return newState;
   }

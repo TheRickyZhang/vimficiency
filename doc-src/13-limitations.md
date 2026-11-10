@@ -24,8 +24,9 @@ title: "Known limitations"
 - **Long sessions** may hit the optimizer's search budget; expect diminishing
   suggestion quality beyond roughly a dozen lines of edits.
 
-- **Unwrapped mappings that invoke Vimfy** have their trigger keypress
-  counted as motion. See [8. Keymaps](08-keymaps.md) for the fix.
+- **Mappings that invoke Vimfy without `vimfy.map()` / `<Plug>`** have
+  their trigger keypress counted as motion. See
+  [8. Keymaps](08-keymaps.md) for the fix.
 
 - **Keys produced by a mapping's RHS are invisible.** If `<leader>V` is
   mapped to `V$%`, the `V$%` bytes never reach the capture — `vim.on_key`

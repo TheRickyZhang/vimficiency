@@ -23,17 +23,6 @@ using VF::LuaExports::JobRegistry;
 
 namespace {
 
-VF::LuaExports::Result<OptimizerParamOverrides> parseOverrides(
-    string_view text) {
-  auto parsed = parseOptimizerParamOverrides(text);
-  if (!parsed) {
-    return helpers::unexpectedError(
-        VF::LuaExports::ExportErrorKind::InvalidValue,
-        formatOptimizerParamOverrideErrors(parsed.error()));
-  }
-  return std::move(*parsed);
-}
-
 // Fully-owning decode of the analyze FFI inputs. Owns its Lines and keyseq so it
 // can outlive the FFI buffers on the async worker thread (same ownership rule as
 // StartInputs in InteractiveExports.cpp). `overrides` is kept un-resolved
@@ -68,8 +57,18 @@ VF::LuaExports::Result<AnalyzeInputs> decodeAnalyzeInputs(
     size_t keyseq_len,
     int window_height,
     int scroll_amount,
-    int results_calculated) {
+    int results_calculated,
+    const char *optimizer_overrides,
+    size_t optimizer_overrides_len) {
   CHECK(results_calculated >= 0, "results_calculated must be non-negative");
+  auto overridesText = helpers::requiredBytes(
+      optimizer_overrides,
+      optimizer_overrides_len,
+      "optimizer_overrides");
+  if (!overridesText) return unexpected(overridesText.error());
+  auto overridesResult = helpers::parseOverrides(*overridesText);
+  if (!overridesResult) return unexpected(overridesResult.error());
+
   auto initialText = helpers::requiredBytes(
       encoded_initial_lines,
       encoded_initial_lines_len,
@@ -92,6 +91,7 @@ VF::LuaExports::Result<AnalyzeInputs> decodeAnalyzeInputs(
   in.initialLines = std::move(*initialLinesResult);
   in.goalLines = std::move(*goalLinesResult);
   in.keyseqText.assign(*keyseqTextResult);
+  in.overrides = std::move(*overridesResult);
   in.resultsCalculated = results_calculated;
 
   // Neovim can capture an insert-mode / 'virtualedit' cursor one past
@@ -101,12 +101,8 @@ VF::LuaExports::Result<AnalyzeInputs> decodeAnalyzeInputs(
   in.initialPos = in.initialLines.clamp(CursorPos(start_row, start_col));
   in.goalPos = in.goalLines.clamp(CursorPos(end_row, end_col));
   in.navContext = NavContext(window_height, scroll_amount);
-  in.boundary = NavBoundary(
-      in.initialLines,
-      CursorPos(0, boundaryFirstCol),
-      CursorPos(static_cast<int>(in.initialLines.size()) - 1, boundaryLastCol + 1),
-      hasLinesAbove,
-      hasLinesBelow);
+  in.boundary = helpers::sliceBoundary(
+      in.initialLines, boundaryFirstCol, boundaryLastCol, hasLinesAbove, hasLinesBelow);
   return in;
 }
 
@@ -225,22 +221,14 @@ VF::LuaExports::Result<string> analyzeImpl(
     int results_calculated,
     const char *optimizer_overrides,
     size_t optimizer_overrides_len) {
-  auto overridesText = helpers::requiredBytes(
-      optimizer_overrides,
-      optimizer_overrides_len,
-      "optimizer_overrides");
-  if (!overridesText) return unexpected(overridesText.error());
-  auto overridesResult = parseOverrides(*overridesText);
-  if (!overridesResult) return unexpected(overridesResult.error());
-
   auto inputsRes = decodeAnalyzeInputs(
       encoded_initial_lines, encoded_initial_lines_len,
       encoded_goal_lines, encoded_goal_lines_len,
       boundaryFirstCol, boundaryLastCol, hasLinesAbove, hasLinesBelow,
       start_row, start_col, end_row, end_col,
-      keyseq, keyseq_len, window_height, scroll_amount, results_calculated);
+      keyseq, keyseq_len, window_height, scroll_amount, results_calculated,
+      optimizer_overrides, optimizer_overrides_len);
   if (!inputsRes) return unexpected(inputsRes.error());
-  inputsRes->overrides = std::move(*overridesResult);
 
   return runAnalyze(*inputsRes, g_config_internal, nullptr);
 }
@@ -266,22 +254,14 @@ VF::LuaExports::Result<string> startAsyncImpl(
     const char *optimizer_overrides,
     size_t optimizer_overrides_len,
     int deadline_ms) {
-  auto overridesText = helpers::requiredBytes(
-      optimizer_overrides,
-      optimizer_overrides_len,
-      "optimizer_overrides");
-  if (!overridesText) return unexpected(overridesText.error());
-  auto overridesResult = parseOverrides(*overridesText);
-  if (!overridesResult) return unexpected(overridesResult.error());
-
   auto inputsRes = decodeAnalyzeInputs(
       encoded_initial_lines, encoded_initial_lines_len,
       encoded_goal_lines, encoded_goal_lines_len,
       boundaryFirstCol, boundaryLastCol, hasLinesAbove, hasLinesBelow,
       start_row, start_col, end_row, end_col,
-      keyseq, keyseq_len, window_height, scroll_amount, results_calculated);
+      keyseq, keyseq_len, window_height, scroll_amount, results_calculated,
+      optimizer_overrides, optimizer_overrides_len);
   if (!inputsRes) return unexpected(inputsRes.error());
-  inputsRes->overrides = std::move(*overridesResult);
 
   auto job = std::make_unique<AnalyzeJob>(
       AnalyzeState{std::move(*inputsRes), g_config_internal, {}}, deadline_ms,

@@ -11,13 +11,11 @@ import vf.Explore.MovementHandler;
 import vf.Optimizer.BuildTypedCommands;
 import vf.Optimizer.DiffPlanner.DiffState;
 import vf.Optimizer.CompositionOptimizer.CompositionFrontier;
+import vf.Optimizer.CompositionOptimizer.CompositionStrategies;
 import vf.Optimizer.NavOptimizer.NavFrontier;
 import vf.Optimizer.OptimizerParamOverrides;
 import vf.Optimizer.TransformOptimizer.TransformFrontier;
 import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
-import vf.VimCore.VimCore;
-import vf.VimCore.VimEditUtils;
-import vf.VimCore.VimOptions;
 
 using namespace std;
 
@@ -41,71 +39,27 @@ bool isHistoryCheckpoint(const State& state) {
          !state.hasPartialEditSpan;
 }
 
-KeyedSequence buildInsertModeTypedSequence(const DiffState& diff,
-                                            const Lines& lines) {
-  if (diff.isPureInsertion() && diff.isNewLineInsertion() &&
-      diff.beginPos.col == 0 && diff.beginPos.line > 0) {
-    const int targetLine = diff.beginPos.line - 1;
-    const std::string_view sourceIndent = VimOptions::autoindent()
-        ? leadingWhitespace(lines[targetLine])
-        : std::string_view{};
-    Lines insertLines = Lines::unflatten(std::string(diff.insertedTextBody()));
-    return buildTypedCommands(insertLines, sourceIndent);
-  }
-
-  const int line = diff.beginPos.line;
-  const int col = diff.beginPos.col;
-  std::string_view lineText(lines[line].data(), lines[line].size());
-  Lines insertLines = Lines::unflatten(diff.insertedText);
-
-  if (diff.isPureInsertion()) {
-    const int fnb = VimCore::firstNonBlankColInLine(lines[line]);
-    const int lineLen = static_cast<int>(lines[line].size());
-    if (col == fnb)
-      return buildTypedCommands(
-          insertLines, "", lineText.substr(0, fnb), lineText.substr(fnb));
-    if (col == lineLen)
-      return buildTypedCommands(insertLines, "", lines[line]);
-    return buildTypedCommands(
-        insertLines, "", lineText.substr(0, col), lineText.substr(col));
-  }
-
-  return buildTypedCommands(insertLines, "", lines[line].substr(0, col));
-}
-
 std::string deriveInsertModeTypedText(const DiffState& diff,
                                        const Lines& lines) {
   if (diff.isPureDeletion()) return "";
 
-  KeyedSequence ks = buildInsertModeTypedSequence(diff, lines);
+  KeyedSequence ks = diff.isPureInsertion()
+      ? CompositionStrategies::typedInsertion(diff, lines).typed
+      : buildTypedCommands(
+            diff.insertedLines(), "",
+            lines[diff.beginPos.line].substr(0, diff.beginPos.col),
+            lines[diff.endPos.line].substr(diff.endPos.col));
 
   std::string_view raw = ks.seq.view();
   static constexpr std::string_view ESC_STR = "<Esc>";
-  if (raw.size() >= ESC_STR.size() &&
-      raw.substr(raw.size() - ESC_STR.size()) == ESC_STR) {
-    raw.remove_suffix(ESC_STR.size());
-  }
+  if (raw.ends_with(ESC_STR)) raw.remove_suffix(ESC_STR.size());
   return std::string(raw);
 }
 
-CursorPos insertExitCursor(const DiffState& diff) {
-  bool newlineHandledByModeEntry =
-      diff.isPureInsertion() && diff.isNewLineInsertion() &&
-      diff.beginPos.col == 0 && diff.beginPos.line > 0;
-  Lines inserted =
-      newlineHandledByModeEntry
-          ? Lines::unflatten(std::string(diff.insertedTextBody()))
-          : diff.insertedLines();
-  std::string_view suffix = newlineHandledByModeEntry
-      ? std::string_view{}
-      : std::string_view{diff.boundary.suffix()};
-  return typedCommandsExitCursor(diff.beginPos, inserted, suffix);
-}
-
 bool containsInsertCursor(const Lines& lines, CursorPos pos) {
-  if (pos.line < 0 || pos.line >= static_cast<int>(lines.size()))
+  if (pos.line < 0 || pos.line > lines.lastLine())
     return false;
-  return pos.col >= 0 && pos.col <= static_cast<int>(lines[pos.line].size());
+  return pos.col >= 0 && pos.col <= lines.getSize(pos.line);
 }
 
 std::optional<DiffState> insertionResidualBetween(
@@ -137,29 +91,11 @@ void appendUniqueSuggestions(vector<Suggestion>& dest, vector<Suggestion>&& src)
   }
 }
 
-bool sameResult(const Result& a, const Result& b) {
-  return a.getSequence().view() == b.getSequence().view() &&
-         a.getCost() == b.getCost();
-}
-
-bool sameResultList(const vector<Result>& a, const vector<Result>& b) {
-  if (a.size() != b.size()) return false;
-  for (size_t i = 0; i < a.size(); ++i) {
-    if (!sameResult(a[i], b[i])) return false;
-  }
-  return true;
-}
-
 bool sameTransformResult(const TransformResult& a, const TransformResult& b) {
   if (a.getGoalPos() != b.getGoalPos()) return false;
   if (a.startPositions() != b.startPositions()) return false;
   if (a.hasResultGoals() != b.hasResultGoals()) return false;
-  const auto& ar = a.getResults();
-  const auto& br = b.getResults();
-  if (ar.size() != br.size()) return false;
-  for (size_t i = 0; i < ar.size(); ++i) {
-    if (!sameResultList(ar[i], br[i])) return false;
-  }
+  if (a.getResults() != b.getResults()) return false;
   for (CursorPos start : a.startPositions()) {
     auto aBucket = a.resultsAt(start.line, start.col);
     auto bBucket = b.resultsAt(start.line, start.col);
@@ -188,15 +124,14 @@ bool sameCompositionResult(const CompositionResult& a,
   if (ap.finalGoalPos != bp.finalGoalPos) return false;
   if (ap.fenceposts != bp.fenceposts) return false;
   if (ap.diffs.size() != bp.diffs.size()) return false;
-  for (size_t i = 0; i < ap.diffs.size(); ++i) {
+  for (int i = 0; i < ssize(ap.diffs); ++i) {
     if (!sameDiff(ap.diffs[i], bp.diffs[i])) return false;
-    if (!sameTransformResult(
-            a.plannedEditAt(static_cast<int>(i)).transformResult,
-            b.plannedEditAt(static_cast<int>(i)).transformResult)) {
+    if (!sameTransformResult(a.plannedEditAt(i).transformResult,
+                             b.plannedEditAt(i).transformResult)) {
       return false;
     }
   }
-  return sameResultList(a.getResults(), b.getResults());
+  return a.getResults() == b.getResults();
 }
 
 } // namespace
@@ -209,17 +144,11 @@ View::View(Lines initialLines, CursorPos initialPos, Lines goalLines,
            CursorPos goalPos, NavBoundary boundary, NavContext navContext,
            Config config, string_view userSequence,
            CompositionOptimizerParams compositionParams)
-    : initialLines_(std::move(initialLines)), initialPos_(initialPos),
-      goalLines_(std::move(goalLines)), goalPos_(goalPos),
-      boundary_(std::move(boundary)), navContext_(navContext),
-      config_(std::move(config)),
-      userSequence_(userSequence),
-      compositionParams_(std::move(compositionParams)) {
-
-  resetToInitial();
-  installPlan(computePlan(compositionParams_));
-  state_.phase = phaseForCursor(0, state_.lines, state_.cursor);
-}
+    : View(initialLines, initialPos, goalLines, goalPos, boundary, navContext,
+           config, userSequence, compositionParams,
+           computeTrace(initialLines, initialPos, goalLines, goalPos,
+                        compositionParams, userSequence, boundary, navContext,
+                        config, nullptr)) {}
 
 View::View(Lines initialLines, CursorPos initialPos, Lines goalLines,
            CursorPos goalPos, NavBoundary boundary, NavContext navContext,
@@ -242,9 +171,8 @@ View::View(Lines initialLines, CursorPos initialPos, Lines goalLines,
 // Query
 // =============================================================================
 
-pair<CursorPos, CursorPos> View::currentTargetRange() const {
-  CharRange r = plan_.getPlan().navTarget(phaseIndex(state_.phase));
-  return {r.begin, r.end};
+CharRange View::currentTargetRange() const {
+  return plan_.getPlan().navTarget(phaseIndex(state_.phase));
 }
 
 bool View::isCompleted() const {
@@ -287,8 +215,7 @@ vector<Suggestion> View::recommendations(
   }, state_.phase);
 }
 
-PlanReconfigureResult View::reconfigurePlan(
-    CompositionOptimizerParams compositionParams) {
+bool View::reconfigurePlan(CompositionOptimizerParams compositionParams) {
   CompositionTraceResult traced = computePlan(compositionParams);
   const bool resetState = !sameCompositionResult(plan_, traced.result);
 
@@ -299,7 +226,7 @@ PlanReconfigureResult View::reconfigurePlan(
     resetToInitial();
     state_.phase = phaseForCursor(0, state_.lines, state_.cursor);
   }
-  return PlanReconfigureResult{resetState};
+  return resetState;
 }
 
 // =============================================================================
@@ -489,7 +416,8 @@ vector<Suggestion> View::recommendInsert(int editIndex, int maxCount) const {
   Suggestion suggestion{
       .token = Token{typedText},
       .landingPos = currentResidual
-          ? insertExitCursor(insertDiff)
+          ? CompositionStrategies::typedInsertion(insertDiff, state_.lines)
+                .exitCursor
           : plannedEdit.transformResult.getGoalPos(),
   };
   suggestion.literalText = insertDiff.insertedText;
@@ -550,16 +478,6 @@ View::requireNavigateOrTransform(string_view action) const {
 }
 
 expected<int, Rejected>
-View::requireTransform(string_view action) const {
-  auto* t = std::get_if<Transform>(&state_.phase);
-  if (!t) {
-    return unexpected(
-        Rejected{string(action) + " only accepted while transforming"});
-  }
-  return t->index;
-}
-
-expected<int, Rejected>
 View::requirePlannedEditTarget(string_view action) const {
   auto gated = requireNavigateOrTransform(action);
   if (!gated)
@@ -607,7 +525,7 @@ Outcome View::applyMovement(string_view movementText) {
 
   State next = state_;
   next.cursor = eff->newCursor;
-  next.seq.append(eff->appendedSeq);
+  next.seq.append(movementText);
   next.cost = getEffort(next.seq, config_);
   next.phase = phaseForCursor(*gated, next.lines, next.cursor);
   return commit(std::move(next));
@@ -619,16 +537,13 @@ Outcome View::acceptCursorMove(CursorPos newCursor, string_view rawKeys) {
     return unexpected(std::move(gated.error()));
 
   auto eff = MovementHandler::acceptCursorMove(
-      state_.lines, newCursor, rawKeys, boundary_);
+      state_.lines, newCursor, boundary_);
   if (!eff)
     return unexpected(std::move(eff.error()));
 
   State next = state_;
   next.cursor = eff->newCursor;
-  if (!eff->appendedSeq.empty()) {
-    next.seq.append(eff->appendedSeq);
-    next.cost = getEffort(next.seq, config_);
-  }
+  appendRawKeys(next, rawKeys, config_);
   next.phase = phaseForCursor(*gated, next.lines, next.cursor);
   return commit(std::move(next));
 }
@@ -653,9 +568,9 @@ Outcome View::applyEdit(string_view text) {
 
   State next = state_;
   next.cursor = eff->postCursor;
-  const uint32_t spanBegin = static_cast<uint32_t>(next.seq.size());
+  const uint32_t spanBegin = next.seqEnd();
   next.seq.append(text);
-  const uint32_t spanEnd = static_cast<uint32_t>(next.seq.size());
+  const uint32_t spanEnd = next.seqEnd();
   next.cost = getEffort(next.seq, config_);
 
   if (eff->entersInsert) {
@@ -697,10 +612,10 @@ Outcome View::acceptBufferState(const Lines& newLines, CursorPos newCursor,
 
   const auto plannedEdit = plan_.plannedEditAt(editIndex);
 
-  auto eff = EditHandler::validateBufferState(newLines, plannedEdit.preFencepost,
-                                              plannedEdit.postFencepost);
-  if (!eff)
-    return unexpected(std::move(eff.error()));
+  auto advance = EditHandler::validateBufferState(
+      newLines, plannedEdit.preFencepost, plannedEdit.postFencepost);
+  if (!advance)
+    return unexpected(std::move(advance.error()));
   if (!newLines.contains(newCursor)) {
     return unexpected(
         Rejected{"buffer state reported an invalid cursor position"});
@@ -710,13 +625,10 @@ Outcome View::acceptBufferState(const Lines& newLines, CursorPos newCursor,
   next.cursor = newCursor;
   // Capture span begin before appending raw keys so the edit's start byte is
   // exactly where the rawKeys (which performed this edit) begin in seq.
-  const uint32_t spanBegin = next.hasPartialEditSpan
-      ? next.partialEditSpanBegin
-      : static_cast<uint32_t>(next.seq.size());
+  const uint32_t spanBegin = next.spanBegin();
   appendRawKeys(next, rawKeys, config_);
-  if (eff->advance) {
-    const uint32_t spanEnd = static_cast<uint32_t>(next.seq.size());
-    next.editSpans.push(EditSequenceSpan{spanBegin, spanEnd});
+  if (*advance) {
+    next.editSpans.push(EditSequenceSpan{spanBegin, next.seqEnd()});
     next.hasPartialEditSpan = false;
     return afterEditCompleted(std::move(next), editIndex);
   }
@@ -761,12 +673,9 @@ Outcome View::acceptInsertExit(const Lines& newLines, CursorPos newCursor,
   // rawKeys (`s`/`cl`/etc. + typed text + `<Esc>`), so this span covers the
   // complete planned edit.
   next.cursor = newCursor;
-  const uint32_t spanBegin = next.hasPartialEditSpan
-      ? next.partialEditSpanBegin
-      : static_cast<uint32_t>(next.seq.size());
+  const uint32_t spanBegin = next.spanBegin();
   appendRawKeys(next, rawKeys, config_);
-  const uint32_t spanEnd = static_cast<uint32_t>(next.seq.size());
-  next.editSpans.push(EditSequenceSpan{spanBegin, spanEnd});
+  next.editSpans.push(EditSequenceSpan{spanBegin, next.seqEnd()});
   next.hasPartialEditSpan = false;
   return afterEditCompleted(std::move(next), editIndex);
 }
@@ -826,7 +735,7 @@ Outcome View::acceptSnapshot(const Lines& liveLines, CursorPos liveCursor,
         } else {
           if (!next.hasPartialEditSpan) {
             next.hasPartialEditSpan = true;
-            next.partialEditSpanBegin = static_cast<uint32_t>(next.seq.size());
+            next.partialEditSpanBegin = next.seqEnd();
           }
           appendRawKeys(next, rawKeys, config_);
           // The deletion may leave the cursor off the residual insertion start
@@ -911,11 +820,5 @@ Outcome View::redo() {
   redo_.pop_back();
   return {};
 }
-
-// =============================================================================
-// Debug
-// =============================================================================
-
-// phaseKindName overloads live in Explore.h alongside Phase.
 
 } // namespace Explore

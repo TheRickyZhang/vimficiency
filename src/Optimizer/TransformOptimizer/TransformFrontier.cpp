@@ -1,15 +1,9 @@
-module;
-#include "Utils/CheckMacro.h"
-
 module vf.Optimizer.TransformOptimizer.TransformFrontier;
 
 import std.compat;
 import vf.Effort.EffortBank;
-import vf.Effort.RunningEffort;
-import vf.Keyboard.ToKeys.MovementToKeys;
+import vf.Optimizer.CompositionOptimizer.CompositionStrategies;
 import vf.Optimizer.CompositionOptimizer.PlannedEditArtifacts;
-import vf.Optimizer.DiffPlanner.MyersDiff;
-import vf.Optimizer.OptimizerParamOverrides;
 import vf.Optimizer.TransformOptimizer.ChangeGoalHandler;
 import vf.Optimizer.TransformOptimizer.TransformExplorer;
 import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
@@ -22,14 +16,6 @@ import vf.VimCore.VimCore;
 using namespace std;
 
 namespace {
-
-bool cursorInInsertionRange(
-    CursorPos cursor,
-    int targetLine,
-    int beginCol,
-    int endCol) {
-  return cursor.line == targetLine && cursor.col >= beginCol && cursor.col < endCol;
-}
 
 size_t skipPositiveCount(string_view seq) {
   size_t i = 0;
@@ -48,62 +34,8 @@ bool isSingleChangeAction(string_view seq) {
   return c == 'c' || c == 's' || c == 'C';
 }
 
-string sourceCommandSeq(const SequenceBinding& cmd) {
-  string seq;
-  if (cmd.count > 0) seq += to_string(cmd.count);
-  seq += string(cmd.base.seq.view());
-  return seq;
-}
-
-double residualDistanceAfter(const Lines& before,
-                             const Lines& afterStep,
-                             const DiffState& diff) {
-  Lines target = MyersDiff::applyDiffState(diff, before);
-  auto residual = DiffText::calculateContiguousResidualDiff(afterStep, target);
-  if (!residual) return 0.0;
-  return textDistanceEstimate(residual->deletedLines()) +
-         textDistanceEstimate(residual->insertedLines());
-}
-
-double diffDistance(const DiffState& diff) {
-  return textDistanceEstimate(diff.deletedLines()) +
-         textDistanceEstimate(diff.insertedLines());
-}
-
-// Shared collector for first-action transform recommendations. Each emission
-// lane must own a disjoint token family; duplicates mean the frontier boundary
-// is too broad.
-struct EditEmitter {
-  vector<Suggestion>& items;
-  unordered_set<string> emittedTokens;
-  const RunningEffort& acceptedEffort;
-  double acceptedCost;
-  double effortWeight;
-  double distanceWeight;
-  const Config& config;
-
-  double costDiffFor(string_view tokenSequence) const {
-    RunningEffort candidate(globalSequenceToKeys().tokenize(tokenSequence), config);
-    RunningEffort merged = RunningEffort::merge(acceptedEffort, candidate, config);
-    return merged.getEffort() - acceptedCost;
-  }
-
-  void emit(string_view tokenSequence, CursorPos landingPos, double distance = 0.0) {
-    Suggestion suggestion{
-        .token = Token{tokenSequence},
-        .landingPos = landingPos,
-    };
-    updateSuggestionMetrics(
-        suggestion, costDiffFor(tokenSequence), distance,
-        effortWeight, distanceWeight);
-    CHECK(emittedTokens.insert(string(suggestion.token)).second,
-          "duplicate TransformFrontier token; fix enumerator overlap");
-    items.push_back(std::move(suggestion));
-  }
-};
-
 void appendInsertionStrategy(
-    EditEmitter& emitter,
+    SuggestionEmitter& emitter,
     CursorPos cursor,
     int targetLine,
     int beginCol,
@@ -117,43 +49,23 @@ void appendInsertionStrategy(
   emitter.emit(tokenSequence, landingPos, distance);
 }
 
+// Activation gate: the cursor must sit on a deleted line with another deleted
+// line below it. The progress/fencepost lane split lives in emitProgressJoin.
 void emitJoinFirstAction(
     const TransformFrontierQuery& query,
-    EditEmitter& emitter) {
-  if (query.cursor.line < 0 ||
-      query.cursor.line + 1 >= static_cast<int>(query.lines.size())) {
-    return;
-  }
-
+    SuggestionEmitter& emitter) {
   Lines deleted = query.diff.deletedLines();
   int localLine = query.cursor.line - query.diff.beginPos.line;
   if (localLine < 0 || localLine + 1 >= static_cast<int>(deleted.size())) {
     return;
   }
-
-  TransformEditorState state(query.lines, query.cursor);
-  TransformEditorState afterJoin = TransformSimulator::afterJoin(state, true);
-  if (afterJoin.getLines() == query.lines) return;
-
-  // Structural lane separation: the explorer's J/gJ/NJ/NgJ enumeration owns
-  // every case where the bare command exactly reaches the post-edit
-  // fencepost. This helper owns only "progress without reaching the
-  // fencepost". The two lanes are disjoint by the fencepost equality below.
-  if (afterJoin.getLines() == MyersDiff::applyDiffState(query.diff, query.lines)) {
-    return;
-  }
-
-  const double remainingDistance =
-      residualDistanceAfter(query.lines, afterJoin.getLines(), query.diff);
-  if (remainingDistance >= diffDistance(query.diff)) return;
-
-  emitter.emit("J", afterJoin.getPos(), remainingDistance);
+  emitProgressJoin(query.lines, query.cursor, query.diff, emitter);
 }
 
 void emitReplaceCharAction(
     const TransformFrontierQuery& query,
     const TransformOptimizerParams& params,
-    EditEmitter& emitter) {
+    SuggestionEmitter& emitter) {
   const DiffState& diff = query.diff;
   if (!diff.isReplacement()) return;
   Lines deletedLines = diff.deletedLines();
@@ -209,7 +121,7 @@ void enumerateDepth1DeletionStructurals(
     const TransformFrontierQuery& query,
     const Config& config,
     const TransformOptimizerParams& params,
-    EditEmitter& emitter) {
+    SuggestionEmitter& emitter) {
   const DiffState& diff = query.diff;
   if (!diff.hasDeletedContent()) return;
 
@@ -253,7 +165,7 @@ void enumerateDepth1DeletionStructurals(
   // so Explore can re-enter Transform/Insert after the observed state changes.
   auto charwiseSeq = [&](const SequenceBinding& cmd) -> optional<string> {
     if (!isReplacement) {
-      return sourceCommandSeq(cmd);
+      return countedCommandString(cmd.count, cmd.base.seq.view());
     }
     KeyedSequence c = ChangeGoalHandler::deleteToChangeChar(cmd);
     string seq(c.seq.view());
@@ -264,7 +176,7 @@ void enumerateDepth1DeletionStructurals(
   auto linewiseSeq = [&](const SequenceBinding& cmd,
                          std::string_view lineContent) -> optional<string> {
     if (!isReplacement) {
-      return sourceCommandSeq(cmd);
+      return countedCommandString(cmd.count, cmd.base.seq.view());
     }
     KeyedSequence c = ChangeGoalHandler::deleteToChangeLine(cmd, lineContent);
     string seq(c.seq.view());
@@ -287,6 +199,7 @@ void enumerateDepth1DeletionStructurals(
     emitter.emit(*seq, bufferLanding(newState.getPos()), replacementInsertDistance);
   };
 
+  const VimCore::LineDeleteContext context = lineDeleteContext(boundary);
   auto onDeletion = [&](const ResolvedEditAction& action,
                         const SequenceBinding& cmd) {
     if (isReplacement ? !action.changeEffectValid : !action.deleteEffectValid) {
@@ -294,10 +207,6 @@ void enumerateDepth1DeletionStructurals(
     }
     const VimCore::ResolvedDeleteRange& resolved =
         isReplacement ? action.effectForChange() : action.deleteEffect;
-    VimCore::LineDeleteContext context{
-        .hasLinesAbove = boundary.hasLinesAbove(),
-        .hasLinesBelow = boundary.hasLinesBelow(),
-    };
     TransformEditorState after = isReplacement
         ? TransformSimulator::afterResolvedChangeDeletion(state, resolved, context)
         : TransformSimulator::afterResolvedDeletion(state, resolved, context);
@@ -319,12 +228,7 @@ void enumerateDepth1DeletionStructurals(
             ? std::string_view(effective[range.beginLine])
             : std::string_view{};
     applyAndEmitLinewise(
-        TransformSimulator::afterMultiLinewiseDeletion(
-            state, range,
-            VimCore::LineDeleteContext{
-                .hasLinesAbove = boundary.hasLinesAbove(),
-                .hasLinesBelow = boundary.hasLinesBelow(),
-            }),
+        TransformSimulator::afterMultiLinewiseDeletion(state, range, context),
         cmd, firstLineContent);
   };
 
@@ -375,7 +279,7 @@ vector<Suggestion> rankTransformFrontier(
   items.reserve(static_cast<size_t>(query.maxCount));
   RunningEffort acceptedEffort(globalSequenceToKeys().tokenize(query.seq), config);
   const double acceptedCost = acceptedEffort.getEffort();
-  EditEmitter emitter{
+  SuggestionEmitter emitter{
       items,
       {},
       acceptedEffort, acceptedCost,
@@ -407,39 +311,16 @@ vector<Suggestion> rankTransformFrontier(
   // Insert phase recommendation; the depth-1 transform rec only describes
   // the structural decision the user makes from normal mode.
   if (query.diff.isPureInsertion()) {
-    const CursorPos insertPos = query.diff.beginPos;
-    const bool isNewLineInsertion = query.diff.isNewLineInsertion();
     const double insertDistance = textDistanceEstimate(query.diff.insertedLines());
-
-    if (isNewLineInsertion && insertPos.col == 0 && insertPos.line > 0) {
-      const int targetLine = insertPos.line - 1;
-      const int lineEnd = query.lines[targetLine].effectiveSize();
-      appendInsertionStrategy(emitter, query.cursor, targetLine, 0, lineEnd,
-                              "o", editGoalPos, insertDistance);
-    } else {
-      const int fnb = VimCore::firstNonBlankColInLine(query.lines[insertPos.line]);
-      const int lineLen = static_cast<int>(query.lines[insertPos.line].size());
-      const int lineEnd = query.lines[insertPos.line].effectiveSize();
-      const int lastContentCol = lineEnd - 1;
-
-      if (insertPos.col == fnb) {
-        appendInsertionStrategy(emitter, query.cursor, insertPos.line, 0, lineEnd,
-                                "I", editGoalPos, insertDistance);
-        appendInsertionStrategy(emitter, query.cursor, insertPos.line,
-                                insertPos.col, insertPos.col + 1,
-                                "i", editGoalPos, insertDistance);
-      } else if (insertPos.col == lineLen) {
-        appendInsertionStrategy(emitter, query.cursor, insertPos.line, 0, lineEnd,
-                                "A", editGoalPos, insertDistance);
-        appendInsertionStrategy(emitter, query.cursor, insertPos.line,
-                                lastContentCol, lastContentCol + 1,
-                                "a", editGoalPos, insertDistance);
-      } else {
-        appendInsertionStrategy(emitter, query.cursor, insertPos.line,
-                                insertPos.col, insertPos.col + 1,
-                                "i", editGoalPos, insertDistance);
-      }
-    }
+    CompositionStrategies::enumerateInsertions(
+        query.diff, query.lines, [&](const CompositionStrategies::Insertion& s) {
+          // `o` leaves the cursor on the opened line, not at the diff anchor.
+          const CursorPos landing = s.structural == "o"
+              ? CursorPos(s.targetLine + 1, 0)
+              : editGoalPos;
+          appendInsertionStrategy(emitter, query.cursor, s.targetLine, s.beginCol,
+                                  s.endCol, s.structural, landing, insertDistance);
+        });
   }
 
   emitJoinFirstAction(query, emitter);

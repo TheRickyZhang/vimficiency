@@ -422,4 +422,59 @@ TEST_F(ExploreViewTest, DeletePrefixClampedCursorRederivesPhaseNotAssert) {
   EXPECT_FALSE(recs.empty());
 }
 
+set<string> tokensOf(const vector<Suggestion>& recs) {
+  set<string> out;
+  for (const auto& s : recs) out.insert(string(string_view(s.token)));
+  return out;
+}
+
+TEST_F(ExploreViewTest, InsertionStructuralsOnBlankLineFollowWhereIlands) {
+  // Vim's `I` on an all-whitespace line lands past the indent, so it can only
+  // open an insertion at the line end — never at col 0.
+  Lines blank{Line("   ")};
+  auto atStart = makeView(blank, {0, 0}, Lines{Line("x   ")}, {0, 0});
+  auto startTokens = tokensOf(atStart.recommendations(20));
+  EXPECT_TRUE(startTokens.contains("i"));
+  EXPECT_FALSE(startTokens.contains("I"));
+
+  auto atEnd = makeView(blank, {0, 2}, Lines{Line("   x")}, {0, 3});
+  auto endTokens = tokensOf(atEnd.recommendations(20));
+  EXPECT_TRUE(endTokens.contains("I"));
+  EXPECT_TRUE(endTokens.contains("A"));
+  EXPECT_TRUE(endTokens.contains("a"));
+}
+
+TEST_F(ExploreViewTest, MidLineInsertionSurfacesAFromPrecedingColumn) {
+  Lines initial{Line("foo bar")};
+  Lines goal{Line("fooX bar")};
+  // Cursor on the `o` before the insert point: `a` applies, `i` does not.
+  auto view = makeView(initial, {0, 2}, goal, {0, 3});
+  auto tokens = tokensOf(view.recommendations(20));
+  EXPECT_TRUE(tokens.contains("a"));
+  EXPECT_FALSE(tokens.contains("i"));
+}
+
+TEST_F(ExploreViewTest, LeadingNewlineAppendSurfacesBothOAndA) {
+  Lines initial{Line("ab")};
+  Lines goal{Line("ab"), Line("cd")};
+  auto view = makeView(initial, {0, 1}, goal, {1, 1});
+
+  auto tokens = tokensOf(view.recommendations(20));
+  EXPECT_TRUE(tokens.contains("o"));
+  EXPECT_TRUE(tokens.contains("A"));
+}
+
+TEST_F(ExploreViewTest, InsertRecommendationRetypesSuffixSpacesForMultiLineReplacement) {
+  // <CR> pushes "  bar" down and autoindent strips its leading spaces; the
+  // typed tail must re-type them, as the batch ChangeGoalHandler does.
+  Lines initial{Line("x foo  bar")};
+  Lines goal{Line("x a"), Line("b  bar")};
+  auto view = makeView(initial, {0, 2}, goal, {1, 2});
+  ASSERT_TRUE(view.beginInsert().has_value());
+
+  auto recs = view.recommendations(5);
+  ASSERT_EQ(recs.size(), 1u);
+  EXPECT_EQ(string_view(recs[0].token), "a<CR>b<Space><Space>");
+}
+
 } // namespace

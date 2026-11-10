@@ -34,7 +34,6 @@ class BracketFlags {
 public:
   inline void add(char c) { flags |= maskFor(c); }
   inline bool seen(char c) const { return flags & maskFor(c); }
-  inline void reset() { flags = 0; }
 
   static constexpr std::array<char, 4> ALL_BRACKETS = {'(', '[', '{', '<'};
 };

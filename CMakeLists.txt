@@ -170,7 +170,6 @@ if(VIMF_WASM)
     src/Keyboard/ToKeys/CommandToKeys.cpp
     src/Keyboard/ToKeys/CountToKeys.cpp
     src/Keyboard/ToKeys/MovementToKeys.cpp
-    src/Keyboard/ToKeys/MovementToKeysPrimitives.cpp
     src/Keyboard/ToKeys/SequenceToKeys.cpp
     src/Optimizer/DiffPlanner/DiffState.cpp
     src/Optimizer/DiffPlanner/MyersDiff.cpp
@@ -197,7 +196,6 @@ if(VIMF_WASM)
     src/Keyboard/ToKeys/CommandToKeys.cppm
     src/Keyboard/ToKeys/CountToKeys.cppm
     src/Keyboard/ToKeys/MovementToKeys.cppm
-    src/Keyboard/ToKeys/MovementToKeysPrimitives.cppm
     src/Keyboard/ToKeys/SequenceToKeys.cppm
     src/Optimizer/CountPenalty.cppm
     src/Optimizer/DiffPlanner/DiffState.cppm

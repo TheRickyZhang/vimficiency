@@ -56,8 +56,7 @@ enum class EditOp { KEEP, DELETE, INSERT };
 // Traceback from the saved history to reconstruct edit operations
 static vector<EditOp> myersTraceback(
     const vector<vector<int>>& trace,
-    int d_final, int n, int m, int offset,
-    const string& a, const string& b) {
+    int d_final, int n, int m, int offset) {
 
   vector<EditOp> ops;
   int x = n, y = m;
@@ -167,7 +166,7 @@ static vector<EditOp> tracePath(const string& a, const string& b) {
 
       // Check if we've reached the goal
       if (x >= n && y >= m) {
-        return myersTraceback(trace, d, n, m, offset, a, b);
+        return myersTraceback(trace, d, n, m, offset);
       }
     }
   }
@@ -243,22 +242,18 @@ vector<DiffState> calculate(const Lines& initialLines, const Lines& goalLines) {
       // e.g., "\n  r" matching just because both files have "return" at same indent
       // This applies even to "long" matches since "\n   x" is 5 chars but weak
       // Exception: pure newlines ("\n", "\n\n") are structural boundaries - preserve them
-      bool containsNewline = false;
       int nonWhitespaceCount = 0;
       int newlineCount = 0;
       for (int k = 0; k < keepCount; k++) {
         char c = startText[origIdx + k];
-        if (c == '\n') {
-          containsNewline = true;
-          newlineCount++;
-        }
+        if (c == '\n') newlineCount++;
         if (!std::isspace(static_cast<unsigned char>(c))) nonWhitespaceCount++;
       }
       bool atEnd = (peekIdx >= ops.size());
       bool isPureNewlines = (newlineCount == keepCount);
       // Require at least 3 non-whitespace chars for cross-line matches to be meaningful
       // But preserve pure newlines as they are structural boundaries
-      if (containsNewline && nonWhitespaceCount < 3 && !atEnd && !isPureNewlines) {
+      if (newlineCount > 0 && nonWhitespaceCount < 3 && !atEnd && !isPureNewlines) {
         // Cross-line match with weak content (not pure newlines) - absorb
         for (int k = 0; k < keepCount; k++) {
           deleted += startText[origIdx];

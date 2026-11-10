@@ -49,9 +49,6 @@ struct BracketQuoteContext {
   // Line this context applies to (-1 if not applicable, e.g., pure insertion)
   int line = -1;
 
-  // Explicit default constructor to ensure proper initialization
-  inline BracketQuoteContext() : validQuoteMask(), validBracketMask(), useAroundQuote(), useAroundBracket(), line(-1) {}
-
   inline bool hasAnyValid() const {
     for (const auto& mask : validQuoteMask) {
       if (mask.seen('"') || mask.seen('\'') || mask.seen('`')) return true;
@@ -122,13 +119,7 @@ struct CompositionSearchContext {
 
   inline int totalEdits() const { return static_cast<int>(edits.size()); }
 
-  // Heuristic tuning parameters
-  double overshootPenalty;
   int maxLineLength;
-
-  // A* priority weights from params
-  double effortWeight;
-  double distanceWeight;
 
   // Search state.
   // pq lives locally in optimizeImpl() because its element type depends on
@@ -180,13 +171,6 @@ struct CompositionSearchContext {
       const SearchControl* control = nullptr);
 
   // ==========================================================================
-  // CursorPos conversion helpers
-  // ==========================================================================
-
-  // Convert flat index within edit region's insertedLines to buffer position
-  CursorPos editIndexToBufferPos(int flatIndex, const DiffState& diff) const;
-
-  // ==========================================================================
   // Heuristic and distance computation
   // ==========================================================================
 
@@ -200,7 +184,7 @@ struct CompositionSearchContext {
 
   // h(n) for A*: estimates remaining cost
   // Uses suffix sum of median edit costs + asymmetric distance to next edit region
-  double heuristic(const CompositionState& s, int editsCompleted) const;
+  double heuristic(const CompositionState& s) const;
 
   // Get buffer state for a given number of completed edits (0..totalEdits())
   inline const Lines& getLinesAfter(int editsCompleted) const {
@@ -219,7 +203,7 @@ struct CompositionSearchContext {
   // Track an explored state when search-trace collection is compiled in.
   inline void trackState(const CompositionState& s) {
     if constexpr (SEARCH_TRACE_STATS_ENABLED) {
-      if (exploredStates.size() >= static_cast<size_t>(MAX_TRACED_STATES)) return;
+      if (std::ssize(exploredStates) >= MAX_TRACED_STATES) return;
       CursorPos pos = s.getPos();
       exploredStates.push_back({{pos.line, pos.col, s.getEffort(), s.getSequence().str()},
                                 s.getEditsCompleted()});

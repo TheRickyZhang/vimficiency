@@ -11,7 +11,6 @@ import vf.VimCore.VimEndpointUtils;
 import vf.Types.EdgeType;
 import vf.Types.LineEdgeType;
 import vf.Types.CursorPos;
-import vf.Utils.Debug;
 
 using namespace std;
 
@@ -26,45 +25,15 @@ namespace VimCore {
 //
 // =============================================================================
 
-static void motionWord(CursorPos &pos, const Lines &lines,
-                       bool forward, EdgeType edgeType, bool big,
+template<bool Forward, EdgeType Edge>
+static void motionWord(CursorPos &pos, const Lines &lines, bool big,
                        bool skipCurrent) {
-  CursorPos result =
-      motionWordCore(pos, lines, forward, edgeType, big, skipCurrent);
+  CursorPos result = motionWordCore<Forward, Edge>(pos, lines, big, skipCurrent);
 
   if (result == POSITION_OUTSIDE_BOUNDARY) {
     // Vim clamps to buffer edge based on direction
-    if (forward) {
-      int lastLine = lines.lastLine();
-      int lastCol = lines[lastLine].empty()
-                        ? 0
-                        : static_cast<int>(lines[lastLine].size()) - 1;
-      pos = CursorPos(lastLine, lastCol);
-    } else {
-      pos = CursorPos(0, 0);
-    }
-  } else {
-    pos = result;
-  }
-}
-
-// Operator-pending variant: when forward word motion would fall off the end
-// of the buffer (motionWordCore returns POSITION_OUTSIDE_BOUNDARY), leave the
-// cursor at the past-EOL position (col == lines[lastLine].size()) so the
-// caller's `isPastEndPosition` check fires and the operator extends through
-// the buffer tail. Mirrors Neovim's fwd_word returning FAIL while leaving
-// cursor at the NUL/past-EOL position so the operator still applies.
-static void motionWordForOperator(CursorPos &pos, const Lines &lines,
-                                  bool forward, EdgeType edgeType, bool big,
-                                  bool skipCurrent) {
-  CursorPos result =
-      motionWordCore(pos, lines, forward, edgeType, big, skipCurrent);
-
-  if (result == POSITION_OUTSIDE_BOUNDARY) {
-    if (forward) {
-      int lastLine = lines.lastLine();
-      int len = static_cast<int>(lines[lastLine].size());
-      pos = CursorPos(lastLine, len);
+    if constexpr (Forward) {
+      pos = lines.lastPos();
     } else {
       pos = CursorPos(0, 0);
     }
@@ -96,66 +65,24 @@ static void motionWordForOperator(CursorPos &pos, const Lines &lines,
 
 namespace {
 
-int wordCharClass(char c, bool big) {
-  CharMask m(c);
-  if (m.whitespace() || c == '\0') return 0;
+int wordCharClassAt(const Lines& lines, CursorPos pos, bool big) {
+  int c = gchar(lines, pos);
+  if (c == 0) return 0;
+  CharMask m(static_cast<char>(c));
+  if (m.whitespace()) return 0;
   if (big) return 1;  // Bigword: only whitespace vs non-whitespace
   return m.smallWord() ? 2 : 1;
 }
 
-int wordCharClassAt(const Lines& lines, CursorPos pos, bool big) {
-  if (pos.line < 0 || pos.line >= static_cast<int>(lines.size())) return 0;
-  const string& line = lines[pos.line];
-  if (pos.col < 0 || pos.col >= static_cast<int>(line.size())) return 0;  // NUL position
-  return wordCharClass(line[pos.col], big);
-}
-
-// Port of Neovim's `inc`. Returns:
-//   -1: cursor was already past end of buffer
-//    0: advanced within line (or onto NUL position)
-//    1: crossed to start of next line
-int wordIncCursor(const Lines& lines, CursorPos& pos) {
-  if (lines.empty() || pos.line < 0) return -1;
-  if (pos.line >= static_cast<int>(lines.size())) return -1;
-  int len = static_cast<int>(lines[pos.line].size());
-  if (pos.col < len) {
-    pos.col++;
-    return 0;
-  }
-  if (pos.line + 1 >= static_cast<int>(lines.size())) return -1;
-  pos.line++;
-  pos.col = 0;
-  return 1;
-}
-
 bool atEmptyLine(const Lines& lines, CursorPos pos) {
-  if (pos.line < 0 || pos.line >= static_cast<int>(lines.size())) return false;
-  return pos.col == 0 && lines[pos.line].empty();
-}
-
-// Port of `dec` from Neovim's mark.c. Returns:
-//   -1: cursor at start of buffer (no movement)
-//    0: moved backward within line
-//    1: crossed to previous line (cursor at NUL position = col == size, which
-//       wordCharClassAt treats as class 0; this matches Vim's coladvance(MAXCOL)
-//       semantics where NUL is a visitable position)
-int wordDecCursor(const Lines& lines, CursorPos& pos) {
-  if (lines.empty() || pos.line < 0) return -1;
-  if (pos.col > 0) {
-    pos.col--;
-    return 0;
-  }
-  if (pos.line == 0) return -1;
-  pos.line--;
-  pos.col = static_cast<int>(lines[pos.line].size());  // NUL position
-  return 1;
+  return pos.col == 0 && gchar(lines, pos) == 0;
 }
 
 // Skip a row of characters of the same class in the given direction.
 // Returns true if hit buffer edge (cursor stays at edge).
 bool wordSkipChars(int cclass, bool forward, const Lines& lines, CursorPos& pos, bool big) {
   while (wordCharClassAt(lines, pos, big) == cclass) {
-    int i = forward ? wordIncCursor(lines, pos) : wordDecCursor(lines, pos);
+    int i = forward ? inc(lines, pos) : dec(lines, pos);
     if (i == -1) return true;
   }
   return false;
@@ -165,25 +92,32 @@ bool wordSkipChars(int cclass, bool forward, const Lines& lines, CursorPos& pos,
    //              from the VimCore::* scope declared in VimMotionUtils.h)
 
 // Port of fwd_word(count, bigword, eol=true) — operator-pending forward `w`.
+//
+// Deliberate divergence: Neovim's eol checks are `i >= 1`, so landing on the
+// NUL slot (inc == 2) also stops the last word there, and nv_wordcmd's
+// adjust_cursor then backs onto the last char inclusive. We test `i == 1` so
+// the scan keeps going and reports the line crossing instead; the interpreter
+// (shouldStopAtEndOfLine) relies on seeing goalPos on the next line to apply
+// the "dw on last word of line doesn't take the newline" rule.
 bool fwdWordOperator(CursorPos& pos, const Lines& lines, bool big, int count) {
   while (--count >= 0) {
     int sclass = wordCharClassAt(lines, pos, big);
     bool lastLine = (pos.line == lines.lastLine());
-    int i = wordIncCursor(lines, pos);
-    if (i == -1 || (i >= 1 && lastLine)) return false;
-    if (i >= 1 && count == 0) return true;
+    int i = inc(lines, pos);
+    if (i == -1 || (i == 1 && lastLine)) return false;
+    if (i == 1 && count == 0) return true;
 
     if (sclass != 0) {
       while (wordCharClassAt(lines, pos, big) == sclass) {
-        i = wordIncCursor(lines, pos);
-        if (i == -1 || (i >= 1 && count == 0)) return true;
+        i = inc(lines, pos);
+        if (i == -1 || (i == 1 && count == 0)) return true;
       }
     }
 
     while (wordCharClassAt(lines, pos, big) == 0) {
       if (atEmptyLine(lines, pos)) break;
-      i = wordIncCursor(lines, pos);
-      if (i == -1 || (i >= 1 && count == 0)) return true;
+      i = inc(lines, pos);
+      if (i == -1 || (i == 1 && count == 0)) return true;
     }
   }
   return true;
@@ -196,42 +130,20 @@ bool bckWordOperator(CursorPos& pos, const Lines& lines, bool big, int count) {
   bool stop = false;  // matches nv_bck_word(cap->count1, cap->arg, false)
   while (--count >= 0) {
     int sclass = wordCharClassAt(lines, pos, big);
-    if (wordDecCursor(lines, pos) == -1) return false;
+    if (dec(lines, pos) == -1) return false;
 
     if (!stop || sclass == wordCharClassAt(lines, pos, big) || sclass == 0) {
       // Skip whitespace before the word. Stop on empty line.
       while (wordCharClassAt(lines, pos, big) == 0) {
         if (atEmptyLine(lines, pos)) goto finished;
-        if (wordDecCursor(lines, pos) == -1) return true;
+        if (dec(lines, pos) == -1) return true;
       }
       // Move backward to start of this word.
       if (wordSkipChars(wordCharClassAt(lines, pos, big), false, lines, pos, big)) return true;
     }
-    wordIncCursor(lines, pos);  // overshot — forward one
+    inc(lines, pos);  // overshot — forward one
 finished:
     stop = false;
-  }
-  return true;
-}
-
-// Port of end_word(count, bigword, stop=false, empty=false) — `e`/`E`/`de`/`dE`.
-// Per Neovim's nv_wordcmd, `flag` (which becomes `stop`) is only true for the
-// `cw`/`cW` → `ce`/`cE` mapping. Plain `e`/`E` and operator-pending `de`/`dE`
-// use stop=false.
-bool endWordOperator(CursorPos& pos, const Lines& lines, bool big, int count) {
-  while (--count >= 0) {
-    int sclass = wordCharClassAt(lines, pos, big);
-    if (wordIncCursor(lines, pos) == -1) return false;
-
-    if (wordCharClassAt(lines, pos, big) == sclass && sclass != 0) {
-      if (wordSkipChars(sclass, true, lines, pos, big)) return false;
-    } else {  // stop=false: always enter the "end of next word" branch
-      while (wordCharClassAt(lines, pos, big) == 0) {
-        if (wordIncCursor(lines, pos) == -1) return false;
-      }
-      if (wordSkipChars(wordCharClassAt(lines, pos, big), true, lines, pos, big)) return false;
-    }
-    wordDecCursor(lines, pos);  // overshot — back one
   }
   return true;
 }
@@ -242,51 +154,23 @@ bool endWordOperator(CursorPos& pos, const Lines& lines, bool big, int count) {
 bool bckEndWordOperator(CursorPos& pos, const Lines& lines, bool big, int count) {
   while (--count >= 0) {
     int sclass = wordCharClassAt(lines, pos, big);
-    if (wordDecCursor(lines, pos) == -1) return false;
+    if (dec(lines, pos) == -1) return false;
 
     if (sclass != 0) {
       while (wordCharClassAt(lines, pos, big) == sclass) {
-        if (wordDecCursor(lines, pos) == -1) return true;
+        if (dec(lines, pos) == -1) return true;
       }
     }
 
     while (wordCharClassAt(lines, pos, big) == 0) {
       if (atEmptyLine(lines, pos)) break;
-      if (wordDecCursor(lines, pos) == -1) return true;
+      if (dec(lines, pos) == -1) return true;
     }
   }
   return true;
 }
 
 namespace {
-
-// Port of `incl` from memline.c: like inc but skips the NUL position at end
-// of a non-empty line. Used by current_word.
-int wordIncl(const Lines& lines, CursorPos& pos) {
-  int r = wordIncCursor(lines, pos);
-  // wordIncCursor returns 0 for within-line advance; we need to detect when
-  // we landed on the NUL position (col == size) of a non-empty line.
-  if (r == 0 && pos.line >= 0 && pos.line < static_cast<int>(lines.size())) {
-    int len = static_cast<int>(lines[pos.line].size());
-    if (len > 0 && pos.col >= len) {
-      // At NUL of non-empty line — Vim's incl skips it.
-      return wordIncCursor(lines, pos);
-    }
-  }
-  return r;
-}
-
-// Port of `decl` from memline.c: like dec but skips NUL when crossing back
-// to a non-empty previous line.
-int wordDecl(const Lines& lines, CursorPos& pos) {
-  int r = wordDecCursor(lines, pos);
-  // wordDecCursor lands at col == size (NUL position) when crossing back.
-  // For non-empty prev line, that's col > 0 — Vim's decl re-decs to skip NUL.
-  if (r == 1 && pos.col > 0) {
-    return wordDecCursor(lines, pos);
-  }
-  return r;
-}
 
 // Port of `back_in_line` from textobject.c: move backward within the current
 // line to the start of the current character class run. Does NOT cross lines.
@@ -316,7 +200,7 @@ bool endWord(CursorPos& pos, const Lines& lines, bool big, int count,
              bool stop, bool empty) {
   while (--count >= 0) {
     int sclass = wordCharClassAt(lines, pos, big);
-    if (wordIncCursor(lines, pos) == -1) return false;
+    if (inc(lines, pos) == -1) return false;
 
     bool finished = false;
     if (wordCharClassAt(lines, pos, big) == sclass && sclass != 0) {
@@ -327,19 +211,25 @@ bool endWord(CursorPos& pos, const Lines& lines, bool big, int count,
           finished = true;
           break;
         }
-        if (wordIncCursor(lines, pos) == -1) return false;
+        if (inc(lines, pos) == -1) return false;
       }
       if (!finished) {
         if (wordSkipChars(wordCharClassAt(lines, pos, big), true, lines, pos, big)) return false;
       }
     }
-    if (!finished) wordDecCursor(lines, pos);
+    if (!finished) dec(lines, pos);
     stop = false;
   }
   return true;
 }
 
 }  // namespace
+
+// Per Neovim's nv_wordcmd, `stop` is only true for the `cw`/`cW` → `ce`/`cE`
+// mapping. Plain `e`/`E` and operator-pending `de`/`dE` use stop=false.
+bool endWordOperator(CursorPos& pos, const Lines& lines, bool big, int count) {
+  return endWord(pos, lines, big, count, /*stop=*/false, /*empty=*/false);
+}
 
 // =============================================================================
 // Named word motion forwarders
@@ -353,25 +243,25 @@ bool endWord(CursorPos& pos, const Lines& lines, bool big, int count,
 //
 
 void motionW(CursorPos &pos, const Lines &lines, bool big) {
-  motionWord(pos, lines, true, EdgeType::NextEdge, big, false);
+  motionWord<true, EdgeType::NextEdge>(pos, lines, big, false);
 }
 
 void motionB(CursorPos &pos, const Lines &lines, bool big) {
   // For backward direction, End gives edge opposite to travel = leftmost =
   // START skipCurrent needed so b from word start goes to PREVIOUS word start
-  motionWord(pos, lines, false, EdgeType::WordEdge, big, true);
+  motionWord<false, EdgeType::WordEdge>(pos, lines, big, true);
 }
 
 void motionE(CursorPos &pos, const Lines &lines, bool big) {
   // e needs to skip current position first, otherwise we'd stay at current word
   // end
-  motionWord(pos, lines, true, EdgeType::WordEdge, big, true);
+  motionWord<true, EdgeType::WordEdge>(pos, lines, big, true);
 }
 
 void motionGe(CursorPos &pos, const Lines &lines, bool big) {
   // For backward direction, Next gives edge in travel direction = rightmost =
   // END skipCurrent needed so ge from word end goes to PREVIOUS word end
-  motionWord(pos, lines, false, EdgeType::NextEdge, big, true);
+  motionWord<false, EdgeType::NextEdge>(pos, lines, big, true);
 }
 
 void motionWForOperator(CursorPos& pos, const Lines& lines, bool big) {
@@ -383,14 +273,6 @@ void motionWForOperator(CursorPos& pos, const Lines& lines, bool big) {
 
 void motionEForOperator(CursorPos& pos, const Lines& lines, bool big) {
   endWordOperator(pos, lines, big, 1);
-}
-
-void motionBForOperator(CursorPos& pos, const Lines& lines, bool big) {
-  bckWordOperator(pos, lines, big, 1);
-}
-
-void motionGeForOperator(CursorPos& pos, const Lines& lines, bool big) {
-  bckEndWordOperator(pos, lines, big, 1);
 }
 
 CurrentWordResult currentWord(CursorPos cursor, const Lines& lines,
@@ -433,7 +315,7 @@ CurrentWordResult currentWord(CursorPos cursor, const Lines& lines,
     // Vim: "If we end up in the first column of the next line (single char
     // word), back up to end of the line."
     if (cursor.col == 0) {
-      wordDecl(lines, cursor);
+      decl(lines, cursor);
     } else {
       oneLeftCursor(cursor);
     }
@@ -468,29 +350,18 @@ CurrentWordResult currentWord(CursorPos cursor, const Lines& lines,
 // =============================================================================
 
 void motionParagraphPrev(CursorPos &pos, const Lines &lines) {
-  int n = (int)lines.size();
-  if (n == 0)
-    return;
-
-  pos.line = motionParagraphEndpoint(pos.line, lines, false,
-                                                       LineEdgeType::NextEdge);
+  pos.line = motionParagraphEndpoint<false, LineEdgeType::NextEdge>(pos.line, lines);
   pos.setCol(0);
 }
 
 void motionParagraphNext(CursorPos &pos, const Lines &lines) {
-  int n = (int)lines.size();
-  if (n == 0)
-    return;
-
-  int resultLine = motionParagraphEndpoint(
-      pos.line, lines, true, LineEdgeType::NextEdge);
+  int resultLine = motionParagraphEndpoint<true, LineEdgeType::NextEdge>(pos.line, lines);
   pos.line = resultLine;
 
   // Special case: if at last line and it's not blank, go to last char
   // (This matches vim's behavior at EOF)
-  if (resultLine == n - 1 && !isParagraphSeparatorLine(lines[resultLine])) {
-    int lastCol = std::max(0, (int)lines[resultLine].size() - 1);
-    pos.setCol(lastCol);
+  if (resultLine == lines.lastLine() && !isParagraphSeparatorLine(lines[resultLine])) {
+    pos.setCol(lines[resultLine].lastCol());
   } else {
     pos.setCol(0);
   }
@@ -501,12 +372,7 @@ void motionParagraphNext(CursorPos &pos, const Lines &lines) {
 // =============================================================================
 
 int clampCol(const Lines &lines, int col, int lineIdx) {
-  int n = static_cast<int>(lines.size());
-  assert(lineIdx >= 0 && lineIdx < n);
-  int len = static_cast<int>(lines[lineIdx].size());
-  if (len == 0)
-    return 0;
-  return std::clamp(col, 0, len - 1);
+  return lines.clamp(CursorPos(lineIdx, col)).col;
 }
 
 void moveCol(CursorPos &pos, const Lines &lines, int dx) {
@@ -525,116 +391,21 @@ void moveLine(CursorPos &pos, const Lines &lines, int dy) {
 }
 
 // =============================================================================
-// Paragraph edge helpers
-// =============================================================================
-
-// Move to the "top edge" (start) of the current paragraph.
-// If currently on blank lines, goes to first blank line in that run.
-void moveToParagraphStart(CursorPos &pos, const Lines &lines) {
-  int n = (int)lines.size();
-  if (n == 0)
-    return;
-  pos.line = std::clamp(pos.line, 0, n - 1);
-  pos.line = paragraphStartLine(lines, pos.line);
-
-  // For non-blank paragraph, go to first non-blank column on that line.
-  if (!isParagraphSeparatorLine(lines[pos.line]))
-    pos.setCol(firstNonBlankColInLine(lines[pos.line]));
-  else
-    pos.setCol(0);
-}
-
-// Move to the "bottom edge" (end) of the current paragraph.
-// If currently on blank lines, goes to last blank line in that run.
-void moveToParagraphEnd(CursorPos &pos, const Lines &lines) {
-  int n = (int)lines.size();
-  if (n == 0)
-    return;
-  pos.line = std::clamp(pos.line, 0, n - 1);
-  pos.line = paragraphEndLine(lines, pos.line);
-
-  // Keep column in bounds.
-  pos.setCol(clampCol(lines, pos.col, pos.line));
-}
-
-// =============================================================================
 // Sentence motions
 // =============================================================================
 
 namespace {
 
-struct SentenceScanPos {
-  int line = 0;
-  int col = 0;
-};
-
-bool sameSentenceScanPos(SentenceScanPos a, SentenceScanPos b) {
-  return a.line == b.line && a.col == b.col;
-}
-
-int sentenceCharAt(const Lines& lines, SentenceScanPos pos) {
-  if (lines.empty() || pos.line < 0 || pos.line >= static_cast<int>(lines.size())) {
-    return -1;
-  }
-  const string& line = lines[pos.line];
-  if (pos.col < 0) return -1;
-  if (pos.col >= static_cast<int>(line.size())) return 0;
-  return static_cast<unsigned char>(line[pos.col]);
-}
-
-int sentenceInc(const Lines& lines, SentenceScanPos& pos) {
-  if (lines.empty() || pos.line < 0 || pos.line >= static_cast<int>(lines.size())) {
-    return -1;
-  }
-  const int len = static_cast<int>(lines[pos.line].size());
-  if (pos.col < len) {
-    pos.col++;
-    return sentenceCharAt(lines, pos) == 0 ? 2 : 0;
-  }
-  if (pos.line + 1 >= static_cast<int>(lines.size())) {
-    return -1;
-  }
-  pos.line++;
-  pos.col = 0;
-  return 1;
-}
-
-int sentenceIncl(const Lines& lines, SentenceScanPos& pos) {
-  int result = sentenceInc(lines, pos);
-  if (result >= 1 && pos.col != 0) {
-    result = sentenceInc(lines, pos);
-  }
-  return result;
-}
-
-int sentenceDecl(const Lines& lines, SentenceScanPos& pos) {
-  if (lines.empty() || pos.line < 0 || pos.line >= static_cast<int>(lines.size())) {
-    return -1;
-  }
-  if (pos.col > 0) {
-    pos.col--;
-    return sentenceCharAt(lines, pos);
-  }
-  if (pos.line == 0) {
-    return -1;
-  }
-  pos.line--;
-  pos.col = max(0, static_cast<int>(lines[pos.line].size()) - 1);
-  return sentenceCharAt(lines, pos);
-}
-
-// The sentence scan loop works in `int` (0 = end-of-line, -1 = invalid), so
-// these adapters keep sentinel handling separate from character classification.
+// The scan works on `gchar` ints (0 = NUL slot), which CharMask never flags.
 inline bool sentenceIsWhite(int c) {
-  return c >= 0 && CharMask::isWhitespace(static_cast<char>(c));
+  return CharMask::isWhitespace(static_cast<char>(c));
 }
 
 inline bool sentenceIsEndPunct(int c) {
-  return c >= 0 && CharMask::isSentenceEnd(static_cast<char>(c));
+  return CharMask::isSentenceEnd(static_cast<char>(c));
 }
 
 inline bool sentenceIsPunctOrCloser(int c) {
-  if (c < 0) return false;
   CharMask cls(static_cast<char>(c));
   return cls.sentenceEnd() || cls.sentenceCloser();
 }
@@ -669,52 +440,23 @@ bool sentenceStartPS(const Lines& lines, int line, int para = 0, bool both = fal
        (para == 0 && sentenceInMacro(PARAGRAPHS, string_view(s).substr(1))));
 }
 
-CursorPos sentenceScanToCursor(const Lines& lines, SentenceScanPos pos) {
-  if (lines.empty()) return {0, 0};
-  pos.line = clamp(pos.line, 0, static_cast<int>(lines.size()) - 1);
-  int len = static_cast<int>(lines[pos.line].size());
-  if (len == 0) return {pos.line, 0};
-  return {pos.line, clamp(pos.col, 0, len - 1)};
-}
-
-// Like sentenceScanToCursor but preserves the past-EOL position (col == size)
-// that Neovim's findsent leaves on the NUL terminator. Operator endpoints need
-// the raw position to construct the exclusive range correctly; cursor display
-// needs the clamped variant above.
-CursorPos sentenceScanToCursorRaw(const Lines& lines, SentenceScanPos pos) {
-  if (lines.empty()) return {0, 0};
-  pos.line = clamp(pos.line, 0, static_cast<int>(lines.size()) - 1);
+// Preserves the past-EOL position (col == size) that Neovim's findsent leaves
+// on the NUL terminator; operator endpoints need it to build the exclusive
+// range, and motion callers clamp afterwards.
+CursorPos sentenceScanToCursorRaw(const Lines& lines, CursorPos pos) {
+  pos.line = clamp(pos.line, 0, lines.lastLine());
   int len = static_cast<int>(lines[pos.line].size());
   if (len == 0) return {pos.line, 0};
   return {pos.line, clamp(pos.col, 0, len)};
 }
 
-// Port of Neovim's `findsent()` from textobject.c — the MOTION path for `)` / `(`.
-//
-// Looks duplicative of `sentenceExtentAtOrAfter` / `sentenceGapEndpoint` in
-// VimEndpointUtils.cpp because both walk over Vim's sentence boundary rules,
-// but the two answer different questions and **must stay separate**:
-//
-//   - findSentenceLikeNeovim → motion: "where does `)` land the cursor?"
-//     `)` puts the cursor at the *start* of the next sentence (skipping
-//     trailing whitespace forward).
-//
-//   - sentenceExtentAtOrAfter / sentenceGapEndpoint → operator endpoint:
-//     "where does `d)` reach?" `d)` includes the trailing whitespace gap
-//     after the sentence-ending punctuation (see :help exclusive-linewise
-//     and the gap-after-sentence rule).
-//
-// Same underlying boundary definition, different endpoint. Forcing a single
-// helper would conflate motion and operator semantics — the same kind of
-// conflation the project deliberately avoids by separating `motionXxx`
-// (NavOptimizer / replay) from `xxxOperatorEndpoint` (TransformOptimizer).
-bool findSentenceLikeNeovim(CursorPos& cursor, const Lines& lines, bool forward, int count) {
-  if (lines.empty() || count <= 0) return false;
+}  // namespace
 
-  SentenceScanPos pos{
-      clamp(cursor.line, 0, static_cast<int>(lines.size()) - 1),
-      cursor.col,
-  };
+// Port of Neovim's `findsent()` from textobject.c.
+bool findSentenceForOperator(CursorPos& cursor, const Lines& lines, bool forward, int count) {
+  if (count <= 0) return false;
+
+  CursorPos pos(clamp(cursor.line, 0, lines.lastLine()), cursor.col);
   int len = static_cast<int>(lines[pos.line].size());
   // Allow col up to len (NUL position) — Vim's findsent operates on NUL too,
   // and the sentence text object port (current_sent in VimEndpointUtils) calls
@@ -725,39 +467,39 @@ bool findSentenceLikeNeovim(CursorPos& cursor, const Lines& lines, bool forward,
   bool noskip = false;
   while (count > 0) {
     count--;
-    SentenceScanPos prevPos = pos;
-    int c = sentenceCharAt(lines, pos);
+    CursorPos prevPos = pos;
+    int c = gchar(lines, pos);
 
     if (c == 0) {
       do {
-        if ((forward ? sentenceIncl(lines, pos) : sentenceDecl(lines, pos)) == -1) {
+        if ((forward ? incl(lines, pos) : decl(lines, pos)) == -1) {
           break;
         }
-      } while (sentenceCharAt(lines, pos) == 0);
+      } while (gchar(lines, pos) == 0);
       if (forward) {
         goto found;
       }
     } else if (forward && pos.col == 0 && sentenceStartPS(lines, pos.line)) {
-      if (pos.line == static_cast<int>(lines.size()) - 1) {
+      if (pos.line == lines.lastLine()) {
         return false;
       }
       pos.line++;
       pos.col = 0;
       goto found;
     } else if (!forward) {
-      sentenceDecl(lines, pos);
+      decl(lines, pos);
     }
 
     {
       bool foundDot = false;
       while (true) {
-        c = sentenceCharAt(lines, pos);
+        c = gchar(lines, pos);
         if (!sentenceIsWhite(c) && !sentenceIsPunctOrCloser(c)) {
           break;
         }
 
-        SentenceScanPos tpos = pos;
-        if (sentenceDecl(lines, tpos) == -1 ||
+        CursorPos tpos = pos;
+        if (decl(lines, tpos) == -1 ||
             (lines[tpos.line].empty() && forward)) {
           break;
         }
@@ -768,17 +510,17 @@ bool findSentenceLikeNeovim(CursorPos& cursor, const Lines& lines, bool forward,
           foundDot = true;
         }
         if ((c == ')' || c == ']' || c == '"' || c == '\'') &&
-            !sentenceIsPunctOrCloser(sentenceCharAt(lines, tpos))) {
+            !sentenceIsPunctOrCloser(gchar(lines, tpos))) {
           break;
         }
-        sentenceDecl(lines, pos);
+        decl(lines, pos);
       }
     }
 
     {
       int startLine = pos.line;
       while (true) {
-        c = sentenceCharAt(lines, pos);
+        c = gchar(lines, pos);
         if (c == 0 || (pos.col == 0 && sentenceStartPS(lines, pos.line))) {
           if (!forward && pos.line != startLine) {
             pos.line++;
@@ -788,27 +530,27 @@ bool findSentenceLikeNeovim(CursorPos& cursor, const Lines& lines, bool forward,
         }
 
         if (sentenceIsEndPunct(c)) {
-          SentenceScanPos tpos = pos;
+          CursorPos tpos = pos;
           int next = 0;
           do {
-            next = sentenceInc(lines, tpos);
+            next = inc(lines, tpos);
             if (next == -1) break;
-          } while (sentenceCharAt(lines, tpos) == ')' ||
-                   sentenceCharAt(lines, tpos) == ']' ||
-                   sentenceCharAt(lines, tpos) == '"' ||
-                   sentenceCharAt(lines, tpos) == '\'');
+          } while (gchar(lines, tpos) == ')' ||
+                   gchar(lines, tpos) == ']' ||
+                   gchar(lines, tpos) == '"' ||
+                   gchar(lines, tpos) == '\'');
 
-          int after = sentenceCharAt(lines, tpos);
+          int after = gchar(lines, tpos);
           if (next == -1 || sentenceIsWhite(after) || after == 0) {
             pos = tpos;
-            if (sentenceCharAt(lines, pos) == 0) {
-              sentenceIncl(lines, pos);
+            if (gchar(lines, pos) == 0) {
+              incl(lines, pos);
             }
             break;
           }
         }
 
-        if ((forward ? sentenceIncl(lines, pos) : sentenceDecl(lines, pos)) == -1) {
+        if ((forward ? incl(lines, pos) : decl(lines, pos)) == -1) {
           if (count > 0) {
             return false;
           }
@@ -819,14 +561,14 @@ bool findSentenceLikeNeovim(CursorPos& cursor, const Lines& lines, bool forward,
     }
 
 found:
-    while (!noskip && sentenceIsWhite(sentenceCharAt(lines, pos))) {
-      if (sentenceIncl(lines, pos) == -1) {
+    while (!noskip && sentenceIsWhite(gchar(lines, pos))) {
+      if (incl(lines, pos) == -1) {
         break;
       }
     }
 
-    if (sameSentenceScanPos(prevPos, pos)) {
-      if ((forward ? sentenceIncl(lines, pos) : sentenceDecl(lines, pos)) == -1) {
+    if (prevPos == pos) {
+      if ((forward ? incl(lines, pos) : decl(lines, pos)) == -1) {
         if (count > 0) {
           return false;
         }
@@ -840,46 +582,19 @@ found:
   return true;
 }
 
-CursorPos clampCursorToValidLine(CursorPos pos, const Lines& lines) {
-  if (lines.empty()) return {0, 0};
-  if (pos.line >= static_cast<int>(lines.size())) {
-    int lastLine = lines.lastLine();
-    int lastLen = static_cast<int>(lines[lastLine].size());
-    return {lastLine, lastLen == 0 ? 0 : lastLen - 1};
-  }
-  int len = static_cast<int>(lines[pos.line].size());
-  if (len == 0) return {pos.line, 0};
-  return {pos.line, std::min(pos.col, len - 1)};
-}
-
-}  // namespace
-
 void motionSentenceNext(CursorPos &pos, const Lines &lines) {
-  findSentenceLikeNeovim(pos, lines, true, 1);
-  pos = clampCursorToValidLine(pos, lines);
+  findSentenceForOperator(pos, lines, true, 1);
+  pos = lines.clamp(pos);
 }
 
 void motionSentencePrev(CursorPos &pos, const Lines &lines) {
-  findSentenceLikeNeovim(pos, lines, false, 1);
-  pos = clampCursorToValidLine(pos, lines);
-}
-
-bool findSentenceForOperator(CursorPos& cursor, const Lines& lines, bool forward, int count) {
-  return findSentenceLikeNeovim(cursor, lines, forward, count);
+  findSentenceForOperator(pos, lines, false, 1);
+  pos = lines.clamp(pos);
 }
 
 // =============================================================================
 // Character Find (f/F/t/T)
 // =============================================================================
-
-// Returns destination column, or -1 if target not found
-// forward: true for f/t, false for F/T
-// till: true for t/T (stop one short), false for f/F (land on target)
-int findCharInLine(char target, string_view line,
-                   int startCol, bool forward, bool till) {
-  return findCharInLine(target, line, startCol, forward, till,
-                        /*count=*/1, /*repeat=*/false);
-}
 
 int findCharInLine(char target, string_view line, int startCol,
                    bool forward, bool till, int count, bool repeat) {
@@ -929,10 +644,8 @@ generateFMotions(int currCol, int targetCol,
   } else {
     r = min(r, currCol - 1);
   }
-  if (l > r) {
-    debug("this shouldn't happen");
-    return res;
-  }
+  // Reachable: a boundary column can exceed the line after a deletion shrinks it.
+  if (l > r) return res;
 
   res.reserve(r - l + 1);
   // Might be possible to optimize with static instance and resetting only

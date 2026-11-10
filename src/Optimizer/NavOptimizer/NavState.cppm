@@ -18,7 +18,6 @@ class NavState {
 
   // Visible, core editor state
   CursorPos pos;
-  Mode mode;
 
   // Progress so far
   Sequence movementSequence;
@@ -31,7 +30,7 @@ class NavState {
   RunningEffort runningEffort;
 
   inline NavState(CursorPos pos, RunningEffort runningEffort, double effort, double cost)
-    : pos(pos), mode(Mode::Normal), effort(effort), cost(cost),
+    : pos(pos), effort(effort), cost(cost),
       runningEffort(std::move(runningEffort)) {
   }
 
@@ -47,7 +46,6 @@ public:
     return Pos(pos.line, pos.col);
   }
   inline CursorPos getPos()                       const { return pos; }
-  inline Mode getMode()                          const { return mode; }
   inline const Sequence& getSequence()            const { return movementSequence; }
   inline double getEffort()                      const { return effort; }
   inline double getCost()                        const { return cost; }
@@ -55,7 +53,6 @@ public:
 
 private:
   // Internal: apply motion to this state (mutates)
-  void applyMotionImpl(const KeyedSequence& ks, CursorPos endpoint, const Config& config);
   void applyMotionImpl(const KeyedSequence& ks, const RunningEffort& precomputed,
                        CursorPos endpoint, const Config& config);
   void applyCountedMotionImpl(const KeyedSequence& baseMotion, int cnt,
@@ -84,14 +81,6 @@ public:
   [[nodiscard]] inline NavState initial(CursorPos pos, RunningEffort runningEffort) const {
     double effort = runningEffort.getEffort();
     return NavState(pos, std::move(runningEffort), effort, computeCost(pos, effort));
-  }
-
-  [[nodiscard]] inline NavState afterMotion(
-      const NavState& state, const KeyedSequence& ks, CursorPos endpoint) const {
-    NavState newState = state;
-    newState.applyMotionImpl(ks, endpoint, config);
-    newState.cost = costFor(newState);
-    return newState;
   }
 
   [[nodiscard]] inline NavState afterMotion(

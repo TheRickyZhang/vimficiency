@@ -9,13 +9,6 @@ import vf.Types.CountPrefixLimits;
 
 using namespace std;
 
-void NavState::applyMotionImpl(const KeyedSequence& ks, CursorPos endpoint,
-                                  const Config& config) {
-  pos = endpoint;
-  movementSequence.append(ks.seq.view());
-  effort = runningEffort.append(ks.keys, config);
-}
-
 void NavState::applyMotionImpl(const KeyedSequence& ks, const RunningEffort& precomputed,
                                   CursorPos endpoint, const Config& config) {
   pos = endpoint;

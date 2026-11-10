@@ -16,11 +16,15 @@ struct SequenceBinding {
   const KeyedSequence& base;
   const RunningEffort& effort;
 
-  inline SequenceBinding(const KeyedSequence& base, const RunningEffort& effort)
-      : count(0), base(base), effort(effort) {}
-
-  inline SequenceBinding(const KeyedSequence& base, const RunningEffort& effort, int count)
+  inline SequenceBinding(const KeyedSequence& base, const RunningEffort& effort, int count = 0)
       : count(count), base(base), effort(effort) {}
 };
+
+// `base` carries no count prefix (`ParsedEdit.edit` / `DotRepeat.base` / the
+// binding's `base`), so the count must be prepended explicitly.
+inline std::string countedCommandString(int count, std::string_view base) {
+  if (count <= 0) return std::string(base);
+  return std::to_string(count) + std::string(base);
+}
 
 }  // export

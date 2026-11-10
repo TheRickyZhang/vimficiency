@@ -24,7 +24,7 @@ internals and implementation notes, see `dev/`.
 6. [Suggest](06-suggest.md) — auto start, auto end (idle-surfaces result)
 7. [Inspecting results](07-results.md) — notifications, simulate, list, view
    - [7a. Session storage](07a-session-storage.md) — workspace (memory) vs. archive (disk)
-8. [Binding keys to Vimfy](08-keymaps.md) — `<Plug>` maps and `wrap()`
+8. [Binding keys to Vimfy](08-keymaps.md) — `vimfy.map()` and `<Plug>` maps
 9. [Configuration](09-configuration.md) — setup knobs
 10. [The effort model](10-effort-model.md) — how "cost" is computed
 11. [Commands reference](11-commands.md) — cheat sheet
@@ -58,14 +58,12 @@ For anything else, start at [1. Installation](01-installation.md).
 
 ## One rule that runs through every page: the keymap contract
 
-Vimfy counts the keys you type. Any key you bind to invoke a
-Vimfy action must therefore announce itself as admin activity —
-otherwise the invoking keystroke is counted as motion and skews your
-own results. Routing options, in order of ergonomics:
+Vimfy counts the keys you type. A key you bind to invoke a Vimfy
+action must not be counted as motion; bindings made through these
+retract their own trigger keystroke:
 
 - `vimfy.map('n', '<leader>vs', 'start a')` — recommended
 - `<Plug>VimfyStartA` — for users who prefer the Vim convention
-- `require('vimficiency').wrap(fn)` — for autocommands / UI callbacks
 
 A raw `nnoremap X :Vimfy start a<CR>` does **not** route correctly; the
 `X` keypress is delivered before the mapping resolves. Full detail:

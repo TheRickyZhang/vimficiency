@@ -1,6 +1,67 @@
 #include <gtest/gtest.h>
 
 import std.compat;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.tests.Utils.InterpreterModelReplay;
+import vf.tests.Utils.NeovimOracle;
+import vf.tests.Utils.OracleReplay;
+
+using namespace std;
+
+class NeovimOracleStepperDebug : public ::testing::Test {
+ protected:
+  static void SetUpTestSuite() { oracle_ = make_unique<NeovimOracle>(); }
+  static void TearDownTestSuite() { oracle_.reset(); }
+  static unique_ptr<NeovimOracle> oracle_;
+};
+
+unique_ptr<NeovimOracle> NeovimOracleStepperDebug::oracle_;
+
+// Hand-picked buffers where Neovim's inc/incl/dec/decl land on the NUL slot or
+// on empty lines: the cases where the pre-unification per-family steppers
+// differed from Neovim (inclPos/declPos skipped empty lines; the word inc never
+// reported 2). Every cursor position is driven through each command.
+TEST_F(NeovimOracleStepperDebug, StepperNulAndEmptyLineCases) {
+  struct Case {
+    vector<string> lines;
+    vector<string> commands;
+  };
+  const vector<Case> cases = {
+      {{"{", "", "}"}, {"di{", "da{"}},
+      {{"{", "", "", "}"}, {"di{", "da{"}},
+      {{"a{", "", "  x", "}"}, {"di{", "da{", "di(", "dab"}},
+      {{"{x", "", "}"}, {"di{", "da{"}},
+      {{"(", "", ")"}, {"di(", "da("}},
+      {{"f(a,", "", "", "  b)"}, {"di(", "da("}},
+      {{"Foo.", "", "Bar."}, {"dis", "das", "d)", "d(", ")", "("}},
+      {{"Foo.  ", "", "", "Bar baz."}, {"dis", "das", "d)", "d("}},
+      {{"", "Foo. Bar.", ""}, {"dis", "das", "d)", "d("}},
+      {{"Foo bar", "", "baz."}, {"dis", "das"}},
+      {{"a. b.", "", ""}, {"dis", "das", "d)"}},
+      {{"foo bar", "baz"}, {"dw", "dW", "daw", "diw", "de", "db", "dge"}},
+      {{"bar", "baz"}, {"dw", "daw", "diw"}},
+      {{"foo   ", "bar"}, {"dw", "daw", "diw", "de"}},
+      {{"foo bar"}, {"dw", "daw", "de", "2dw"}},
+      {{"foo", "", "bar"}, {"dw", "daw", "diw", "de", "db", "dge"}},
+      {{"", "", "x"}, {"dw", "daw", "diw", "de", "db", "dge"}},
+  };
+
+  for (const Case& c : cases) {
+    Lines lines(c.lines);
+    for (int line = 0; line <= lines.lastLine(); line++) {
+      for (int col = 0; col <= lines[line].lastCol(); col++) {
+        CursorPos cursor(line, col);
+        for (const string& seq : c.commands) {
+          InterpreterReplayResult result = applyUserSequence(lines, cursor, seq);
+          OracleReplay::expectMatchesOracle(*oracle_, lines, cursor, seq,
+                                            result.lines, result.cursor,
+                                            result.mode, "stepper edge case");
+        }
+      }
+    }
+  }
+}
 
 /*
 TEST_F(NeovimOracleDebug, DISABLED_InvestigateSentenceMotion) {
@@ -326,7 +387,7 @@ TEST_F(NeovimOracleDebug, DISABLED_InvestigateJCursor) {
 
   Lines ourLines = lines;
   CursorPos pos(0, 6);
-  VimCore::joinLines(ourLines, pos, true);
+  VimCore::joinLineRange(ourLines, pos, 2, true);
   cerr << endl << "Our VimCore after J:" << endl;
   cerr << "  Buffer: '" << ourLines.flatten() << "'" << endl;
   cerr << "  Cursor: [" << pos.line << "," << pos.col << "]" << endl;
@@ -341,7 +402,7 @@ TEST_F(NeovimOracleDebug, DISABLED_InvestigateJCursor) {
     auto nvim = oracle_->simulate(l, 0, startCol, "J");
     Lines our = l;
     CursorPos p(0, startCol);
-    VimCore::joinLines(our, p, true);
+    VimCore::joinLineRange(our, p, 2, true);
     cerr << label << " J at [0," << startCol << "]:" << endl;
     cerr << "  Neovim: '" << nvim.lines.flatten() << "' cursor=[" << nvim.row << "," << nvim.col << "]" << endl;
     cerr << "  Ours:   '" << our.flatten() << "' cursor=[" << p.line << "," << p.col << "]" << endl;

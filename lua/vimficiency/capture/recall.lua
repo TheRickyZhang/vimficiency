@@ -19,7 +19,7 @@ function M.install()
     -- `ingest_recall_event` into every active recall record. Strip them
     -- so Recall sessions don't record the binding's LHS as motion.
     session_store.strip_recall_pre_resolution(typed_raw)
-  end)
+  end, session_store.uncount_recall_trigger)
   if not ok then
     vim.notify(
       "vimfy: recall capture already installed (subscriber name " ..

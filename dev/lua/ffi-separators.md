@@ -150,7 +150,7 @@ lose representational precision as decimals. For an hrtime-scale value
 (~1.07e14 ns on a mid-uptime box), `tostring` produces
 `"1.0710102841774e+14"`. C++'s `from_chars<int64_t>` does not accept
 scientific notation, silently fails, and the payload decoder returns
-an error — which, in the `storeIntOr(0, …)` wrapper pattern, turns
+an error — which, in the `.value_or(0)` wrapper pattern, turns
 into a zero return that Lua maps to nil. The symptom is a "query
 returns nothing" that looks like a logic bug but is actually an
 encoding bug.

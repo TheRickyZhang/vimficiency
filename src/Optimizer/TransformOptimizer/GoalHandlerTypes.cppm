@@ -1,10 +1,18 @@
 export module vf.Optimizer.TransformOptimizer.GoalHandlerTypes;
 
 import std.compat;
+export import vf.Boundary.TransformBoundary;
 export import vf.Optimizer.TransformOptimizer.TransformState;
 export import vf.VimCore.VimEditUtils;
 
 export {
+
+inline VimCore::LineDeleteContext lineDeleteContext(const TransformBoundary& boundary) {
+  return {
+      .hasLinesAbove = boundary.hasLinesAbove(),
+      .hasLinesBelow = boundary.hasLinesBelow(),
+  };
+}
 
 // Protocol types for GoalHandler — shared between the dispatcher and both
 // goal handler implementations (DeletionGoalHandler, ChangeGoalHandler).
@@ -29,13 +37,6 @@ struct ResolvedEditAction {
   std::optional<VimCore::ResolvedDeleteRange> changeEffect;
   bool deleteEffectValid = true;
   bool changeEffectValid = true;
-
-  inline explicit ResolvedEditAction(VimCore::ResolvedDeleteRange deleteEffect)
-      : deleteEffect(deleteEffect), changeEffect(std::nullopt) {}
-
-  inline ResolvedEditAction(VimCore::ResolvedDeleteRange deleteEffect,
-                     VimCore::ResolvedDeleteRange changeEffect)
-      : deleteEffect(deleteEffect), changeEffect(changeEffect) {}
 
   inline ResolvedEditAction(VimCore::ResolvedDeleteRange deleteEffect,
                      bool deleteEffectValid)

@@ -130,17 +130,10 @@ CharRange bracketTextObjectRange(CursorPos cursor,
 //   GapEdge:   edge of blank line run (adjacent to paragraph)
 //   NextEdge:  start/end of next different-type block
 
-// Templated version for compile-time dispatch on Forward and Edge
 template<bool Forward, LineEdgeType Edge>
 int motionParagraphEndpoint(int cursorLine,
                             const Lines& lines,
                             bool hasLinesOutside = false);
-
-// Runtime dispatch version (for internal use in text object functions)
-int motionParagraphEndpoint(int cursorLine,
-                            const Lines& lines,
-                            bool forward,
-                            LineEdgeType edgeType);
 
 // Returns the line range for a paragraph text object.
 // If boundaries >= 0 and result would cross:
@@ -208,36 +201,6 @@ int scrollEndpoint(int cursorLine,
                    int shift,
                    bool hasLinesAbove,
                    bool hasLinesBelow);
-
-// =============================================================================
-// Line Endpoint/CharRange Computation
-// =============================================================================
-
-// Sentinel for column outside boundary
-constexpr int COL_OUTSIDE_BOUNDARY = -1;
-
-// Returns the column endpoint for line-based motions.
-// forward=true:  D/d$ - returns last column of current line
-// forward=false: d0   - returns column 0
-//
-// Boundary check:
-//   forward:  if on last line and !boundary.atLineEnd(), returns COL_OUTSIDE_BOUNDARY
-//   backward: if on first line and !boundary.atLineStart(), returns COL_OUTSIDE_BOUNDARY
-int motionLineEndpoint(CursorPos cursor,
-                       const Lines& lines,
-                       bool forward,
-                       const TransformBoundary& boundary);
-
-// Returns the line range for a full-line delete (dd).
-// Returns LINE_RANGE_OUTSIDE_BOUNDARY if would cross boundary.
-//
-// Safe if:
-//   - cursor is on a middle line (not first or last), OR
-//   - cursor is on first line AND boundary.atLineStart(), OR
-//   - cursor is on last line AND boundary.atLineEnd()
-LineRange lineDeleteRange(CursorPos cursor,
-                          const Lines& lines,
-                          const TransformBoundary& boundary);
 
 } // namespace VimCore
 

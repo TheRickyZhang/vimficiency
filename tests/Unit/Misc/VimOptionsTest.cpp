@@ -182,7 +182,7 @@ TEST_F(VimOptionsTest, J_AfterPeriod) {
 
   Lines ourLines = lines;
   CursorPos ourPos(0, 0);
-  VimCore::joinLines(ourLines, ourPos, true);
+  VimCore::joinLineRange(ourLines, ourPos, 2, true);
 
   EXPECT_EQ(ourLines, result.lines);
   EXPECT_EQ(ourPos.line, result.row);
@@ -201,7 +201,7 @@ TEST_F(VimOptionsTest, J_AfterExclamation) {
 
   Lines ourLines = lines;
   CursorPos ourPos(0, 0);
-  VimCore::joinLines(ourLines, ourPos, true);
+  VimCore::joinLineRange(ourLines, ourPos, 2, true);
 
   EXPECT_EQ(ourLines, result.lines);
   EXPECT_EQ(ourPos.line, result.row);
@@ -220,7 +220,7 @@ TEST_F(VimOptionsTest, J_AfterQuestion) {
 
   Lines ourLines = lines;
   CursorPos ourPos(0, 0);
-  VimCore::joinLines(ourLines, ourPos, true);
+  VimCore::joinLineRange(ourLines, ourPos, 2, true);
 
   EXPECT_EQ(ourLines, result.lines);
   EXPECT_EQ(ourPos.line, result.row);
@@ -239,7 +239,7 @@ TEST_F(VimOptionsTest, J_AfterNormalChar_SingleSpaceBothModes) {
 
   Lines ourLines = lines;
   CursorPos ourPos(0, 0);
-  VimCore::joinLines(ourLines, ourPos, true);
+  VimCore::joinLineRange(ourLines, ourPos, 2, true);
 
   EXPECT_EQ(ourLines, result.lines);
   EXPECT_EQ(ourLines[0], "hello world"); // 1 space in both modes
@@ -279,7 +279,7 @@ TEST_F(VimOptionsTest, J_NextLineLeadingWhitespace) {
 
   Lines ourLines = lines;
   CursorPos ourPos(0, 0);
-  VimCore::joinLines(ourLines, ourPos, true);
+  VimCore::joinLineRange(ourLines, ourPos, 2, true);
 
   EXPECT_EQ(ourLines, result.lines);
   EXPECT_EQ(ourPos.col, result.col);
@@ -354,7 +354,7 @@ TEST_F(VimOptionsTest, BareJ_DoesNotPreserveEmptyLineSeparator) {
 
   Lines ourLines = lines;
   CursorPos ourPos(0, 0);
-  VimCore::joinLines(ourLines, ourPos, true);
+  VimCore::joinLineRange(ourLines, ourPos, 2, true);
 
   EXPECT_EQ(ourLines, result.lines);
   EXPECT_EQ(ourPos.line, result.row);
@@ -424,7 +424,7 @@ TEST_F(VimOptionsTest, J_DoesNotStripCommentLeaders) {
 
   Lines ourLines = lines;
   CursorPos ourPos(0, 0);
-  VimCore::joinLines(ourLines, ourPos, true);
+  VimCore::joinLineRange(ourLines, ourPos, 2, true);
 
   EXPECT_EQ(ourLines, result.lines);
   EXPECT_EQ(ourPos.line, result.row);
@@ -437,7 +437,7 @@ TEST_F(VimOptionsTest, J_DoesNotInsertSpaceBeforeClosingParen) {
 
   Lines ourLines = lines;
   CursorPos ourPos(0, 0);
-  VimCore::joinLines(ourLines, ourPos, true);
+  VimCore::joinLineRange(ourLines, ourPos, 2, true);
 
   EXPECT_EQ(ourLines, result.lines);
   EXPECT_EQ(ourPos.line, result.row);

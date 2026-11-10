@@ -24,10 +24,8 @@ double bigramEffort(Key prev, Key next, const Config& model) {
     s += w.alt_hand_weight;
   }
 
-  if (a.finger != Finger::None && b.finger != Finger::None &&
-      sameHand(a.finger, b.finger)) {
-    int delta = static_cast<uint8_t>(fingerToPosition(b.finger)) -
-                static_cast<uint8_t>(fingerToPosition(a.finger));
+  if (a.hand != Hand::None && a.hand == b.hand) {
+    int delta = fingerToPosition(b.finger) - fingerToPosition(a.finger);
     if (delta > 0)      s += w.good_roll_weight;
     else if (delta < 0) s += w.bad_roll_weight;
   }
@@ -54,10 +52,6 @@ void RunningEffort::appendSingle(Key key, const Config &model) {
   if (strokes == 0) first_key = key;
   last_key = key;
   ++strokes;
-}
-
-void RunningEffort::reset() {
-  *this = RunningEffort();
 }
 
 RunningEffort RunningEffort::merge(const RunningEffort& a, const RunningEffort& b,

@@ -22,6 +22,7 @@ TEST(ResultDisplayApproval, EditedFunctionSavedReport) {
           .endRow = 2,
           .endCol = 10,
           .userSeq = "jciwn<Esc>",
+          .hasUserCost = true,
           .userCost = 12.345,
           .optimalResults = {
               {.seq = "jciwm<Esc>", .cost = 4.25},
@@ -42,7 +43,7 @@ TEST(ResultDisplayApproval, MovementOnlyNoRecommendations) {
           .startCol = 0,
           .endRow = 0,
           .endCol = 6,
-          .userCost = 0.0,
+          .hasUserCost = true,
       }));
 }
 

@@ -4,12 +4,11 @@ title: "Binding keys to Vimfy actions"
 
 # Binding keys to Vimfy actions
 
-Vimfy measures the keys you type, so a key that *invokes* Vimfy
-must announce itself as admin activity — otherwise the invoking
-keystroke counts as motion. `vim.on_key` fires for the LHS before
-Neovim resolves the mapping, and we can't retroactively uncount; the
-caller has to announce. Three ways to bind correctly, one ergonomic
-way that doesn't:
+Vimfy measures the keys you type, so a key that *invokes* Vimfy must
+not itself count as motion. Bindings made through `vimfy.map()` or a
+`<Plug>` map retract their own trigger keystroke from every active
+recording when they fire. Two ways to bind, one ergonomic way that
+doesn't work:
 
 ## 1. `vimfy.map()` (recommended)
 
@@ -43,8 +42,9 @@ vimfy.map('n', 'Z', function()
 end)
 ```
 
-The callback is wrapped with `M.wrap` internally, so any `:Vimfy` or
-plugin-level calls you make from it are announced as admin activity.
+The callback is wrapped so that the `Z` keystroke is retracted before
+your function runs; a plain `vim.keymap.set` to the same function would
+record it as motion.
 
 ## 2. `<Plug>` maps
 
@@ -78,24 +78,9 @@ vim.keymap.set('n', '<leader>vs', '<Plug>VimfyStartA', { remap = true })
 (including arbitrary args, e.g. `save @ quick`, which no `<Plug>`
 name exposes directly).
 
-## 3. `require('vimficiency').wrap(fn)` (low-level)
-
-`vimfy.map(mode, lhs, fn, opts)` is shorthand for
-`vim.keymap.set(mode, lhs, wrap(fn), opts)`. If you need to attach
-your Lua callback somewhere other than a keymap — an autocommand, a
-command, a UI callback — call `wrap` directly:
-
-```lua
-local vimfy = require('vimficiency')
-vim.api.nvim_create_autocmd('User', {
-  pattern = 'MyEvent',
-  callback = vimfy.wrap(function() vim.cmd('Vimfy finish a') end),
-})
-```
-
 ## Direct `:Vimfy ...` typing
 
-Works as-is. Cmdline input is never counted as motion, so nothing to wrap.
+Works as-is. Cmdline input is never counted as motion.
 
 ## What doesn't work
 
@@ -114,4 +99,4 @@ At setup, Vimfy scans pre-existing mappings for this pattern and
 emits a one-shot warning listing each offender. The scan can't see
 mappings defined *after* setup (or Lua-callback RHS, or buffer-local
 mappings added later) — if an LHS keeps showing up as motion, check
-that the binding is routed through `vimfy.map()` / `<Plug>` / `wrap()`.
+that the binding is routed through `vimfy.map()` / `<Plug>`.

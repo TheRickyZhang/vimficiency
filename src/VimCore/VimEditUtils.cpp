@@ -4,6 +4,7 @@ module;
 module vf.VimCore.VimEditUtils;
 
 import std.compat;
+import vf.VimCore.CharMask;
 import vf.VimCore.VimCore;
 import vf.VimCore.VimOptions;
 
@@ -109,18 +110,13 @@ CharDeletionBufferEffect applyLineCharDeletionToBuffer(
 
 void placeCursorAfterCharDeletion(const Lines& lines, int anchorLine, int anchorCol,
                                   CursorPos& pos, Mode mode) {
-  pos.line = anchorLine;
-  if (pos.line >= static_cast<int>(lines.size())) {
-    pos.line = static_cast<int>(lines.size()) - 1;
-  }
+  pos.line = min(anchorLine, lines.lastLine());
 
   int newCol = anchorCol;
   if (mode == Mode::Insert) {
-    newCol = min(newCol, static_cast<int>(lines[pos.line].size()));
+    newCol = min(newCol, lines.getSize(pos.line));
   } else {
-    newCol = lines[pos.line].empty()
-        ? 0
-        : min(newCol, static_cast<int>(lines[pos.line].size()) - 1);
+    newCol = min(newCol, lines[pos.line].lastCol());
   }
   pos.setCol(newCol);
 }
@@ -266,56 +262,6 @@ void applyBackwardWordLinewiseCursorPolicy(
   pos.setCol(lines[pos.line].lastCol());
 }
 
-bool isJoinWhitespace(char c) {
-  return c == ' ' || c == '\t';
-}
-
-bool endsJoinWhitespace(const string& line) {
-  return !line.empty() && isJoinWhitespace(line.back());
-}
-
-size_t firstJoinContentCol(const string& line, bool addSpace) {
-  if (!addSpace) return 0;
-  size_t col = 0;
-  while (col < line.size() && isJoinWhitespace(line[col])) {
-    col++;
-  }
-  return col;
-}
-
-bool endsWithDashBeforeJoinWhitespace(const string& line) {
-  int col = static_cast<int>(line.size()) - 1;
-  bool sawWhitespace = false;
-  while (col >= 0 && isJoinWhitespace(line[col])) {
-    sawWhitespace = true;
-    col--;
-  }
-  return sawWhitespace && col >= 0 && line[col] == '-';
-}
-
-size_t skipJoinCommentLeader(const string& currentLine,
-                             const string& nextLine,
-                             size_t start,
-                             bool addSpace) {
-  if (!addSpace || start >= nextLine.size() || nextLine[start] != '#') {
-    return start;
-  }
-  if (!endsWithDashBeforeJoinWhitespace(currentLine)) return start;
-
-  start++;
-  while (start < nextLine.size() && isJoinWhitespace(nextLine[start])) {
-    start++;
-  }
-  return start;
-}
-
-void appendJoinSpace(string& line) {
-  bool needsTwoSpaces =
-      VimOptions::joinSpaces() &&
-      (line.back() == '.' || line.back() == '!' || line.back() == '?');
-  line += needsTwoSpaces ? "  " : " ";
-}
-
 }  // namespace
 
 // =============================================================================
@@ -387,10 +333,6 @@ void deleteResolvedRangeAndUpdatePos(
       } else if (mode == Mode::Insert) {
         pos = resolved.charRange.begin;
       }
-      return;
-    case ResolvedDeleteRangeKind::CharLine:
-      deleteCharLineRangeAndUpdatePos(
-          lines, resolved.charLineRange, pos, mode, context);
       return;
     case ResolvedDeleteRangeKind::LineChar:
       if (hasContent(resolved.lineCharRange)) {
@@ -488,11 +430,7 @@ void deleteLineRangeAndUpdatePos(Lines& lines, const LineRange& range, CursorPos
     pos.setCol(firstNonBlankColInLine(lines[pos.line]));
   } else {
     // Neovim: dd resets targetCol to the clamped column
-    if (lines[pos.line].empty()) {
-      pos.setCol(0);
-    } else {
-      pos.setCol(min(pos.targetCol, static_cast<int>(lines[pos.line].size()) - 1));
-    }
+    pos.setCol(min(pos.targetCol, lines[pos.line].lastCol()));
   }
 }
 
@@ -569,8 +507,6 @@ void insertText(Lines& lines, CursorPos& pos, string_view text) {
   }
 }
 
-namespace {
-
 // Port of Neovim's `do_join` (src/nvim/ops.c). Joins `count` consecutive lines
 // starting at pos.line into a single line, updating pos.col per Vim's rule:
 //
@@ -590,7 +526,7 @@ namespace {
 // NeovimOracle sets `comments=` (empty). Trade-off: optimizer output may
 // differ from real Vim when the user's buffer joins onto a comment-leader
 // line. See dev/decisions.md (J comment-leader stripping).
-void doJoin(Lines& lines, CursorPos& pos, int count, bool insertSpace) {
+void joinLineRange(Lines& lines, CursorPos& pos, int count, bool insertSpace) {
   assert(count >= 2);
   assert(pos.line + count <= static_cast<int>(lines.size()));
 
@@ -606,7 +542,7 @@ void doJoin(Lines& lines, CursorPos& pos, int count, bool insertSpace) {
 
     // Skip leading whitespace on continuation segments for J (not gJ).
     if (insertSpace && t > 0) {
-      while (!curr.empty() && isJoinWhitespace(curr.front())) {
+      while (!curr.empty() && CharMask::isWhitespace(curr.front())) {
         curr.remove_prefix(1);
       }
     }
@@ -657,19 +593,7 @@ void doJoin(Lines& lines, CursorPos& pos, int count, bool insertSpace) {
       lines.begin() + pos.line + 1,
       lines.begin() + pos.line + count);
 
-  const string& result = lines[pos.line];
-  int lastCol = result.empty() ? 0 : static_cast<int>(result.size()) - 1;
-  pos.setCol(std::min(col, lastCol));
-}
-
-}  // namespace
-
-void joinLines(Lines& lines, CursorPos& pos, bool addSpace) {
-  doJoin(lines, pos, 2, addSpace);
-}
-
-void joinLineRange(Lines& lines, CursorPos& pos, int lineCount, bool addSpace) {
-  doJoin(lines, pos, lineCount, addSpace);
+  pos.setCol(std::min(col, lines[pos.line].lastCol()));
 }
 
 void openLineBelow(Lines& lines, CursorPos& pos) {

@@ -20,20 +20,22 @@ local keynorm = require("vimficiency.capture.keynorm")
 ---@field key_typed_raw string   # raw typed key (before mappings)
 ---@field key_typed string       # keytrans'd typed key
 
--- Announced admin activity: Vimfy entry points bracket themselves with
--- `begin_ignore()` / `end_ignore()` so internal keys are suppressed.
+-- Both handlers drop events with empty `typed`. Neovim leaves `typed` empty
+-- for keys that were not typed by the user: `nvim_feedkeys` without the `t`
+-- flag, `:normal`, and the RHS of a mapping expansion. The plugin's own
+-- replay (simulate/precompute.lua) never passes `t`, so that one check is
+-- what keeps plugin-generated keys out of every recording.
 
-local ignoring = false
+-- `key` as `vim.on_key` reports it for any mapping whose RHS is a Lua
+-- callback: K_SPECIAL, KS_EXTRA, KE_LUA. Nothing else produces this code.
+M.LUA_KEY = "\128\253g"
 
-function M.begin_ignore()
-	local prev = ignoring
-	ignoring = true
-	return prev
-end
-
-function M.end_ignore(prev)
-	ignoring = prev
-end
+-- Manual sessions currently recording, keyed by on_key namespace, so
+-- `uncount_trigger` can reach their key sequences.
+---@type table<integer, fun(): VF.Session.Active|nil>
+local manual_sessions = {}
+---@type table<string, {on_event: fun(event: VF.KeyEvent), on_resolution?: fun(typed: string), on_trigger?: fun()}>
+local global_subs = {}
 
 ---@param get_session fun(): VF.Session.Active|nil
 ---@param reset_session fun(reason: string, level: integer)
@@ -43,8 +45,6 @@ function M.attach(get_session, reset_session, should_evict)
 	local nsid = nil
 
 	local function on_key(key, typed)
-		if ignoring then return end
-
 		local session = get_session()
 		if not session then return end
 
@@ -101,12 +101,14 @@ function M.attach(get_session, reset_session, should_evict)
 	end
 
 	nsid = vim.on_key(on_key, nsid)
+	manual_sessions[nsid] = get_session
 	return nsid
 end
 
 function M.detach(nsid)
 	if nsid then
 		vim.on_key(nil, nsid)
+		manual_sessions[nsid] = nil
 	end
 end
 
@@ -138,19 +140,63 @@ function M.strip_matching_tail(key_seq, typed_raw)
 	return popped
 end
 
+--- Remove the trailing event if it is a Lua-callback mapping trigger.
+---@param key_seq VF.KeyEvent[]
+---@return integer popped  0 or 1
+function M.pop_trigger(key_seq)
+	local last = key_seq[#key_seq]
+	if not last or last.key_sent_raw ~= M.LUA_KEY then return 0 end
+	key_seq[#key_seq] = nil
+	return 1
+end
+
+--- Retract the keystroke that invoked the calling Vimfy entry point.
+---
+--- Why this exists: a key bound to a Vimfy action is not editing motion, but
+--- `vim.on_key` has already reported it (as `key = LUA_KEY`, `typed = LHS`)
+--- by the time the mapping's callback runs, so every active recording has
+--- appended it. The `#typed > 1` branch in the handlers above catches the
+--- multi-key case, because a multi-byte `typed` on a single event can only
+--- be a resolved mapping. A single-key LHS (`Z`, or `Y` remapped to a
+--- `<Plug>`) is one byte and looks exactly like a plain keystroke there, so
+--- it is recorded.
+---
+--- Why retroactive removal is correct: Neovim runs the callback synchronously,
+--- immediately after that on_key event, so when a Vimfy-registered callback
+--- starts, the newest event in every recording is its own trigger (or the
+--- multi-key branch has already stripped it and nothing is pending). No user
+--- keystroke can land between the two. Popping the newest event, gated on it
+--- carrying LUA_KEY, therefore removes exactly the trigger and nothing else.
+---
+--- Why not widen the handler check to "key == LUA_KEY" instead: that would
+--- strip the LHS of every Lua-callback mapping the user owns, including real
+--- editing actions. Only Vimfy's own entry points know they are not motion,
+--- so the retraction is issued from them (init.lua `keymap_entry`), scoped to
+--- exactly those bindings.
+function M.uncount_trigger()
+	for _, get_session in pairs(manual_sessions) do
+		local session = get_session()
+		if session and session.key_seq then
+			local popped = M.pop_trigger(session.key_seq)
+			if popped > 0 then
+				session.key_count = math.max(0, (session.key_count or 0) - popped)
+			end
+		end
+	end
+	for _, sub in pairs(global_subs) do
+		if sub.on_trigger then sub.on_trigger() end
+	end
+end
+
 -- Shared global `vim.on_key()` namespace for key-count and time-based sessions.
 
 local global_nsid = nil
----@type table<string, {on_event: fun(event: VF.KeyEvent), on_resolution?: fun(typed: string)}>
-local global_subs = {}
 local global_subs_count = 0
 
 local function ensure_global_listener()
 	if global_nsid then return end
 
 	local function on_key(key, typed)
-		if ignoring then return end
-
 		typed = typed or ""
 		local mode = vim.api.nvim_get_mode().mode
 		local m = mode:sub(1, 1)
@@ -188,17 +234,19 @@ local function ensure_global_listener()
 end
 
 --- Attach a named global key listener.
---- `on_resolution` is called on multi-key mapping resolution events.
+--- `on_resolution` is called on multi-key mapping resolution events;
+--- `on_trigger` from `uncount_trigger`, and should `pop_trigger` each recording.
 ---@param on_key_event fun(event: VF.KeyEvent)
 ---@param name string|nil             Subscriber name; defaults to "default"
 ---@param on_resolution (fun(typed_raw: string))|nil  Optional strip hook
+---@param on_trigger (fun())|nil
 ---@return boolean success
-function M.attach_global(on_key_event, name, on_resolution)
+function M.attach_global(on_key_event, name, on_resolution, on_trigger)
 	name = name or "default"
 	if global_subs[name] then
 		return false
 	end
-	global_subs[name] = { on_event = on_key_event, on_resolution = on_resolution }
+	global_subs[name] = { on_event = on_key_event, on_resolution = on_resolution, on_trigger = on_trigger }
 	global_subs_count = global_subs_count + 1
 	ensure_global_listener()
 	return true

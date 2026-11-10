@@ -21,10 +21,6 @@ struct OptimizerParamsBase {
   }
 
   inline bool countPrefixesEnabled() const { return minPrefixCount <= maxPrefixCount; }
-  inline void disableCountPrefixes() {
-    minPrefixCount = CountPrefixLimits::MIN_PREFIX_COUNT;
-    maxPrefixCount = 0;
-  }
 };
 
 }  // export

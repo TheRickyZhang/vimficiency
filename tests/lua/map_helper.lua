@@ -13,12 +13,16 @@ local h            = require("_helpers")
 local function feed_and_capture(keys)
   local captured = {}
   local ok = key_tracking.attach_global(function(event)
-    captured[#captured + 1] = event.key_typed
-  end, "test_map_helper_probe")
+    captured[#captured + 1] = event
+  end, "test_map_helper_probe", nil, function()
+    key_tracking.pop_trigger(captured)
+  end)
   assert_true(ok, "probe listener should attach cleanly")
   h.feed(keys)
   key_tracking.detach_global("test_map_helper_probe")
-  return table.concat(captured, "")
+  local typed = {}
+  for i, event in ipairs(captured) do typed[i] = event.key_typed end
+  return table.concat(typed, "")
 end
 
 --- Look up a keymap registration for a given LHS in normal mode.
@@ -101,22 +105,39 @@ test("e2e: vimfy.map function spec — LHS not recorded as motion", function()
   end)
 end)
 
-test("e2e: wrap() suppresses keys fired inside its body", function()
-  -- Verify the low-level primitive that `vimfy.map()` is built on.
-  local captured = {}
-  local ok = key_tracking.attach_global(function(event)
-    captured[#captured + 1] = event.key_typed
-  end, "test_map_helper_wrap_probe")
-  assert_true(ok, "probe listener should attach cleanly")
+--------------------------------------------------------------------------------
+-- Single-key LHS coverage: the on_key event is one byte, so it reaches the
+-- recordings; the entry callback retracts it.
+--------------------------------------------------------------------------------
 
-  local wrapped = vimfy.wrap(function()
-    h.feed("j")
+test("e2e: single-key LHS (string spec) — not recorded", function()
+  h.with_temp_map("n", "Z", "list", function()
+    assert_eq(feed_and_capture("Z"), "", "single-key LHS 'Z' leaked")
   end)
-  wrapped()
+end)
 
-  key_tracking.detach_global("test_map_helper_wrap_probe")
-  assert_eq(table.concat(captured, ""), "",
-    "keys fed inside wrap() body must be suppressed")
+test("e2e: single-key LHS (function spec) — not recorded, body runs", function()
+  local body_ran = false
+  h.with_temp_map("n", "Z", function() body_ran = true end, function()
+    assert_eq(feed_and_capture("Z"), "", "single-key LHS 'Z' (fn spec) leaked")
+    assert_true(body_ran, "bound function should have fired")
+  end)
+end)
+
+test("e2e: single-key user-remap → <Plug> — not recorded", function()
+  h.with_temp_map("n", "<Plug>VimfyProbeSingle", "list", function()
+    pcall(vim.keymap.del, "n", "Y")
+    vim.keymap.set("n", "Y", "<Plug>VimfyProbeSingle", { remap = true })
+    local captured = feed_and_capture("Y")
+    pcall(vim.keymap.del, "n", "Y")
+    assert_eq(captured, "", "single-key remap to <Plug> leaked")
+  end)
+end)
+
+test("e2e: keys typed after a single-key trigger are still captured", function()
+  h.with_temp_map("n", "Z", "list", function()
+    assert_eq(feed_and_capture("jZk"), "jk", "only the trigger is retracted")
+  end)
 end)
 
 --------------------------------------------------------------------------------
@@ -144,7 +165,7 @@ test("e2e: three-key LHS (string spec) — no key leaks on resolve", function()
   end)
 end)
 
-test("e2e: user-remap → <Plug> → wrap() chain — no key leaks", function()
+test("e2e: user-remap → <Plug> chain — no key leaks", function()
   h.with_temp_map("n", "<Plug>VimfyProbeRecall", "list", function()
     pcall(vim.keymap.del, "n", "zx")
     vim.keymap.set("n", "zx", "<Plug>VimfyProbeRecall", { remap = true })
@@ -153,13 +174,4 @@ test("e2e: user-remap → <Plug> → wrap() chain — no key leaks", function()
     assert_eq(captured, "",
       "user-remap → <Plug> chain leaked")
   end)
-end)
-
-test("e2e: listener sees keys AFTER wrap() returns (ignore flag restored)", function()
-  -- Regression guard: end_ignore must restore the flag so post-wrap
-  -- keypresses are captured normally.
-  local wrapped = vimfy.wrap(function() end)
-  wrapped()
-  assert_match(feed_and_capture("k"), "k",
-    "literal 'k' after wrap() must be captured")
 end)

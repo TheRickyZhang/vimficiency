@@ -384,7 +384,7 @@ TEST_F(DebugTest, DISABLED_InvestigateMovementSequences) {
       }
       token += movement.motion;
       auto result = oracle.simulate(lines, nvim.line, nvim.col, token);
-      applyParsedMovement(ours, mode, movement, lines, NavContext());
+      applyParsedMovement(ours, movement, lines, NavContext());
       nvim = CursorPos(result.row, result.col);
       cerr << token << " nvim=" << nvim << " ours=" << ours << endl;
     }
@@ -2037,7 +2037,7 @@ TEST_F(DebugTest, CompositionOptimizer_TraceFailure) {
     std::priority_queue<CompositionState, std::vector<CompositionState>,
                         std::greater<CompositionState>> pq;
     auto scoreState = [&](const CompositionState& state) {
-      return ctx.heuristic(state, state.getEditsCompleted());
+      return ctx.heuristic(state);
     };
     CompositionStateFactory states(config, scoreState);
     CompositionState startingState = states.initial(initialPos);
@@ -2066,7 +2066,7 @@ TEST_F(DebugTest, CompositionOptimizer_TraceFailure) {
                                      const CursorPos& goalPos,
                                      int /*editsAfter*/) {
       CompositionState newState = states.afterEditTransition(
-          current, editSequence, goalPos, Mode::Normal);
+          current, editSequence, goalPos);
       enqueueState(std::move(newState));
     };
     auto enqueueMotionTransition = [&](const CompositionState& current,
@@ -2250,7 +2250,7 @@ TEST_F(DebugTest, InvestigateTelescopingSearch) {
   std::priority_queue<CompositionState, std::vector<CompositionState>,
                       std::greater<CompositionState>> pq;
   auto scoreState = [&](const CompositionState& state) {
-    return ctx.heuristic(state, state.getEditsCompleted());
+    return ctx.heuristic(state);
   };
   CompositionStateFactory states(config, scoreState);
   CompositionState startingState = states.initial(initialPos);
@@ -2279,7 +2279,7 @@ TEST_F(DebugTest, InvestigateTelescopingSearch) {
                                    const CursorPos& goalPos,
                                    int /*editsAfter*/) {
     CompositionState newState = states.afterEditTransition(
-        current, editSequence, goalPos, Mode::Normal);
+        current, editSequence, goalPos);
     enqueueState(std::move(newState));
   };
   auto enqueueMotionTransition = [&](const CompositionState& current,
@@ -3793,7 +3793,7 @@ void traceNavReplay(
     subNvimRow = subNvim.row;
     subNvimCol = subNvim.col;
 
-    applySingleMovement(modelPos, modelMode, token, subBuffer, navContext);
+    applySingleMovement(modelPos, token, subBuffer, navContext);
 
     cerr << "step " << i << " token='" << token << "'" << endl;
     cerr << "  Neovim full -> (" << fullRow << ", " << fullCol

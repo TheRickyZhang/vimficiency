@@ -20,8 +20,6 @@ std::optional<Result> tryReplacement(
     const Config& config,
     double maxEffort) {
   if (deleted.size() != inserted.size() || deleted == inserted) return std::nullopt;
-  assert(deleted.size() == inserted.size());
-  assert(deleted != inserted);
 
   std::vector<int> diff;
   for (size_t i = 0; i < deleted.size(); i++) {
@@ -88,18 +86,16 @@ std::optional<VisualDeleteResult> tryVisualDelete(
     const Config& config) {
   const bool spansContent =
       effectiveLines.size() > 1 ||
-      static_cast<int>(effectiveLines[0].size()) > leftColOffset + rightColOffset;
+      effectiveLines.getSize(0) > leftColOffset + rightColOffset;
   if (!spansContent) return std::nullopt;
 
   CursorPos beginPos(0, leftColOffset);
   int lastLine = effectiveLines.lastLine();
-  int lastEditableEnd = static_cast<int>(effectiveLines[lastLine].size()) - rightColOffset;
+  int lastEditableEnd = effectiveLines.getSize(lastLine) - rightColOffset;
   if (lastEditableEnd <= 0) return std::nullopt;
   CursorPos lastPos(lastLine, lastEditableEnd - 1);
 
-  const bool sameCell = lastPos.line == beginPos.line && lastPos.col == beginPos.col;
-  if (sameCell) return std::nullopt;
-  if (lastPos < beginPos) return std::nullopt;
+  if (lastPos <= beginPos) return std::nullopt;
 
   Sequence visualSeq("v");
   KeyedSequence motion;

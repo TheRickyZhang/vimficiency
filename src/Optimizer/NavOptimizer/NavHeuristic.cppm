@@ -41,6 +41,17 @@ inline double distanceToRange(const CharInterval& range, const CursorPos& pos) {
   return fastSqrt(dline) + fastSqrt(dcol);
 }
 
+// NavStateFactory cost function: weighted effort plus weighted distance to the goal.
+struct StateScorer {
+  const CharInterval& range;
+  double effortWeight;
+  double distanceWeight;
+
+  inline double operator()(CursorPos pos, double effort) const {
+    return effortWeight * effort + distanceWeight * distanceToRange(range, pos);
+  }
+};
+
 } // namespace NavHeuristic
 
 }  // export

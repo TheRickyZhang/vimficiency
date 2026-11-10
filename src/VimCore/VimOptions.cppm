@@ -17,7 +17,6 @@ export {
 // | startofline  | OFF              | ON                        |
 // | joinspaces   | OFF              | ON                        |
 // | autoindent   | ON               | OFF                       |
-// | Y mapping    | y$ (to EOL)      | yy (whole line)           |
 //
 // startofline affects: gg, G, <C-d>, <C-u>, <C-f>, <C-b>, dd, H, M, L
 //   - OFF: cursor preserves column position
@@ -38,14 +37,6 @@ constexpr bool startOfLine() {
 }
 
 constexpr bool joinSpaces() {
-#ifdef VIMFICIENCY_LEGACY_VIM
-    return true;
-#else
-    return false;
-#endif
-}
-
-constexpr bool yIsYankLine() {
 #ifdef VIMFICIENCY_LEGACY_VIM
     return true;
 #else

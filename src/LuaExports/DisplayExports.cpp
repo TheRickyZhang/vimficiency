@@ -1,72 +1,29 @@
 #include "LuaExports/Api.h"
-#include <fast_float/fast_float.h>
 
 import std.compat;
 import vf.LuaExports.Common;
 import vf.Interpreter.SequenceDisplay;
 import vf.Session.ResultView;
+import vf.Utils.ParseNumber;
 
 using namespace std;
 namespace helpers = VF::LuaExports::helpers;
 namespace payload = VF::LuaExports::payload;
-using VF::LuaExports::ExportErrorKind;
 using VF::LuaExports::Result;
+using payload::encodeStringList;
 
 namespace {
 
 Result<int> parseIntField(string_view text, string_view name) {
-  int out = 0;
-  const auto [ptr, ec] = from_chars(text.data(), text.data() + text.size(), out);
-  if (ec != errc{} || ptr != text.data() + text.size()) {
-    return helpers::unexpectedError(
-        ExportErrorKind::InvalidValue,
-        "invalid " + string(name));
-  }
-  return out;
+  auto parsed = parseInt(text);
+  if (!parsed) return helpers::unexpectedError("invalid " + string(name));
+  return *parsed;
 }
 
 Result<double> parseDoubleField(string_view text, string_view name) {
-  double out = 0;
-  const auto [ptr, ec] = fast_float::from_chars(text.data(), text.data() + text.size(), out);
-  if (ec != errc{} || ptr != text.data() + text.size()) {
-    return helpers::unexpectedError(
-        ExportErrorKind::InvalidValue,
-        "invalid " + string(name));
-  }
-  return out;
-}
-
-string encodeStringList(const vector<string>& values) {
-  string out;
-  for (const string& value : values) {
-    out += payload::encodeField(value);
-  }
-  return out;
-}
-
-struct PositionFields {
-  int startRow = 0;
-  int startCol = 0;
-  int endRow = 0;
-  int endCol = 0;
-};
-
-Result<PositionFields> parsePositionFields(const vector<string>& fields) {
-  auto startRow = parseIntField(fields[1], "start_row");
-  if (!startRow) return unexpected(startRow.error());
-  auto startCol = parseIntField(fields[2], "start_col");
-  if (!startCol) return unexpected(startCol.error());
-  auto endRow = parseIntField(fields[3], "end_row");
-  if (!endRow) return unexpected(endRow.error());
-  auto endCol = parseIntField(fields[4], "end_col");
-  if (!endCol) return unexpected(endCol.error());
-
-  return PositionFields{
-      .startRow = *startRow,
-      .startCol = *startCol,
-      .endRow = *endRow,
-      .endCol = *endCol,
-  };
+  auto parsed = parseDouble(text);
+  if (!parsed) return helpers::unexpectedError("invalid " + string(name));
+  return *parsed;
 }
 
 Result<VF::SessionView::Result> decodeSessionResult(string_view encoded) {
@@ -75,7 +32,6 @@ Result<VF::SessionView::Result> decodeSessionResult(string_view encoded) {
           -> Result<VF::SessionView::Result> {
         if (fields.size() != 10) {
           return helpers::unexpectedError(
-              ExportErrorKind::InvalidPayload,
               "invalid session result display payload");
         }
 
@@ -84,23 +40,26 @@ Result<VF::SessionView::Result> decodeSessionResult(string_view encoded) {
         if (!lines) return unexpected(lines.error());
         result.lines = std::move(*lines);
 
-        auto position = parsePositionFields(fields);
-        if (!position) return unexpected(position.error());
-        const auto [startRow, startCol, endRow, endCol] = *position;
-        result.startRow = startRow;
-        result.startCol = startCol;
-        result.endRow = endRow;
-        result.endCol = endCol;
+        struct IntField { int* dst; size_t index; string_view name; };
+        for (auto [dst, index, name] : {
+                 IntField{&result.startRow, 1, "start_row"},
+                 IntField{&result.startCol, 2, "start_col"},
+                 IntField{&result.endRow, 3, "end_row"},
+                 IntField{&result.endCol, 4, "end_col"},
+             }) {
+          auto value = parseIntField(fields[index], name);
+          if (!value) return unexpected(value.error());
+          *dst = *value;
+        }
         result.userSeq = fields[5];
 
         if (fields[6] == "1") {
           auto userCost = parseDoubleField(fields[7], "user_cost");
           if (!userCost) return unexpected(userCost.error());
+          result.hasUserCost = true;
           result.userCost = *userCost;
         } else if (fields[6] != "0") {
-          return helpers::unexpectedError(
-              ExportErrorKind::InvalidValue,
-              "invalid user_cost presence flag");
+          return helpers::unexpectedError("invalid user_cost presence flag");
         }
 
         result.finishReason = fields[8];
@@ -111,9 +70,7 @@ Result<VF::SessionView::Result> decodeSessionResult(string_view encoded) {
           return unexpected(recommendationFields.error());
         }
         if (recommendationFields->size() % 2 != 0) {
-          return helpers::unexpectedError(
-              ExportErrorKind::InvalidPayload,
-              "invalid recommendation payload");
+          return helpers::unexpectedError("invalid recommendation payload");
         }
         for (size_t i = 0; i < recommendationFields->size(); i += 2) {
           auto cost = parseDoubleField((*recommendationFields)[i + 1],
@@ -128,136 +85,31 @@ Result<VF::SessionView::Result> decodeSessionResult(string_view encoded) {
       });
 }
 
-Result<string> displayLinesImpl(
-    const char* seq,
-    size_t seqLen,
-    bool tokenize,
-    bool sectionize) {
-  return helpers::requiredBytes(seq, seqLen, "seq")
-      .transform([&](string_view seqText) {
-        return encodeStringList(VF::SequenceDisplay::lines(
-            seqText,
-            {.tokenize = tokenize, .sectionize = sectionize}));
-      });
-}
-
-Result<string> displayKeyNotationImpl(const char* text, size_t textLen) {
-  return helpers::requiredBytes(text, textLen, "text")
-      .transform([](string_view textValue) {
-        return VF::SequenceDisplay::displayKeyNotation(textValue);
-      });
-}
-
-Result<string> typedChunksImpl(
-    const char* encodedChunks,
-    size_t encodedChunksLen,
-    bool tokenize) {
-  return helpers::requiredBytes(
-      encodedChunks,
-      encodedChunksLen,
-      "encoded_chunks")
-      .and_then([](string_view encoded) {
-        return payload::decodeLengthPrefixedStrings(encoded);
-      })
-      .and_then([&](const vector<string>& fields) -> Result<string> {
-        if (fields.size() % 2 != 0) {
-          return helpers::unexpectedError(
-              ExportErrorKind::InvalidPayload,
-              "invalid typed chunk payload");
-        }
-
-        vector<VF::SequenceDisplay::TypedChunk> chunks;
-        chunks.reserve(fields.size() / 2);
-        for (size_t i = 0; i < fields.size(); i += 2) {
-          chunks.push_back({
-              .kind = fields[i],
-              .text = fields[i + 1],
-          });
-        }
-        return VF::SequenceDisplay::typedChunksInline(chunks, tokenize);
-      });
-}
-
-Result<string> formatPositionImpl(
-    int startRow,
-    int startCol,
-    int endRow,
-    int endCol) {
-  return VF::SessionView::formatPosition(VF::SessionView::Result{
-      .startRow = startRow,
-      .startCol = startCol,
-      .endRow = endRow,
-      .endCol = endCol,
-  });
-}
-
-Result<string> formatReasonSuffixImpl(const char* reason, size_t reasonLen) {
-  return helpers::requiredBytes(reason, reasonLen, "finish_reason")
-      .transform([](string_view reasonText) {
-        return VF::SessionView::formatReasonSuffix(
-            VF::SessionView::Result{.finishReason = string(reasonText)});
-      });
-}
-
-Result<string> formatBodyImpl(
+// Shared shape of the two labelled formatters: a label string plus an encoded
+// session result, handed to `format(label, result, options)`.
+template <typename Format>
+Result<string> formatLabelled(
+    const char* label,
+    size_t labelLen,
+    string_view labelName,
     const char* encodedResult,
     size_t encodedResultLen,
     bool tokenize,
-    bool sectionize) {
-  return helpers::requiredBytes(
-      encodedResult,
-      encodedResultLen,
-      "encoded_result")
-      .and_then(decodeSessionResult)
-      .transform([&](const VF::SessionView::Result& result) {
-        return encodeStringList(VF::SessionView::formatBody(
-            result,
-            {.tokenize = tokenize, .sectionize = sectionize}));
-      });
-}
-
-Result<string> formatMessageImpl(
-    const char* title,
-    size_t titleLen,
-    const char* encodedResult,
-    size_t encodedResultLen,
-    bool tokenize,
-    bool sectionize) {
-  return helpers::requiredBytes(title, titleLen, "title")
-      .and_then([&](string_view titleText) {
+    bool sectionize,
+    Format format) {
+  return helpers::requiredBytes(label, labelLen, labelName)
+      .and_then([&](string_view labelText) {
         return helpers::requiredBytes(
             encodedResult,
             encodedResultLen,
             "encoded_result")
             .and_then(decodeSessionResult)
             .transform([&](const VF::SessionView::Result& result) {
-              return VF::SessionView::formatMessage(
-                  titleText,
+              return format(
+                  labelText,
                   result,
-                  {.tokenize = tokenize, .sectionize = sectionize});
-            });
-      });
-}
-
-Result<string> formatSavedLinesImpl(
-    const char* name,
-    size_t nameLen,
-    const char* encodedResult,
-    size_t encodedResultLen,
-    bool tokenize,
-    bool sectionize) {
-  return helpers::requiredBytes(name, nameLen, "name")
-      .and_then([&](string_view nameText) {
-        return helpers::requiredBytes(
-            encodedResult,
-            encodedResultLen,
-            "encoded_result")
-            .and_then(decodeSessionResult)
-            .transform([&](const VF::SessionView::Result& result) {
-              return encodeStringList(VF::SessionView::formatSavedLines(
-                  nameText,
-                  result,
-                  {.tokenize = tokenize, .sectionize = sectionize}));
+                  VF::SequenceDisplay::Options{
+                      .tokenize = tokenize, .sectionize = sectionize});
             });
       });
 }
@@ -274,7 +126,12 @@ VFByteSlice vf_sequence_display_lines(
   static string result_storage;
   return helpers::storeBytes(
       result_storage,
-      displayLinesImpl(seq, seq_len, tokenize, sectionize));
+      helpers::requiredBytes(seq, seq_len, "seq")
+          .transform([&](string_view seqText) {
+            return encodeStringList(VF::SequenceDisplay::lines(
+                seqText,
+                {.tokenize = tokenize, .sectionize = sectionize}));
+          }));
 }
 
 VFByteSlice vf_sequence_display_inline(
@@ -298,7 +155,10 @@ VFByteSlice vf_sequence_display_key_notation(
   static string result_storage;
   return helpers::storeBytes(
       result_storage,
-      displayKeyNotationImpl(text, text_len));
+      helpers::requiredBytes(text, text_len, "text")
+          .transform([](string_view textValue) {
+            return VF::SequenceDisplay::displayKeyNotation(textValue);
+          }));
 }
 
 VFByteSlice vf_sequence_display_typed_text(
@@ -323,7 +183,26 @@ VFByteSlice vf_sequence_display_typed_chunks(
   static string result_storage;
   return helpers::storeBytes(
       result_storage,
-      typedChunksImpl(encoded_chunks, encoded_chunks_len, tokenize));
+      helpers::requiredBytes(
+          encoded_chunks,
+          encoded_chunks_len,
+          "encoded_chunks")
+          .and_then(payload::decodeLengthPrefixedStrings)
+          .and_then([&](const vector<string>& fields) -> Result<string> {
+            if (fields.size() % 2 != 0) {
+              return helpers::unexpectedError("invalid typed chunk payload");
+            }
+
+            vector<VF::SequenceDisplay::TypedChunk> chunks;
+            chunks.reserve(fields.size() / 2);
+            for (size_t i = 0; i < fields.size(); i += 2) {
+              chunks.push_back({
+                  .kind = fields[i],
+                  .text = fields[i + 1],
+              });
+            }
+            return VF::SequenceDisplay::typedChunksInline(chunks, tokenize);
+          }));
 }
 
 VFByteSlice vf_format_result_position(
@@ -332,9 +211,13 @@ VFByteSlice vf_format_result_position(
     int end_row,
     int end_col) {
   static string result_storage;
-  return helpers::storeBytes(
-      result_storage,
-      formatPositionImpl(start_row, start_col, end_row, end_col));
+  result_storage = VF::SessionView::formatPosition(VF::SessionView::Result{
+      .startRow = start_row,
+      .startCol = start_col,
+      .endRow = end_row,
+      .endCol = end_col,
+  });
+  return helpers::byteSlice(result_storage);
 }
 
 VFByteSlice vf_format_result_reason_suffix(
@@ -343,7 +226,11 @@ VFByteSlice vf_format_result_reason_suffix(
   static string result_storage;
   return helpers::storeBytes(
       result_storage,
-      formatReasonSuffixImpl(reason, reason_len));
+      helpers::requiredBytes(reason, reason_len, "finish_reason")
+          .transform([](string_view reasonText) {
+            return VF::SessionView::formatReasonSuffix(
+                VF::SessionView::Result{.finishReason = string(reasonText)});
+          }));
 }
 
 VFByteSlice vf_format_result_body(
@@ -354,7 +241,16 @@ VFByteSlice vf_format_result_body(
   static string result_storage;
   return helpers::storeBytes(
       result_storage,
-      formatBodyImpl(encoded_result, encoded_result_len, tokenize, sectionize));
+      helpers::requiredBytes(
+          encoded_result,
+          encoded_result_len,
+          "encoded_result")
+          .and_then(decodeSessionResult)
+          .transform([&](const VF::SessionView::Result& result) {
+            return encodeStringList(VF::SessionView::formatBody(
+                result,
+                {.tokenize = tokenize, .sectionize = sectionize}));
+          }));
 }
 
 VFByteSlice vf_format_result_message(
@@ -367,13 +263,13 @@ VFByteSlice vf_format_result_message(
   static string result_storage;
   return helpers::storeBytes(
       result_storage,
-      formatMessageImpl(
-          title,
-          title_len,
-          encoded_result,
-          encoded_result_len,
-          tokenize,
-          sectionize));
+      formatLabelled(
+          title, title_len, "title", encoded_result, encoded_result_len,
+          tokenize, sectionize,
+          [](string_view titleText, const VF::SessionView::Result& result,
+             VF::SequenceDisplay::Options options) {
+            return VF::SessionView::formatMessage(titleText, result, options);
+          }));
 }
 
 VFByteSlice vf_format_saved_result_lines(
@@ -386,13 +282,14 @@ VFByteSlice vf_format_saved_result_lines(
   static string result_storage;
   return helpers::storeBytes(
       result_storage,
-      formatSavedLinesImpl(
-          name,
-          name_len,
-          encoded_result,
-          encoded_result_len,
-          tokenize,
-          sectionize));
+      formatLabelled(
+          name, name_len, "name", encoded_result, encoded_result_len,
+          tokenize, sectionize,
+          [](string_view nameText, const VF::SessionView::Result& result,
+             VF::SequenceDisplay::Options options) {
+            return encodeStringList(
+                VF::SessionView::formatSavedLines(nameText, result, options));
+          }));
 }
 
 }

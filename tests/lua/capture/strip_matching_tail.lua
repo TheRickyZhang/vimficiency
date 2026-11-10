@@ -46,6 +46,18 @@ test("strip_matching_tail: no-op cases leave sequence intact", function()
   end
 end)
 
+test("pop_trigger: removes only a trailing Lua-mapping trigger", function()
+  local trigger = ev("Z")
+  trigger.key_sent_raw = key_tracking.LUA_KEY
+  local seq = { ev("j"), ev("w"), trigger }
+  assert_eq(key_tracking.pop_trigger(seq), 1, "trigger popped")
+  assert_eq(#seq, 2, "motion survives")
+
+  assert_eq(key_tracking.pop_trigger(seq), 0, "plain key is not a trigger")
+  assert_eq(#seq, 2, "seq intact")
+  assert_eq(key_tracking.pop_trigger({}), 0, "empty seq")
+end)
+
 test("strip_matching_tail: handles multi-byte key_typed_raw at the boundary", function()
   -- If a prior entry has a multi-byte `key_typed_raw` whose bytes
   -- overlap with the target prefix, we still match correctly via

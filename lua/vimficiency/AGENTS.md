@@ -14,7 +14,9 @@ Top-level modules are the plugin entry and cross-cutting infrastructure:
 | `explore.lua` | Interactive result exploration view. Required as `vimficiency.explore`. |
 | `play.lua` | Play-screen settings and modal wiring. Required as `vimficiency.play`. |
 | `stats.lua` | Stats aggregation and display. Required as `vimficiency.stats`. |
-| `commands.lua` | `:Vimfy` subcommand dispatch + tab completion. |
+| `commands.lua` | `:Vimfy` generic dispatch, usage checks, and tab completion over the subcommand table. |
+| `commands/defs.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, fn) per `:Vimfy` verb. |
+| `dev_reload.lua` | `:Vimfy reload`: cmake rebuild, then hot-reload the `.so` and every Lua module. |
 | `config.lua` | Shared configuration constants (Lua-side only). |
 | `config_detail.lua` | Config introspection / validation helpers. |
 | `ffi.lua` | Compatibility surface for LuaJIT FFI bindings to `libvimficiency.so`. |
@@ -123,19 +125,25 @@ motion key twice. `build_sequence()` removes these duplicates by detecting:
 - Second occurrence in different mode (normal/insert)
 
 ### Filtering logic
-Announce-only: Vimfy entry points (the `:Vimfy` user command, `<Plug>Vimfy*`
-maps, `M.wrap(fn)`) bracket their bodies with `key_tracking.begin_ignore` /
-`end_ignore`. Both `on_key` handlers short-circuit when the flag is set,
-so admin-triggered key events are never recorded. Save/restore via the
-returned `prev` keeps nested invocations safe.
+Both `on_key` handlers drop events whose `typed` is empty. Neovim leaves it
+empty for keys the user did not type: `nvim_feedkeys` without `t`, `:normal`,
+and mapping-RHS expansions. The plugin's replay (`simulate/precompute.lua`)
+never passes `t`, so this one check keeps plugin-generated keys out of every
+recording; there is no admin/ignore flag.
 
-Cmdline activity (`m == "c"`, `:` in normal mode) is dropped unconditionally
-as meta-activity, independent of the flag.
+Mapping LHS: a Lua-callback mapping arrives as `key = LUA_KEY`, `typed = LHS`,
+before the callback runs. When `#typed > 1` the handlers strip the
+already-recorded LHS bytes (`strip_matching_tail`) and drop the event. A
+single-byte LHS looks like a plain keystroke there and is recorded; Vimfy's
+own keymap entry points (`init.lua` `entry`) then call
+`key_tracking.uncount_trigger`, which pops that newest event from every
+recording. Only Vimfy's bindings retract — a user's own Lua mapping is motion.
 
-No retroactive cleanup, no RHS/maparg heuristics. User mappings that invoke
-Vimfy without routing through `<Plug>` or `wrap()` (e.g. `nnoremap X
-:Vimfy start a<CR>`) will have the LHS keypress counted as motion — this
-is documented and the user fix is to migrate the mapping.
+Cmdline activity (`m == "c"`, `:` in normal mode) is dropped as meta-activity.
+
+No retroactive cleanup, no RHS/maparg heuristics. `nnoremap X :Vimfy …<CR>`
+style mappings are flagged by `mapping_scan` at setup; the user fix is to
+migrate the mapping.
 
 ### Known limitations
 - Text object final character missing (`ciw` → `c, i, ?`) - Neovim consumes internally before `vim.on_key` fires

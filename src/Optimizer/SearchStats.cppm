@@ -39,16 +39,6 @@ inline std::string to_string(SearchStopReason reason) {
   }
 }
 
-inline std::string toShortString(SearchStopReason reason) {
-  switch (reason) {
-    case SearchStopReason::FullyExplored: return "Queue";
-    case SearchStopReason::MaxPopsReached: return "Limit";
-    case SearchStopReason::AllResultsFound: return "All";
-    case SearchStopReason::MaxResultsFound: return "Max";
-    default: return "?";
-  }
-}
-
 struct ExploredState {
   int line;
   int col;
@@ -74,19 +64,9 @@ public:
   inline void maybeRecordExploredState(int line,
                                 int col,
                                 double effort,
-                                const Sequence& sequence) {
-    if constexpr (SEARCH_TRACE_STATS_ENABLED) {
-      if (exploredStates_.size() < static_cast<size_t>(MAX_TRACED_STATES))
-        exploredStates_.push_back({line, col, effort, sequence.str()});
-    }
-  }
-
-  inline void maybeRecordExploredState(int line,
-                                int col,
-                                double effort,
                                 std::string_view sequence) {
     if constexpr (SEARCH_TRACE_STATS_ENABLED) {
-      if (exploredStates_.size() < static_cast<size_t>(MAX_TRACED_STATES))
+      if (std::ssize(exploredStates_) < MAX_TRACED_STATES)
         exploredStates_.push_back({line, col, effort, std::string(sequence)});
     }
   }
@@ -108,10 +88,6 @@ public:
     statesSkipped_ = statesSkippedValue;
   }
 
-  inline void setExploredStates(std::vector<ExploredState> exploredStatesValue) {
-    exploredStates_ = std::move(exploredStatesValue);
-  }
-
   inline void accumulateFrom(const BaseSearchStats& other) {
     nodesExplored_ += other.nodesExplored_;
     totalPops_ += other.totalPops_;
@@ -119,10 +95,6 @@ public:
     queueSizeAtStop_ += other.queueSizeAtStop_;
     motionsEmitted_ += other.motionsEmitted_;
     statesSkipped_ += other.statesSkipped_;
-  }
-
-  inline double avgMotionsPerState() const {
-    return nodesExplored_ > 0 ? static_cast<double>(motionsEmitted_) / nodesExplored_ : 0;
   }
 
   inline friend std::ostream& operator<<(std::ostream& os, const BaseSearchStats& s) {
@@ -155,24 +127,6 @@ class NavSearchStats : public BaseSearchStats {
 public:
   inline int uniquePositionsFound() const { return uniquePositionsFound_; }
   inline bool isRangeSearch() const { return uniquePositionsFound_ >= 0; }
-
-  inline void finalizeSingleGoal(int resultsFoundValue,
-                          int queueSizeAtStopValue,
-                          int maxResults,
-                          int maxNodesPopped,
-                          int totalPopsValue,
-                          bool queueEmpty) {
-    setTotalPops(totalPopsValue);
-    setResultsFound(resultsFoundValue);
-    setQueueSizeAtStop(queueSizeAtStopValue);
-    if (resultsFoundValue >= maxResults) {
-      setStopReason(SearchStopReason::MaxResultsFound);
-    } else if (totalPopsValue >= maxNodesPopped) {
-      setStopReason(SearchStopReason::MaxPopsReached);
-    } else if (queueEmpty) {
-      setStopReason(SearchStopReason::FullyExplored);
-    }
-  }
 
   inline void finalizeRangeGoal(int resultsFoundValue,
                          int uniquePositionsFoundValue,
@@ -225,12 +179,7 @@ public:
   inline int cachePopulations() const { return cachePopulations_; }
   inline bool isRangeSearch() const { return uniquePositionsFound_ >= 0; }
 
-  inline void setRangeSearchUniquePositions(int uniquePositionsFoundValue) {
-    uniquePositionsFound_ = uniquePositionsFoundValue;
-  }
-
-  inline void finalize(int nodesExploredValue,
-                           int totalPopsValue,
+  inline void finalize(int totalPopsValue,
                            int resultsFoundValue,
                            int uniquePositionsFoundValue,
                            int queueSizeAtStopValue,
@@ -239,7 +188,7 @@ public:
                            int maxResultsValue,
                            int maxNodesPoppedValue,
                            bool queueEmpty) {
-    BaseSearchStats::finalize(nodesExploredValue,
+    BaseSearchStats::finalize(nodesExplored(),
                     totalPopsValue,
                     resultsFoundValue,
                     queueSizeAtStopValue,
