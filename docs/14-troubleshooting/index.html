@@ -78,8 +78,9 @@ has run.</p>
 <p>The native library is missing from <code dir="auto">build/</code> in the plugin directory. Your
 plugin manager’s build step did not run or failed — run it again
 (<code dir="auto">:Lazy build vimficiency</code>, or <code dir="auto">./scripts/install.sh</code> from the plugin
-directory) and read its output. Building from source needs a C++23 compiler
-and CMake 3.20+; pinning a release tag avoids the compile by downloading a
+directory) and read its output. Building from source needs GCC 15+ or Clang
+19+ with libc++, CMake 4.3+
+and Ninja; pinning a release tag avoids the compile by downloading a
 prebuilt library instead.</p>
 <p>If you set <code dir="auto">VIMFICIENCY_LIB_PATH</code>, it is tried first; make sure it points at
 an existing <code dir="auto">libvimficiency.so</code> / <code dir="auto">.dylib</code>.</p>
