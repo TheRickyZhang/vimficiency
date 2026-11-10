@@ -6,14 +6,12 @@
 // suites; run ad hoc:
 //   ./build/tests/vimfy_benchmarks --benchmark_filter="VimDiffPlan.*"
 
-#include <string>
-#include <vector>
-
 #include <benchmark/benchmark.h>
 
-#include "Keyboard/Config.h"
-#include "Optimizer/DiffPlanner/VimDiff.h"
-#include "Utils/OptimizerCaseCatalog.h"
+import std.compat;
+import vf.Keyboard.Config;
+import vf.Optimizer.DiffPlanner.VimDiff;
+import vf.tests.Utils.OptimizerCaseCatalog;
 
 using namespace std;
 

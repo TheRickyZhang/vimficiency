@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "LuaExports/Common.h"
-#include "Types/Lines.h"
+import std.compat;
+import vf.LuaExports.Common;
+import vf.Types.Lines;
 
 namespace payload = VF::LuaExports::payload;
 

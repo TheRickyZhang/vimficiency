@@ -7,14 +7,12 @@
 
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <array>
-
-#include "Optimizer/DiffPlanner/DiffState.h"
-#include "Optimizer/DiffPlanner/MyersDiff.h"
-#include "Optimizer/DiffPlanner/VimDiff.h"
-#include "Keyboard/Config.h"
-#include "Types/Lines.h"
+import std.compat;
+import vf.Optimizer.DiffPlanner.DiffState;
+import vf.Optimizer.DiffPlanner.MyersDiff;
+import vf.Optimizer.DiffPlanner.VimDiff;
+import vf.Keyboard.Config;
+import vf.Types.Lines;
 
 using namespace std;
 

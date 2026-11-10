@@ -1,36 +1,7 @@
-#include "Interpreter/SequenceFormatting.h"
+module vf.Interpreter.SequenceFormatting;
 
-#include "Types/Sequence.h"
-
-#include "Interpreter/SequenceParser.h"
-#include "Utils/PrettyText.h"
-
-// Note this is defined elsewhere from Sequence.h because it relies on higher-order parsing logic
-std::ostream& operator<<(std::ostream& os, const Sequence& seq) {
-  if (seq.empty()) return os;
-
-  auto parsed = parseSequence(seq.view());
-  if (!parsed) {
-    os << VF::prettify(seq.str());
-    return os;
-  }
-  std::vector<TaggedToken> tokens = *parsed;
-
-  for (size_t i = 0; i < tokens.size(); i++) {
-    os << VF::prettify(tokens[i].token);
-
-    if (i + 1 < tokens.size()) {
-      auto cur = tokens[i].kind;
-      auto next = tokens[i + 1].kind;
-      if (cur == TokenKind::Escape ||
-          (cur == TokenKind::Change && next == TokenKind::TypedText)) {
-        os << " ";
-      }
-    }
-  }
-
-  return os;
-}
+import std.compat;
+import vf.Interpreter.SequenceParser;
 
 std::string formatSequenceForDisplay(std::string_view seq) {
   if (seq.empty()) {

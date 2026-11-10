@@ -1,12 +1,8 @@
-#include "Exploration/ExplorationCollector.h"
-
-#include <iostream>
-
-#include "Utils/SeedManager.h"
+import std.compat;
+import vf.tools.Exploration.ExplorationCollector;
+import vf.tests.Utils.SeedManager;
 
 using namespace std;
-
-Config config = Config::uniform();
 
 static_assert(SEARCH_TRACE_STATS_ENABLED,
               "vimfy_explore must be built with -DVIMF_TRACK_STATES=ON; "

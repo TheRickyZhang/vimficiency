@@ -13,17 +13,14 @@
 //   - Comment-leader stripping under default `formatoptions+=j` (alphabet
 //     excludes `#`, `-`, `*`, `>` for now — re-add once leader rule is ported).
 
-#include <algorithm>
-#include <string>
-#include <vector>
-
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Utils/NeovimOracle.h"
-#include "VimCore/VimEditUtils.h"
+import std.compat;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.tests.Utils.NeovimOracle;
+import vf.VimCore.VimEditUtils;
 
 using namespace std;
 

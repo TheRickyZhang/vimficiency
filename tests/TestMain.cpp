@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "TestMainSupport.h"
+import std.compat;
+import vf.tests.TestMainSupport;
 
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);

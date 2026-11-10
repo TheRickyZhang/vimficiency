@@ -1,15 +1,10 @@
-#include <filesystem>
-#include <format>
-#include <iostream>
-#include <string>
-#include <vector>
-
-#include "Keyboard/Config.h"
-#include "Boundary/NavBoundary.h"
-#include "Optimizer/NavOptimizer/NavOptimizer.h"
-#include "Session/Snapshot.h"
-#include "Types/NavContext.h"
-#include "Utils/Debug.h"
+import std.compat;
+import vf.Keyboard.Config;
+import vf.Boundary.NavBoundary;
+import vf.Optimizer.NavOptimizer.NavOptimizer;
+import vf.Session.Snapshot;
+import vf.Types.NavContext;
+import vf.Utils.Debug;
 
 using namespace std;
 namespace fs = std::filesystem;

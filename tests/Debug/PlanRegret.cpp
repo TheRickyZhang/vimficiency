@@ -14,19 +14,13 @@
 
 #include <gtest/gtest.h>
 
-#include <cstdlib>
-#include <iomanip>
-#include <iostream>
-#include <limits>
-#include <string>
-#include <vector>
-
-#include "Keyboard/Config.h"
-#include "Optimizer/CompositionOptimizer/CompositionOptimizer.h"
-#include "Optimizer/DiffPlanner/MyersDiff.h"
-#include "Optimizer/DiffPlanner/VimDiff.h"
-#include "Utils/OptimizerCaseCatalog.h"
-#include "Utils/PrettyText.h"
+import std.compat;
+import vf.Keyboard.Config;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
+import vf.Optimizer.DiffPlanner.MyersDiff;
+import vf.Optimizer.DiffPlanner.VimDiff;
+import vf.tests.Utils.OptimizerCaseCatalog;
+import vf.Utils.PrettyText;
 
 using namespace std;
 

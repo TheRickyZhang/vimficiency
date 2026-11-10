@@ -1,10 +1,14 @@
-#include "LuaExports/Common.h"
-
+module;
 #include "AbiHash.h"
 #include "BuildConfig.h"
-#include "Optimizer/GlobalRuntimeOptions.h"
-#include "Utils/Debug.h"
-#include "VimCore/VimOptions.h"
+#include "LuaExports/Api.h"
+
+module vf.LuaExports.Common;
+
+import std.compat;
+import vf.Optimizer.GlobalRuntimeOptions;
+import vf.Utils.Debug;
+import vf.VimCore.VimOptions;
 
 namespace VF::LuaExports {
 

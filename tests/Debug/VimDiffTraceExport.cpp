@@ -14,20 +14,15 @@
 // still runs; nothing is written.
 
 #include <gtest/gtest.h>
-
-#include <cstdlib>
-#include <fstream>
-#include <string>
-#include <vector>
-
 #include <nlohmann/json.hpp>
 
-#include "Keyboard/Config.h"
-#include "Optimizer/DiffPlanner/DiffState.h"
-#include "Optimizer/DiffPlanner/PlannerCosts.h"
-#include "Optimizer/DiffPlanner/VimDiff.h"
-#include "Optimizer/DiffPlanner/VimDiffTrace.h"
-#include "Types/Lines.h"
+import std.compat;
+import vf.Keyboard.Config;
+import vf.Optimizer.DiffPlanner.DiffState;
+import vf.Optimizer.DiffPlanner.PlannerCosts;
+import vf.Optimizer.DiffPlanner.VimDiff;
+import vf.Optimizer.DiffPlanner.VimDiff;
+import vf.Types.Lines;
 
 using namespace std;
 using namespace VimDiff;

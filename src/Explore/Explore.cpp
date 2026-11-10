@@ -1,25 +1,23 @@
-#include "Explore.h"
-
-#include <algorithm>
+module;
 #include <cassert>
-#include <optional>
-#include <utility>
-#include <variant>
 
-#include "EditHandler.h"
-#include "Effort/RunningEffort.h"
-#include "Keyboard/ToKeys/MovementToKeys.h"
-#include "MovementHandler.h"
-#include "Optimizer/BuildTypedCommands.h"
-#include "Optimizer/DiffPlanner/DiffState.h"
-#include "Optimizer/CompositionOptimizer/CompositionFrontier.h"
-#include "Optimizer/NavOptimizer/NavFrontier.h"
-#include "Optimizer/OptimizerParamOverrides.h"
-#include "Optimizer/TransformOptimizer/TransformFrontier.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizerParams.h"
-#include "VimCore/VimCore.h"
-#include "VimCore/VimEditUtils.h"
-#include "VimCore/VimOptions.h"
+module vf.Explore.Explore;
+
+import std.compat;
+import vf.Explore.EditHandler;
+import vf.Effort.RunningEffort;
+import vf.Keyboard.ToKeys.MovementToKeys;
+import vf.Explore.MovementHandler;
+import vf.Optimizer.BuildTypedCommands;
+import vf.Optimizer.DiffPlanner.DiffState;
+import vf.Optimizer.CompositionOptimizer.CompositionFrontier;
+import vf.Optimizer.NavOptimizer.NavFrontier;
+import vf.Optimizer.OptimizerParamOverrides;
+import vf.Optimizer.TransformOptimizer.TransformFrontier;
+import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
+import vf.VimCore.VimCore;
+import vf.VimCore.VimEditUtils;
+import vf.VimCore.VimOptions;
 
 using namespace std;
 

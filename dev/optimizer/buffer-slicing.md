@@ -55,7 +55,7 @@ local end_search = math.min(nlines-1, end_row + padding)
 
 ### 2. NavOptimizer
 
-**File**: `src/Optimizer/NavOptimizer/NavOptimizerParams.h`
+**File**: `src/Optimizer/NavOptimizer/NavOptimizerParams.cppm`
 
 ```cpp
 int linePaddingAbove = 2;  // Default for motion searches
@@ -66,7 +66,7 @@ NavOptimizer itself does NOT do internal slicing - it operates on whatever buffe
 
 ### 3. TransformOptimizer
 
-**File**: `src/Optimizer/TransformOptimizer/TransformOptimizerParams.h`
+**File**: `src/Optimizer/TransformOptimizer/TransformOptimizerParams.cppm`
 
 ```cpp
 int navLinePaddingAbove = 1;  // For internal NavOptimizer calls
@@ -79,7 +79,7 @@ Lower default (1) because `effectiveLines` already includes prefix/suffix contex
 
 ### 4. CompositionOptimizer → NavOptimizer
 
-**File**: `src/Optimizer/CompositionOptimizer/CompositionOptimizerParams.h`
+**File**: `src/Optimizer/CompositionOptimizer/CompositionOptimizerParams.cppm`
 
 ```cpp
 int navLinePaddingAbove = 2;  // For NavOptimizer calls
@@ -155,6 +155,6 @@ This applies to both code paths in CompositionOptimizer: the edit/motion transit
 | Lua → C++ | Yes | `SLICE_PADDING` = 5 | `lua/vimficiency/config.lua` |
 | NavOptimizer | No | N/A | (caller responsibility) |
 | TransformOptimizer | No | N/A | (exact regions) |
-| TransformOptimizer → NavOptimizer | Yes | `navLinePadding*` = 1 | `TransformOptimizerParams.h` |
-| CompositionOptimizer → NavOptimizer | Yes | `navLinePadding*` = 2 | `CompositionOptimizerParams.h` |
+| TransformOptimizer → NavOptimizer | Yes | `navLinePadding*` = 1 | `TransformOptimizerParams.cppm` |
+| CompositionOptimizer → NavOptimizer | Yes | `navLinePadding*` = 2 | `CompositionOptimizerParams.cppm` |
 | CompositionOptimizer → TransformOptimizer | No | N/A | (exact character-wise) |

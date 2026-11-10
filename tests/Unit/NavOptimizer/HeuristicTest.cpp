@@ -4,9 +4,8 @@
 
 #include <gtest/gtest.h>
 
-#include <cmath>
-
-#include "Optimizer/NavOptimizer/NavHeuristic.h"
+import std.compat;
+import vf.Optimizer.NavOptimizer.NavHeuristic;
 
 TEST(NavOptimizerHeuristicTest, TreatsEOLTargetColAsCurrentColumn) {
   CharInterval range(CursorPos(0, 2), CursorPos(0, 2));

@@ -1,0 +1,4 @@
+# build/ is GCC; clangd needs Clang flags and a libc++ `std` module:
+#   cmake -G Ninja -B build-clangd -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS=-stdlib=libc++ -DVIMF_BUILD_TESTS=ON
+CompileFlags:
+  CompilationDatabase: build-clangd

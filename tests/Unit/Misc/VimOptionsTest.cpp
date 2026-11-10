@@ -8,15 +8,16 @@
 
 #include <gtest/gtest.h>
 
-#include "Interpreter/EditInterpreter.h"
-#include "Interpreter/MovementInterpreter.h"
-#include "Types/NavContext.h"
-#include "Optimizer/BuildTypedCommands.h"
-#include "Optimizer/Indentation.h"
-#include "Types/Lines.h"
-#include "Utils/NeovimOracle.h"
-#include "VimCore/VimEditUtils.h"
-#include "VimCore/VimOptions.h"
+import std.compat;
+import vf.Interpreter.EditInterpreter;
+import vf.Interpreter.MovementInterpreter;
+import vf.Types.NavContext;
+import vf.Optimizer.BuildTypedCommands;
+import vf.Optimizer.Indentation;
+import vf.Types.Lines;
+import vf.tests.Utils.NeovimOracle;
+import vf.VimCore.VimEditUtils;
+import vf.VimCore.VimOptions;
 
 using namespace std;
 

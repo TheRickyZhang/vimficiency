@@ -1,15 +1,8 @@
-#include "VimDiff.h"
+module vf.Optimizer.DiffPlanner.VimDiff;
 
-#include <algorithm>
-#include <cstdint>
-#include <limits>
-#include <string>
-#include <utility>
-#include <vector>
-
-#include "PlannerCosts.h"
-#include "SealMatchedRuns.h"
-#include "VimDiffTrace.h"
+import std.compat;
+import vf.Optimizer.DiffPlanner.PlannerCosts;
+import vf.Optimizer.DiffPlanner.SealMatchedRuns;
 
 using namespace std;
 

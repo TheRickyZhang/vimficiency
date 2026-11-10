@@ -3,8 +3,9 @@
 // Unit tests for NavClassMask directional pruning masks.
 
 #include <gtest/gtest.h>
-#include "Optimizer/NavOptimizer/NavClassMask.h"
-#include <vector>
+
+import std.compat;
+import vf.Optimizer.NavOptimizer.NavClassMask;
 
 using M = NavClassMask;
 

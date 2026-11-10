@@ -45,19 +45,19 @@ while IFS=$'\t' read -r src_mod dst_mod location include_path; do
 
   if ! is_allowed_edge "$edge"; then
     bad_counts["$edge"]=$(( ${bad_counts["$edge"]:-0} + 1 ))
-    bad_details["$edge"]+=$'\n'"  - ${location} includes \"${include_path}\""
+    bad_details["$edge"]+=$'\n'"  - ${location} -> ${include_path}"
   fi
 done < <(
-  rg -n '#include "([^"]+)"' src | awk '
+  rg -n -e '#include "([^"]+)"' -e '^\s*(export\s+)?import\s+vf\.' src | awk '
     match($0, /^([^:]+):([0-9]+):#include "([^"]+)"/, m) {
-      file = m[1];
-      line = m[2];
-      inc  = m[3];
-      split(file, fparts, "/");
-      src_mod = fparts[2];
-      split(inc, iparts, "/");
-      dst_mod = iparts[1];
-      printf "%s\t%s\t%s:%s\t%s\n", src_mod, dst_mod, file, line, inc;
+      split(m[1], fparts, "/");
+      split(m[3], iparts, "/");
+      printf "%s\t%s\t%s:%s\t%s\n", fparts[2], iparts[1], m[1], m[2], m[3];
+      next;
+    }
+    match($0, /^([^:]+):([0-9]+):\s*(export\s+)?import\s+vf\.([A-Za-z0-9_]+)\.([A-Za-z0-9_.]+)/, m) {
+      split(m[1], fparts, "/");
+      printf "%s\t%s\t%s:%s\t%s\n", fparts[2], m[4], m[1], m[2], "vf." m[4] "." m[5];
     }
   '
 )

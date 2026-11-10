@@ -1,18 +1,17 @@
-#include "LuaExports/Common.h"
-#include "LuaExports/AsyncJob.h"
-#include "LuaExports/AsyncJobRegistry.h"
-#include "Boundary/NavBoundary.h"
-#include "Optimizer/CompositionOptimizer/CompositionOptimizer.h"
-#include "Optimizer/DiffPlanner/DiffState.h"
-#include "Optimizer/NavOptimizer/NavOptimizer.h"
-#include "Optimizer/OptimizerParamOverrides.h"
-#include "Optimizer/SearchControl.h"
-#include "Utils/Debug.h"
-#include <algorithm>
-#include <iomanip>
-#include <memory>
-#include <string>
-#include <utility>
+#include "LuaExports/Api.h"
+#include "Utils/CheckMacro.h"
+
+import std.compat;
+import vf.LuaExports.Common;
+import vf.LuaExports.AsyncJob;
+import vf.LuaExports.AsyncJobRegistry;
+import vf.Boundary.NavBoundary;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
+import vf.Optimizer.DiffPlanner.DiffState;
+import vf.Optimizer.NavOptimizer.NavOptimizer;
+import vf.Optimizer.OptimizerParamOverrides;
+import vf.Optimizer.SearchControl;
+import vf.Utils.Debug;
 
 using namespace std;
 namespace helpers = VF::LuaExports::helpers;

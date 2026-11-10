@@ -12,9 +12,9 @@ to deeper docs when needed.
 ## Approval tests
 - When an approval-test output format changes intentionally, just overwrite `.approved.txt` with `.received.txt` — no separate confirmation step. The diff between received/approved IS the new expected output.
 
-## Pretty text (`src/Utils/PrettyText.h`)
+## Pretty text (`src/Utils/PrettyText.cppm`)
 - Named `PrettyText` / `prettify`, not `GlyphText` / `glyphize` — because "pretty" matches the user-facing intent (make whitespace/control chars visible), while "glyph" was implementation jargon and "glyphize" is a made-up verb.
-- Centralized in `Utils/PrettyText.h`, not `Interpreter/SequenceDisplay.cpp` — because VimDiff diagnostics also need this, and Optimizer→Interpreter is a backwards layering.
+- Centralized in `Utils/PrettyText.cppm`, not `Interpreter/SequenceDisplay.cpp` — because VimDiff diagnostics also need this, and Optimizer→Interpreter is a backwards layering.
 - `PrettyText` is a tagged struct (`struct PrettyText { std::string text; }`) built only via `explicit` constructors — because the type itself signals "rendering has happened", and the `.text` accessor marks the boundary back to untagged text.
 - A free function `prettify(c/sv) → std::string` exists alongside the struct — for sites that don't need to keep the type tag (e.g. concatenating into an existing `std::string`). Without this, those sites would have to write `PrettyText(x).text`, which is friction without benefit.
 - The plural-string constructor delegates to the singular-char dispatch (`appendGlyph`) — single source of truth for the char→glyph mapping.
@@ -78,7 +78,7 @@ to deeper docs when needed.
 
 ## Dot repeat uses a structured `DotRepeat`, not a re-parsed text command
 - `Edit::applyEdit` previously took `std::string* lastEditCmd` holding a formatted text command like `"5de"`. On every `.`, it called `parseEdits(*lastEditCmd)` to split count and base again. The optimizer side already carried `(lastEditCount_, lastEditBase_)` as separate fields, so the two sides described the same concept in two incompatible shapes — and `formatCountedCommand` + `matchesCountedCmd` existed solely to bridge them via text.
-- Now there's one shape: `struct DotRepeat { std::string base; int count; }` in `EditInterpreter.h` (next to `ParsedEdit`). `applyEdit` takes `DotRepeat* lastEdit`; on `.`, it constructs `ParsedEdit{base, count}` directly via `asEdit()` — no parse round-trip. `TransformState`/`TransformPathStep` store a `DotRepeat lastEdit_`. `ChangeGoalHandler::isDotRepeat`, `SuffixCache::canUseDot`, `TransformTransitionDispatcher::continueWithEdit`, and `afterCommandWithLastEdit` all consume `DotRepeat` instead of `(int, string_view)` pairs.
+- Now there's one shape: `struct DotRepeat { std::string base; int count; }` in `EditInterpreter.cppm` (next to `ParsedEdit`). `applyEdit` takes `DotRepeat* lastEdit`; on `.`, it constructs `ParsedEdit{base, count}` directly via `asEdit()` — no parse round-trip. `TransformState`/`TransformPathStep` store a `DotRepeat lastEdit_`. `ChangeGoalHandler::isDotRepeat`, `SuffixCache::canUseDot`, `TransformTransitionDispatcher::continueWithEdit`, and `afterCommandWithLastEdit` all consume `DotRepeat` instead of `(int, string_view)` pairs.
 - `formatCountedCommand` stays — `SuffixCache::matchesCountedCmd` still compares against an existing text token inside the program. That's a text↔text comparison, not a parse round-trip.
 - Verified by `Verify_DotRepeat.cpp` (oracle-pinned `.` after each of `x/dw/dW/de/dE/db/dB/dge/dgE` + controlled motion).
 
@@ -104,7 +104,7 @@ to deeper docs when needed.
 - The convention this codebase already follows: any `std::string`/`std::string_view` holding a Vim sequence is in notation form (`<Space>`, `<CR>`, `<lt>`, etc.). Lua normalises raw `vim.on_key` bytes via `vim.fn.keytrans` before they cross the FFI; internal C++ helpers (`displayChar`, `CountToKeys::textForCount`, sequence concatenation) produce notation by construction. The only string-category that needs distinguishing is buffer text — and `Line`/`Lines` already covers that.
 - The actual bug class (raw buffer text leaking where notation was expected) is therefore already guarded by the `Lines` boundary. The remaining "raw text → Sequence" path was essentially hypothetical given current data flow.
 - Tradeoff: introducing a `KeyNotation` type would have required wrapping every literal at every call site (`KeyNotation("j0")` or a `"j0"_kn` literal), plus updating ~67 test sites and every notation-producing helper to return the typed form. The compile-time safety it adds is asymmetric with peer types (`Sequence`, `Line`, `Token` don't enforce this), and the FFI/test churn is high for a small actual safety gain.
-- The header `src/Types/KeyNotation.h` survives, but only as a home for `displayChar(char) → std::string` and `parseDisplayChar(string_view) → optional<char>` free functions. No tagged type, no `_kn` literal, no `Sequence::notation()` accessor.
+- The header `src/Types/KeyNotation.cppm` survives, but only as a home for `displayChar(char) → std::string` and `parseDisplayChar(string_view) → optional<char>` free functions. No tagged type, no `_kn` literal, no `Sequence::notation()` accessor.
 - If a future case introduces *another* string category that needs distinguishing from notation, type **that** new category, not notation — notation is the default in this codebase.
 
 ## Property/safety suites are not timed on the dashboard (coverage, not duration)

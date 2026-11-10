@@ -2,6 +2,12 @@
 
 This document defines the allowed `src` module dependency graph and the intent of each module.
 
+"Module" below means a top-level `src/` directory. Each former header is now a
+C++20 named module `vf.<Dir>.<Name>` in `<Name>.cppm`, with `<Name>.cpp` as its
+implementation unit (`module vf.<Dir>.<Name>;`), so the directory layer of a
+module is the second component of its name. Dependencies are `import` lines;
+the few remaining `#include "..."` lines are X-macro `.inc`/`.h` fragments.
+
 ## Module Intent
 
 - `Types`: Shared representation primitives and semantic enums only (e.g. `Position`, `Range`, `Mode`, `NavContext`, `Sequence`, `Lines`, `BracketFlags`, `QuoteFlags`, `NoChar`, `EdgeType`, `LandingType`). No optimizer policy or execution logic.
@@ -51,4 +57,4 @@ Run dependency lint locally:
 ./scripts/lint-module-deps.sh
 ```
 
-CI runs the same lint before build/tests. The lint currently enforces the core domain modules; `Explore`, `LuaExports`, and the root FFI entrypoint are documented edge layers rather than linted core modules.
+CI runs the same lint before build/tests. The lint reads `import vf.<Dir>...` lines (and any remaining quoted includes) and currently enforces the core domain modules; `Explore`, `LuaExports`, and the root FFI entrypoint are documented edge layers rather than linted core modules.

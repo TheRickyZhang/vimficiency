@@ -2,18 +2,15 @@
 // `dap`, `dip`, `cap`, `cip` under d/c operators across multi-line buffers
 // containing blank lines (paragraph separators).
 
-#include <algorithm>
-#include <string>
-#include <vector>
-
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Utils/InterpreterModelReplay.h"
-#include "Utils/NeovimOracle.h"
-#include "Utils/OracleReplay.h"
+import std.compat;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.tests.Utils.InterpreterModelReplay;
+import vf.tests.Utils.NeovimOracle;
+import vf.tests.Utils.OracleReplay;
 
 using namespace std;
 

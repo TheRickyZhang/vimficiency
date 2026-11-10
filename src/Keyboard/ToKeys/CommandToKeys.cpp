@@ -1,8 +1,9 @@
-#include "CommandToKeys.h"
-
+module;
 #include <cassert>
-#include <iostream>
-#include <set>
+
+module vf.Keyboard.ToKeys.CommandToKeys;
+
+import std.compat;
 
 using namespace std;
 

@@ -1,3 +1,7 @@
+#include <gtest/gtest.h>
+
+import std.compat;
+
 /*
 TEST_F(NeovimOracleDebug, DISABLED_InvestigateSentenceMotion) {
   cerr << "=== Understanding d( sentence motion ===" << endl;

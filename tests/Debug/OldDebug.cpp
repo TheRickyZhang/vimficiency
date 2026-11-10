@@ -5,9 +5,10 @@
 //
 // Run: ./build/tests/vimfy_debug --gtest_filter="*Debug*"
 
+#include <gtest/gtest.h>
 #include <cassert>
 
-#include <gtest/gtest.h>
+import std.compat;
 
 // #include "Optimizer/Keyboard/Config.h"
 // #include "Optimizer/TransformOptimizer/TransformOptimizer.h"

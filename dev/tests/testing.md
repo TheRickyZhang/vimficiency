@@ -248,7 +248,7 @@ Fuzz campaigns use the same property or safety source files, but the build must
 be configured in FuzzTest fuzzing mode with Clang:
 
 ```bash
-cmake -S . -B build-fuzz \
+cmake -G Ninja -S . -B build-fuzz \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DCMAKE_C_COMPILER=clang \
   -DCMAKE_CXX_COMPILER=clang++ \

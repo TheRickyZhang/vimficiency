@@ -1,7 +1,8 @@
-#include "Effort/RunningEffort.h"
+module vf.Effort.RunningEffort;
 
-#include "Keyboard/Finger.h"
-#include "Keyboard/ToKeys/MovementToKeys.h"
+import std.compat;
+import vf.Keyboard.Finger;
+import vf.Keyboard.ToKeys.MovementToKeys;
 
 namespace {
 

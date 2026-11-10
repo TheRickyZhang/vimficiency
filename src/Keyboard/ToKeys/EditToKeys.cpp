@@ -1,6 +1,8 @@
-#include "EditToKeys.h"
-#include "EditToKeysPrimitives.h"
-#include "MovementToKeysPrimitives.h"
+module vf.Keyboard.ToKeys.EditToKeys;
+
+import std.compat;
+import vf.Keyboard.ToKeys.EditToKeysPrimitives;
+import vf.Keyboard.ToKeys.MovementToKeysPrimitives;
 
 using namespace std;
 

@@ -1,13 +1,15 @@
-#include "ChangeGoalHandler.h"
-
-#include <algorithm>
+module;
 #include <cassert>
+#include "Utils/CheckMacro.h"
 
-#include "TransformOptimizer.h"
-#include "Keyboard/ToKeys/MovementToKeys.h"
-#include "Optimizer/BuildTypedCommands.h"
-#include "Optimizer/TransformOptimizer/TransformPostExplorerEmissions.h"
-#include "Utils/Debug.h"
+module vf.Optimizer.TransformOptimizer.ChangeGoalHandler;
+
+import std.compat;
+import vf.Optimizer.TransformOptimizer.TransformOptimizer;
+import vf.Keyboard.ToKeys.MovementToKeys;
+import vf.Optimizer.BuildTypedCommands;
+import vf.Optimizer.TransformOptimizer.TransformPostExplorerEmissions;
+import vf.Utils.Debug;
 
 using namespace std;
 

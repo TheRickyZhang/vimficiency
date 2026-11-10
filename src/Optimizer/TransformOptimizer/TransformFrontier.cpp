@@ -1,27 +1,23 @@
-#include "TransformFrontier.h"
+module;
+#include "Utils/CheckMacro.h"
 
-#include <algorithm>
-#include <optional>
-#include <string>
-#include <string_view>
-#include <type_traits>
-#include <unordered_set>
-#include <utility>
+module vf.Optimizer.TransformOptimizer.TransformFrontier;
 
-#include "Effort/EffortBank.h"
-#include "Effort/RunningEffort.h"
-#include "Keyboard/ToKeys/MovementToKeys.h"
-#include "Optimizer/CompositionOptimizer/PlannedEditArtifacts.h"
-#include "Optimizer/DiffPlanner/MyersDiff.h"
-#include "Optimizer/OptimizerParamOverrides.h"
-#include "Optimizer/TransformOptimizer/ChangeGoalHandler.h"
-#include "Optimizer/TransformOptimizer/TransformExplorer.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizerParams.h"
-#include "Optimizer/TransformOptimizer/TransformState.h"
-#include "Types/BracketFlags.h"
-#include "Types/QuoteFlags.h"
-#include "Utils/Debug.h"
-#include "VimCore/VimCore.h"
+import std.compat;
+import vf.Effort.EffortBank;
+import vf.Effort.RunningEffort;
+import vf.Keyboard.ToKeys.MovementToKeys;
+import vf.Optimizer.CompositionOptimizer.PlannedEditArtifacts;
+import vf.Optimizer.DiffPlanner.MyersDiff;
+import vf.Optimizer.OptimizerParamOverrides;
+import vf.Optimizer.TransformOptimizer.ChangeGoalHandler;
+import vf.Optimizer.TransformOptimizer.TransformExplorer;
+import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
+import vf.Optimizer.TransformOptimizer.TransformState;
+import vf.Types.BracketFlags;
+import vf.Types.QuoteFlags;
+import vf.Utils.Debug;
+import vf.VimCore.VimCore;
 
 using namespace std;
 

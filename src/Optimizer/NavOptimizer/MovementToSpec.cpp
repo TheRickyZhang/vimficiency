@@ -1,4 +1,7 @@
-#include "MovementToSpec.h"
+module vf.Optimizer.NavOptimizer.MovementToSpec;
+
+import std.compat;
+
 using namespace std;
 
 // =============================================================================

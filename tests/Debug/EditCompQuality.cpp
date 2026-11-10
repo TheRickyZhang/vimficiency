@@ -1,16 +1,11 @@
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <cstdio>
-#include <limits>
-#include <string>
-#include <vector>
-
-#include "Keyboard/Config.h"
-#include "Optimizer/CompositionOptimizer/CompositionOptimizer.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizer.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizerParams.h"
-#include "Utils/OptimizerCaseCatalog.h"
+import std.compat;
+import vf.Keyboard.Config;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
+import vf.Optimizer.TransformOptimizer.TransformOptimizer;
+import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
+import vf.tests.Utils.OptimizerCaseCatalog;
 
 using namespace std;
 

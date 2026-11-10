@@ -9,18 +9,15 @@
 // shaped to keep every step legal: lines are wide and dense enough that the
 // fixed `hh` motion always lands within content.
 
-#include <algorithm>
-#include <string>
-#include <vector>
-
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Utils/InterpreterModelReplay.h"
-#include "Utils/NeovimOracle.h"
-#include "Utils/OracleReplay.h"
+import std.compat;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.tests.Utils.InterpreterModelReplay;
+import vf.tests.Utils.NeovimOracle;
+import vf.tests.Utils.OracleReplay;
 
 using namespace std;
 

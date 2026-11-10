@@ -1,9 +1,9 @@
 // Tests to verify no hash collisions in edit command parsing.
 
 #include <gtest/gtest.h>
-#include <string_view>
 
-#include "Interpreter/EditHash.h"
+import std.compat;
+import vf.Interpreter.EditHash;
 
 using Edit::hash;
 using Edit::HASH_MULTIPLIER;

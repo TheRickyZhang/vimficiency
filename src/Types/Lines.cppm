@@ -1,0 +1,276 @@
+module;
+#include <cassert>
+
+export module vf.Types.Lines;
+
+import std.compat;
+export import vf.Types.CharRange;
+export import :CharInterval;
+export import vf.Types.CharLineRange;
+export import vf.Types.LineCharRange;
+export import vf.Types.CursorPos;
+
+export {
+
+struct Line final : std::string {
+  using std::string::string;
+
+  inline int effectiveSize() const { return empty() ? 1 : static_cast<int>(size()); }
+  inline int lastCol() const { return effectiveSize() - 1; }
+
+  inline char get(int col) const {
+    if (empty()) {
+      assert(col == 0 && "col must be 0 in empty line)");
+      return '\n';
+    }
+    return data()[col];
+  }
+
+  inline Line(const std::string& s) : std::string(s) {}
+  inline Line(std::string&& s) : std::string(std::move(s)) {}
+
+  void* operator new(size_t) = delete;
+  void* operator new[](size_t) = delete;
+};
+
+struct Lines final : std::vector<Line> {
+  using std::vector<Line>::vector;
+
+  inline Lines(std::vector<std::string> v) {
+    assert(!v.empty());
+    reserve(v.size());
+    for (auto& s : v) {
+      push_back(std::move(s));
+    }
+  }
+
+  inline std::string flatten() const {
+    size_t total = 0;
+    for (size_t i = 0; i < size(); i++) {
+      if (i > 0) {
+        total++;
+      }
+      total += (*this)[i].size();
+    }
+    std::string result;
+    result.reserve(total);
+    for (size_t i = 0; i < size(); i++) {
+      if (i > 0) {
+        result += '\n';
+      }
+      result += (*this)[i];
+    }
+    return result;
+  }
+
+  inline static Lines unflatten(std::string_view text) {
+    Lines result;
+    size_t start = 0;
+    size_t pos;
+    while ((pos = text.find('\n', start)) != std::string_view::npos) {
+      result.push_back(std::string(text.substr(start, pos - start)));
+      start = pos + 1;
+    }
+    result.push_back(std::string(text.substr(start)));
+    assert(!result.empty() && "Lines invariant: buffer must have at least one line");
+    return result;
+  }
+
+  inline int lastLine() const { return static_cast<int>(size()) - 1; }
+  inline int getSize(int line) const { return static_cast<int>(data()[line].size()); }
+  inline bool isEmpty() const { return size() == 1 && data()[0].empty(); }
+
+  inline CursorPos getNextPos(CursorPos pos) const {
+    if (pos.col + 1 < static_cast<int>((*this)[pos.line].size())) {
+      return CursorPos(pos.line, pos.col + 1);
+    }
+    if (pos.line + 1 < static_cast<int>(size())) {
+      return CursorPos(pos.line + 1, 0);
+    }
+    return pos;
+  }
+
+  inline CursorPos getNextPosUnbounded(CursorPos pos) const {
+    if (pos.col + 1 < static_cast<int>((*this)[pos.line].size())) {
+      return CursorPos(pos.line, pos.col + 1);
+    }
+    return CursorPos(pos.line + 1, 0);
+  }
+
+  inline CursorPos getPrevPos(CursorPos pos) const {
+    if (pos.col > 0) {
+      return CursorPos(pos.line, pos.col - 1);
+    }
+    if (pos.line > 0) {
+      int prevLine = pos.line - 1;
+      int prevCol = (*this)[prevLine].empty() ? 0 : static_cast<int>((*this)[prevLine].size()) - 1;
+      return CursorPos(prevLine, prevCol);
+    }
+    return pos;
+  }
+
+  inline CursorPos lastPos() const { return CursorPos(lastLine(), back().lastCol()); }
+  inline CursorPos endPos() const { return CursorPos(lastLine(), back().effectiveSize()); }
+
+  // True iff `pos` is a valid normal-mode cursor target — line is in range and
+  // col is on a real character. This is what most callers actually want when
+  // they ask "does this position exist?"; `endPos()`-style past-the-end values
+  // are NOT contained.
+  inline bool contains(const CursorPos& pos) const {
+    if (pos.line < 0 || pos.line >= static_cast<int>(size())) return false;
+    const auto& line = data()[pos.line];
+    const int maxCol = line.empty() ? 0 : static_cast<int>(line.size()) - 1;
+    return pos.col >= 0 && pos.col <= maxCol;
+  }
+
+  // Nearest position that `contains()` accepts: clamp the line into range, then
+  // the column onto a real character of that line. Input boundaries use this
+  // because Neovim can hand back an insert-mode / 'virtualedit' cursor sitting
+  // one past end-of-line, which is not a valid normal-mode target.
+  inline CursorPos clamp(const CursorPos& pos) const {
+    if (empty()) return CursorPos(0, 0);
+    const int line = std::clamp(pos.line, 0, lastLine());
+    const auto& l = data()[line];
+    const int maxCol = l.empty() ? 0 : static_cast<int>(l.size()) - 1;
+    return CursorPos(line, std::clamp(pos.col, 0, maxCol));
+  }
+
+  inline char get(const CursorPos& pos) const {
+    assert(pos.line < static_cast<int>(size()) && "Lines::get() position out of bounds");
+    return data()[pos.line].get(pos.col);
+  }
+
+  inline Lines getSpan(const CursorPos& begin, const CursorPos& end) const {
+    Lines result;
+    if (begin.line == end.line) {
+      result.push_back(data()[begin.line].substr(begin.col, end.col - begin.col));
+    } else {
+      result.push_back(data()[begin.line].substr(begin.col));
+      for (int i = begin.line + 1; i < end.line; i++) {
+        result.push_back(data()[i]);
+      }
+      result.push_back(data()[end.line].substr(0, end.col));
+    }
+    return result;
+  }
+
+  inline int spanSize(const CursorPos& begin, const CursorPos& end) const {
+    if (begin.line == end.line) {
+      return end.col - begin.col;
+    }
+    int count = std::max(1, static_cast<int>(data()[begin.line].size()) - begin.col);
+    for (int i = begin.line + 1; i < end.line; i++) {
+      count += std::max(1, static_cast<int>(data()[i].size()));
+    }
+    count += end.col;
+    return count;
+  }
+
+  inline int spanSize(const CharRange& range) const {
+    return spanSize(range.begin, range.end);
+  }
+
+  inline int spanSize(const CharInterval& interval) const {
+    assert(interval.isValid());
+    if (interval.first.line == interval.last.line) {
+      return interval.last.col - interval.first.col + 1;
+    }
+    int count = std::max(1, static_cast<int>(data()[interval.first.line].size()) - interval.first.col);
+    for (int i = interval.first.line + 1; i < interval.last.line; i++) {
+      count += std::max(1, static_cast<int>(data()[i].size()));
+    }
+    count += interval.last.col + 1;
+    return count;
+  }
+
+  inline int spanSize(const CharLineRange& range) const {
+    assert(range.isValid());
+    if (range.begin.line + 1 == range.endLine) {
+      return std::max(1, static_cast<int>(data()[range.begin.line].size()) - range.begin.col);
+    }
+    int count = std::max(1, static_cast<int>(data()[range.begin.line].size()) - range.begin.col);
+    for (int i = range.begin.line + 1; i < range.endLine; i++) {
+      count += std::max(1, static_cast<int>(data()[i].size()));
+    }
+    return count;
+  }
+
+  inline int spanSize(const LineCharRange& range) const {
+    assert(range.isValid());
+    return spanSize(CursorPos(range.beginLine, 0), range.end);
+  }
+
+  inline int totalPositions() const {
+    int count = 0;
+    for (const auto& line : *this) {
+      count += line.effectiveSize();
+    }
+    return count;
+  }
+
+  // Same indexing model as totalPositions(): empty lines contribute col 0.
+  inline CursorPos cursorFromFlatIndexClamped(int flatIndex) const {
+    int remaining = std::clamp(flatIndex, 0, totalPositions() - 1);
+    for (int line = 0; line < static_cast<int>(size()); line++) {
+      int lineSize = data()[line].effectiveSize();
+      if (remaining < lineSize) {
+        return CursorPos(line, data()[line].empty() ? 0 : remaining);
+      }
+      remaining -= lineSize;
+    }
+    return lastPos();
+  }
+
+  inline static bool sameLineLengths(const Lines& x, const Lines& y) {
+    if (x.size() != y.size()) {
+      return false;
+    }
+    for (size_t i = 0; i < x.size(); i++) {
+      if (x[i].size() != y[i].size()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  inline Lines getLineRange(int beginLine, int endLine) const {
+    assert(beginLine >= 0 && "beginLine must be non-negative");
+    assert(endLine <= static_cast<int>(size()) && "endLine must be <= size()");
+    assert(beginLine < endLine && "must have at least one line in range");
+    return Lines(begin() + beginLine, begin() + endLine);
+  }
+
+  inline std::pair<int, int> minmaxBoundWithPadding(int beginLine, int endLine, int padAbove, int padBelow) const {
+    if (beginLine > endLine) {
+      std::swap(beginLine, endLine);
+    }
+    return {std::max(0, beginLine - padAbove),
+            std::min(static_cast<int>(size()), endLine + padBelow)};
+  }
+
+  inline friend std::ostream& operator<<(std::ostream& os, const Lines& lines) {
+    for (const std::string& s : lines) {
+      os << s << "\n";
+    }
+    return os;
+  }
+};
+
+inline uint64_t hashLines(const Lines& lines) {
+  uint64_t h = 0xcbf29ce484222325ULL;
+  for (const auto& line : lines) {
+    for (char c : line) {
+      h ^= static_cast<uint64_t>(static_cast<unsigned char>(c));
+      h *= 0x100000001b3ULL;
+    }
+    h ^= '\n';
+    h *= 0x100000001b3ULL;
+  }
+  h ^= lines.size();
+  h *= 0x100000001b3ULL;
+  return h;
+}
+
+using SharedLines = std::shared_ptr<const Lines>;
+
+}  // export

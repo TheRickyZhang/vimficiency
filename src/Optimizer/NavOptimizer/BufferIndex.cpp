@@ -1,8 +1,11 @@
-#include "BufferIndex.h"
-#include "VimCore/CharMask.h"
-#include "VimCore/VimCore.h"
-#include <algorithm>
+module;
 #include <assert.h>
+
+module vf.Optimizer.NavOptimizer.BufferIndex;
+
+import std.compat;
+import vf.VimCore.CharMask;
+import vf.VimCore.VimCore;
 
 using namespace VimCore;
 

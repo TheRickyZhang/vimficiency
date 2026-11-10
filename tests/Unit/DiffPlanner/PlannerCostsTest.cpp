@@ -1,13 +1,11 @@
 #include <gtest/gtest.h>
 
-#include <string>
-#include <vector>
-
-#include "Effort/RunningEffort.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/DiffPlanner/PlannerCosts.h"
-#include "Types/CountPrefixLimits.h"
-#include "Types/Lines.h"
+import std.compat;
+import vf.Effort.RunningEffort;
+import vf.Keyboard.Config;
+import vf.Optimizer.DiffPlanner.PlannerCosts;
+import vf.Types.CountPrefixLimits;
+import vf.Types.Lines;
 
 using namespace std;
 using namespace VimDiff;

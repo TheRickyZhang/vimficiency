@@ -6,19 +6,16 @@
 // `[pre + suf]` with cursor positioned at end-of-pre (col == pre.size() - 1
 // after the implicit <Esc> backup, or 0 if pre is empty).
 
-#include <algorithm>
-#include <string>
-#include <vector>
-
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
-#include "Optimizer/TransformOptimizer/ChangeGoalHandler.h"
-#include "Keyboard/KeyedSequence.h"
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Utils/NeovimOracle.h"
-#include "Utils/OracleReplay.h"
+import std.compat;
+import vf.Optimizer.TransformOptimizer.ChangeGoalHandler;
+import vf.Keyboard.KeyedSequence;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.tests.Utils.NeovimOracle;
+import vf.tests.Utils.OracleReplay;
 
 using namespace std;
 

@@ -1,6 +1,7 @@
-#include "CompositionState.h"
+module vf.Optimizer.CompositionOptimizer.CompositionState;
 
-#include "Keyboard/ToKeys/MovementToKeys.h"
+import std.compat;
+import vf.Keyboard.ToKeys.MovementToKeys;
 
 using namespace std;
 

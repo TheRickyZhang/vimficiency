@@ -1,9 +1,9 @@
 #define APPROVALS_GOOGLETEST_EXISTING_MAIN
-#include "ApprovalTests.hpp"  // IWYU pragma: keep
-
 #include <gtest/gtest.h>
+#include "ApprovalTests.hpp"
 
-#include "TestMainSupport.h"
+import std.compat;
+import vf.tests.TestMainSupport;
 
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);

@@ -1,5 +1,8 @@
-#include "Unit/NavOptimizer/ManualTestHelpers.h"
-#include "Interpreter/MovementInterpreter.h"
+#include <gtest/gtest.h>
+
+import std.compat;
+import vf.tests.Unit.NavOptimizer.ManualTestHelpers;
+import vf.Interpreter.MovementInterpreter;
 
 using namespace std;
 

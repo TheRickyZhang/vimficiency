@@ -4,19 +4,18 @@
 // ways to transform text. The deletion search finds optimal ways to
 // clear buffer from any starting position.
 
-#include "TransformOptimizer.h"
-
-#include <algorithm>
+module;
 #include <cassert>
-#include <vector>
 
-#include "ChangeGoalHandler.h"
-#include "TransformExplorer.h"
-#include "TransformPostExplorerEmissions.h"
-#include "TransformTransitionDispatcher.h"
-#include "Effort/EffortBank.h"
+module vf.Optimizer.TransformOptimizer.TransformOptimizer;
 
-#include "Keyboard/KeyedSequence.h"
+import std.compat;
+import vf.Optimizer.TransformOptimizer.ChangeGoalHandler;
+import vf.Optimizer.TransformOptimizer.TransformExplorer;
+import vf.Optimizer.TransformOptimizer.TransformPostExplorerEmissions;
+import vf.Optimizer.TransformOptimizer.TransformTransitionDispatcher;
+import vf.Effort.EffortBank;
+import vf.Keyboard.KeyedSequence;
 
 using namespace std;
 

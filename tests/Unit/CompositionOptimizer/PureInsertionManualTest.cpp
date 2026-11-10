@@ -1,4 +1,7 @@
-#include "Unit/CompositionOptimizer/ManualTestHelpers.h"
+#include <gtest/gtest.h>
+
+import std.compat;
+import vf.tests.Unit.CompositionOptimizer.ManualTestHelpers;
 
 using namespace std;
 

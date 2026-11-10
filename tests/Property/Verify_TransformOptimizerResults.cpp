@@ -2,23 +2,19 @@
 // must replay in Neovim to the exact goal while preserving protected full-buffer
 // prefix/suffix context around embedded regions.
 
-#include <sstream>
-#include <string>
-#include <utility>
-#include <vector>
-
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
-#include "Boundary/TransformBoundary.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizer.h"
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Utils/NeovimOracle.h"
-#include "Property/OptimizerResultChecks.h"
-#include "Property/PropertyDomains.h"
-#include "Unit/TransformOptimizer/EmbeddedRegionTestUtils.h"
+import std.compat;
+import vf.Boundary.TransformBoundary;
+import vf.Keyboard.Config;
+import vf.Optimizer.TransformOptimizer.TransformOptimizer;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.tests.Utils.NeovimOracle;
+import vf.tests.Property.OptimizerResultChecks;
+import vf.tests.Property.PropertyDomains;
+import vf.tests.Unit.TransformOptimizer.EmbeddedRegionTestUtils;
 
 using namespace std;
 

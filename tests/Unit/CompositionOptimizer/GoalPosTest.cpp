@@ -8,15 +8,15 @@
 // Run: ./build/tests/vimfy_unit_tests --gtest_filter="CompositionOptimizerGoalPos*"
 
 #include <gtest/gtest.h>
-#include <memory>
 
-#include "Boundary/NavBoundary.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/CompositionOptimizer/CompositionOptimizer.h"
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Utils/NeovimOracle.h"
-#include "Utils/OracleReplay.h"
+import std.compat;
+import vf.Boundary.NavBoundary;
+import vf.Keyboard.Config;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.tests.Utils.NeovimOracle;
+import vf.tests.Utils.OracleReplay;
 
 using namespace std;
 

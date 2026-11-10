@@ -6,33 +6,32 @@
 // Run: ./build/tests/vimfy_debug --gtest_filter="DebugTest.*"
 //   - Or: ./vimfy_unit_tests --gtest_filter="NeovimOracleDebug.*"
 
-#include <cassert>
-
 #include <gtest/gtest.h>
-#include <chrono>
-#include <queue>
+#include <cassert>
+#include <climits>
+#include <cstdio>
 
-#include "Interpreter/EditInterpreter.h"
-#include "Interpreter/MovementInterpreter.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizer.h"
-#include "Optimizer/CompositionOptimizer/CompositionOptimizer.h"
-#include "Optimizer/CompositionOptimizer/CompositionSearchContext.h"
-#include "Optimizer/DiffPlanner/DiffState.h"
-#include "Optimizer/DiffPlanner/MyersDiff.h"
-#include "Optimizer/DiffPlanner/VimDiff.h"
-#include "Optimizer/NavOptimizer/NavOptimizer.h"
-#include "Boundary/TransformBoundary.h"
-#include "Boundary/NavBoundary.h"
-#include "Unit/TransformOptimizer/EmbeddedRegionTestUtils.h"
-#include "Utils/NeovimOracle.h"
-#include "Utils/PrettyText.h"
-#include "Utils/RandomBufferHelpers.h"
-#include "Utils/RandomGeneration.h"
-#include "Utils/PrettyText.h"
-#include "Optimizer/TransformOptimizer/TransformState.h"
-#include "VimCore/VimEditUtils.h"
-#include "VimCore/VimEndpointUtils.h"
+import std.compat;
+import vf.Interpreter.EditInterpreter;
+import vf.Interpreter.MovementInterpreter;
+import vf.Keyboard.Config;
+import vf.Optimizer.TransformOptimizer.TransformOptimizer;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
+import vf.Optimizer.CompositionOptimizer.CompositionSearchContext;
+import vf.Optimizer.DiffPlanner.DiffState;
+import vf.Optimizer.DiffPlanner.MyersDiff;
+import vf.Optimizer.DiffPlanner.VimDiff;
+import vf.Optimizer.NavOptimizer.NavOptimizer;
+import vf.Boundary.TransformBoundary;
+import vf.Boundary.NavBoundary;
+import vf.tests.Unit.TransformOptimizer.EmbeddedRegionTestUtils;
+import vf.tests.Utils.NeovimOracle;
+import vf.Utils.PrettyText;
+import vf.tests.Utils.RandomBufferHelpers;
+import vf.tests.Utils.RandomGeneration;
+import vf.Optimizer.TransformOptimizer.TransformState;
+import vf.VimCore.VimEditUtils;
+import vf.VimCore.VimEndpointUtils;
 
 using namespace std;
 

@@ -10,11 +10,8 @@
 
 #include <gtest/gtest.h>
 
-#include <string>
-#include <tuple>
-#include <vector>
-
-#include "VimCore/VimMotionUtils.h"
+import std.compat;
+import vf.VimCore.VimMotionUtils;
 
 using std::get;
 using std::string;

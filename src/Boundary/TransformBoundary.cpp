@@ -1,6 +1,11 @@
-#include "TransformBoundary.h"
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
+module;
+#include <cassert>
+
+module vf.Boundary.TransformBoundary;
+
+import std.compat;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
 
 using namespace std;
 

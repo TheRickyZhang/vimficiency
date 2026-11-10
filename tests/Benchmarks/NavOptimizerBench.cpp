@@ -4,28 +4,21 @@
 //
 // Run: ./build/tests/vimfy_benchmarks --benchmark_filter="NavOptimizer.*"
 
-#include <algorithm>
-#include <array>
-#include <limits>
-#include <queue>
-#include <string>
-#include <unordered_map>
-#include <vector>
-
 #include <benchmark/benchmark.h>
 
-#include "Benchmarks/BenchUtils.h"
-#include "Boundary/NavBoundary.h"
-#include "Effort/EffortBank.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/NavOptimizer/NavExplorer.h"
-#include "Optimizer/NavOptimizer/NavHeuristic.h"
-#include "Optimizer/NavOptimizer/NavOptimizer.h"
-#include "Optimizer/NavOptimizer/NavOptimizerParams.h"
-#include "Optimizer/NavOptimizer/NavRangeConversion.h"
-#include "Optimizer/SearchFrontier.h"
-#include "Utils/OptimizerCaseCatalog.h"
-#include "Utils/RandomGeneration.h"
+import std.compat;
+import vf.tests.Benchmarks.BenchUtils;
+import vf.Boundary.NavBoundary;
+import vf.Effort.EffortBank;
+import vf.Keyboard.Config;
+import vf.Optimizer.NavOptimizer.NavExplorer;
+import vf.Optimizer.NavOptimizer.NavHeuristic;
+import vf.Optimizer.NavOptimizer.NavOptimizer;
+import vf.Optimizer.NavOptimizer.NavOptimizerParams;
+import vf.Optimizer.NavOptimizer.NavRangeConversion;
+import vf.Optimizer.SearchFrontier;
+import vf.tests.Utils.OptimizerCaseCatalog;
+import vf.tests.Utils.RandomGeneration;
 
 using namespace std;
 

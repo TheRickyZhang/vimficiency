@@ -1,6 +1,9 @@
-#include "EditSequenceSpan.h"
-
+module;
 #include <cassert>
+
+module vf.Optimizer.CompositionOptimizer.EditSequenceSpan;
+
+import std.compat;
 
 std::vector<std::string> rowsFromEditSpans(
     std::string_view seq,

@@ -2,24 +2,18 @@
 // same buffer/cursor/mode state as Neovim. Focused generators cover movement,
 // char-find repeat state, edits, and small mixed normal-mode sequences.
 
-#include <array>
-#include <algorithm>
-#include <cassert>
-#include <sstream>
-#include <string>
-#include <string_view>
-#include <vector>
-
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
+#include <cassert>
 
-#include "Interpreter/MovementInterpreter.h"
-#include "Property/PropertyDomains.h"
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Utils/InterpreterModelReplay.h"
-#include "Utils/NeovimOracle.h"
-#include "Utils/OracleReplay.h"
+import std.compat;
+import vf.Interpreter.MovementInterpreter;
+import vf.tests.Property.PropertyDomains;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.tests.Utils.InterpreterModelReplay;
+import vf.tests.Utils.NeovimOracle;
+import vf.tests.Utils.OracleReplay;
 
 using namespace std;
 

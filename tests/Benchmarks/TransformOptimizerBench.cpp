@@ -4,21 +4,16 @@
 //
 // Run: ./build/tests/vimfy_benchmarks --benchmark_filter="TransformOptimizer.*"
 
-#include <algorithm>
-#include <array>
-#include <optional>
-#include <string>
-#include <vector>
-
 #include <benchmark/benchmark.h>
 
-#include "Benchmarks/BenchUtils.h"
-#include "Boundary/TransformBoundary.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizer.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizerParams.h"
-#include "Utils/OptimizerCaseCatalog.h"
-#include "Utils/RandomGeneration.h"
+import std.compat;
+import vf.tests.Benchmarks.BenchUtils;
+import vf.Boundary.TransformBoundary;
+import vf.Keyboard.Config;
+import vf.Optimizer.TransformOptimizer.TransformOptimizer;
+import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
+import vf.tests.Utils.OptimizerCaseCatalog;
+import vf.tests.Utils.RandomGeneration;
 
 using namespace std;
 

@@ -1,11 +1,8 @@
 #include <gtest/gtest.h>
 
-#include <atomic>
-#include <memory>
-#include <thread>
-
-#include "LuaExports/AsyncJob.h"
-#include "Optimizer/SearchControl.h"
+import std.compat;
+import vf.LuaExports.AsyncJob;
+import vf.Optimizer.SearchControl;
 
 using VF::LuaExports::AsyncJob;
 

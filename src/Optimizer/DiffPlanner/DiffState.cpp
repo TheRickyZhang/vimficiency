@@ -1,9 +1,10 @@
-#include "DiffState.h"
-
-#include <algorithm>
+module;
 #include <cassert>
 
-#include "Utils/PrettyText.h"
+module vf.Optimizer.DiffPlanner.DiffState;
+
+import std.compat;
+import vf.Utils.PrettyText;
 
 using namespace std;
 

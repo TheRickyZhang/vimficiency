@@ -1,15 +1,13 @@
-#include "EditHandler.h"
+module vf.Explore.EditHandler;
 
-#include <span>
-#include <string>
-
-#include "Interpreter/EditInterpreter.h"
-#include "Optimizer/CompositionOptimizer/CompositionSearchContext.h"
-#include "Optimizer/CompositionOptimizer/CompositionStrategies.h"
-#include "Optimizer/CompositionOptimizer/PlannedEditArtifacts.h"
-#include "Optimizer/DiffPlanner/MyersDiff.h"
-#include "Optimizer/FrontierCommon.h"
-#include "VimCore/VimEditUtils.h"
+import std.compat;
+import vf.Interpreter.EditInterpreter;
+import vf.Optimizer.CompositionOptimizer.CompositionSearchContext;
+import vf.Optimizer.CompositionOptimizer.CompositionStrategies;
+import vf.Optimizer.CompositionOptimizer.PlannedEditArtifacts;
+import vf.Optimizer.DiffPlanner.MyersDiff;
+import vf.Optimizer.FrontierCommon;
+import vf.VimCore.VimEditUtils;
 
 using namespace std;
 

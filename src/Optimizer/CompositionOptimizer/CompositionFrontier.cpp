@@ -1,21 +1,21 @@
-#include "CompositionFrontier.h"
+module;
+#include "Utils/CheckMacro.h"
 
-#include <string>
-#include <unordered_set>
-#include <utility>
+module vf.Optimizer.CompositionOptimizer.CompositionFrontier;
 
-#include "Effort/RunningEffort.h"
-#include "Keyboard/ToKeys/MovementToKeys.h"
-#include "Optimizer/CompositionOptimizer/CompositionOptimizerParams.h"
-#include "Optimizer/CompositionOptimizer/CompositionStrategies.h"
-#include "Optimizer/DiffPlanner/DiffState.h"
-#include "Optimizer/DiffPlanner/MyersDiff.h"
-#include "Optimizer/CompositionOptimizer/PlannedEditArtifacts.h"
-#include "Optimizer/FrontierCommon.h"
-#include "Optimizer/OptimizerParamOverrides.h"
-#include "Types/Lines.h"
-#include "Utils/Debug.h"
-#include "VimCore/VimEditUtils.h"
+import std.compat;
+import vf.Effort.RunningEffort;
+import vf.Keyboard.ToKeys.MovementToKeys;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizerParams;
+import vf.Optimizer.CompositionOptimizer.CompositionStrategies;
+import vf.Optimizer.DiffPlanner.DiffState;
+import vf.Optimizer.DiffPlanner.MyersDiff;
+import vf.Optimizer.CompositionOptimizer.PlannedEditArtifacts;
+import vf.Optimizer.FrontierCommon;
+import vf.Optimizer.OptimizerParamOverrides;
+import vf.Types.Lines;
+import vf.Utils.Debug;
+import vf.VimCore.VimEditUtils;
 
 using namespace std;
 

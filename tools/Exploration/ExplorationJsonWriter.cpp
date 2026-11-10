@@ -1,7 +1,6 @@
-#include "Exploration/ExplorationCollector.h"
+module vf.tools.Exploration.ExplorationCollector;
 
-#include <fstream>
-#include <iostream>
+import std.compat;
 
 using namespace std;
 

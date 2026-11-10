@@ -31,9 +31,11 @@ https://therickyzhang.github.io/vimficiency/docs/how-it-works/
 - Neovim 0.11+
 - **Linux or macOS.** Windows is not yet supported.
 - Prebuilt libraries are published for Linux x86_64, Linux aarch64, and
-  macOS arm64 (built on Ubuntu 24.04; the macOS build runs on 14.0+). On other systems, or
+  macOS arm64 (Linux builds need glibc 2.36+ and bundle the C++ runtime; the
+  macOS build runs on 14.0+). On other systems, or
   when installing from an untagged commit, the install step builds from
-  source and needs a C++23 compiler (GCC 13+ or Clang 16+) and CMake 3.20+.
+  source and needs a C++23 compiler with the standard library module (GCC 15+
+  or Clang 19+ with libc++), CMake 4.3+ and Ninja.
 
 ## Installation
 
@@ -96,7 +98,7 @@ cd vimficiency
 Or configure CMake yourself; this builds only the library, in Release:
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF
+cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF
 cmake --build build -j --target vimficiency
 ```
 

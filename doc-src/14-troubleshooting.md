@@ -13,8 +13,9 @@ has run.
 The native library is missing from `build/` in the plugin directory. Your
 plugin manager's build step did not run or failed — run it again
 (`:Lazy build vimficiency`, or `./scripts/install.sh` from the plugin
-directory) and read its output. Building from source needs a C++23 compiler
-and CMake 3.20+; pinning a release tag avoids the compile by downloading a
+directory) and read its output. Building from source needs GCC 15+ or Clang
+19+ with libc++, CMake 4.3+
+and Ninja; pinning a release tag avoids the compile by downloading a
 prebuilt library instead.
 
 If you set `VIMFICIENCY_LIB_PATH`, it is tried first; make sure it points at

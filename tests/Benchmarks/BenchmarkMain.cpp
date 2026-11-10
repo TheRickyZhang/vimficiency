@@ -2,16 +2,11 @@
 //
 // Custom main for Google Benchmark with SeedManager initialization.
 
-#include <cstdlib>
-#include <iostream>
-#include <string>
-#include <string_view>
-#include <vector>
-
 #include <benchmark/benchmark.h>
 
-#include "Utils/SeedManager.h"
-#include "Benchmarks/BenchUtils.h"
+import std.compat;
+import vf.tests.Utils.SeedManager;
+import vf.tests.Benchmarks.BenchUtils;
 
 int main(int argc, char** argv) {
   // Initialize SeedManager (reads VIMFY_SEED_MODE env var)

@@ -3,27 +3,21 @@
 // prefix/suffix text, and every safe unbounded structural command should remain
 // available when a boundary is applied.
 
-#include <algorithm>
-#include <set>
-#include <sstream>
-#include <string>
-#include <string_view>
-#include <vector>
-
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
-#include "Boundary/TransformBoundary.h"
-#include "Effort/EffortBank.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/SequenceBinding.h"
-#include "Optimizer/TransformOptimizer/TransformExplorer.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizerParams.h"
-#include "Optimizer/TransformOptimizer/TransformState.h"
-#include "Property/PropertyDomains.h"
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Utils/NeovimOracle.h"
+import std.compat;
+import vf.Boundary.TransformBoundary;
+import vf.Effort.EffortBank;
+import vf.Keyboard.Config;
+import vf.Optimizer.SequenceBinding;
+import vf.Optimizer.TransformOptimizer.TransformExplorer;
+import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
+import vf.Optimizer.TransformOptimizer.TransformState;
+import vf.tests.Property.PropertyDomains;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.tests.Utils.NeovimOracle;
 
 using namespace std;
 

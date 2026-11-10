@@ -1,4 +1,7 @@
-#include "Unit/NavOptimizer/ManualTestHelpers.h"
+#include <gtest/gtest.h>
+
+import std.compat;
+import vf.tests.Unit.NavOptimizer.ManualTestHelpers;
 
 using namespace std;
 

@@ -1,12 +1,10 @@
-#include "LuaExports/Common.h"
-
-#include "Interpreter/SequenceDisplay.h"
-#include "Session/ResultView.h"
-
-#include <charconv>
-#include <string>
-
+#include "LuaExports/Api.h"
 #include <fast_float/fast_float.h>
+
+import std.compat;
+import vf.LuaExports.Common;
+import vf.Interpreter.SequenceDisplay;
+import vf.Session.ResultView;
 
 using namespace std;
 namespace helpers = VF::LuaExports::helpers;

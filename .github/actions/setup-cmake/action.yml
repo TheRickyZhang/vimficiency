@@ -1,0 +1,25 @@
+name: Setup CMake
+description: Install a pinned CMake release (the import-std gate in CMakeLists.txt is version-specific) plus Ninja.
+
+inputs:
+  cmake-version:
+    description: CMake release to install.
+    required: false
+    default: "4.4.4"
+
+runs:
+  using: composite
+  steps:
+    - name: Install CMake and Ninja
+      shell: bash
+      run: |
+        set -euo pipefail
+        apt_get="apt-get"
+        if [ "$(id -u)" != 0 ]; then apt_get="sudo apt-get"; fi
+        $apt_get update
+        $apt_get install -y curl ninja-build
+        install_dir="${RUNNER_TEMP}/cmake-${{ inputs.cmake-version }}"
+        mkdir -p "${install_dir}"
+        curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${{ inputs.cmake-version }}/cmake-${{ inputs.cmake-version }}-linux-$(uname -m).tar.gz" \
+          | tar -xz -C "${install_dir}" --strip-components=1
+        echo "${install_dir}/bin" >> "${GITHUB_PATH}"

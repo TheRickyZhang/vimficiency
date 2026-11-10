@@ -1,4 +1,7 @@
-#include "Unit/Explore/TestHelpers.h"
+#include <gtest/gtest.h>
+
+import std.compat;
+import vf.tests.Unit.Explore.TestHelpers;
 
 using namespace std;
 

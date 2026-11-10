@@ -19,17 +19,17 @@ We completed a structural cleanup to enforce explicit module boundaries in `src/
 - Kept sequence ownership split:
   `Sequence` type stays in `Types`, while stream formatting implementation
   lives in `Interpreter` because it depends on higher-level sequence parsing helpers.
-- Moved `RepeatMovementResult` to `src/Optimizer/NavOptimizer/BufferIndex.h` because it is
+- Moved `RepeatMovementResult` to `src/Optimizer/NavOptimizer/BufferIndex.cppm` because it is
   an optimizer/index query result type rather than a shared core primitive.
 - Moved count-search motion pair ownership to NavOptimizer via
-  `src/Optimizer/NavOptimizer/CountableMovementPair.h`, removing semantic
+  `src/Optimizer/NavOptimizer/CountableMovementPair.cppm`, removing semantic
   count-landing coupling from `Keyboard`.
-- Moved config type ownership to Keyboard (`src/Keyboard/Config.h`), with
-  `src/Keyboard/Config.h` kept as a thin forwarding include for compatibility.
+- Moved config type ownership to Keyboard (`src/Keyboard/Config.cppm`), with
+  `src/Keyboard/Config.cppm` kept as a thin forwarding include for compatibility.
 - Moved `SequenceBinding` ownership to optimizer-wide scope
-  (`src/Optimizer/SequenceBinding.h`), removing it from `State`.
+  (`src/Optimizer/SequenceBinding.cppm`), removing it from `State`.
 - Moved indentation helpers from `Utils` to `Optimizer`
-  (`src/Optimizer/Indentation.h`) to avoid upward dependency from `Utils`.
+  (`src/Optimizer/Indentation.cppm`) to avoid upward dependency from `Utils`.
 - Added dependency enforcement:
   `scripts/lint-module-deps.sh` plus CI gating in `.github/workflows/bench.yml`.
 - Updated dependency lint and architecture docs to treat `Types` as the
@@ -49,14 +49,14 @@ We completed a structural cleanup to enforce explicit module boundaries in `src/
 - Renamed `SequenceTokenizer` to `SequenceToKeys` and moved it to
   `src/Keyboard/ToKeys/` to clarify that this layer maps command strings to
   physical key sequences for effort computation, not Vim semantic parsing.
-- Folded `fingerToHand`/`sameHand` into `src/Keyboard/Finger.h` and removed
+- Folded `fingerToHand`/`sameHand` into `src/Keyboard/Finger.cppm` and removed
   `KeyboardUtils.h` so finger/hand relationship helpers live with the finger
   type definitions.
 - Dissolved `src/State/` and moved state ownership into optimizer modules:
   `NavState` under `src/Optimizer/NavOptimizer/`, `TransformState` under
   `src/Optimizer/TransformOptimizer/`, and `CompositionState` under
   `src/Optimizer/CompositionOptimizer/`.
-- Moved `EffortBank` to effort scope (`src/Effort/EffortBank.h`)
+- Moved `EffortBank` to effort scope (`src/Effort/EffortBank.cppm`)
   since it is a config-scoped typed-effort cache shared across optimizers.
 - Moved effort modeling to its own module (`src/Effort/RunningEffort.*`) to
   separate keyboard primitives from runtime effort aggregation.

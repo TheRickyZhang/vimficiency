@@ -2,15 +2,13 @@
 // physical keys in order. Merge, associativity, and appendFrom are checked
 // against a naive sequential accumulator.
 
-#include <utility>
-#include <vector>
-
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
-#include "Effort/RunningEffort.h"
-#include "Keyboard/Config.h"
-#include "Keyboard/PhysicalKeys.h"
+import std.compat;
+import vf.Effort.RunningEffort;
+import vf.Keyboard.Config;
+import vf.Keyboard.PhysicalKeys;
 
 using namespace std;
 

@@ -9,15 +9,12 @@
 
 #include <gtest/gtest.h>
 
-#include <chrono>
-#include <string>
-#include <vector>
-
-#include "Keyboard/Config.h"
-#include "Optimizer/NavOptimizer/NavOptimizer.h"
-#include "Optimizer/SearchControl.h"
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
+import std.compat;
+import vf.Keyboard.Config;
+import vf.Optimizer.NavOptimizer.NavOptimizer;
+import vf.Optimizer.SearchControl;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
 
 using namespace std;
 

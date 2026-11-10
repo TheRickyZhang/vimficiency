@@ -1,6 +1,7 @@
-#include "MovementHandler.h"
+module vf.Explore.MovementHandler;
 
-#include "Interpreter/MovementInterpreter.h"
+import std.compat;
+import vf.Interpreter.MovementInterpreter;
 
 using namespace std;
 

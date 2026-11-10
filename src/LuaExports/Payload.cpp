@@ -1,9 +1,9 @@
-#include "LuaExports/Common.h"
-#include "Optimizer/DiffPlanner/DiffState.h"
+module;
+#include "LuaExports/Api.h"
 
-#include <charconv>
-#include <limits>
-#include <sstream>
+module vf.LuaExports.Common;
+
+import std.compat;
 
 using namespace std;
 

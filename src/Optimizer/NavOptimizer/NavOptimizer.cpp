@@ -1,22 +1,18 @@
-#include "NavOptimizer.h"
-
+module;
 #include <cassert>
-#include <limits>
-#include <map>
-#include <queue>
-#include <set>
-#include <unordered_map>
 
-#include "Effort/EffortBank.h"
-#include "NavHeuristic.h"
-#include "NavExplorer.h"
-#include "Optimizer/SearchFrontier.h"
-#include "Optimizer/SearchStats.h"
+module vf.Optimizer.NavOptimizer.NavOptimizer;
 
-#include "BufferIndex.h"
-#include "Types/CharInterval.h"
-#include "Types/Pos.h"
-#include "Utils/Debug.h"
+import std.compat;
+import vf.Effort.EffortBank;
+import vf.Optimizer.NavOptimizer.NavHeuristic;
+import vf.Optimizer.NavOptimizer.NavExplorer;
+import vf.Optimizer.SearchFrontier;
+import vf.Optimizer.SearchStats;
+import vf.Optimizer.NavOptimizer.BufferIndex;
+import vf.Types.Lines;
+import vf.Types.Pos;
+import vf.Utils.Debug;
 
 using namespace std;
 

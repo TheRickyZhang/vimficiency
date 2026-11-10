@@ -11,15 +11,15 @@
 // Or pipe via stdin (two lines: initial then goal):
 //   echo -e 'aaa\\nbbb\\nccc\nccc\\nddd' | ./build/tests/vimfy_diff_debug
 
-#include <iostream>
-#include <string>
+#include <cstdio>
 
-#include "Optimizer/DiffPlanner/DiffState.h"
-#include "Optimizer/DiffPlanner/VimDiff.h"
-#include "Optimizer/DiffPlanner/MyersDiff.h"
-#include "Keyboard/Config.h"
-#include "Types/Lines.h"
-#include "Utils/PrettyText.h"
+import std.compat;
+import vf.Optimizer.DiffPlanner.DiffState;
+import vf.Optimizer.DiffPlanner.VimDiff;
+import vf.Optimizer.DiffPlanner.MyersDiff;
+import vf.Keyboard.Config;
+import vf.Types.Lines;
+import vf.Utils.PrettyText;
 
 using namespace std;
 

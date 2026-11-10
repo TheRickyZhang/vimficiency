@@ -1,10 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "Interpreter/SequenceDisplay.h"
-#include "Utils/PrettyText.h"
-
-#include <string>
-#include <vector>
+import std.compat;
+import vf.Interpreter.SequenceDisplay;
+import vf.Utils.PrettyText;
 
 using namespace std;
 

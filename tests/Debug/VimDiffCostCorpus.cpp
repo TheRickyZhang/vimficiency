@@ -9,16 +9,11 @@
 
 #include <gtest/gtest.h>
 
-#include <iomanip>
-#include <iostream>
-#include <random>
-#include <string>
-#include <vector>
-
-#include "Keyboard/Config.h"
-#include "Optimizer/DiffPlanner/VimDiff.h"
-#include "Types/Lines.h"
-#include "Utils/OptimizerCaseCatalog.h"
+import std.compat;
+import vf.Keyboard.Config;
+import vf.Optimizer.DiffPlanner.VimDiff;
+import vf.Types.Lines;
+import vf.tests.Utils.OptimizerCaseCatalog;
 
 using namespace std;
 

@@ -32,7 +32,7 @@ search. Single-cursor is handled as a 1-cell interval.
   you want distinct sequences to the goal (e.g. `G` and `3j` to the same
   line). Only `NavFrontier` treats the value as a per-cell cap.
 
-`LandingResult` lives in `src/Optimizer/LandingResult.h`. It is the
+`LandingResult` lives in `src/Optimizer/LandingResult.cppm`. It is the
 landing-carrying variant of `Result`.
 
 
@@ -49,7 +49,7 @@ There are 6 natural movement classes:
 | Forward-crossing | `w`, `W`, `e`, `E`, `}`, `)` | Traverses forward, may cross lines|
 | Backward-crossing | `b`, `B`, `ge`, `gE`, `{`, `(` | Traverses backward, may cross lines |
 
-**Selection logic** (`classesForSingleGoal` in `NavClassMask.h`, per goal endpoint; `classesForRange` takes the union over both endpoints, plus Up/Down when the cursor is on a multi-line range's edge line):
+**Selection logic** (`classesForSingleGoal` in `NavClassMask.cppm`, per goal endpoint; `classesForRange` takes the union over both endpoints, plus Up/Down when the cursor is on a multi-line range's edge line):
 - Same line: Left+Backward OR Right+Forward (2/6 classes)
 - Same column (different line): Up+Backward OR Down+Forward (2/6 classes)
 - Different line and column:

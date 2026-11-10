@@ -1,18 +1,12 @@
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <cmath>
-#include <iostream>
-#include <map>
-#include <string>
-#include <vector>
-
-#include "Keyboard/Config.h"
-#include "Optimizer/NavOptimizer/NavOptimizer.h"
-#include "Optimizer/NavOptimizer/NavOptimizerParams.h"
-#include "Types/CharInterval.h"
-#include "Types/CharRange.h"
-#include "Utils/OptimizerCaseCatalog.h"
+import std.compat;
+import vf.Keyboard.Config;
+import vf.Optimizer.NavOptimizer.NavOptimizer;
+import vf.Optimizer.NavOptimizer.NavOptimizerParams;
+import vf.Types.Lines;
+import vf.Types.CharRange;
+import vf.tests.Utils.OptimizerCaseCatalog;
 
 using namespace std;
 

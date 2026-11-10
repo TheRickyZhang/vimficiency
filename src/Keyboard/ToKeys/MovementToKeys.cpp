@@ -1,12 +1,11 @@
-#include "MovementToKeys.h"
+module vf.Keyboard.ToKeys.MovementToKeys;
 
-#include <string>
-#include <vector>
+import std.compat;
+import vf.Keyboard.ToKeys.MovementToKeysPrimitives;
+import vf.Utils.Debug;
 
 using namespace std;
 
-#include "MovementToKeysPrimitives.h"
-#include "Utils/Debug.h"
 
 // =============================================================================
 // Global Tokenizer

@@ -1,11 +1,9 @@
-#include "FixtureLoader.h"
-
-#include <filesystem>
-#include <fstream>
-#include <stdexcept>
-#include <string>
-
+module;
 #include <nlohmann/json.hpp>
+
+module vf.tests.Unit.Explore.FixtureLoader;
+
+import std.compat;
 
 namespace ExploreFixtures {
 namespace {

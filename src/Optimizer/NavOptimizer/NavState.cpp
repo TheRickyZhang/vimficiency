@@ -1,6 +1,11 @@
-#include "NavState.h"
-#include "Keyboard/ToKeys/CountToKeys.h"
-#include "Types/CountPrefixLimits.h"
+module;
+#include <cassert>
+
+module vf.Optimizer.NavOptimizer.NavState;
+
+import std.compat;
+import vf.Keyboard.ToKeys.CountToKeys;
+import vf.Types.CountPrefixLimits;
 
 using namespace std;
 

@@ -1,13 +1,8 @@
 // tests/Utils/SeedManager.cpp
 
-#include "SeedManager.h"
+module vf.tests.Utils.SeedManager;
 
-#include <chrono>
-#include <cstdlib>
-#include <fstream>
-#include <iostream>
-#include <random>
-#include <sstream>
+import std.compat;
 
 SeedManager& SeedManager::instance() {
   static SeedManager instance;

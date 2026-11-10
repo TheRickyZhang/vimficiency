@@ -1,7 +1,10 @@
-#include "EditToKeysPrimitives.h"
-#include "CharToKeys.h"
-
+module;
 #include <cassert>
+
+module vf.Keyboard.ToKeys.EditToKeysPrimitives;
+
+import std.compat;
+import vf.Keyboard.ToKeys.CharToKeys;
 
 using namespace std;
 

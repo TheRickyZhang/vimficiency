@@ -1,16 +1,17 @@
-#include "VimMotionUtils.h"
-#include "CharMask.h"
-#include "VimCore.h"
-#include "VimEndpointUtils.h"
-#include "Types/EdgeType.h"
-#include "Types/LineEdgeType.h"
-
-#include <algorithm>
-#include <array>
+module;
 #include <cassert>
+#include <cstdio>
 
-#include "Types/CursorPos.h"
-#include "Utils/Debug.h"
+module vf.VimCore.VimMotionUtils;
+
+import std.compat;
+import vf.VimCore.CharMask;
+import vf.VimCore.VimCore;
+import vf.VimCore.VimEndpointUtils;
+import vf.Types.EdgeType;
+import vf.Types.LineEdgeType;
+import vf.Types.CursorPos;
+import vf.Utils.Debug;
 
 using namespace std;
 

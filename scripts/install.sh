@@ -44,5 +44,5 @@ if try_prebuilt; then
 fi
 
 echo "vimficiency: building from source (Release, library only)"
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_BUILD_TESTS=OFF
+cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_BUILD_TESTS=OFF
 cmake --build build -j --target vimficiency

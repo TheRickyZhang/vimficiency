@@ -1,13 +1,14 @@
 #include <gtest/gtest.h>
 
-#include "Boundary/TransformBoundary.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/CountPenalty.h"
-#include "Optimizer/TransformOptimizer/TransformExplorer.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizerParams.h"
-#include "Effort/EffortBank.h"
-#include "Optimizer/GlobalRuntimeOptions.h"
-#include "Types/Lines.h"
+import std.compat;
+import vf.Boundary.TransformBoundary;
+import vf.Keyboard.Config;
+import vf.Optimizer.CountPenalty;
+import vf.Optimizer.TransformOptimizer.TransformExplorer;
+import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
+import vf.Effort.EffortBank;
+import vf.Optimizer.GlobalRuntimeOptions;
+import vf.Types.Lines;
 
 namespace {
 struct RuntimeOptionsGuard {

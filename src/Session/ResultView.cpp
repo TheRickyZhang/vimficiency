@@ -1,10 +1,7 @@
-#include "Session/ResultView.h"
+module vf.Session.ResultView;
 
-#include "Utils/PrettyText.h"
-
-#include <iomanip>
-#include <iterator>
-#include <sstream>
+import std.compat;
+import vf.Utils.PrettyText;
 
 using namespace std;
 

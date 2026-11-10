@@ -38,7 +38,7 @@ jobs:
         # the workflow; fail fast with a clear list instead of mid-pipeline.
         run: |
           missing=
-          for t in ccache cmake nvim jq bun g++; do
+          for t in ccache cmake ninja nvim jq bun g++; do
             command -v "$t" >/dev/null || missing="$missing $t"
           done
           [ -z "$missing" ] || { echo "missing on runner:$missing"; exit 1; }

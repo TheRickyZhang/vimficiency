@@ -6,11 +6,12 @@
 
 #include <gtest/gtest.h>
 
-#include "Interpreter/MovementInterpreter.h"
-#include "Interpreter/SequenceFormatting.h"
-#include "Interpreter/SequenceParser.h"
-#include "Keyboard/ToKeys/SequenceToKeys.h"
-#include "Keyboard/ToKeys/MovementToKeys.h"
+import std.compat;
+import vf.Interpreter.MovementInterpreter;
+import vf.Interpreter.SequenceFormatting;
+import vf.Interpreter.SequenceParser;
+import vf.Keyboard.ToKeys.SequenceToKeys;
+import vf.Keyboard.ToKeys.MovementToKeys;
 
 using namespace std;
 

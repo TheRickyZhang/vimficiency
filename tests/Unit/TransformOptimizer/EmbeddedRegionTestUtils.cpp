@@ -1,7 +1,8 @@
-#include "Unit/TransformOptimizer/EmbeddedRegionTestUtils.h"
+module vf.tests.Unit.TransformOptimizer.EmbeddedRegionTestUtils;
 
-#include "Utils/RandomBufferHelpers.h"
-#include "Utils/RandomGeneration.h"
+import std.compat;
+import vf.tests.Utils.RandomBufferHelpers;
+import vf.tests.Utils.RandomGeneration;
 
 using namespace std;
 

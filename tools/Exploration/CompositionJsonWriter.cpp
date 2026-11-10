@@ -1,10 +1,7 @@
-#include "Exploration/ExplorationCollector.h"
+module vf.tools.Exploration.ExplorationCollector;
 
-#include <fstream>
-#include <iostream>
-#include <unordered_map>
-
-#include "Exploration/SequenceChunker.h"
+import std.compat;
+import vf.tools.Exploration.SequenceChunker;
 
 using namespace std;
 

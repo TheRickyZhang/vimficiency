@@ -1,10 +1,10 @@
-#include "CompositionMotionSearch.h"
-
-#include <algorithm>
+module;
 #include <cassert>
-#include <utility>
 
-#include "Optimizer/CompositionOptimizer/CompositionNavParams.h"
+module vf.Optimizer.CompositionOptimizer.CompositionMotionSearch;
+
+import std.compat;
+import vf.Optimizer.CompositionOptimizer.CompositionNavParams;
 
 using namespace std;
 

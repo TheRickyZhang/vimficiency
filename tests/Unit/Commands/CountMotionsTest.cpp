@@ -9,15 +9,13 @@
 
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <vector>
-
-#include "Optimizer/NavOptimizer/BufferIndex.h"
-#include "Optimizer/NavOptimizer/CountableMovementPair.h"
-#include "Types/NavContext.h"
-#include "Optimizer/NavOptimizer/NavOptimizer.h"
-#include "Boundary/NavBoundary.h"
-#include "Utils/TestUtils.h"
+import std.compat;
+import vf.Optimizer.NavOptimizer.BufferIndex;
+import vf.Optimizer.NavOptimizer.CountableMovementPair;
+import vf.Types.NavContext;
+import vf.Optimizer.NavOptimizer.NavOptimizer;
+import vf.Boundary.NavBoundary;
+import vf.tests.Utils.TestUtils;
 
 using namespace std;
 

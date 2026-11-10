@@ -22,28 +22,21 @@
 // still run; nothing is written.
 
 #include <gtest/gtest.h>
-
-#include <algorithm>
-#include <cstdlib>
-#include <fstream>
-#include <iostream>
-#include <string>
-#include <vector>
-
 #include <nlohmann/json.hpp>
 
-#include "Keyboard/Config.h"
-#include "Optimizer/CompositionOptimizer/CompositionMotionSearch.h"
-#include "Optimizer/CompositionOptimizer/CompositionNavParams.h"
-#include "Optimizer/CompositionOptimizer/CompositionOptimizer.h"
-#include "Optimizer/CompositionOptimizer/CompositionSearchContext.h"
-#include "Optimizer/CompositionOptimizer/CompositionState.h"
-#include "Optimizer/CompositionOptimizer/CompositionStrategies.h"
-#include "Optimizer/NavOptimizer/NavOptimizer.h"
-#include "Types/CharInterval.h"
-#include "Types/Lines.h"
-#include "Utils/InterpreterModelReplay.h"
-#include "Utils/PrettyText.h"
+import std.compat;
+import vf.Keyboard.Config;
+import vf.Optimizer.CompositionOptimizer.CompositionMotionSearch;
+import vf.Optimizer.CompositionOptimizer.CompositionNavParams;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
+import vf.Optimizer.CompositionOptimizer.CompositionSearchContext;
+import vf.Optimizer.CompositionOptimizer.CompositionState;
+import vf.Optimizer.CompositionOptimizer.CompositionStrategies;
+import vf.Optimizer.NavOptimizer.NavOptimizer;
+import vf.Types.Lines;
+import vf.Types.Lines;
+import vf.tests.Utils.InterpreterModelReplay;
+import vf.Utils.PrettyText;
 
 using namespace std;
 using json = nlohmann::json;

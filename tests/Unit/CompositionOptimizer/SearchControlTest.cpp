@@ -9,17 +9,14 @@
 
 #include <gtest/gtest.h>
 
-#include <chrono>
-#include <string>
-#include <vector>
-
-#include "Boundary/NavBoundary.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/CompositionOptimizer/CompositionOptimizer.h"
-#include "Optimizer/SearchControl.h"
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Types/NavContext.h"
+import std.compat;
+import vf.Boundary.NavBoundary;
+import vf.Keyboard.Config;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
+import vf.Optimizer.SearchControl;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.Types.NavContext;
 
 using namespace std;
 

@@ -9,9 +9,10 @@
 
 #include <gtest/gtest.h>
 
-#include "Keyboard/Config.h"
-#include "Keyboard/Finger.h"
-#include "Keyboard/Key.h"
+import std.compat;
+import vf.Keyboard.Config;
+import vf.Keyboard.Finger;
+import vf.Keyboard.Key;
 
 TEST(KeyboardConfigConsistency, ColemakSpaceHandMatchesFinger) {
   Config cfg = Config::colemakDh();

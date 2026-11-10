@@ -7,13 +7,10 @@
 
 #include <gtest/gtest.h>
 
-#include <iomanip>
-#include <iostream>
-#include <string_view>
-
-#include "Effort/RunningEffort.h"
-#include "Keyboard/Config.h"
-#include "Keyboard/KeyedSequence.h"
+import std.compat;
+import vf.Effort.RunningEffort;
+import vf.Keyboard.Config;
+import vf.Keyboard.KeyedSequence;
 
 using namespace std;
 

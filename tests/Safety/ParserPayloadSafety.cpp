@@ -1,14 +1,12 @@
 // Safety property: payload and sequence decoders reject arbitrary bytes cleanly
 // or return stable, bounded results.
 
-#include <string>
-#include <string_view>
-
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
-#include "Interpreter/SequenceParser.h"
-#include "LuaExports/Common.h"
+import std.compat;
+import vf.Interpreter.SequenceParser;
+import vf.LuaExports.Common;
 
 using namespace std;
 

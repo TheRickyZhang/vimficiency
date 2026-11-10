@@ -13,20 +13,16 @@
 // untouched) and windowHeight() to mirror the fixed headless height into the
 // model's NavContext.
 
-#include <algorithm>
-#include <array>
-#include <string>
-#include <vector>
-
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
-#include "Interpreter/MovementInterpreter.h"
-#include "Property/PropertyDomains.h"
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Types/NavContext.h"
-#include "Utils/NeovimOracle.h"
+import std.compat;
+import vf.Interpreter.MovementInterpreter;
+import vf.tests.Property.PropertyDomains;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.Types.NavContext;
+import vf.tests.Utils.NeovimOracle;
 
 using namespace std;
 

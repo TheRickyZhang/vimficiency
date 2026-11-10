@@ -5,17 +5,14 @@
 //
 // Run: ./build/tests/vimfy_benchmarks --benchmark_filter="CompositionOptimizer.*"
 
-#include <algorithm>
-#include <string>
-#include <vector>
-
 #include <benchmark/benchmark.h>
 
-#include "Benchmarks/BenchUtils.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/CompositionOptimizer/CompositionOptimizer.h"
-#include "Utils/OptimizerCaseCatalog.h"
-#include "Utils/RandomGeneration.h"
+import std.compat;
+import vf.tests.Benchmarks.BenchUtils;
+import vf.Keyboard.Config;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
+import vf.tests.Utils.OptimizerCaseCatalog;
+import vf.tests.Utils.RandomGeneration;
 
 using namespace std;
 

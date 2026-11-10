@@ -1,7 +1,7 @@
-#include "SequenceChunker.h"
-#include "Interpreter/SequenceParser.h"
+module vf.tools.Exploration.SequenceChunker;
 
-#include <unordered_map>
+import std.compat;
+import vf.Interpreter.SequenceParser;
 
 using namespace std;
 

@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "ApprovalTestUtils.h"
-#include "Session/ResultView.h"
+import std.compat;
+import vf.tests.Approval.ApprovalTestUtils;
+import vf.Session.ResultView;
 
 namespace {
 

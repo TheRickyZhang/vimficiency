@@ -99,7 +99,7 @@ NavBoundary subsetBoundary(subset, subsetFirst, subsetLast, ...);
 
 ## $ motion missing TARGETCOL_EOL
 
-In `NavExplorer.h`, the `$` motion emitted its goal position using the 2-param Position constructor `{pos.line, dollarCol}`, which sets `targetCol = dollarCol`. The correct behavior is `targetCol = TARGETCOL_EOL` (INT_MAX), which makes subsequent vertical motions (`j`, `k`, `<C-d>`, etc.) stick to end-of-line.
+In `NavExplorer.cppm`, the `$` motion emitted its goal position using the 2-param Position constructor `{pos.line, dollarCol}`, which sets `targetCol = dollarCol`. The correct behavior is `targetCol = TARGETCOL_EOL` (INT_MAX), which makes subsequent vertical motions (`j`, `k`, `<C-d>`, etc.) stick to end-of-line.
 
 **Symptom:** Sequences like `$<C-d>` would land at the wrong column on the target line. After `$` on a line of length 10 (dollarCol=9), a subsequent `j` to a line of length 20 would go to col 9 instead of col 19.
 
@@ -296,7 +296,7 @@ lastStats = result.stats;  // Only captures the LAST iteration
 
 With `benchmark::Counter::kAvgIterations`, Google Benchmark divides the counter value by iteration count. Since only the last iteration's stats were stored, the displayed values were 1/N of one iteration instead of the true per-iteration average.
 
-**Fix:** Added `accumulateStats()` in `BenchUtils.h` that sums all fields across iterations, and changed all benchmark loops to use it:
+**Fix:** Added `accumulateStats()` in `BenchUtils.cppm` that sums all fields across iterations, and changed all benchmark loops to use it:
 ```cpp
 accumulateStats(totalStats, result.stats);
 ```

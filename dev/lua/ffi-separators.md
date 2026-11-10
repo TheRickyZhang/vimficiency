@@ -103,7 +103,7 @@ Both sections are count-framed: the parser reads exactly `N` result
 lines and `M` region lines, so a body line can never be mistaken for a
 section header, and the DEBUG trailer is only looked for between
 sections. Region lines are `payload::encodeDiffRegions`
-(`LuaExports/Common.h`) — the planner's own regions, so views highlight
+(`LuaExports/Common.cppm`) — the planner's own regions, so views highlight
 the partition the search actually ran against. `vf_compute_diffs`
 emits the same region lines with no headers.
 

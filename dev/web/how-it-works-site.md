@@ -50,7 +50,7 @@ Effort, Keyboard) plus `src/Wasm/PlannerExports.cpp`, and returns before the
 native targets. `src/Wasm/` is excluded from the `vimfy_core` glob.
 
 ```bash
-emcmake cmake -B build-wasm -DVIMF_WASM=ON -DCMAKE_BUILD_TYPE=Release
+emcmake cmake -G Ninja -B build-wasm -DVIMF_WASM=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build-wasm --target vimfy_planner_wasm
 mkdir -p web/docs/public/wasm
 cp build-wasm/wasm/vimfy_planner.js build-wasm/wasm/vimfy_planner.wasm web/docs/public/wasm/

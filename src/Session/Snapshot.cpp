@@ -1,8 +1,9 @@
+module;
 #include <cassert>
-#include <fstream>
-#include <sstream>
 
-#include "Snapshot.h"
+module vf.Session.Snapshot;
+
+import std.compat;
 
 using namespace std;
 

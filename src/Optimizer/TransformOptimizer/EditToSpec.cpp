@@ -1,4 +1,7 @@
-#include "EditToSpec.h"
+module vf.Optimizer.TransformOptimizer.EditToSpec;
+
+import std.compat;
+
 using namespace std;
 
 // =============================================================================

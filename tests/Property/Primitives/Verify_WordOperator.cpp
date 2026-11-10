@@ -6,18 +6,15 @@
 // EOF/last-line variants (de/dE), and the change-mode quirks where the
 // operator's effect differs from the delete-mode effect.
 
-#include <algorithm>
-#include <string>
-#include <vector>
-
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Utils/InterpreterModelReplay.h"
-#include "Utils/NeovimOracle.h"
-#include "Utils/OracleReplay.h"
+import std.compat;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.tests.Utils.InterpreterModelReplay;
+import vf.tests.Utils.NeovimOracle;
+import vf.tests.Utils.OracleReplay;
 
 using namespace std;
 

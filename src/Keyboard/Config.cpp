@@ -1,6 +1,6 @@
-#include "Config.h"
+module vf.Keyboard.Config;
 
-#include <vector>
+import std.compat;
 
 using namespace std;
 
@@ -252,4 +252,3 @@ void fillUniform(Config& cfg) {
   }
   cfg.weights = ScoreWeights();
 }
-

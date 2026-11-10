@@ -1,18 +1,16 @@
-#include "TransformPostExplorerEmissions.h"
-
-#include <algorithm>
+module;
 #include <cassert>
-#include <cstdlib>
-#include <utility>
-#include <vector>
 
-#include "Effort/RunningEffort.h"
-#include "Keyboard/KeyedSequence.h"
-#include "Keyboard/PhysicalKeys.h"
-#include "Types/CharRange.h"
-#include "Types/Sequence.h"
-#include "VimCore/VimEditUtils.h"
-#include "VimCore/VimMotionUtils.h"
+module vf.Optimizer.TransformOptimizer.TransformPostExplorerEmissions;
+
+import std.compat;
+import vf.Effort.RunningEffort;
+import vf.Keyboard.KeyedSequence;
+import vf.Keyboard.PhysicalKeys;
+import vf.Types.CharRange;
+import vf.Types.Sequence;
+import vf.VimCore.VimEditUtils;
+import vf.VimCore.VimMotionUtils;
 
 namespace TransformPostExplorer {
 

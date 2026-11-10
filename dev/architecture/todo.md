@@ -64,7 +64,7 @@ Any of those makes the "one preset per config" structure pay for itself.
 
 ## 2. Unify `VIMF_DEBUG` through `BuildConfig.h` and fix the source-side name
 
-**What.** `CMakeLists.txt` defines the macro `VIMF_DEBUG`, but `src/Utils/Debug.h` checks `#ifdef VIMFICIENCY_DEBUG` (different spelling). `DEBUG_ENABLED` is therefore always `false`, regardless of how the option is set. Route `VIMF_DEBUG` through `BuildConfig.h.in` (same pattern as `VIMF_TRACK_STATES`) and change `Debug.h` to read it with `#if VIMF_DEBUG`.
+**What.** `CMakeLists.txt` defines the macro `VIMF_DEBUG`, but `src/Utils/Debug.cppm` checks `#ifdef VIMFICIENCY_DEBUG` (different spelling). `DEBUG_ENABLED` is therefore always `false`, regardless of how the option is set. Route `VIMF_DEBUG` through `BuildConfig.h.in` (same pattern as `VIMF_TRACK_STATES`) and change `Debug.cppm` to read it with `#if VIMF_DEBUG`.
 
 **Why deferred.** Fixing the wiring flips `DEBUG_ENABLED` from `false` to `true` for local developer builds (the option defaults `ON`). `AnalyzeExports.cpp:117` and every `debug(...)` call site would start producing output. Not a bug per se — that was the original intent — but it's a behavior change that deserves its own PR and a tour of the call sites, not a hidden side effect of the track-states fix.
 
@@ -74,9 +74,9 @@ Any of those makes the "one preset per config" structure pay for itself.
 
 ## 3. Unify `VIMF_LEGACY_VIM` through `BuildConfig.h` and fix the source-side name
 
-**What.** Same class of bug as item 2. `CMakeLists.txt` defines `VIMF_LEGACY_VIM`, `src/VimCore/VimOptions.h` checks `VIMFICIENCY_LEGACY_VIM`. The option has never actually flipped Vim-default behavior — passing `-DVIMF_LEGACY_VIM=ON` today is a no-op.
+**What.** Same class of bug as item 2. `CMakeLists.txt` defines `VIMF_LEGACY_VIM`, `src/VimCore/VimOptions.cppm` checks `VIMFICIENCY_LEGACY_VIM`. The option has never actually flipped Vim-default behavior — passing `-DVIMF_LEGACY_VIM=ON` today is a no-op.
 
-**Why deferred.** Fixing the wiring would retroactively enable legacy-Vim option defaults (`startofline`, `joinspaces`, `Y`-yanks-line) for anyone who has ever set the flag expecting it to work. Low risk today because no current workflow sets it, but it deserves a directed audit of the `VimOptions.h` blocks + test coverage for both branches.
+**Why deferred.** Fixing the wiring would retroactively enable legacy-Vim option defaults (`startofline`, `joinspaces`, `Y`-yanks-line) for anyone who has ever set the flag expecting it to work. Low risk today because no current workflow sets it, but it deserves a directed audit of the `VimOptions.cppm` blocks + test coverage for both branches.
 
 **Threshold to revisit.**
 - A user or test case actually needs legacy-Vim defaults (right now it's pure latent infrastructure), **or**
@@ -84,9 +84,9 @@ Any of those makes the "one preset per config" structure pay for itself.
 
 ---
 
-## 4. Retire or use `DebugTracking.h`'s `Maybe<T>` pattern
+## 4. Retire or use `DebugTracking.cppm`'s `Maybe<T>` pattern
 
-**What.** `src/Optimizer/DebugTracking.h` defines a zero-overhead-when-disabled `Maybe<T>` template gated on `kDebugTrackingEnabled` (now driven by `VIMF_TRACK_STATES` via `BuildConfig.h`). It has no users. `SearchStats::exploredStates_` is just a raw `std::vector<ExploredState>` that costs a 24-byte empty-vector member per `BaseSearchStats` even with tracking off.
+**What.** `src/Optimizer/DebugTracking.cppm` defines a zero-overhead-when-disabled `Maybe<T>` template gated on `kDebugTrackingEnabled` (now driven by `VIMF_TRACK_STATES` via `BuildConfig.h`). It has no users. `SearchStats::exploredStates_` is just a raw `std::vector<ExploredState>` that costs a 24-byte empty-vector member per `BaseSearchStats` even with tracking off.
 
 **Why deferred.** The empty-vector cost is negligible and `Maybe<T>` would require rethreading accessor call sites. Not worth it for one field.
 

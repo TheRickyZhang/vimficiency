@@ -1,9 +1,10 @@
-#include "VimCore.h"
+module;
+#include <cstdio>
 
-#include <algorithm>
-#include <cassert>
+module vf.VimCore.VimCore;
 
-#include "CharMask.h"
+import std.compat;
+import vf.VimCore.CharMask;
 
 using namespace std;
 

@@ -1,11 +1,11 @@
-#include "VimEditUtils.h"
-#include "VimCore.h"
-#include "VimOptions.h"
-
-#include <algorithm>
+module;
 #include <cassert>
-#include <string_view>
-#include <vector>
+
+module vf.VimCore.VimEditUtils;
+
+import std.compat;
+import vf.VimCore.VimCore;
+import vf.VimCore.VimOptions;
 
 using namespace std;
 

@@ -76,7 +76,7 @@ require_executable() {
   fi
 
   echo "error: $path not found" >&2
-  echo "  Run: cmake -B build -DVIMF_BUILD_TESTS=ON && cmake --build build --target $target" >&2
+  echo "  Run: cmake -G Ninja -B build -DVIMF_BUILD_TESTS=ON && cmake --build build --target $target" >&2
   exit 1
 }
 
@@ -209,7 +209,7 @@ run_lua() {
   local lib="$build_dir/libvimficiency.so"
   if [[ ! -f "$lib" ]]; then
     echo "error: $lib not found" >&2
-    echo "  Run: cmake -B build && cmake --build build --target vimficiency" >&2
+    echo "  Run: cmake -G Ninja -B build && cmake --build build --target vimficiency" >&2
     exit 1
   fi
 

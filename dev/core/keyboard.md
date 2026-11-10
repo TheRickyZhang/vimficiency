@@ -6,13 +6,13 @@ The `src/Keyboard/` module handles physical keyboard representation, key mapping
 
 | Concept | Description | Source |
 |---------|-------------|--------|
-| `Key` | Physical key enum (61 keys) | `Key.h` |
-| `PhysicalKeys` | Ordered list of keys representing keystrokes | `PhysicalKeys.h` |
-| `Hand`, `Finger` | Ergonomic metadata for effort calculation | `Hand.h`, `Finger.h` |
-| `CharToKeys` | Single character → key sequence | `ToKeys/CharToKeys.h` |
-| `CommandToKeys` | Token string → key sequence map | `ToKeys/CommandToKeys.h` |
-| `CountToKeys` | Prebuilt count-prefix keys/text | `ToKeys/CountToKeys.h` |
-| `SequenceToKeys` | Vim sequence → physical keys | `ToKeys/SequenceToKeys.h` |
+| `Key` | Physical key enum (61 keys) | `Key.cppm` |
+| `PhysicalKeys` | Ordered list of keys representing keystrokes | `PhysicalKeys.cppm` |
+| `Hand`, `Finger` | Ergonomic metadata for effort calculation | `Hand.cppm`, `Finger.cppm` |
+| `CharToKeys` | Single character → key sequence | `ToKeys/CharToKeys.cppm` |
+| `CommandToKeys` | Token string → key sequence map | `ToKeys/CommandToKeys.cppm` |
+| `CountToKeys` | Prebuilt count-prefix keys/text | `ToKeys/CountToKeys.cppm` |
+| `SequenceToKeys` | Vim sequence → physical keys | `ToKeys/SequenceToKeys.cppm` |
 
 ## X Macros (`XMacroKey.inc`, `XMacroHand.inc`, `XMacroFinger.inc`, `XMacroKeyedSequence.h`)
 
@@ -77,7 +77,7 @@ keys.push_back(Key::Key_W);
 
 ## Character and String Mappings
 
-### CharToKeys (`ToKeys/CharToKeys.h`)
+### CharToKeys (`ToKeys/CharToKeys.cppm`)
 
 Maps single printable characters to their physical key sequences:
 
@@ -89,13 +89,13 @@ CharMappings::whitespace   // ' ' -> {Key_Space}
 CharMappings::digitSymbols // '!' -> {Key_Shift, Key_1}
 ```
 
-### CommandToKeys (`ToKeys/CommandToKeys.h`)
+### CommandToKeys (`ToKeys/CommandToKeys.cppm`)
 
 Maps multi-character command tokens (like `<C-d>`, `<Esc>`, `gJ`) to key sequences. Uses transparent hashing for efficient `string_view` lookups without allocation.
 
 ## Motion and Edit Mappings
 
-### MovementToKeys (`ToKeys/MovementToKeys.h`)
+### MovementToKeys (`ToKeys/MovementToKeys.cppm`)
 
 Several maps for different purposes:
 
@@ -105,9 +105,9 @@ Several maps for different purposes:
 | `ALL_MOTIONS` | All supported vim motions for parsing/validation |
 | `EXPLORABLE_MOTIONS` | Context-free motions (no target char needed), combined into `ALL_MOTIONS` |
 
-`EXPLORABLE_MOTIONS` is **not** the optimizer's search set despite the name — nothing outside `MovementToKeys.cpp` reads it; it exists only as the base of `ALL_MOTIONS`. The actual NavOptimizer search enumerates motions via `MovementToSpec` specs (`WORD_MOTIONS`, `PARAGRAPH_MOTIONS`, `SENTENCE_MOTIONS`, `SCROLL_MOTIONS`, …) and the count-search pair specs (`w/b`, `e/ge`, paragraph categories) in `Optimizer/NavOptimizer/CountableMovementPair.h`, not this map. Counted sentence motions are stateful scans in NavExplorer, not `BufferIndex` categories. Note `SCROLL_MOTIONS` is `<C-d>`/`<C-u>` only — `<C-f>`/`<C-b>` are excluded as viewport-dependent (see `MovementToSpec.cpp`).
+`EXPLORABLE_MOTIONS` is **not** the optimizer's search set despite the name — nothing outside `MovementToKeys.cpp` reads it; it exists only as the base of `ALL_MOTIONS`. The actual NavOptimizer search enumerates motions via `MovementToSpec` specs (`WORD_MOTIONS`, `PARAGRAPH_MOTIONS`, `SENTENCE_MOTIONS`, `SCROLL_MOTIONS`, …) and the count-search pair specs (`w/b`, `e/ge`, paragraph categories) in `Optimizer/NavOptimizer/CountableMovementPair.cppm`, not this map. Counted sentence motions are stateful scans in NavExplorer, not `BufferIndex` categories. Note `SCROLL_MOTIONS` is `<C-d>`/`<C-u>` only — `<C-f>`/`<C-b>` are excluded as viewport-dependent (see `MovementToSpec.cpp`).
 
-### EditToKeys (`ToKeys/EditToKeys.h`)
+### EditToKeys (`ToKeys/EditToKeys.cppm`)
 
 Similar structure for edit commands. Organized by `TransformBoundary` level (see `boundary-logic.md`).
 
@@ -121,11 +121,11 @@ Sequence "l3wfD;"
   -> Keys: {Key_L, Key_3, Key_W, Key_F, Key_Shift, Key_D, Key_Semicolon}
 ```
 
-**Important:** This is for physical effort calculation only. For semantic parsing (understanding what motions/edits are being executed), see `Interpreter/SequenceParser.h`.
+**Important:** This is for physical effort calculation only. For semantic parsing (understanding what motions/edits are being executed), see `Interpreter/SequenceParser.cppm`.
 
 ## Effort Model
 
-The `RunningEffort` class (`Effort/RunningEffort.h`) computes typing cost from `PhysicalKeys`:
+The `RunningEffort` class (`Effort/RunningEffort.cppm`) computes typing cost from `PhysicalKeys`:
 
 **Terms, each weighed by `ScoreWeights` as the key is appended:**
 - Base key cost (some keys harder than others)
@@ -151,7 +151,7 @@ and does not rely on it.
 
 1. **New physical key**: Add to `XMacroKey.inc`, update any related key metadata in `Config`
 2. **New character mapping**: Add to appropriate `CharMappings` category
-3. **New motion**: Add to `ToKeys/MovementToKeysPrimitives.h` and relevant motion maps
+3. **New motion**: Add to `ToKeys/MovementToKeysPrimitives.cppm` and relevant motion maps
 4. **New edit**: Add to `ToKeys/EditToKeysPrimitives.cpp` and relevant edit maps
 
 ## Semantics

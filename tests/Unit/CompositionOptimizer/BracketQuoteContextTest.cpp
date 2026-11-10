@@ -7,14 +7,14 @@
 // Run: ./build/tests/vimfy_unit_tests --gtest_filter="TextObjectContextTest.*"
 
 #include <gtest/gtest.h>
-#include <memory>
 
-#include "Boundary/NavBoundary.h"
-#include "Types/NavContext.h"
-#include "Optimizer/CompositionOptimizer/CompositionSearchContext.h"
-#include "Keyboard/Config.h"
-#include "Types/Lines.h"
-#include "Utils/NeovimOracle.h"
+import std.compat;
+import vf.Boundary.NavBoundary;
+import vf.Types.NavContext;
+import vf.Optimizer.CompositionOptimizer.CompositionSearchContext;
+import vf.Keyboard.Config;
+import vf.Types.Lines;
+import vf.tests.Utils.NeovimOracle;
 
 using namespace std;
 

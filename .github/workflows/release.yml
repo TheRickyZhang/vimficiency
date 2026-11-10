@@ -15,15 +15,20 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04
+            container: gcc:15-bookworm
             asset: libvimficiency-linux-x86_64.so
             lib: libvimficiency.so
           - os: ubuntu-24.04-arm
+            container: gcc:15-bookworm
             asset: libvimficiency-linux-aarch64.so
             lib: libvimficiency.so
           - os: macos-15
             asset: libvimficiency-macos-arm64.dylib
             lib: libvimficiency.dylib
     runs-on: ${{ matrix.os }}
+    # Linux builds in the official gcc image: hosted Ubuntu stops at GCC 14 and
+    # the module build needs 15. bookworm keeps the glibc floor at 2.36.
+    container: ${{ matrix.container }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,18 +40,21 @@ jobs:
           neovim-version: ${{ env.NEOVIM_VERSION }}
 
       - name: Setup deps (macOS)
+        # Apple Clang has no `import std`; Homebrew GCC does.
         if: runner.os == 'macOS'
-        run: brew install cmake neovim
+        run: brew install cmake ninja neovim gcc@15
 
       - name: Build library
         run: |
-          flags=(-DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_BUILD_TESTS=OFF)
-          if [ "$RUNNER_OS" = Linux ]; then
-            flags+=(-DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14)
-          else
-            flags+=(-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0)
+          # The C++ runtime is linked in statically so the prebuilt loads on
+          # systems whose libstdc++ predates GCC 15.
+          flags=(-DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_BUILD_TESTS=OFF
+                 -DCMAKE_SHARED_LINKER_FLAGS=-static-libstdc++)
+          if [ "$RUNNER_OS" = macOS ]; then
+            flags+=(-DCMAKE_C_COMPILER=gcc-15 -DCMAKE_CXX_COMPILER=g++-15
+                    -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0)
           fi
-          cmake -B build "${flags[@]}"
+          cmake -G Ninja -B build "${flags[@]}"
           cmake --build build -j --target vimficiency
 
       - name: Load smoke test

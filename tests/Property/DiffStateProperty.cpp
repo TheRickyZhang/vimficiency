@@ -3,17 +3,14 @@
 // Sequential application also has to match batch application because
 // CompositionOptimizer applies planned edits against changing buffers.
 
-#include <string>
-#include <utility>
-#include <vector>
-
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
-#include "Optimizer/DiffPlanner/DiffState.h"
-#include "Optimizer/DiffPlanner/MyersDiff.h"
-#include "Property/PropertyDomains.h"
-#include "Types/Lines.h"
+import std.compat;
+import vf.Optimizer.DiffPlanner.DiffState;
+import vf.Optimizer.DiffPlanner.MyersDiff;
+import vf.tests.Property.PropertyDomains;
+import vf.Types.Lines;
 
 using namespace std;
 

@@ -78,7 +78,7 @@ distinguish a real error from an empty result.
 
 ### Cost Calculation
 
-User cost is calculated using `getEffort(keyseq, config)` from `RunningEffort.h`, which:
+User cost is calculated using `getEffort(keyseq, config)` from `RunningEffort.cppm`, which:
 - Converts the sequence to physical key presses
 - Applies keyboard effort model (finger travel, hand alternation, etc.)
 - Returns total effort score

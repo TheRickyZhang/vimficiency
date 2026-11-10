@@ -1,6 +1,8 @@
-#include "Unit/CompositionOptimizer/ManualTestHelpers.h"
+#include <gtest/gtest.h>
 
-#include "Optimizer/CompositionOptimizer/PlannedEditArtifacts.h"
+import std.compat;
+import vf.tests.Unit.CompositionOptimizer.ManualTestHelpers;
+import vf.Optimizer.CompositionOptimizer.PlannedEditArtifacts;
 
 using namespace std;
 

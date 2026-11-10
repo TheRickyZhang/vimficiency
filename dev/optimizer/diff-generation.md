@@ -227,11 +227,11 @@ extends by `PS(rj+1) - PS(rj)` per char.
 
 `delCost(begin,end)` and `moveCost(begin,end)` price the raw initial span
 `[begin,end)` as the cheapest set of counted Vim commands that tile it
-(`TilingCost` in `PlannerCosts.h`, one class, two base tables). An end-anchored
+(`TilingCost` in `PlannerCosts.cppm`, one class, two base tables). An end-anchored
 DP runs from `begin`: the chunk ending at each `ri` is the cheapest `{k}`
 command across levels, `base + penalty(k)`. `penalty(k)` is the digit
 keystrokes plus the shared cognitive count penalty for the level's class
-(`CountPenalty.h`, honouring runtime overrides), 0 at `k=1` so an uncounted
+(`CountPenalty.cppm`, honouring runtime overrides), 0 at `k=1` so an uncounted
 command is just `base`:
 
 | chunk ending at `ri`       | delete (`deleteCost`) | move (`levelCost`) |

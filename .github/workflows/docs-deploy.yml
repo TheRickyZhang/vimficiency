@@ -20,6 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/setup-cmake
       - uses: ./.github/actions/setup-emscripten
       - name: Build and verify docs site
         run: scripts/build-docs-site.sh

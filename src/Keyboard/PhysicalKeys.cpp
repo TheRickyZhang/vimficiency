@@ -1,6 +1,6 @@
-#include "PhysicalKeys.h"
+module vf.Keyboard.PhysicalKeys;
 
-#include <ostream>
+import std.compat;
 
 PhysicalKeys& PhysicalKeys::append(const PhysicalKeys& ks, size_t cnt) {
   if (cnt <= 0 || ks.size() == 0) return *this;

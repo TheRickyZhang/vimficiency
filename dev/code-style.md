@@ -12,7 +12,7 @@ Baseline: **Google C++ Style Guide**, with deviations noted below.
 | Constants | `kPascalCase` | **`UPPER_SNAKE_CASE`** | `POSITION_OUTSIDE_BOUNDARY`, `MAX_PREFIX_COUNT` | We sparingly use macros (all prefixed with VIMF), so low collision risk |
 | Enum values | `kPascalCase` | **`PascalCase`** | `Mode::Normal`, `EdgeType::WordEdge` | `k` prefix is redundant with scoped enums (`enum class`) providing the namespace |
 | Namespaces | `snake_case` | **`PascalCase`** | `VimCore`, `EditCategory` | We don't need visual disambiguation; combining snake_case and camelCase function names looks bad.
-| File names | `snake_case.cc` | **`PascalCase.cpp`** | `TransformOptimizer.cpp`, `CursorPos.h` | .cpp/.h is overwhelmingly used, and we will only transition to snake_case when developing windows support.
+| File names | `snake_case.cc` | **`PascalCase.cpp`** | `TransformOptimizer.cpp`, `CursorPos.cppm` | .cpp/.h is overwhelmingly used, and we will only transition to snake_case when developing windows support.
 
 ## Common Styles following Google
 
@@ -61,9 +61,12 @@ inline constexpr bool DEBUG_ENABLED = true;
   `BracketFlags`, `TransformState`, `ParsedEdit`
 - Both may have `private:` sections; the distinction is about intent, not strict rules.
 
-### Headers & Linkage
+### Modules & Linkage
 
-- Include order: `#pragma once` → standard library → blank line → project includes
+- One named module per former header: `Name.cppm` is `export module vf.<Dir>.<Name>;`, `Name.cpp` is `module vf.<Dir>.<Name>;`
+- Unit order: `module;` + the `#include`s that must stay textual (`<cassert>`, X-macro `.inc` files) → module declaration → `import std.compat;` → `export import` / `import` lines
+- Export with one `export { ... }` block; member definitions written outside the class body go after it (Clang rejects them inside `export {}`)
+- Member functions defined in a class body are **not** implicitly inline in a named module. Write `inline` on every in-class member function definition, or importers call it out of line (measured 1.2–2.5× slower searches before the rule was applied)
 - Anonymous `namespace {}` in `.cpp` for file-local helpers (not `static`)
 
 ### Comments

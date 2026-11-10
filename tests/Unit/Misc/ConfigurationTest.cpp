@@ -6,16 +6,16 @@
 
 #include <gtest/gtest.h>
 
-#include "Types/NavContext.h"
-#include "Utils/TestUtils.h"
-
-#include "Keyboard/ToKeys/MovementToKeys.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/CountPenalty.h"
-#include "Optimizer/GlobalRuntimeOptions.h"
-#include "Boundary/NavBoundary.h"
-#include "Optimizer/NavOptimizer/NavOptimizer.h"
-#include "Effort/RunningEffort.h"
+import std.compat;
+import vf.Types.NavContext;
+import vf.tests.Utils.TestUtils;
+import vf.Keyboard.ToKeys.MovementToKeys;
+import vf.Keyboard.Config;
+import vf.Optimizer.CountPenalty;
+import vf.Optimizer.GlobalRuntimeOptions;
+import vf.Boundary.NavBoundary;
+import vf.Optimizer.NavOptimizer.NavOptimizer;
+import vf.Effort.RunningEffort;
 
 using namespace std;
 

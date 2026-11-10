@@ -3,14 +3,15 @@
 
 #include <gtest/gtest.h>
 
-#include "Boundary/NavBoundary.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/CompositionOptimizer/CompositionOptimizer.h"
-#include "Optimizer/DiffPlanner/DiffState.h"
-#include "Optimizer/DiffPlanner/MyersDiff.h"
-#include "Optimizer/DiffPlanner/VimDiff.h"
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
+import std.compat;
+import vf.Boundary.NavBoundary;
+import vf.Keyboard.Config;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
+import vf.Optimizer.DiffPlanner.DiffState;
+import vf.Optimizer.DiffPlanner.MyersDiff;
+import vf.Optimizer.DiffPlanner.VimDiff;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
 
 using namespace std;
 

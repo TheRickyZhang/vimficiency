@@ -4,7 +4,7 @@
 General-purpose utilities in `src/Utils/`.
 
 
-## Lines (`Lines.h`)
+## Lines (`Lines.cppm`)
 
 Wrapper around `vector<string>` with position-aware character access. Key methods:
 - `get(pos)` - returns char at position, `'\n'` for empty lines
@@ -18,7 +18,7 @@ See `boundary-logic.md` for when to use each variant.
 
 String manipulation helpers, including `flattenLines()` for buffer-to-string conversion used in edit distance analysis.
 
-## Sequence Formatting (`Interpreter/SequenceFormatting.h`)
+## Sequence Formatting (`Interpreter/SequenceFormatting.cppm`)
 
 Formatting utility for Vim command sequence display:
 
@@ -26,7 +26,7 @@ Formatting utility for Vim command sequence display:
 std::string formatSequenceForDisplay(std::string_view seq);
 ```
 
-**Tokenization**: Uses `parseSequenceStrings()` from `SequenceParser.h` which splits sequences into:
+**Tokenization**: Uses `parseSequenceStrings()` from `SequenceParser.cppm` which splits sequences into:
 - Motions: `w`, `3j`, `fa`, `;`, `<C-d>`
 - Edits/Changes: `ciw`, `dd`, `D`, `s`
 - Typed text: Characters typed in insert mode (between change command and `<Esc>`)
@@ -51,6 +51,6 @@ string on parse failure.
 
 **Usage**: FFI output and debug display. Raw sequences are used internally for execution and cost calculation.
 
-## Debug (`Debug.h`)
+## Debug (`Debug.cppm`)
 
 `debug()` macro for conditional debug output. Enabled when `VIMFICIENCY_DEBUG=true` (default in debug builds).

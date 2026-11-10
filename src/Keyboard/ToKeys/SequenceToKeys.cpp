@@ -1,9 +1,8 @@
-#include "SequenceToKeys.h"
-#include "CharToKeys.h"
-#include "Utils/Debug.h"
+module vf.Keyboard.ToKeys.SequenceToKeys;
 
-#include <algorithm>
-#include <cstdio>
+import std.compat;
+import vf.Keyboard.ToKeys.CharToKeys;
+import vf.Utils.Debug;
 
 namespace {
 // Render `[start, end)` of `s` as `byte/hex` pairs so non-printable bytes

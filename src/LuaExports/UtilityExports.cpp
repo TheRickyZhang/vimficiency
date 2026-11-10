@@ -1,14 +1,16 @@
-#include "LuaExports/Common.h"
-#include "Interpreter/MovementInterpreter.h"
-#include "Interpreter/SequenceFormatting.h"
-#include "Interpreter/SequenceParser.h"
-#include "Optimizer/CompositionOptimizer/CompositionOptimizerParams.h"
-#include "Optimizer/NavOptimizer/NavOptimizerParams.h"
-#include "Optimizer/OptimizerParamsBase.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizerParams.h"
-#include "Utils/Debug.h"
+#include "LuaExports/Api.h"
+#include "Utils/CheckMacro.h"
 
-#include <sstream>
+import std.compat;
+import vf.LuaExports.Common;
+import vf.Interpreter.MovementInterpreter;
+import vf.Interpreter.SequenceFormatting;
+import vf.Interpreter.SequenceParser;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizerParams;
+import vf.Optimizer.NavOptimizer.NavOptimizerParams;
+import vf.Optimizer.OptimizerParamsBase;
+import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
+import vf.Utils.Debug;
 
 using namespace std;
 namespace helpers = VF::LuaExports::helpers;

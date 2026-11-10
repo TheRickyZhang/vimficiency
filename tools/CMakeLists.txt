@@ -13,14 +13,17 @@ if(VIMF_TRACK_STATES)
     ${CMAKE_CURRENT_SOURCE_DIR}/Exploration/*.cpp
   )
 
+  file(GLOB VIMFY_EXPLORE_MODULES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/Exploration/*.cppm
+  )
+
   add_executable(vimfy_explore
     ${VIMFY_EXPLORE_SOURCES}
   )
-
-  target_include_directories(vimfy_explore
-    PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}
+  target_sources(vimfy_explore PRIVATE
+    FILE_SET CXX_MODULES BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} FILES ${VIMFY_EXPLORE_MODULES}
   )
+  vimfy_enable_modules(vimfy_explore)
 
   target_link_libraries(vimfy_explore
     PRIVATE

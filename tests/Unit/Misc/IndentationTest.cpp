@@ -10,7 +10,8 @@
 
 #include <gtest/gtest.h>
 
-#include "Optimizer/Indentation.h"
+import std.compat;
+import vf.Optimizer.Indentation;
 
 // The crash reproducer: reducing indent (from > to) is the path that enters
 // the divide loop. With sw==0 this must not divide by zero.

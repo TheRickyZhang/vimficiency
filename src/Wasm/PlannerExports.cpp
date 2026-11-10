@@ -4,21 +4,14 @@
 
 #include <emscripten.h>
 
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <string>
-#include <string_view>
-#include <vector>
-
-#include "Keyboard/Config.h"
-#include "Keyboard/ToKeys/CharToKeys.h"
-#include "Optimizer/DiffPlanner/DiffState.h"
-#include "Optimizer/DiffPlanner/PlannerCosts.h"
-#include "Optimizer/DiffPlanner/SealMatchedRuns.h"
-#include "Optimizer/DiffPlanner/VimDiff.h"
-#include "Optimizer/DiffPlanner/VimDiffTrace.h"
-#include "Types/Lines.h"
+import std.compat;
+import vf.Keyboard.Config;
+import vf.Keyboard.ToKeys.CharToKeys;
+import vf.Optimizer.DiffPlanner.DiffState;
+import vf.Optimizer.DiffPlanner.PlannerCosts;
+import vf.Optimizer.DiffPlanner.SealMatchedRuns;
+import vf.Optimizer.DiffPlanner.VimDiff;
+import vf.Types.Lines;
 
 using namespace std;
 using namespace VimDiff;

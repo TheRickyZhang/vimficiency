@@ -118,7 +118,7 @@ J plan efforts are included in `computeSuffixEditCosts()` alongside regular tran
 
 | File | Role |
 |------|------|
-| `JoinPlan.h` | JoinPlan struct definition |
+| `JoinPlan.cppm` | JoinPlan struct definition |
 | `CompositionSearchContext.cpp` | `computeJoinPlans()` implementation |
 | `CompositionOptimizer.cpp` | A* integration (J plan exploration + entry line motion search) |
 
@@ -143,7 +143,7 @@ J plan efforts are included in `computeSuffixEditCosts()` alongside regular tran
 
 ### Autoindent in Pure Insertions
 
-For `o`/`A`/`I`/`i` with multi-line insertions, `buildTypedCommands` (from `src/Optimizer/BuildTypedCommands.h`) applies autoindent strip/backspace/clear logic (see `dev/optimizer/transform-optimizer.md` § Autoindent Handling):
+For `o`/`A`/`I`/`i` with multi-line insertions, `buildTypedCommands` (from `src/Optimizer/BuildTypedCommands.cppm`) applies autoindent strip/backspace/clear logic (see `dev/optimizer/transform-optimizer.md` § Autoindent Handling):
 
 | Command | Source indent | Line prefix |
 |---------|--------------|-------------|

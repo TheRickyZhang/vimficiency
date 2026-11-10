@@ -1,17 +1,15 @@
-#include "Utils/InterpreterModelReplay.h"
-
-#include <algorithm>
-#include <array>
+module;
 #include <cassert>
-#include <optional>
-#include <string>
 
-#include "Interpreter/EditInterpreter.h"
-#include "Interpreter/MovementInterpreter.h"
-#include "Interpreter/SequenceParser.h"
-#include "Types/KeyNotation.h"
-#include "Types/Mode.h"
-#include "VimCore/VimEditUtils.h"
+module vf.tests.Utils.InterpreterModelReplay;
+
+import std.compat;
+import vf.Interpreter.EditInterpreter;
+import vf.Interpreter.MovementInterpreter;
+import vf.Interpreter.SequenceParser;
+import vf.Types.KeyNotation;
+import vf.Types.Mode;
+import vf.VimCore.VimEditUtils;
 
 using namespace std;
 

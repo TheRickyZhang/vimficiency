@@ -1,8 +1,7 @@
-#include "Utils/RandomBufferHelpers.h"
+module vf.tests.Utils.RandomBufferHelpers;
 
-#include <algorithm>
-
-#include "Utils/RandomGeneration.h"
+import std.compat;
+import vf.tests.Utils.RandomGeneration;
 
 using namespace std;
 

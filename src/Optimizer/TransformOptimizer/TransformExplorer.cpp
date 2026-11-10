@@ -1,4 +1,6 @@
-#include "TransformExplorer.h"
+module vf.Optimizer.TransformOptimizer.TransformExplorer;
+
+import std.compat;
 
 using namespace std;
 

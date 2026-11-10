@@ -1,4 +1,6 @@
-#include "CharToKeys.h"
+module vf.Keyboard.ToKeys.CharToKeys;
+
+import std.compat;
 
 namespace CharMappings {
 

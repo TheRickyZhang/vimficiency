@@ -17,7 +17,7 @@ hook (next section) on the maintainer's machine, where hardware is stable.
 
 Shared dependency setup is centralized in `.github/actions/setup-ci-deps/action.yml`.
 
-- Always installs `gcc-14` and `g++-14`
+- Runs inside the `gcc:15` container (Ubuntu 24.04 has no GCC 15 package) and installs Ninja and a pinned CMake
 - Optionally installs Neovim (version-controlled by workflow env `NEOVIM_VERSION`)
 - Caches extracted Neovim under `~/.local/neovim/<version>` with key `neovim-<os>-<version>`
 - Adds cached Neovim to `PATH` when enabled
@@ -100,7 +100,7 @@ suites) and are not comparable to the dashboard or to each other across
 structural changes. Configure the Release tree once:
 
 ```bash
-cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF \
+cmake -G Ninja -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF \
   -DVIMF_BUILD_TESTS=ON \
   -DVIMF_TRACK_STATES=OFF -DFETCHCONTENT_FULLY_DISCONNECTED=OFF
 cmake --build build-release --target vimfy_benchmarks

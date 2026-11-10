@@ -1,8 +1,10 @@
-#include "LuaExports/Common.h"
-#include "Optimizer/DiffPlanner/VimDiff.h"
-#include "Optimizer/DiffPlanner/DiffAlgorithm.h"
-#include "Optimizer/DiffPlanner/DiffState.h"
-#include "Optimizer/DiffPlanner/MyersDiff.h"
+#include "LuaExports/Api.h"
+import std.compat;
+import vf.LuaExports.Common;
+import vf.Optimizer.DiffPlanner.VimDiff;
+import vf.Optimizer.DiffPlanner.DiffAlgorithm;
+import vf.Optimizer.DiffPlanner.DiffState;
+import vf.Optimizer.DiffPlanner.MyersDiff;
 
 using namespace std;
 namespace helpers = VF::LuaExports::helpers;

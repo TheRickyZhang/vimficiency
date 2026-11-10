@@ -163,7 +163,7 @@ whole-buffer level, reserved for future per-edit views) plus `has_lines_above`/
 `below`. The full-screen viewer (`result_window.lua`) renders the above/below
 booleans as faded placeholders and prefix/suffix faded only when nonempty.
 
-## Endpoint Functions (VimEndpointUtils.h)
+## Endpoint Functions (VimEndpointUtils.cppm)
 
 Return sentinel values (`POSITION_OUTSIDE_BOUNDARY`, `LINE_OUTSIDE_BOUNDARY`, etc.) when crossing:
 

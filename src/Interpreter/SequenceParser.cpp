@@ -1,13 +1,14 @@
 // SequenceParser.cpp - Implementation of sequence parsing for animation
 
-#include "SequenceParser.h"
-#include "Interpreter/ParserChar.h"
-#include "Types/KeyNotation.h"
-#include "Keyboard/ToKeys/MovementToKeys.h"
-
+module;
 #include <cassert>
-#include <limits>
-#include <unordered_set>
+
+module vf.Interpreter.SequenceParser;
+
+import std.compat;
+import vf.Interpreter.ParserChar;
+import vf.Types.KeyNotation;
+import vf.Keyboard.ToKeys.MovementToKeys;
 
 using namespace std;
 

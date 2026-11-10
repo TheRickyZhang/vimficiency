@@ -2,20 +2,16 @@
 // must replay in Neovim from the generated initial cursor to the exact generated
 // goal buffer and goal cursor.
 
-#include <algorithm>
-#include <sstream>
-#include <string>
-#include <vector>
-
 #include <fuzztest/fuzztest.h>
 
-#include "Keyboard/Config.h"
-#include "Optimizer/CompositionOptimizer/CompositionOptimizer.h"
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Utils/NeovimOracle.h"
-#include "Property/OptimizerResultChecks.h"
-#include "Property/PropertyDomains.h"
+import std.compat;
+import vf.Keyboard.Config;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.tests.Utils.NeovimOracle;
+import vf.tests.Property.OptimizerResultChecks;
+import vf.tests.Property.PropertyDomains;
 
 using namespace std;
 

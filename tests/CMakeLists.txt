@@ -72,7 +72,16 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 4.0)
 endif()
 
 set(VIMFY_TEST_MAIN_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/TestMain.cpp)
-set(VIMFY_LUA_PAYLOAD_SOURCE ${PROJECT_SOURCE_DIR}/src/LuaExports/Payload.cpp)
+
+# Attach module interface units (ARGN) privately to a test binary.
+function(vimfy_test_modules target)
+  if(ARGN)
+    target_sources(${target} PRIVATE
+      FILE_SET CXX_MODULES BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ARGN}
+    )
+  endif()
+  vimfy_enable_modules(${target})
+endfunction()
 
 # =============================================================================
 # Shared test utilities library
@@ -89,9 +98,21 @@ list(APPEND VIMFY_TEST_UTIL_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/Unit/TransformOptimizer/EmbeddedRegionTestUtils.cpp
 )
 
+file(GLOB VIMFY_TEST_UTIL_MODULES CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/Utils/*.cppm
+)
+list(APPEND VIMFY_TEST_UTIL_MODULES
+  ${CMAKE_CURRENT_SOURCE_DIR}/Unit/TransformOptimizer/EmbeddedRegionTestUtils.cppm
+  ${CMAKE_CURRENT_SOURCE_DIR}/TestMainSupport.cppm
+)
+
 add_library(test_utils STATIC
   ${VIMFY_TEST_UTIL_SOURCES}
 )
+target_sources(test_utils PUBLIC
+  FILE_SET CXX_MODULES BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} FILES ${VIMFY_TEST_UTIL_MODULES}
+)
+vimfy_enable_modules(test_utils)
 
 target_include_directories(test_utils
   PUBLIC
@@ -120,15 +141,23 @@ list(REMOVE_ITEM VIMFY_UNIT_TEST_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/Unit/TransformOptimizer/EmbeddedRegionTestUtils.cpp
 )
 
+file(GLOB_RECURSE VIMFY_UNIT_TEST_MODULES CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/Unit/*.cppm
+)
+list(REMOVE_ITEM VIMFY_UNIT_TEST_MODULES
+  ${CMAKE_CURRENT_SOURCE_DIR}/Unit/TransformOptimizer/EmbeddedRegionTestUtils.cppm
+)
+
 add_executable(vimfy_unit_tests
   ${VIMFY_TEST_MAIN_SOURCE}
-  ${VIMFY_LUA_PAYLOAD_SOURCE}
   ${VIMFY_UNIT_TEST_SOURCES}
 )
+vimfy_test_modules(vimfy_unit_tests ${VIMFY_UNIT_TEST_MODULES})
 
 target_link_libraries(vimfy_unit_tests
   PRIVATE
     test_utils
+    vimfy_lua_common
     GTest::gtest
     nlohmann_json::nlohmann_json
 )
@@ -140,9 +169,14 @@ file(GLOB VIMFY_APPROVAL_TEST_SOURCES CONFIGURE_DEPENDS
   ${CMAKE_CURRENT_SOURCE_DIR}/Approval/*.cpp
 )
 
+file(GLOB VIMFY_APPROVAL_TEST_MODULES CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/Approval/*.cppm
+)
+
 add_executable(vimfy_approval_tests
   ${VIMFY_APPROVAL_TEST_SOURCES}
 )
+vimfy_test_modules(vimfy_approval_tests ${VIMFY_APPROVAL_TEST_MODULES})
 
 target_link_libraries(vimfy_approval_tests
   PRIVATE
@@ -177,9 +211,14 @@ file(GLOB_RECURSE VIMFY_PROPERTY_TEST_SOURCES CONFIGURE_DEPENDS
   ${CMAKE_CURRENT_SOURCE_DIR}/Property/*.cpp
 )
 
+file(GLOB_RECURSE VIMFY_PROPERTY_TEST_MODULES CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/Property/*.cppm
+)
+
 add_executable(vimfy_property_tests
   ${VIMFY_PROPERTY_TEST_SOURCES}
 )
+vimfy_test_modules(vimfy_property_tests ${VIMFY_PROPERTY_TEST_MODULES})
 
 target_link_libraries(vimfy_property_tests
   PRIVATE
@@ -202,12 +241,12 @@ file(GLOB VIMFY_SAFETY_TEST_SOURCES CONFIGURE_DEPENDS
 
 add_executable(vimfy_safety_tests
   ${VIMFY_SAFETY_TEST_SOURCES}
-  ${VIMFY_LUA_PAYLOAD_SOURCE}
 )
+vimfy_test_modules(vimfy_safety_tests)
 
 target_link_libraries(vimfy_safety_tests
   PRIVATE
-    vimfy_core
+    vimfy_lua_common
 )
 
 link_fuzztest(vimfy_safety_tests)
@@ -244,9 +283,14 @@ file(GLOB VIMFY_BENCHMARK_SOURCES CONFIGURE_DEPENDS
   ${CMAKE_CURRENT_SOURCE_DIR}/Benchmarks/*.cpp
 )
 
+file(GLOB VIMFY_BENCHMARK_MODULES CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/Benchmarks/*.cppm
+)
+
 add_executable(vimfy_benchmarks
   ${VIMFY_BENCHMARK_SOURCES}
 )
+vimfy_test_modules(vimfy_benchmarks ${VIMFY_BENCHMARK_MODULES})
 
 target_link_libraries(vimfy_benchmarks
   PRIVATE
@@ -270,6 +314,7 @@ list(REMOVE_ITEM VIMFY_DEBUG_TEST_SOURCES
 add_executable(vimfy_debug
   ${VIMFY_DEBUG_TEST_SOURCES}
 )
+vimfy_test_modules(vimfy_debug)
 
 target_link_libraries(vimfy_debug
   PRIVATE
@@ -282,6 +327,7 @@ target_link_libraries(vimfy_debug
 add_executable(vimfy_diff_debug
   Debug/DiffDebug.cpp
 )
+vimfy_test_modules(vimfy_diff_debug)
 
 target_link_libraries(vimfy_diff_debug
   PRIVATE

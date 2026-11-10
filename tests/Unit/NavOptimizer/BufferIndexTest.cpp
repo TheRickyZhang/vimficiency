@@ -9,13 +9,11 @@
 
 #include <gtest/gtest.h>
 
-#include <memory>
-#include <vector>
-
-#include "Optimizer/NavOptimizer/BufferIndex.h"
-#include "Types/Lines.h"
-#include "Types/Pos.h"
-#include "Utils/NeovimOracle.h"
+import std.compat;
+import vf.Optimizer.NavOptimizer.BufferIndex;
+import vf.Types.Lines;
+import vf.Types.Pos;
+import vf.tests.Utils.NeovimOracle;
 
 class BufferIndexEmptyLine : public ::testing::Test {
 protected:

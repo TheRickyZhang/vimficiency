@@ -1,20 +1,20 @@
-#include "EditInterpreter.h"
-#include "Interpreter/EditHash.h"
-#include "VimCore/CharMask.h"
-#include "VimCore/VimCore.h"
-#include "VimCore/VimEditUtils.h"
-#include "VimCore/VimEndpointUtils.h"
-#include "VimCore/VimMotionUtils.h"
-#include "VimCore/VimOptions.h"
-#include "VimCore/VimCore.h"
-#include "Types/KeyNotation.h"
-#include "Utils/Debug.h"
-#include "Types/Lines.h"
-
-#include <algorithm>
+module;
 #include <cassert>
-#include <limits>
-#include <optional>
+#include <cstdio>
+
+module vf.Interpreter.EditInterpreter;
+
+import std.compat;
+import vf.Interpreter.EditHash;
+import vf.VimCore.CharMask;
+import vf.VimCore.VimCore;
+import vf.VimCore.VimEditUtils;
+import vf.VimCore.VimEndpointUtils;
+import vf.VimCore.VimMotionUtils;
+import vf.VimCore.VimOptions;
+import vf.Types.KeyNotation;
+import vf.Utils.Debug;
+import vf.Types.Lines;
 
 using namespace std;
 

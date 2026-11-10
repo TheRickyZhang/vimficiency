@@ -1,4 +1,7 @@
-#include "Unit/TransformOptimizer/ManualTestHelpers.h"
+#include <gtest/gtest.h>
+
+import std.compat;
+import vf.tests.Unit.TransformOptimizer.ManualTestHelpers;
 
 using namespace std;
 

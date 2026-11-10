@@ -1,9 +1,10 @@
-#include "LuaExports/Common.h"
+module;
+#include "LuaExports/Api.h"
 
-#include "Interpreter/SequenceParser.h"
+module vf.LuaExports.Common;
 
-#include <algorithm>
-#include <cstdlib>
+import std.compat;
+import vf.Interpreter.SequenceParser;
 
 using namespace std;
 

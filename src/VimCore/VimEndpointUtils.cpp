@@ -1,16 +1,15 @@
-#include "VimEndpointUtils.h"
-#include "CharMask.h"
-#include "VimCore.h"
-#include "VimEditUtils.h"
-#include "VimMotionUtils.h"
+module;
+#include <cstdio>
 
-#include <algorithm>
-#include <cassert>
-#include <optional>
-#include <utility>
+module vf.VimCore.VimEndpointUtils;
 
-#include "Boundary/TransformBoundary.h"
-#include "Types/CursorPos.h"
+import std.compat;
+import vf.VimCore.CharMask;
+import vf.VimCore.VimCore;
+import vf.VimCore.VimEditUtils;
+import vf.VimCore.VimMotionUtils;
+import vf.Boundary.TransformBoundary;
+import vf.Types.CursorPos;
 
 using namespace std;
 

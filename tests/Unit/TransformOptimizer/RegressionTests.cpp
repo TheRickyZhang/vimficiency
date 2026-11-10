@@ -3,26 +3,24 @@
 // Regression tests for TransformOptimizer edge cases.
 // Run: ./build/tests/vimfy_unit_tests --gtest_filter="TransformOptimizerRegression.*"
 
+#include <gtest/gtest.h>
 #include <cassert>
 
-#include <gtest/gtest.h>
-
-#include <vector>
-
-#include "Boundary/TransformBoundary.h"
-#include "Effort/EffortBank.h"
-#include "Interpreter/EditInterpreter.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/TransformOptimizer/TransformExplorer.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizer.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizerParams.h"
-#include "Optimizer/TransformOptimizer/TransformPostExplorerEmissions.h"
-#include "Types/Mode.h"
-#include "Types/CursorPos.h"
-#include "Utils/NeovimOracle.h"
-#include "Utils/OracleReplay.h"
-#include "Types/Lines.h"
-#include "VimCore/VimEndpointUtils.h"
+import std.compat;
+import vf.Boundary.TransformBoundary;
+import vf.Effort.EffortBank;
+import vf.Interpreter.EditInterpreter;
+import vf.Keyboard.Config;
+import vf.Optimizer.TransformOptimizer.TransformExplorer;
+import vf.Optimizer.TransformOptimizer.TransformOptimizer;
+import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
+import vf.Optimizer.TransformOptimizer.TransformPostExplorerEmissions;
+import vf.Types.Mode;
+import vf.Types.CursorPos;
+import vf.tests.Utils.NeovimOracle;
+import vf.tests.Utils.OracleReplay;
+import vf.Types.Lines;
+import vf.VimCore.VimEndpointUtils;
 
 using namespace std;
 

@@ -1,10 +1,10 @@
-#include "OracleReplay.h"
+module;
+#include <gtest/gtest.h>
 
-#include <exception>
-#include <sstream>
-#include <string>
+module vf.tests.Utils.OracleReplay;
 
-#include "Utils/PrettyText.h"
+import std.compat;
+import vf.Utils.PrettyText;
 
 using namespace std;
 

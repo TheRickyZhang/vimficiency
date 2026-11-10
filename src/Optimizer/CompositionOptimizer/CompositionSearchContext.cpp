@@ -1,19 +1,17 @@
-#include "CompositionSearchContext.h"
-
-#include <algorithm>
+module;
 #include <cassert>
-#include <chrono>
-#include <cstdlib>
-#include <iostream>
-#include <limits>
+#include "Utils/CheckMacro.h"
 
-#include "PlannedEditArtifacts.h"
-#include "Optimizer/DiffPlanner/VimDiff.h"
-#include "Optimizer/DiffPlanner/DiffAlgorithm.h"
-#include "Optimizer/DiffPlanner/MyersDiff.h"
-#include "Optimizer/SearchControl.h"
-#include "Utils/Debug.h"
-#include "Utils/PrettyText.h"
+module vf.Optimizer.CompositionOptimizer.CompositionSearchContext;
+
+import std.compat;
+import vf.Optimizer.CompositionOptimizer.PlannedEditArtifacts;
+import vf.Optimizer.DiffPlanner.VimDiff;
+import vf.Optimizer.DiffPlanner.DiffAlgorithm;
+import vf.Optimizer.DiffPlanner.MyersDiff;
+import vf.Optimizer.SearchControl;
+import vf.Utils.Debug;
+import vf.Utils.PrettyText;
 
 using namespace std;
 

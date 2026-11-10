@@ -4,10 +4,11 @@
 
 #include <gtest/gtest.h>
 
-#include "Boundary/TransformBoundary.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizer.h"
-#include "Types/Lines.h"
+import std.compat;
+import vf.Boundary.TransformBoundary;
+import vf.Keyboard.Config;
+import vf.Optimizer.TransformOptimizer.TransformOptimizer;
+import vf.Types.Lines;
 
 using namespace std;
 

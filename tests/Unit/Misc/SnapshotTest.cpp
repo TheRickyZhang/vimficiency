@@ -7,7 +7,8 @@
 
 #include <gtest/gtest.h>
 
-#include "Session/Snapshot.h"
+import std.compat;
+import vf.Session.Snapshot;
 
 namespace {
 

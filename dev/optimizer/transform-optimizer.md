@@ -114,7 +114,7 @@ TODO may need more elaboration
 
 ## Auto-indent Handling
 
-When `VimOptions::autoindent()` is true (Neovim default), entering insert mode via `cc`/`c{motion}` copies leading whitespace from the source line. Each subsequent `<CR>` copies indent from the current line. The `buildTypedCommands` function (in `src/Optimizer/BuildTypedCommands.h`, shared by TransformOptimizer and CompositionOptimizer) accounts for this:
+When `VimOptions::autoindent()` is true (Neovim default), entering insert mode via `cc`/`c{motion}` copies leading whitespace from the source line. Each subsequent `<CR>` copies indent from the current line. The `buildTypedCommands` function (in `src/Optimizer/BuildTypedCommands.cppm`, shared by TransformOptimizer and CompositionOptimizer) accounts for this:
 
 
 | Case | Condition | Action |

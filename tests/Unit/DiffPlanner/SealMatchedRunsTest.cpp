@@ -1,13 +1,11 @@
 #include <gtest/gtest.h>
 
-#include <string>
-#include <vector>
-
-#include "Keyboard/Config.h"
-#include "Optimizer/DiffPlanner/PlannerCosts.h"
-#include "Optimizer/DiffPlanner/SealMatchedRuns.h"
-#include "Optimizer/DiffPlanner/VimDiff.h"
-#include "Types/Lines.h"
+import std.compat;
+import vf.Keyboard.Config;
+import vf.Optimizer.DiffPlanner.PlannerCosts;
+import vf.Optimizer.DiffPlanner.SealMatchedRuns;
+import vf.Optimizer.DiffPlanner.VimDiff;
+import vf.Types.Lines;
 
 using namespace std;
 using namespace VimDiff;

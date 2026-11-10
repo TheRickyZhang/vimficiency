@@ -1,12 +1,13 @@
 #include <gtest/gtest.h>
 
-#include "Optimizer/CompositionOptimizer/CompositionOptimizer.h"
-#include "Optimizer/CompositionOptimizer/EditSequenceSpan.h"
-#include "Keyboard/Config.h"
-#include "Boundary/NavBoundary.h"
-#include "Types/Lines.h"
-#include "Types/CursorPos.h"
-#include "Types/NavContext.h"
+import std.compat;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
+import vf.Optimizer.CompositionOptimizer.EditSequenceSpan;
+import vf.Keyboard.Config;
+import vf.Boundary.NavBoundary;
+import vf.Types.Lines;
+import vf.Types.CursorPos;
+import vf.Types.NavContext;
 
 using namespace std;
 

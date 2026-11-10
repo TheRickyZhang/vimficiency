@@ -1,10 +1,6 @@
-#include "MyersDiff.h"
+module vf.Optimizer.DiffPlanner.MyersDiff;
 
-#include <algorithm>
-#include <cctype>
-#include <string>
-#include <utility>
-#include <vector>
+import std.compat;
 
 using namespace std;
 

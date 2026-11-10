@@ -1,8 +1,7 @@
-#include "SealMatchedRuns.h"
+module vf.Optimizer.DiffPlanner.SealMatchedRuns;
 
-#include <vector>
-
-#include "MyersDiff.h"
+import std.compat;
+import vf.Optimizer.DiffPlanner.MyersDiff;
 
 using namespace std;
 

@@ -1,3 +1,7 @@
+#include <gtest/gtest.h>
+
+import std.compat;
+
 /*
 TEST_F(NeovimOracleDebug, DISABLED_InvestigateBackspaceAutoindent) {
   // Test: Does <BS> delete autoindent space after <CR>?

@@ -7,17 +7,14 @@
 
 #include <gtest/gtest.h>
 
-#include <set>
-#include <string>
-
-#include "Boundary/NavBoundary.h"
-#include "Keyboard/Config.h"
-#include "Explore/Explore.h"
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Types/NavContext.h"
-
-#include "Unit/Explore/FixtureLoader.h"
+import std.compat;
+import vf.Boundary.NavBoundary;
+import vf.Keyboard.Config;
+import vf.Explore.Explore;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.Types.NavContext;
+import vf.tests.Unit.Explore.FixtureLoader;
 
 using namespace std;
 

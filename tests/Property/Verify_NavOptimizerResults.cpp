@@ -2,24 +2,20 @@
 // must replay in Neovim on the full buffer and land at the requested sub-buffer
 // target without relying on motion semantics outside the boundary.
 
-#include <algorithm>
-#include <sstream>
-#include <string>
-#include <vector>
-
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
-#include "Boundary/NavBoundary.h"
-#include "Interpreter/MovementInterpreter.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/NavOptimizer/NavOptimizer.h"
-#include "Property/PropertyDomains.h"
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Types/NavContext.h"
-#include "Utils/NeovimOracle.h"
-#include "Utils/OracleReplay.h"
+import std.compat;
+import vf.Boundary.NavBoundary;
+import vf.Interpreter.MovementInterpreter;
+import vf.Keyboard.Config;
+import vf.Optimizer.NavOptimizer.NavOptimizer;
+import vf.tests.Property.PropertyDomains;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.Types.NavContext;
+import vf.tests.Utils.NeovimOracle;
+import vf.tests.Utils.OracleReplay;
 
 using namespace std;
 

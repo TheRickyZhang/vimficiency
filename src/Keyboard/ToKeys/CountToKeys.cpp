@@ -1,11 +1,10 @@
-#include "CountToKeys.h"
-
-#include "Keyboard/PhysicalKeys.h"
-
-#include <array>
+module;
 #include <cassert>
-#include <string>
-#include <string_view>
+
+module vf.Keyboard.ToKeys.CountToKeys;
+
+import std.compat;
+import vf.Keyboard.PhysicalKeys;
 
 namespace CountToKeys {
 namespace {

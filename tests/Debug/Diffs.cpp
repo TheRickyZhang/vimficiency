@@ -1,3 +1,7 @@
+#include <gtest/gtest.h>
+
+import std.compat;
+
 /*
 TEST_F(DebugTest, DISABLED_InvestigatePureInsertionDiffs) {
   cerr << "=== Pure Insertion Diff Investigation ===" << endl;

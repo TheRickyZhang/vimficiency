@@ -33,8 +33,11 @@ jobs:
   # expression inside an assertion body (missing method, typo, wrong type)
   # is invisible. A dedicated Debug build catches that class of bug on every
   # push. One matrix entry, ~2 min extra with ccache; cheap insurance.
+  # Hosted Ubuntu images stop at GCC 14; the module build needs GCC 15, so
+  # both build jobs run in the official gcc image (glibc 2.36 via bookworm).
   debug-build:
     runs-on: ubuntu-latest
+    container: gcc:15-bookworm
     needs: dependency-lint
     steps:
       - uses: actions/checkout@v4
@@ -53,13 +56,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/_deps
-          key: deps-v3-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt') }}
-          restore-keys: deps-v3-
+          key: deps-v4-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt') }}
+          restore-keys: deps-v4-
 
       - name: Build (Debug)
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Debug -DVIMF_BUILD_TESTS=ON \
-            -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 \
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Debug -DVIMF_BUILD_TESTS=ON \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           cmake --build build -j$(nproc)
 
@@ -71,14 +73,14 @@ jobs:
       # Lives here rather than in `test` because this job finishes first.
       - name: Build tracking-enabled exploration target
         run: |
-          cmake -B build_track -DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_BUILD_TESTS=ON \
+          cmake -G Ninja -B build_track -DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_BUILD_TESTS=ON \
             -DVIMF_TRACK_STATES=ON \
-            -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           cmake --build build_track --target vimfy_explore -j$(nproc)
 
   test:
     runs-on: ubuntu-latest
+    container: gcc:15-bookworm
     needs: dependency-lint
     steps:
       - uses: actions/checkout@v4
@@ -97,14 +99,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/_deps
-          key: deps-v3-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt') }}
-          restore-keys: deps-v3-
+          key: deps-v4-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt') }}
+          restore-keys: deps-v4-
 
       - name: Build
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_BUILD_TESTS=ON \
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_BUILD_TESTS=ON \
             -DVIMF_TRACK_STATES=OFF \
-            -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           # Only what the gate runs; debug-build compiles every target.
           cmake --build build -j$(nproc) --target \

@@ -1,5 +1,27 @@
-cmake_minimum_required(VERSION 3.20)
+# 4.3 is the first release whose `import std` covers GCC; the gate UUID below
+# changes per release and must be set before project().
+cmake_minimum_required(VERSION 4.3)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 4.4)
+  set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "f35a9ac6-8463-4d38-8eec-5d6008153e7d")
+else()
+  set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
+endif()
+
+if(NOT CMAKE_GENERATOR MATCHES "Ninja")
+  message(FATAL_ERROR "C++ modules need the Ninja generator: cmake -G Ninja -B build ...")
+endif()
+
 project(vimficiency VERSION 0.1.1 LANGUAGES CXX)
+
+# Third-party targets inherit C++23 and would otherwise be dependency-scanned
+# for modules they don't use; only project targets opt in.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+function(vimfy_enable_modules target)
+  set_target_properties(${target} PROPERTIES
+    CXX_SCAN_FOR_MODULES ON
+    CXX_MODULE_STD ON
+  )
+endfunction()
 
 # Default CMAKE_BUILD_TYPE to Debug for local iteration when none is specified.
 # Single-config generators (Make, Ninja) leave `CMAKE_BUILD_TYPE` empty by
@@ -87,38 +109,122 @@ configure_file(
 
 # Planner-only WebAssembly module for the docs site's interactive explainer
 # (dev/web/how-it-works-site.md). Needs the Emscripten toolchain:
-#   emcmake cmake -B build-wasm -DVIMF_WASM=ON -DCMAKE_BUILD_TYPE=Release
+#   emcmake cmake -G Ninja -B build-wasm -DVIMF_WASM=ON -DCMAKE_BUILD_TYPE=Release
 #   cmake --build build-wasm --target vimfy_planner_wasm
 # Explicit source list rather than the glob: the module must stay the planner
 # closure (no Lua exports, CLI, fast_float, or tests), and growing it should be
-# a visible decision.
+# a visible decision. The list is the transitive import closure of
+# PlannerExports.cpp; every module interface needs its implementation units too.
 option(VIMF_WASM "Build the planner-only WebAssembly module (requires emcmake)" OFF)
 if(VIMF_WASM)
   if(NOT EMSCRIPTEN)
-    message(FATAL_ERROR "VIMF_WASM needs the Emscripten toolchain: emcmake cmake -B build-wasm -DVIMF_WASM=ON")
+    message(FATAL_ERROR "VIMF_WASM needs the Emscripten toolchain: emcmake cmake -G Ninja -B build-wasm -DVIMF_WASM=ON")
   endif()
+  # Directory-wide rather than per target: the std module CMake builds for
+  # `import std` must match the importers' -fPIC setting.
+  set(CMAKE_POSITION_INDEPENDENT_CODE OFF)
+  # emcc does not answer `-print-file-name=libc++.modules.json`, and the
+  # description Emscripten ships omits the directory holding the `std/*.inc`
+  # files its std.cppm includes, so generate a complete one.
+  set(_vimfy_libcxx_modules ${EMSCRIPTEN_ROOT_PATH}/system/lib/libcxx/modules)
+  set(CMAKE_CXX_STDLIB_MODULES_JSON ${CMAKE_CURRENT_BINARY_DIR}/libc++.modules.json)
+  file(WRITE ${CMAKE_CXX_STDLIB_MODULES_JSON} "{
+  \"version\": 1,
+  \"revision\": 1,
+  \"modules\": [
+    {
+      \"logical-name\": \"std\",
+      \"source-path\": \"${_vimfy_libcxx_modules}/prebuilt/share/libc++/v1/std.cppm\",
+      \"is-std-library\": true,
+      \"local-arguments\": {
+        \"system-include-directories\": [
+          \"${_vimfy_libcxx_modules}/prebuilt/share/libc++/v1\",
+          \"${_vimfy_libcxx_modules}\"
+        ]
+      }
+    },
+    {
+      \"logical-name\": \"std.compat\",
+      \"source-path\": \"${_vimfy_libcxx_modules}/prebuilt/share/libc++/v1/std.compat.cppm\",
+      \"is-std-library\": true,
+      \"local-arguments\": {
+        \"system-include-directories\": [
+          \"${_vimfy_libcxx_modules}/prebuilt/share/libc++/v1\",
+          \"${_vimfy_libcxx_modules}\"
+        ]
+      }
+    }
+  ]
+}
+")
   add_executable(vimfy_planner_wasm
     src/Wasm/PlannerExports.cpp
-    src/Optimizer/DiffPlanner/VimDiff.cpp
-    src/Optimizer/DiffPlanner/PlannerCosts.cpp
-    src/Optimizer/DiffPlanner/SealMatchedRuns.cpp
-    src/Optimizer/DiffPlanner/MyersDiff.cpp
-    src/Optimizer/DiffPlanner/DiffState.cpp
-    src/Boundary/TransformBoundary.cpp
     src/Boundary/BoundaryContext.cpp
+    src/Boundary/TransformBoundary.cpp
     src/Effort/RunningEffort.cpp
+    src/Interpreter/SequenceParser.cpp
+    src/Interpreter/SequenceStream.cpp
     src/Keyboard/Config.cpp
     src/Keyboard/PhysicalKeys.cpp
     src/Keyboard/ToKeys/CharToKeys.cpp
     src/Keyboard/ToKeys/CommandToKeys.cpp
-    src/Keyboard/ToKeys/SequenceToKeys.cpp
+    src/Keyboard/ToKeys/CountToKeys.cpp
     src/Keyboard/ToKeys/MovementToKeys.cpp
     src/Keyboard/ToKeys/MovementToKeysPrimitives.cpp
-    src/Keyboard/ToKeys/EditToKeys.cpp
-    src/Keyboard/ToKeys/EditToKeysPrimitives.cpp
-    src/Keyboard/ToKeys/CountToKeys.cpp
+    src/Keyboard/ToKeys/SequenceToKeys.cpp
+    src/Optimizer/DiffPlanner/DiffState.cpp
+    src/Optimizer/DiffPlanner/MyersDiff.cpp
+    src/Optimizer/DiffPlanner/PlannerCosts.cpp
+    src/Optimizer/DiffPlanner/SealMatchedRuns.cpp
+    src/Optimizer/DiffPlanner/VimDiff.cpp
     src/Types/CharInterval.cpp
+    src/Utils/Debug.cpp
   )
+  target_sources(vimfy_planner_wasm PRIVATE
+    FILE_SET CXX_MODULES BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src FILES
+    src/Boundary/BoundaryContext.cppm
+    src/Boundary/TransformBoundary.cppm
+    src/Effort/RunningEffort.cppm
+    src/Interpreter/ParserChar.cppm
+    src/Interpreter/SequenceParser.cppm
+    src/Keyboard/Config.cppm
+    src/Keyboard/Finger.cppm
+    src/Keyboard/Hand.cppm
+    src/Keyboard/Key.cppm
+    src/Keyboard/KeyedSequence.cppm
+    src/Keyboard/PhysicalKeys.cppm
+    src/Keyboard/ToKeys/CharToKeys.cppm
+    src/Keyboard/ToKeys/CommandToKeys.cppm
+    src/Keyboard/ToKeys/CountToKeys.cppm
+    src/Keyboard/ToKeys/MovementToKeys.cppm
+    src/Keyboard/ToKeys/MovementToKeysPrimitives.cppm
+    src/Keyboard/ToKeys/SequenceToKeys.cppm
+    src/Optimizer/CountPenalty.cppm
+    src/Optimizer/DiffPlanner/DiffState.cppm
+    src/Optimizer/DiffPlanner/MyersDiff.cppm
+    src/Optimizer/DiffPlanner/PlannerCosts.cppm
+    src/Optimizer/DiffPlanner/SealMatchedRuns.cppm
+    src/Optimizer/DiffPlanner/VimDiff.cppm
+    src/Optimizer/GlobalRuntimeOptions.cppm
+    src/Types/BracketFlags.cppm
+    src/Types/CharInterval.cppm
+    src/Types/CharLineRange.cppm
+    src/Types/CharRange.cppm
+    src/Types/CountPrefixLimits.cppm
+    src/Types/CursorPos.cppm
+    src/Types/KeyNotation.cppm
+    src/Types/LineCharRange.cppm
+    src/Types/Lines.cppm
+    src/Types/NoChar.cppm
+    src/Types/Pos.cppm
+    src/Types/QuoteFlags.cppm
+    src/Types/Sequence.cppm
+    src/Types/Token.cppm
+    src/Utils/Debug.cppm
+    src/Utils/PrettyText.cppm
+    src/VimCore/CharMask.cppm
+  )
+  vimfy_enable_modules(vimfy_planner_wasm)
   target_include_directories(vimfy_planner_wasm PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_BINARY_DIR}/generated
@@ -130,7 +236,6 @@ if(VIMF_WASM)
     OUTPUT_NAME vimfy_planner
     SUFFIX ".js"
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/wasm
-    POSITION_INDEPENDENT_CODE OFF
   )
   # No exception catching: the wrapper sanitizes input so the one throwing
   # call in the closure (CHAR_TO_KEYS.at) cannot fire.
@@ -165,8 +270,16 @@ file(GLOB_RECURSE VIMFY_CORE_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
 )
 list(FILTER VIMFY_CORE_SOURCES EXCLUDE REGEX [[/src/(LuaExports/|Wasm/|lua_exports\.cpp$|main\.cpp$)]])
+file(GLOB_RECURSE VIMFY_CORE_MODULES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm
+)
+list(FILTER VIMFY_CORE_MODULES EXCLUDE REGEX [[/src/(LuaExports/|Wasm/)]])
 
 add_library(vimfy_core STATIC ${VIMFY_CORE_SOURCES})
+target_sources(vimfy_core PUBLIC
+    FILE_SET CXX_MODULES BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src FILES ${VIMFY_CORE_MODULES}
+)
+vimfy_enable_modules(vimfy_core)
 target_link_libraries(vimfy_core PUBLIC fast_float)
 
 # We can reference everything under src/ absolutely. The generated/ directory
@@ -185,19 +298,38 @@ target_compile_definitions(vimfy_core PUBLIC
     $<$<BOOL:${VIMF_LEGACY_VIM}>:VIMF_LEGACY_VIM>
 )
 
+# The LuaExports module interfaces plus the payload/logic code that tests
+# exercise without the FFI entry points. A separate target because a module
+# interface can only be built once: tests import these instead of recompiling
+# Payload.cpp into each binary.
+file(GLOB VIMFY_LUA_COMMON_MODULES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/LuaExports/*.cppm
+)
+add_library(vimfy_lua_common STATIC
+    src/LuaExports/Payload.cpp
+    src/LuaExports/Logic.cpp
+)
+target_sources(vimfy_lua_common PUBLIC
+    FILE_SET CXX_MODULES BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src FILES ${VIMFY_LUA_COMMON_MODULES}
+)
+vimfy_enable_modules(vimfy_lua_common)
+target_link_libraries(vimfy_lua_common PUBLIC vimfy_core)
+
 # SHARED library for Neovim/Lua direct usage
 file(GLOB VIMFY_LUA_EXPORT_SOURCES CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/LuaExports/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/LuaExports/*Exports.cpp
 )
 
 add_library(vimficiency SHARED
     src/lua_exports.cpp
     ${VIMFY_LUA_EXPORT_SOURCES}
 )
-target_link_libraries(vimficiency PRIVATE vimfy_core)
+vimfy_enable_modules(vimficiency)
+target_link_libraries(vimficiency PRIVATE vimfy_lua_common)
 
 # CLI for independent testing
 add_executable(vimficiency_cli src/main.cpp)
+vimfy_enable_modules(vimficiency_cli)
 target_link_libraries(vimficiency_cli PRIVATE vimfy_core)
 
 if(VIMF_BUILD_TESTS)

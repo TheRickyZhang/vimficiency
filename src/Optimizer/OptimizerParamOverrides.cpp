@@ -1,16 +1,13 @@
-#include "OptimizerParamOverrides.h"
-
-#include <charconv>
-#include <optional>
-#include <set>
-#include <string>
-#include <string_view>
-
+module;
 #include <fast_float/fast_float.h>
+#include "Optimizer/OptimizerParamFields.h"
 
-#include "Optimizer/CompositionOptimizer/CompositionOptimizerParams.h"
-#include "Optimizer/NavOptimizer/NavOptimizerParams.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizerParams.h"
+module vf.Optimizer.OptimizerParamOverrides;
+
+import std.compat;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizerParams;
+import vf.Optimizer.NavOptimizer.NavOptimizerParams;
+import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
 
 namespace {
 

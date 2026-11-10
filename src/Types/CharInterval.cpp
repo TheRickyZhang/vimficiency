@@ -1,9 +1,9 @@
-#include "Types/CharInterval.h"
-
+module;
 #include <cassert>
 
-#include "Types/CharRange.h"
-#include "Types/Lines.h"
+module vf.Types.Lines;
+
+import std.compat;
 
 CharInterval::CharInterval(const CharRange& range, const Lines& lines)
     : first(range.begin),

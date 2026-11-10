@@ -1,11 +1,9 @@
-#include "PlannerCosts.h"
+module vf.Optimizer.DiffPlanner.PlannerCosts;
 
-#include <algorithm>
-#include <string_view>
-
-#include "Effort/RunningEffort.h"
-#include "Keyboard/KeyedSequence.h"
-#include "VimCore/CharMask.h"
+import std.compat;
+import vf.Effort.RunningEffort;
+import vf.Keyboard.KeyedSequence;
+import vf.VimCore.CharMask;
 
 using namespace std;
 

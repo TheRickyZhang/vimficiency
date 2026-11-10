@@ -1,4 +1,6 @@
-#include "BoundaryContext.h"
+module vf.Boundary.BoundaryContext;
+
+import std.compat;
 
 // Compute from buffer positions, inheriting from parent context
 BoundaryContext::BoundaryContext(const Lines& lines, CursorPos beginPos, CursorPos endPos,

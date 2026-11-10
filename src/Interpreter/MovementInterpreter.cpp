@@ -1,17 +1,17 @@
-#include "MovementInterpreter.h"
-
+module;
 #include <cassert>
-#include <limits>
-#include <ostream>
+#include <cstdio>
 
-#include "Types/NavContext.h"
-#include "VimCore/VimCore.h"
-#include "VimCore/VimMotionUtils.h"
-#include "VimCore/VimOptions.h"
+module vf.Interpreter.MovementInterpreter;
 
-#include "Interpreter/ParserChar.h"
-#include "Types/KeyNotation.h"
-#include "Keyboard/ToKeys/MovementToKeys.h"
+import std.compat;
+import vf.Types.NavContext;
+import vf.VimCore.VimCore;
+import vf.VimCore.VimMotionUtils;
+import vf.VimCore.VimOptions;
+import vf.Interpreter.ParserChar;
+import vf.Types.KeyNotation;
+import vf.Keyboard.ToKeys.MovementToKeys;
 
 using namespace std;
 

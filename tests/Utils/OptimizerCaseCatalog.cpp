@@ -1,10 +1,9 @@
-#include "Utils/OptimizerCaseCatalog.h"
+module vf.tests.Utils.OptimizerCaseCatalog;
 
-#include <algorithm>
-
-#include "Utils/RandomBufferHelpers.h"
-#include "Utils/RandomGeneration.h"
-#include "Utils/SeedManager.h"
+import std.compat;
+import vf.tests.Utils.RandomBufferHelpers;
+import vf.tests.Utils.RandomGeneration;
+import vf.tests.Utils.SeedManager;
 
 using namespace std;
 

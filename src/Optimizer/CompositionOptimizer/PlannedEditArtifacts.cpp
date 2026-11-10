@@ -1,14 +1,14 @@
-#include "PlannedEditArtifacts.h"
-
-#include <algorithm>
+module;
 #include <cassert>
-#include <tuple>
-#include <vector>
+#include "Utils/CheckMacro.h"
 
-#include "Effort/RunningEffort.h"
-#include "Optimizer/BuildTypedCommands.h"
-#include "Utils/Debug.h"
-#include "VimCore/VimEditUtils.h"
+module vf.Optimizer.CompositionOptimizer.PlannedEditArtifacts;
+
+import std.compat;
+import vf.Effort.RunningEffort;
+import vf.Optimizer.BuildTypedCommands;
+import vf.Utils.Debug;
+import vf.VimCore.VimEditUtils;
 
 using namespace std;
 

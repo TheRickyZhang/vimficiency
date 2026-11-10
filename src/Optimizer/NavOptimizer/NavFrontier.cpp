@@ -1,23 +1,20 @@
-#include "NavFrontier.h"
+module;
+#include "Utils/CheckMacro.h"
 
-#include <algorithm>
-#include <unordered_map>
-#include <utility>
-#include <vector>
+module vf.Optimizer.NavOptimizer.NavFrontier;
 
-#include "Effort/EffortBank.h"
-#include "Effort/RunningEffort.h"
-#include "Keyboard/KeyedSequence.h"
-#include "Keyboard/ToKeys/MovementToKeys.h"
-#include "Optimizer/NavOptimizer/BufferIndex.h"
-#include "Optimizer/NavOptimizer/NavExplorer.h"
-#include "Optimizer/NavOptimizer/NavHeuristic.h"
-#include "Optimizer/NavOptimizer/NavOptimizerParams.h"
-#include "Optimizer/NavOptimizer/NavState.h"
-#include "Optimizer/OptimizerParamOverrides.h"
-#include "Utils/Debug.h"
-
-#include <unordered_set>
+import std.compat;
+import vf.Effort.EffortBank;
+import vf.Effort.RunningEffort;
+import vf.Keyboard.KeyedSequence;
+import vf.Keyboard.ToKeys.MovementToKeys;
+import vf.Optimizer.NavOptimizer.BufferIndex;
+import vf.Optimizer.NavOptimizer.NavExplorer;
+import vf.Optimizer.NavOptimizer.NavHeuristic;
+import vf.Optimizer.NavOptimizer.NavOptimizerParams;
+import vf.Optimizer.NavOptimizer.NavState;
+import vf.Optimizer.OptimizerParamOverrides;
+import vf.Utils.Debug;
 
 using namespace std;
 

@@ -1,5 +1,7 @@
-#include "NavBoundary.h"
-#include "TransformBoundary.h"
+module vf.Boundary.NavBoundary;
+
+import std.compat;
+import vf.Boundary.TransformBoundary;
 
 const NavBoundary& NavBoundary::noParent() {
   static const NavBoundary instance{};

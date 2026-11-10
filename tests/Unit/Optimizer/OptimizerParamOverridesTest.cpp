@@ -1,11 +1,10 @@
 #include <gtest/gtest.h>
 
-#include <string_view>
-
-#include "Optimizer/CompositionOptimizer/CompositionOptimizerParams.h"
-#include "Optimizer/NavOptimizer/NavOptimizerParams.h"
-#include "Optimizer/OptimizerParamOverrides.h"
-#include "Optimizer/TransformOptimizer/TransformOptimizerParams.h"
+import std.compat;
+import vf.Optimizer.CompositionOptimizer.CompositionOptimizerParams;
+import vf.Optimizer.NavOptimizer.NavOptimizerParams;
+import vf.Optimizer.OptimizerParamOverrides;
+import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
 
 namespace {
 

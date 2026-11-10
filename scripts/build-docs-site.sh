@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-$(getconf _NPROCESSORS_ONLN)}"
 
-emcmake cmake -B build-wasm -DVIMF_WASM=ON -DCMAKE_BUILD_TYPE=Release
+emcmake cmake -G Ninja -B build-wasm -DVIMF_WASM=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build-wasm --target vimfy_planner_wasm
 mkdir -p web/docs/public/wasm
 cp build-wasm/wasm/vimfy_planner.js build-wasm/wasm/vimfy_planner.wasm web/docs/public/wasm/

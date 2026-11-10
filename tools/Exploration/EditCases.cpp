@@ -1,10 +1,8 @@
-#include "Exploration/ExplorationCollector.h"
+module vf.tools.Exploration.ExplorationCollector;
 
-#include <algorithm>
-#include <map>
-
-#include "Optimizer/TransformOptimizer/TransformOptimizer.h"
-#include "Utils/OptimizerCaseCatalog.h"
+import std.compat;
+import vf.Optimizer.TransformOptimizer.TransformOptimizer;
+import vf.tests.Utils.OptimizerCaseCatalog;
 
 using namespace std;
 

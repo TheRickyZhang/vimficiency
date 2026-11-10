@@ -1,18 +1,13 @@
 // Safety property: parser-facing boundaries reject arbitrary bytes cleanly or
 // return readable data. Movement/edit tokens must borrow from the input.
 
-#include <cstddef>
-#include <cstdint>
-#include <string>
-#include <string_view>
-#include <utility>
-
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
-#include "Interpreter/EditInterpreter.h"
-#include "Interpreter/MovementInterpreter.h"
-#include "Session/Snapshot.h"
+import std.compat;
+import vf.Interpreter.EditInterpreter;
+import vf.Interpreter.MovementInterpreter;
+import vf.Session.Snapshot;
 
 using namespace std;
 

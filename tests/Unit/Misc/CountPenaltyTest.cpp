@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "Optimizer/CountPenalty.h"
+import std.compat;
+import vf.Optimizer.CountPenalty;
 
 TEST(CountPenaltyTest, CountOneOrLessHasNoPenalty) {
   CountPenaltyInput in;

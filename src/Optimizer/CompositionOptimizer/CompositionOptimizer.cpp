@@ -1,32 +1,24 @@
-#include "CompositionOptimizer.h"
-
-#include <algorithm>
+module;
 #include <cassert>
-#include <chrono>
-#include <cstdint>
-#include <cstdlib>
-#include <iostream>
-#include <optional>
-#include <queue>
-#include <span>
-#include <utility>
-#include <vector>
+#include "Utils/CheckMacro.h"
 
-#include "CompositionMotionSearch.h"
-#include "CompositionSearchContext.h"
-#include "CompositionNavParams.h"
-#include "CompositionStrategies.h"
-#include "EditSequenceSpan.h"
-#include "Optimizer/BuildTypedCommands.h"
-#include "Optimizer/DiffPlanner/MyersDiff.h"
-#include "Optimizer/SearchControl.h"
-#include "Optimizer/NavOptimizer/NavOptimizer.h"
-#include "Optimizer/NavOptimizer/NavRangeConversion.h"
+module vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
 
-#include "Effort/RunningEffort.h"
-#include "Optimizer/CompositionOptimizer/CompositionState.h"
-#include "Utils/Debug.h"
-#include "Utils/PrettyText.h"
+import std.compat;
+import vf.Optimizer.CompositionOptimizer.CompositionMotionSearch;
+import vf.Optimizer.CompositionOptimizer.CompositionSearchContext;
+import vf.Optimizer.CompositionOptimizer.CompositionNavParams;
+import vf.Optimizer.CompositionOptimizer.CompositionStrategies;
+import vf.Optimizer.CompositionOptimizer.EditSequenceSpan;
+import vf.Optimizer.BuildTypedCommands;
+import vf.Optimizer.DiffPlanner.MyersDiff;
+import vf.Optimizer.SearchControl;
+import vf.Optimizer.NavOptimizer.NavOptimizer;
+import vf.Optimizer.NavOptimizer.NavRangeConversion;
+import vf.Effort.RunningEffort;
+import vf.Optimizer.CompositionOptimizer.CompositionState;
+import vf.Utils.Debug;
+import vf.Utils.PrettyText;
 
 using namespace std;
 

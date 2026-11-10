@@ -1,9 +1,10 @@
-#include "Exploration/ExplorationCollector.h"
+module vf.tools.Exploration.ExplorationCollector;
 
-#include "Optimizer/NavOptimizer/NavOptimizer.h"
-#include "Types/CharInterval.h"
-#include "Types/CharRange.h"
-#include "Utils/OptimizerCaseCatalog.h"
+import std.compat;
+import vf.Optimizer.NavOptimizer.NavOptimizer;
+import vf.Types.Lines;
+import vf.Types.CharRange;
+import vf.tests.Utils.OptimizerCaseCatalog;
 
 using namespace std;
 

@@ -1,14 +1,13 @@
 #include <gtest/gtest.h>
 
-#include <iostream>
-
-#include "Boundary/NavBoundary.h"
-#include "Interpreter/MovementInterpreter.h"
-#include "Keyboard/Config.h"
-#include "Optimizer/NavOptimizer/NavOptimizer.h"
-#include "Types/CursorPos.h"
-#include "Types/Lines.h"
-#include "Types/NavContext.h"
+import std.compat;
+import vf.Boundary.NavBoundary;
+import vf.Interpreter.MovementInterpreter;
+import vf.Keyboard.Config;
+import vf.Optimizer.NavOptimizer.NavOptimizer;
+import vf.Types.CursorPos;
+import vf.Types.Lines;
+import vf.Types.NavContext;
 
 using namespace std;
 

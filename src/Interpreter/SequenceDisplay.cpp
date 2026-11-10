@@ -1,9 +1,8 @@
-#include "Interpreter/SequenceDisplay.h"
+module vf.Interpreter.SequenceDisplay;
 
-#include "Interpreter/SequenceParser.h"
-#include "Utils/PrettyText.h"
-
-#include <string>
+import std.compat;
+import vf.Interpreter.SequenceParser;
+import vf.Utils.PrettyText;
 
 using namespace std;
 
