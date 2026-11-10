@@ -21,7 +21,23 @@ struct DiffCase {
   Lines goal;
 };
 
-DiffCase toDiffCase(const PropertyDomains::DiffCaseSpec& spec) {
+// Kept out of the PropertyDomains module: GCC 16 at -O3 drops a fuzztest
+// static local when StructOf is instantiated over a module-attached type,
+// leaving an undefined reference at link time.
+struct DiffCaseSpec {
+  vector<string> initial;
+  vector<string> goal;
+  bool identity;
+};
+
+auto DiffCaseSpecDomain() {
+  return fuzztest::StructOf<DiffCaseSpec>(
+      PropertyDomains::LineVecDomain(1, 6, 0, 40),
+      PropertyDomains::LineVecDomain(1, 6, 0, 40),
+      fuzztest::Arbitrary<bool>());
+}
+
+DiffCase toDiffCase(const DiffCaseSpec& spec) {
   Lines initial(spec.initial);
   Lines goal = spec.identity ? initial : Lines(spec.goal);
   return DiffCase{.initial = std::move(initial), .goal = std::move(goal)};
@@ -69,7 +85,7 @@ void validateInvariants(
 }
 
 void RoundTripAndStructureAcrossBufferStyles(
-    const PropertyDomains::DiffCaseSpec& spec) {
+    const DiffCaseSpec& spec) {
   DiffCase test = toDiffCase(spec);
 
   auto diffs = MyersDiff::calculate(test.initial, test.goal);
@@ -100,7 +116,7 @@ Lines applySequentially(vector<DiffState> diffs, const Lines& initialLines) {
 }
 
 void SequentialApplicationMatchesBatchApplication(
-    const PropertyDomains::DiffCaseSpec& spec) {
+    const DiffCaseSpec& spec) {
   DiffCase test = toDiffCase(spec);
   if (test.initial == test.goal) return;
 
@@ -122,7 +138,7 @@ void SequentialApplicationMatchesBatchApplication(
 }  // namespace
 
 FUZZ_TEST(DiffStateGeneratedPropertyTest, RoundTripAndStructureAcrossBufferStyles)
-    .WithDomains(PropertyDomains::DiffCaseSpecDomain());
+    .WithDomains(DiffCaseSpecDomain());
 
 FUZZ_TEST(DiffStateGeneratedPropertyTest, SequentialApplicationMatchesBatchApplication)
-    .WithDomains(PropertyDomains::DiffCaseSpecDomain());
+    .WithDomains(DiffCaseSpecDomain());

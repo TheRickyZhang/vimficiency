@@ -203,6 +203,7 @@ function(suppress_fuzztest_header_warnings target_name)
       PRIVATE
         -Wno-non-template-friend
         -Wno-return-type
+        -Wno-expose-global-module-tu-local
     )
   endif()
 endfunction()

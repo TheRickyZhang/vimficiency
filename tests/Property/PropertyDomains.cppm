@@ -9,12 +9,6 @@ export {
 
 namespace PropertyDomains {
 
-struct DiffCaseSpec {
-  std::vector<std::string> initial;
-  std::vector<std::string> goal;
-  bool identity;
-};
-
 inline auto LineTextDomain(int minLen, int maxLen) {
   return fuzztest::PrintableAsciiString()
       .WithMinSize(minLen)
@@ -26,13 +20,6 @@ inline auto LineVecDomain(
   return fuzztest::VectorOf(LineTextDomain(minLineLen, maxLineLen))
       .WithMinSize(minLines)
       .WithMaxSize(maxLines);
-}
-
-inline auto DiffCaseSpecDomain() {
-  return fuzztest::StructOf<DiffCaseSpec>(
-      LineVecDomain(1, 6, 0, 40),
-      LineVecDomain(1, 6, 0, 40),
-      fuzztest::Arbitrary<bool>());
 }
 
 }  // namespace PropertyDomains

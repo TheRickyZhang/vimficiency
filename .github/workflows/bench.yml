@@ -63,9 +63,13 @@ jobs:
           key: deps-v4-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt') }}
           restore-keys: deps-v4-
 
+      # Tracking is on so vimfy_explore compiles here instead of in a third
+      # tree (BuildConfig.h would invalidate every TU). It only records popped
+      # states, so test results are unaffected.
       - name: Build (Debug)
         run: |
           cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Debug -DVIMF_BUILD_TESTS=ON \
+            -DVIMF_TRACK_STATES=ON \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           cmake --build build -j$(nproc)
 
@@ -73,14 +77,6 @@ jobs:
         run: |
           ./build/tests/vimfy_unit_tests --gtest_brief=1
           ./build/tests/vimfy_approval_tests --gtest_brief=1
-
-      # Lives here rather than in `test` because this job finishes first.
-      - name: Build tracking-enabled exploration target
-        run: |
-          cmake -G Ninja -B build_track -DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_BUILD_TESTS=ON \
-            -DVIMF_TRACK_STATES=ON \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          cmake --build build_track --target vimfy_explore -j$(nproc)
 
   test:
     runs-on: ubuntu-latest

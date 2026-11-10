@@ -36,11 +36,14 @@ Shared dependency setup is centralized in `.github/actions/setup-ci-deps/action.
 
 ### `debug-build` job (every push and PR)
 
-Builds every target in Debug, so benchmark and debug binaries still get
-compiled on PRs, then runs unit and approval tests. It also builds
-`vimfy_explore` with tracking on as a smoke test, without running it; the local
-bench pipeline executes it and ingests results. These live here because this
-job finishes before `test`.
+Builds every target in Debug with `-DVIMF_TRACK_STATES=ON`, so benchmark,
+debug, and tracking-enabled `vimfy_explore` binaries still get compiled on PRs,
+then runs unit and approval tests. Tracking is on here (unlike a default local
+configure) so that `vimfy_explore` does not need its own tree: the flag goes
+through `BuildConfig.h`, so a separate tree is a full recompile with no ccache
+reuse. It only records popped states, so unit and approval results are
+unaffected. `vimfy_explore` is not run in CI; the local bench pipeline executes
+it and ingests results.
 
 ## Docs deploy (`.github/workflows/docs-deploy.yml`)
 
