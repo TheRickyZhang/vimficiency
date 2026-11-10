@@ -97,10 +97,10 @@ outlined here:
   ------------------------------------------------------------------------
 See the per-type pages for details:
 
-- 3. Mark — manual start, manual end.
-- 4. Watch — manual start, auto end.
-- 5. Recall — auto start, manual end.
-- 6. Suggest — auto start, auto end.
+- 1. Mark — manual start, manual end.
+- 1. Watch — manual start, auto end.
+- 1. Recall — auto start, manual end.
+- 1. Suggest — auto start, auto end.
 
 
 WHERE A SESSION LIVES
@@ -136,9 +136,9 @@ Alternatively, you can call `vim :Vimfy close a` to drop the session manually.
 
 SEE ALSO
 
-- 7. Inspecting results — how to read the output and replay
+- 1. Inspecting results — how to read the output and replay
     the suggestions.
-- 8. Binding keys — use `<Plug>VimfyStartA` /
+- 1. Binding keys — use `<Plug>VimfyStartA` /
     `<Plug>VimfyFinishA` so your session markers don’t need typing `:Vimfy ...`.
 
 
@@ -178,8 +178,8 @@ Suggest’s auto-start side does. Ask if you’d use them and we can extend.
 
 SEE ALSO
 
-- 8. Binding keys — `<Plug>VimfyWatchA` / `<Plug>VimfyWatchB`.
-- 9. Configuration — full shape of the `watch` key in `setup{}`.
+- 1. Binding keys — `<Plug>VimfyWatchA` / `<Plug>VimfyWatchB`.
+- 1. Configuration — full shape of the `watch` key in `setup{}`.
 
 
 ==============================================================================
@@ -282,9 +282,9 @@ moving out from under you:
 
 SEE ALSO
 
-- 6. Suggest — surface results automatically
+- 1. Suggest — surface results automatically
     without calling `finish`.
-- 7. Inspecting results — what the output looks like
+- 1. Inspecting results — what the output looks like
     and how to replay it.
 
 
@@ -1058,7 +1058,7 @@ list cursor without leaving insert mode; `<CR>` opens the current entry;
 - `r` / `y` — on Saved, renames/duplicates the file. On Active, renames
     the manual alias / registers a duplicate finished record under a new
     alias. Only entries with a stable manual alias are renameable this
-    way; for recall and auto-suggest results, save to disk first (`:Vimfy save <alias> <name>`) and then rename from the Saved pane.
+    way; for recall and auto-suggest results, save to disk first (`:Vimfy   save <alias> <name>`) and then rename from the Saved pane.
 
 **Blocked on in-progress sessions:** `<CR>`, `r`, `y` all refuse to run on a
 still-accumulating session. Finish it with `:Vimfy finish` (or let Watch’s
