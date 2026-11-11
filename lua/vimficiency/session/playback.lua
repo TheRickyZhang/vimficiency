@@ -50,7 +50,7 @@ local function run_compare(result, label, count)
   )
 end
 
---- Workspace first, disk second. A disk-only hit under a name alias is fetched
+--- Workspace first, disk second. A disk-only hit under a named alias is fetched
 --- into the workspace so "what I just replayed is in my session" holds.
 ---@param alias_or_filename string
 ---@param count integer|nil
@@ -80,7 +80,7 @@ function M.simulate(alias_or_filename, count)
   elseif in_memory then
     result = in_memory
   elseif on_disk then
-    if alias_mod.is_name(alias_or_filename) then
+    if alias_mod.is_named(alias_or_filename) then
       local id, reg_err = session_store.register_fetched_result(alias_or_filename, on_disk)
       if id then
         vim.notify("vimfy: fetched [" .. alias_or_filename .. "] into session", vim.log.levels.INFO)

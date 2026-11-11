@@ -55,7 +55,7 @@ local function make_session_listener(alias, id)
           vim.log.levels.WARN)
       end)
     elseif decision == "record" then
-      table.insert(session.atoms, atom)
+      session_store.append_atom(session, atom)
     end
   end
 end
@@ -64,8 +64,8 @@ end
 ---@param kind "mark"|"watch"
 ---@return VF.Session.Active
 local function start_named_session(alias, kind)
-  alias_mod.expect(alias, { "name" })
-  if not session_store.can_store_named(alias) then
+  alias_mod.expect(alias, { "named" })
+  if not session_store.has_room_for_named(alias) then
     error("Session capacity reached", 0)
   end
 
@@ -124,17 +124,12 @@ function M.watch(alias)
 end
 
 --- Compute, store, and announce the result for an active record. The record's
---- kind is already decided (mark/watch at start, recall from the ring), so
---- there is nothing to pass here; auto_suggest is the one promoter and goes
---- through `session_store.mark_finished` directly.
+--- kind is already decided (mark/watch at start, recall from the ring)
 ---@param active VF.Session.Active
 ---@param alias string
-local function complete_record(active, alias)
+local function finish_active(active, alias)
   local result, err = compute.compute_result_for_active(active)
   if not result then
-    -- Not raised: watch's idle timer also lands here. A mark/watch record is
-    -- dropped (its window is gone); a recall slice stays in the ring for a
-    -- later window.
     util.show_output("finish()", err or "unknown error", {
       ui_keys = { title = "Vimfy Scratch Output Keys", docs = true },
     })
@@ -145,8 +140,7 @@ local function complete_record(active, alias)
     return
   end
 
-  -- `active` came from get_active a moment ago and nothing ran in between.
-  assert(session_store.mark_finished(active.id, result, alias))
+  assert(session_store.convert_to_finished(active.id, result, alias))
 
   local message = result_view.format_message("vimfy finished [" .. alias .. "]", result)
   if result.analyze_ms then
@@ -157,13 +151,13 @@ end
 
 ---@param alias string
 function M.finish(alias)
-  alias_mod.expect(alias, { "name" })
+  alias_mod.expect(alias, { "named" })
 
   local active = session_store.get_active(alias)
   if not active then
     error("Session '" .. alias .. "' not found or already finished.", 0)
   end
-  complete_record(active, alias)
+  finish_active(active, alias)
 end
 
 ---@param alias string
@@ -178,7 +172,7 @@ function M.recall(alias)
     error("No recall session found within '" .. alias .. "'. " ..
       "Try a larger window or indexing by key count (e.g. 'recall 20').", 0)
   end
-  complete_record(active, alias)
+  finish_active(active, alias)
 end
 
 ---@param alias string

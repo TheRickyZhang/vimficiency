@@ -1,9 +1,58 @@
 -- Canonical session store: `active_sessions` and `finished_sessions`, both
--- keyed by id, plus two indexes spanning both: `name_to_id` for name aliases
+-- keyed by id, plus two indexes spanning both: `named_to_id` for named aliases
 -- and `recall_id_order` for the rolling recall ring. Every alias kind
--- (`alias.lua`) resolves to an id here and only here.
+-- (`alias.lua`) resolves to an id here.
+
+---@class (exact) VF.SessionStore
+---
+--- Kinds
+---@field session_type            fun(kind: VF.Session.Kind): VF.Session.Type
+---
+--- Creating and storing active records
+---@field new_active_session      fun(id: string, stream_sub: string|nil, win: integer, buf: integer, start_state: VF.BufferState, kind: "mark"|"watch"|"recall"): VF.Session.Active
+---@field has_room_for_named      fun(alias: string): boolean
+---@field store_named             fun(alias: string, record: VF.Session.Active): boolean
+---@field store_recall            fun(record: VF.Session.Active)
+---@field append_atom             fun(record: VF.Session.Active, atom: VF.Atom)
+---@field ingest_recall_atom      fun(atom: VF.Atom)
+---
+--- Lifecycle
+---@field convert_to_finished           fun(id: string, result: VF.Session.Result, finish_alias: string|nil, kind?: VF.Session.Kind): boolean
+---@field register_fetched_result fun(alias: string, result: VF.Session.Result): string|nil, string|nil
+---@field remove                  fun(id: string)
+---@field rename_alias            fun(old_alias: string, new_alias: string): boolean, string|nil
+---
+--- Lookup by alias or id
+---@field get_id                  fun(alias: string): string|nil
+---@field get_active              fun(alias: string): VF.Session.Active|nil
+---@field get_result              fun(alias: string): VF.Session.Result|nil
+---@field has_result              fun(alias: string): boolean
+---@field get_result_by_id        fun(id: string): VF.Session.Result|nil
+---@field get_finish_alias        fun(alias: string): string|nil
+---@field list_aliases            fun(): string[]
+---
+--- `@` / `$` selectors
+---@field get_last_finished_id    fun(): string|nil
+---@field get_last_suggest_id     fun(): string|nil
+---@field set_last_suggest_id     fun(id: string)
+---
+--- View-model
+---@field summarize               fun(id: string): VF.Session.Summary|nil
+---@field summarize_all           fun(): VF.Session.Summary[]
+---
+--- Reload
+---@field teardown_active         fun(): integer
+---@field dump_for_reload         fun(): VF.Session.ReloadDump
+---@field restore_from_dump       fun(dump: VF.Session.ReloadDump)
 
 local M = {}
+
+---@class VF.Session.ReloadDump
+---@field finished      table<string, VF.Session.Finished>
+---@field named         table<string, string>
+---@field order         string[]
+---@field last_finished string|nil
+---@field last_suggest  string|nil
 
 local alias_mod = require("vimficiency.session.alias")
 local atom_stream = require("vimficiency.capture.atom_stream")
@@ -37,7 +86,7 @@ local SUGGEST_KINDS = { suggest_idle = true, suggest_keys = true, suggest_cost =
 function M.session_type(kind)
   if SUGGEST_KINDS[kind] then return "suggest" end
   assert(CREATABLE_KINDS[kind], "invalid session kind: " .. tostring(kind))
-  return kind
+  return kind --[[@as VF.Session.Type]]
 end
 
 --- Fields meaningful across a session's whole lifecycle.
@@ -52,6 +101,7 @@ end
 ---@field buf          integer           # Buffer where session started
 ---@field start_state  VF.BufferState    # Cursor/viewport at start
 ---@field atoms        VF.Atom[]
+---@field last_atom_mono_ns integer|nil # vim.uv.hrtime() of the last appended atom; nil until the first. Drives idle eviction
 ---@field stream_sub   string|nil        # Atom listener name this record owns (mark/watch); nil for recall (shared listener)
 ---@field watch_disarm fun()|nil         # Watch only: disarm for the idle end-trigger armed at :Vimfy watch. Called on finish/destroy so the timer and listener are released.
 
@@ -85,7 +135,7 @@ end
 ---@field finished_wall_epoch integer  # os.time() at finish. Wall clock because it is saved to disk; monotonic values do not survive a reboot
 ---@field analyze_ms number|nil        # Wall-time of the optimizer analyze() FFI call (ms); running-model telemetry
 ---@field compute_ms number|nil        # Wall-time of the full compute_result_for_active block (ms): analyze + diff + marshaling
----@field kind? VF.Session.Kind        # Set by mark_finished; absent on saved files that predate it (fetch treats them as mark)
+---@field kind? VF.Session.Kind        # Set by convert_to_finished; absent on saved files that predate it (fetch treats them as mark)
 
 --- Normalized view-model for list/suggest UIs.
 --- `display_alias` is presentation-only; use `id` for follow-up actions.
@@ -132,11 +182,22 @@ function M.new_active_session(id, stream_sub, win, buf, start_state, kind)
   }
 end
 
+---@param record VF.Session.Active
+---@param atom VF.Atom
+function M.append_atom(record, atom)
+  table.insert(record.atoms, atom)
+  record.last_atom_mono_ns = vim.uv.hrtime()
+end
+
 --------------------------------------------------------------------------------
 -- Constants
 --------------------------------------------------------------------------------
 
-local NAMED_CAPACITY = 5      -- concurrent active name-alias sessions. Finished records retain their slot (for `save @` / `view <alias>`) but do not count against this cap.
+-- Concurrent active named-alias sessions. Eviction (window closed, cursor drift,
+-- idle) is what bounds them in practice; this is a runaway guard against
+-- something starting named sessions in a loop. Finished records keep their
+-- alias slot (for `save @` / `view <alias>`) but do not count against it.
+local NAMED_CAPACITY = 100
 
 --------------------------------------------------------------------------------
 -- Storage
@@ -148,8 +209,8 @@ local active_sessions = {}
 ---@type table<string, VF.Session.Finished>
 local finished_sessions = {}
 
----@type table<string, string>  -- name alias -> id
-local name_to_id = {}
+---@type table<string, string>  -- named alias -> id
+local named_to_id = {}
 
 ---@type string[]  -- ordered deque of recall ids (oldest first, newest last)
 local recall_id_order = {}
@@ -215,7 +276,7 @@ local function convert_alias_to_id(alias)
   local kind, value = alias_mod.parse(alias)
   if not kind then return nil end
 
-  if kind == "name" then return name_to_id[alias] end
+  if kind == "named" then return named_to_id[alias] end
   if kind == "last_finished" then return M.get_last_finished_id() end
   if kind == "last_suggest" then return M.get_last_suggest_id() end
 
@@ -295,16 +356,15 @@ end
 -- Public API
 --------------------------------------------------------------------------------
 
---- Check if a name-alias session can be stored.
---- Call this BEFORE subscribing to atom capture to avoid cleanup on failure.
---- The cap only counts active sessions. Finished records keep their alias
---- slot but do not block a new start.
+--- Whether a session can be stored under `alias` without exceeding
+--- NAMED_CAPACITY. Reusing an alias always has room (it replaces). Callers
+--- check this before registering a listener so a refusal has nothing to undo.
 ---@param alias string
----@return boolean can_store
-function M.can_store_named(alias)
-  if name_to_id[alias] then return true end  -- overwrite/replace always allowed
+---@return boolean
+function M.has_room_for_named(alias)
+  if named_to_id[alias] then return true end
   local active_count = 0
-  for _, id in pairs(name_to_id) do
+  for _, id in pairs(named_to_id) do
     if active_sessions[id] then
       active_count = active_count + 1
     end
@@ -312,19 +372,19 @@ function M.can_store_named(alias)
   return active_count < NAMED_CAPACITY
 end
 
---- Store a session under a name alias.
---- Caller must ensure can_store_named(alias) returned true.
+--- Store a session under a named alias, replacing any record it already names.
 ---@param alias string
 ---@param record VF.Session.Active
 ---@return boolean overwrote  True if an existing session was replaced
 function M.store_named(alias, record)
-  local existing_id = name_to_id[alias]
+  assert(M.has_room_for_named(alias), "named session capacity reached")
+  local existing_id = named_to_id[alias]
 
   if existing_id then
     destroy_record(existing_id)
   end
 
-  name_to_id[alias] = record.id
+  named_to_id[alias] = record.id
   active_sessions[record.id] = record
   return existing_id ~= nil
 end
@@ -366,12 +426,6 @@ end
 
 ---@param alias string
 ---@return boolean
-function M.has_active(alias)
-  return M.get_active(alias) ~= nil
-end
-
----@param alias string
----@return boolean
 function M.has_result(alias)
   return M.get_result(alias) ~= nil
 end
@@ -388,11 +442,11 @@ function M.remove(id)
 
   -- Un-index from whichever side holds this id.
   local name = nil
-  for a, nid in pairs(name_to_id) do
+  for a, nid in pairs(named_to_id) do
     if nid == id then name = a; break end
   end
   if name then
-    name_to_id[name] = nil
+    named_to_id[name] = nil
   else
     unindex_recall(id)
   end
@@ -406,13 +460,13 @@ end
 ---@param finish_alias string|nil   Literal alias the caller used for this finish (`a`, `3s`, etc.); the default filename for `:Vimfy save @`
 ---@param kind? VF.Session.Kind     Promotion: a recall record finished by auto_suggest takes the suggest_* that fired. Applied atomically with the status transition so a failed compute/finish path never leaves a mislabeled record. Omit to keep the record's own kind.
 ---@return boolean success
-function M.mark_finished(id, result, finish_alias, kind)
+function M.convert_to_finished(id, result, finish_alias, kind)
   local active = active_sessions[id]
   if not active then return false end
 
   if kind then
     assert(SUGGEST_KINDS[kind] and active.kind == "recall",
-      "mark_finished kind only promotes a recall record to suggest_*; got " ..
+      "convert_to_finished kind only promotes a recall record to suggest_*; got " ..
       tostring(active.kind) .. " -> " .. tostring(kind))
   end
 
@@ -453,30 +507,31 @@ function M.get_id(alias)
 end
 
 --- Mark a session as the most recent suggest regression (drives `$`).
---- Called by auto_suggest only when a toast is surfaced.
+--- Called by auto_suggest for every new-fingerprint result, shown toast or not.
 ---@param id string
 function M.set_last_suggest_id(id)
   last_suggest_id = id
 end
 
 --- The alias a record was finished under (the default `:Vimfy save` filename).
----@param id string
+---@param alias string
 ---@return string|nil
-function M.get_finish_alias(id)
-  local rec = finished_sessions[id]
+function M.get_finish_alias(alias)
+  local id = convert_alias_to_id(alias)
+  local rec = id and finished_sessions[id]
   return rec and rec.finish_alias or nil
 end
 
 --- Insert a disk-loaded result as a finished session under `alias`.
----@param alias string  Must satisfy `alias.is_name`.
+---@param alias string  Must satisfy `alias.is_named`.
 ---@param result VF.Session.Result
 ---@return string|nil id
 ---@return string|nil err
 function M.register_fetched_result(alias, result)
-  if not alias_mod.is_name(alias) then
-    return nil, "alias '" .. tostring(alias) .. "' is not a session name (letters only)"
+  if not alias_mod.is_named(alias) then
+    return nil, "alias '" .. tostring(alias) .. "' is not a named alias (letters only)"
   end
-  if name_to_id[alias] then
+  if named_to_id[alias] then
     return nil, "alias '" .. alias .. "' is already in use in the current session"
   end
   assert(type(result) == "table", "result must be a table")
@@ -493,46 +548,46 @@ function M.register_fetched_result(alias, result)
     finish_alias     = alias,
     result           = result,
   }
-  name_to_id[alias] = id
+  named_to_id[alias] = id
   last_finished_id = id
   return id, nil
 end
 
---- Move a name alias to a new name in-place. Refuses if the source is missing
---- or the target is already taken. Only the `name_to_id` index and a finished
+--- Move a named alias to a new named alias in-place. Refuses if the source is missing
+--- or the target is already taken. Only the `named_to_id` index and a finished
 --- record's default save filename are touched.
 ---@param old_alias string
 ---@param new_alias string
 ---@return boolean ok
 ---@return string|nil err
-function M.rename_name(old_alias, new_alias)
+function M.rename_alias(old_alias, new_alias)
   if old_alias == new_alias then
     return false, "source and target aliases are identical"
   end
-  if not alias_mod.is_name(new_alias) then
+  if not alias_mod.is_named(new_alias) then
     return false, "invalid target alias '" .. tostring(new_alias) ..
-      "' (session names are letters only)"
+      "' (named aliases are letters only)"
   end
-  local id = name_to_id[old_alias]
+  local id = named_to_id[old_alias]
   if not id then
-    return false, "no session named '" .. tostring(old_alias) .. "' in the workspace"
+    return false, "no named alias '" .. tostring(old_alias) .. "' in the workspace"
   end
-  if name_to_id[new_alias] then
+  if named_to_id[new_alias] then
     return false, "alias '" .. new_alias .. "' is already in use"
   end
-  name_to_id[old_alias] = nil
-  name_to_id[new_alias] = id
+  named_to_id[old_alias] = nil
+  named_to_id[new_alias] = id
   local finished = finished_sessions[id]
   if finished then finished.finish_alias = new_alias end
   return true, nil
 end
 
---- All name and recall-key aliases that currently resolve, for tab completion.
+--- All named and recall-key aliases that currently resolve, for tab completion.
 ---@return string[]
 function M.list_aliases()
   local aliases = {}
 
-  for alias, _ in pairs(name_to_id) do
+  for alias, _ in pairs(named_to_id) do
     table.insert(aliases, alias)
   end
 
@@ -559,7 +614,7 @@ end
 ---@param id string
 ---@return string|nil alias
 local function find_name(id)
-  for a, nid in pairs(name_to_id) do
+  for a, nid in pairs(named_to_id) do
     if nid == id then return a end
   end
   return nil
@@ -639,7 +694,7 @@ function M.ingest_recall_atom(atom)
   -- Extend every still-active recall record with this atom.
   for _, id in ipairs(recall_id_order) do
     local rec = active_sessions[id]
-    if rec then table.insert(rec.atoms, atom) end
+    if rec then M.append_atom(rec, atom) end
   end
 
   local prev = recall_prev_state[atom.buf]
@@ -651,7 +706,7 @@ function M.ingest_recall_atom(atom)
 
   local id = util.new_id(atom.buf)
   local rec = M.new_active_session(id, nil, atom.win, atom.buf, prev, "recall")
-  table.insert(rec.atoms, atom)
+  M.append_atom(rec, atom)
   M.store_recall(rec)
 end
 
@@ -661,7 +716,7 @@ end
 
 --- Tear down every active session and return the number dropped.
 --- Routes through `M.remove` rather than calling `destroy_record` directly,
---- so `name_to_id` and `recall_id_order` get un-indexed alongside the record
+--- so `named_to_id` and `recall_id_order` get un-indexed alongside the record
 --- deletion. Calling `destroy_record` alone leaves dangling alias/ring entries
 --- that would survive `dump_for_reload` → `restore_from_dump` and resurrect
 --- phantom sessions (get_id returns ids with no backing record, list() shows
@@ -680,15 +735,15 @@ end
 
 --- Snapshot finished records and indexes for plugin reload. Runs after
 --- `teardown_active`, so only finished records exist to carry over.
----@return { finished: table<string, VF.Session.Finished>, names: table, order: string[], last_finished: string|nil, last_suggest: string|nil }
+---@return VF.Session.ReloadDump
 function M.dump_for_reload()
   local finished_copy = {}
   for id, rec in pairs(finished_sessions) do
     finished_copy[id] = rec
   end
-  local names_copy = {}
-  for alias, id in pairs(name_to_id) do
-    names_copy[alias] = id
+  local named_copy = {}
+  for alias, id in pairs(named_to_id) do
+    named_copy[alias] = id
   end
   local order_copy = {}
   for i, id in ipairs(recall_id_order) do
@@ -696,7 +751,7 @@ function M.dump_for_reload()
   end
   return {
     finished      = finished_copy,
-    names         = names_copy,
+    named         = named_copy,
     order         = order_copy,
     last_finished = last_finished_id,
     last_suggest  = last_suggest_id,
@@ -704,21 +759,21 @@ function M.dump_for_reload()
 end
 
 --- Rehydrate a previous `dump_for_reload()` into this fresh module.
---- Filters the name and recall indexes against `finished` as it goes —
+--- Filters the named and recall indexes against `finished` as it goes —
 --- any id that doesn't have a backing record gets dropped. With the
 --- current `teardown_active` routing through `M.remove`, dumps should
 --- already be clean, but this guard keeps the invariant explicit: after
---- restore, every entry in `name_to_id` and `recall_id_order`
+--- restore, every entry in `named_to_id` and `recall_id_order`
 --- resolves to a real record.
----@param dump { finished: table<string, VF.Session.Finished>, names: table, order: string[], last_finished: string|nil, last_suggest: string|nil }
+---@param dump VF.Session.ReloadDump
 function M.restore_from_dump(dump)
   active_sessions = {}
   finished_sessions = dump.finished
 
-  name_to_id = {}
-  for alias, id in pairs(dump.names) do
+  named_to_id = {}
+  for alias, id in pairs(dump.named) do
     if finished_sessions[id] then
-      name_to_id[alias] = id
+      named_to_id[alias] = id
     end
   end
 

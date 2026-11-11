@@ -10,7 +10,6 @@ local fields = {
   RESULTS_CALCULATED = 20,
   RESULTS_SAVED = 5,
   SLICE_PADDING = 5,
-  SLICE_EXPAND_TO_PARAGRAPH = false,
   MAX_SEARCH_LINES = 500,
 
   -- User overrides for shared base optimizer parameters. Empty by

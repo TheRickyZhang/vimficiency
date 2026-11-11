@@ -10,6 +10,15 @@
 -- state must therefore shift (atom i's start == atom i-1's end), not snapshot at
 -- atom time. See `dev/lua/atom-stream.md`.
 
+---@class (exact) VF.AtomStream
+---@field supported       fun(): boolean
+---@field add_listener    fun(name: string, listener: fun(atom: VF.Atom, decision: VF.Atom.Decision)): boolean
+---@field remove_listener fun(name: string)
+---@field shutdown        fun()
+--- Test-only: exercise the decision table without driving real input, and
+--- assert that sessions and shutdown detach their listeners.
+---@field _classify       fun(atom_type: string, keys_raw: string|nil, keys_norm: string, changed: boolean, moved: boolean): VF.Atom.Decision
+---@field _has_listener   fun(name: string): boolean
 local M = {}
 local keynorm = require("vimficiency.capture.keynorm")
 
@@ -136,8 +145,6 @@ function M.shutdown()
   listener_count = 0
 end
 
--- Test-only: exercise the decision table without driving real input, and
--- assert that sessions and shutdown detach their listeners.
 M._classify = classify
 function M._has_listener(name) return listener_by_name[name] ~= nil end
 

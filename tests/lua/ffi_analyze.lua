@@ -132,6 +132,8 @@ test("ffi.configure: count penalty overrides affect analyze costs", function()
     local free_4W = find_result(free, "4W")
     assert_true(free_4w ~= nil and free_4W ~= nil,
       "zero count penalty must surface 4w and 4W; got " .. vim.inspect(free))
+    ---@cast free_4w -nil
+    ---@cast free_4W -nil
     assert_eq(free_4w.cost, 2.0, "4w with no count penalty costs its two keys")
     assert_eq(free_4W.cost, 2.0, "4W with no count penalty costs its two keys")
     assert_eq(free[1].cost, 2.0, "two-key counted motions must be the cheapest result")

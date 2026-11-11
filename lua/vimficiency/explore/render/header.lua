@@ -10,7 +10,6 @@ local sequence_display = require("vimficiency.sequence_display")
 local M = {}
 
 local header_ns = v.nvim_create_namespace("vimfy_explore_header")
-M.header_ns = header_ns
 
 local MIN_COLUMN_WIDTH = 12
 local MAX_COLUMN_WIDTH = 32
@@ -320,20 +319,6 @@ end
 ---@param active VF.Explore.Active
 function M.reattach(active)
   M.render(active, insert_helpers.current_continuation(active))
-end
-
----For tests: returns the per-column chunk-rows that `render` would draw
----this turn, without touching extmarks.
----@param active VF.Explore.Active
----@param continuation VF.Explore.InsertContinuation
----@return { title: string, rows: table[][] }[]
-function M.column_rows_for_test(active, continuation)
-  local _ = continuation
-  local out = {}
-  for _, column in ipairs(gather_columns(active)) do
-    out[#out + 1] = { title = column.title, rows = build_column_rows(column) }
-  end
-  return out
 end
 
 return M

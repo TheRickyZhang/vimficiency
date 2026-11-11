@@ -1,11 +1,10 @@
 -- tests/lua/workspace_storage.lua
 -- Covers the workspace/storage split: save / store / fetch and the
 -- implicit-fetch fallback in simulate(). These exercise the plumbing in
--- session.lua + session/store.lua that routes finished results between
+-- session/archive.lua + session/store.lua that routes finished results between
 -- in-memory aliases and on-disk files.
 
 local h = require("_helpers")
-local session = require("vimficiency.session")
 local archive = require("vimficiency.session.archive")
 local disk = require("vimficiency.session.disk")
 local session_store = require("vimficiency.session.store")
@@ -183,10 +182,10 @@ test("workspace/storage: save preserves capture_debug extras", function()
   end)
 end)
 
-test("workspace/storage: register_fetched_result rejects a non-name alias", function()
+test("workspace/storage: register_fetched_result rejects a non-named alias", function()
   h.silence_notify(function()
     local id, err = session_store.register_fetched_result("3s", fake_result("abc"))
     assert_true(not id, "alias '3s' must be rejected")
-    assert_match(err or "", "not a session name")
+    assert_match(err or "", "not a named alias")
   end)
 end)

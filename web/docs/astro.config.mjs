@@ -30,6 +30,18 @@ function rehypeRewriteMdLinks() {
   };
 }
 
+// Starlight renders the frontmatter `title` as the page H1, so the body
+// H1 that panvimdoc and GitHub need (see scripts/check-doc-titles.sh)
+// would show twice. Drop it from the site only.
+function remarkStripLeadingH1() {
+  return (tree) => {
+    const i = tree.children.findIndex((n) => n.type !== 'yaml' && n.type !== 'mdxjsEsm');
+    if (i !== -1 && tree.children[i].type === 'heading' && tree.children[i].depth === 1) {
+      tree.children.splice(i, 1);
+    }
+  };
+}
+
 // `base` matches the gh-pages mount point used by bench.yml: the
 // dashboard ships at `/vimficiency/`, this site at `/vimficiency/docs/`.
 export default defineConfig({
@@ -73,6 +85,7 @@ export default defineConfig({
   // rendered on GitHub. The inline plugin above maps those hrefs to the
   // matching Starlight slug routes at build time.
   markdown: {
+    remarkPlugins: [remarkStripLeadingH1],
     rehypePlugins: [rehypeRewriteMdLinks],
   },
 });

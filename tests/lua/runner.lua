@@ -147,7 +147,7 @@ end
 local function reset_state()
   -- The CmdAtom autocmd + subscriber registry survive module reload.
   local atom_stream = package.loaded["vimficiency.capture.atom_stream"]
-  if atoms and type(atom_stream.shutdown) == "function" then atom_stream.shutdown() end
+  if atom_stream then atom_stream.shutdown() end
 
   -- C++ config lives in the shared library, not package.loaded.
   local ffi_lib = package.loaded["vimficiency.ffi"]

@@ -75,6 +75,7 @@ function M.create(label, result, view_id, layout, header_handlers)
     recommendation_count = view_settings.recommendation_count,
     show_user_typed = view_settings.show_user_typed,
     show_result_count = view_settings.show_result_count,
+    compute_deadline_ms = view_settings.compute_deadline_ms,
   }
   return view
 end

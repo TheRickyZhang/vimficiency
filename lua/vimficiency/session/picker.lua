@@ -302,10 +302,10 @@ local function act_open()
     return
   end
   if it.pane == "saved" then
-    -- Load into workspace under a name alias (default: the filename when it is one).
+    -- Load into workspace under a named alias (default: the filename when it is one).
     local function fetch_under(alias)
-      if not alias_mod.is_name(alias) then
-        vim.notify("Need a session name, letters only (got '" .. alias .. "')", vim.log.levels.ERROR)
+      if not alias_mod.is_named(alias) then
+        vim.notify("Need a named alias, letters only (got '" .. alias .. "')", vim.log.levels.ERROR)
         return
       end
       if not run_or_notify(archive.fetch, it.name, alias) then return end
@@ -316,7 +316,7 @@ local function act_open()
         if state then state.pane = "active"; render() end
       end)
     end
-    if alias_mod.is_name(it.name) then
+    if alias_mod.is_named(it.name) then
       fetch_under(it.name)
     else
       vim.ui.input({ prompt = "Fetch [" .. it.name .. "] as alias: " }, function(input)
@@ -400,7 +400,7 @@ end
 --- a stable name alias. Recall/suggest entries drift (their display alias is
 --- a ring index), so the picker points the user at save-to-disk instead.
 local function has_stable_alias(it)
-  return it.pane == "saved" or alias_mod.is_name(it.name)
+  return it.pane == "saved" or alias_mod.is_named(it.name)
 end
 
 local function notify_needs_save_first(it, verb)

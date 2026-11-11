@@ -11,7 +11,7 @@ local h             = require("_helpers")
 local function seed_finished(alias, finish_alias, result)
   local id = "test-special-" .. alias
   h.seed_named(alias, id)
-  session_store.mark_finished(id, result or h.fake_result({ user_seq = "" }), finish_alias)
+  session_store.convert_to_finished(id, result or h.fake_result({ user_seq = "" }), finish_alias)
   return id
 end
 

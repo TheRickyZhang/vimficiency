@@ -36,7 +36,7 @@ local SUMMARY = {
 --- Run `fn` with auto_suggest stubs installed. `spec` keys:
 ---   cfg     — config.auto_suggest value (default IDLE_CFG)
 ---   compute — analyze stub returning `result` or `nil, err` (default fake_result())
----   finish  — session_store.mark_finished stub (default no-op true)
+---   finish  — session_store.convert_to_finished stub (default no-op true)
 ---   active  — session_store.get_active stub (default returns ACTIVE)
 ---
 --- The async compute is stubbed to resolve `on_done` synchronously, so the
@@ -48,23 +48,23 @@ local function harness(spec, fn)
   local patches = {
     { config, "auto_suggest", spec.cfg or IDLE_CFG },
     { session_store, "get_active",     spec.active  or function() return ACTIVE end },
-    { session_store, "mark_finished", spec.finish  or function() return true end },
+    { session_store, "convert_to_finished", spec.finish  or function() return true end },
     { session_store, "summarize",      function() return SUMMARY end },
     { compute,       "compute_result_for_active_async",
-        function(active, _deadline_ms, on_done)
-          on_done(compute_fn(active))
+        function(_active, _deadline_ms, on_done)
+          on_done(compute_fn())
           return nil
         end },
   }
   h.with_patch(patches, fn)
 end
 
---- Helper for kind-capture tests: the 4th mark_finished arg is the promotion.
-local function capture_kind(cfg, compute, trigger)
+--- Helper for kind-capture tests: the 4th convert_to_finished arg is the promotion.
+local function capture_kind(cfg, compute_stub, trigger)
   local captured
   harness({
     cfg = cfg,
-    compute = compute,
+    compute = compute_stub,
     finish = function(...)
       captured = select(4, ...)
       return true
@@ -105,7 +105,7 @@ test("fire_idle: promotes the recall record to suggest_idle on takeover", functi
   local captured = { id = "fake-id", kind = "recall" }
   harness({
     active = function() return captured end,
-    -- Mirror mark_finished's real contract: the promotion is applied
+    -- Mirror convert_to_finished's real contract: the promotion is applied
     -- atomically with the status transition. A failing finish leaves kind
     -- untouched.
     finish = function(...)
@@ -152,7 +152,7 @@ test("fire_idle: single-flight skips a second fire while one is in flight", func
   h.with_patch({
     { config, "auto_suggest", IDLE_CFG },
     { session_store, "get_active",     function() return ACTIVE end },
-    { session_store, "mark_finished", function() finish_count = finish_count + 1; return true end },
+    { session_store, "convert_to_finished", function() finish_count = finish_count + 1; return true end },
     { session_store, "summarize",      function() return SUMMARY end },
     { compute, "compute_result_for_active_async", function(_active, _deadline_ms, on_done)
         pending_on_done = on_done
@@ -243,17 +243,17 @@ end)
 
 --------------------------------------------------------------------------------
 -- Kind plumbing: each trigger must pass its suggest_* kind through to
--- mark_finished so the record is promoted and the header can print it.
+-- convert_to_finished so the record is promoted and the header can print it.
 --------------------------------------------------------------------------------
 
 test("auto_suggest triggers pass their suggest_* kind", function()
   assert_eq(capture_kind(IDLE_CFG, nil, fire_idle), "suggest_idle")
   assert_eq(capture_kind(KEYS_CFG, nil, fire_keys), "suggest_keys")
-  local compute = function() return h.fake_result({
+  local compute_stub = function() return h.fake_result({
     user_cost = 20,
     optimal_results = { { seq = "y", cost = 10.0 } },
   }) end
-  assert_eq(capture_kind(COST_M1, compute, fire_cost), "suggest_cost")
+  assert_eq(capture_kind(COST_M1, compute_stub, fire_cost), "suggest_cost")
 end)
 
 --------------------------------------------------------------------------------

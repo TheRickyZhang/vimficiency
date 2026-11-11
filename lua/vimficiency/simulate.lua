@@ -342,15 +342,6 @@ M._debug_get_states = function()
   return out
 end
 
-M._debug_get_sequences = function()
-  local out = {}
-  for i, entry in ipairs(multi_sim.windows) do
-    local pe = pool_entry_for(entry)
-    out[i] = pe and pe.tokens or nil
-  end
-  return out
-end
-
 M._debug_get_windows = function() return multi_sim.windows end
 M._debug_get_pool = function() return multi_sim.pool end
 M._debug_get_focus_state = function() return focus_state end
@@ -358,8 +349,6 @@ M._debug_seek_to = seek_to
 M._debug_toggle_focus = actions.toggle_focus
 M._debug_cycle_next = actions.cycle_next
 M._debug_cycle_prev = actions.cycle_prev
-M._debug_cycle_rank_next = function() actions.cycle_rank(1) end
-M._debug_cycle_rank_prev = function() actions.cycle_rank(-1) end
 M._debug_tokenize_for_animation = tokenize.for_animation
 
 return M

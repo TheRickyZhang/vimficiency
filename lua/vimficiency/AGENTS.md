@@ -78,6 +78,16 @@ Subdirectories hold supporting modules for each domain:
 | `capture/end_trigger.lua` | Idle/command-count auto-end triggers (Watch / Suggest). |
 | `capture/auto_suggest.lua` | Idle-trigger auto-suggest (runs optimizer on a recall window). |
 
+## Module headers
+
+A module's public surface is declared up front as an `(exact)` class on its
+`M` table, one `---@field name fun(...)` per export, grouped by responsibility.
+lua-language-server (`scripts/lint-lua.sh`) then reports `inject-field` for any
+`function M.x` not in that block, so the header cannot drift from the
+implementation. Everything else in the file is `local`. `session/store.lua` is
+the pilot; `session/archive.lua`, `session/compute.lua`, `capture/atom_stream.lua`
+and `util.lua` follow it. Extend to others as they are touched.
+
 ## Session Architecture
 
 ### Handles: alias or filename
@@ -120,7 +130,7 @@ BOTH `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS` say drop. See
 - **VF.Session.Finished**: `result`, `finish_alias`, `finished_mono_ns`. Both
   shapes extend `VF.Session.Core` (`id`, `kind`, `started_mono_ns`).
 - **VF.Session.Result**: Optimizer output + position + `key_count` +
-  `finished_wall_epoch`, built at finish; `mark_finished` stamps `kind`.
+  `finished_wall_epoch`, built at finish; `convert_to_finished` stamps `kind`.
 
 Clocks: anything that stays in the process (`*_mono_ns`) is `vim.uv.hrtime()`,
 immune to system-time jumps and used for ring lookup, eviction, cooldowns and
@@ -131,7 +141,7 @@ values do not survive a reboot. Never compare across the two.
   here, not stored.
 
 Two tables keyed by id, `active_sessions` and `finished_sessions`;
-`name_to_id` and `recall_id_order` index across both. Finish moves the
+`named_to_id` and `recall_id_order` index across both. Finish moves the
 record from one table to the other — it does NOT unindex. This removes
 tombstones from `recall_id_order` entirely: a finished session stays reachable
 via its recall alias (for `:Vimfy play Ns`) until the ring slot rotates out.

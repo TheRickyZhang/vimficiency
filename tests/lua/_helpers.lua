@@ -132,6 +132,7 @@ function M.fake_result(overrides)
     user_seq = "x",
     user_cost = 1.0,
     optimal_results = { { seq = "y", cost = 1.0 } },
+    finished_wall_epoch = os.time(),
   }
   if overrides then
     for k, v in pairs(overrides) do r[k] = v end

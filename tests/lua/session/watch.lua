@@ -98,13 +98,13 @@ test("watch: finish (manual :Vimfy finish) disarms the trigger", function()
 
       local fake_result = h.fake_result({ user_seq = "" })
       assert_eq(
-        session_store.mark_finished(rec.id, fake_result, "wfinish"),
+        session_store.convert_to_finished(rec.id, fake_result, "wfinish"),
         true)
 
       assert_eq(atom_stream._has_listener(name), false,
-        "mark_finished must disarm the watch trigger")
+        "convert_to_finished must disarm the watch trigger")
       assert_eq(fake_result.kind, "watch",
-        "mark_finished must stamp the kind onto the result")
+        "convert_to_finished must stamp the kind onto the result")
     end)
   end)
 end)

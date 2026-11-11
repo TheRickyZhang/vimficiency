@@ -58,6 +58,4 @@ function M.plan(literal_target, typed_so_far)
   }
 end
 
-M._common_prefix_len = common_prefix_len
-
 return M

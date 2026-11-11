@@ -28,7 +28,6 @@ ever feels laggy. All are optional and default as shown.
 |-------|---------|---------|
 | `MAX_SEARCH_LINES` | `500` | Hard ceiling on the analyzed slice height. A region taller than this is skipped entirely instead of analyzed — the strongest guard against a runaway search. Lower it to cap worst-case latency. |
 | `SLICE_PADDING` | `5` | Context lines included above and below the detected edit region before searching. More padding means a larger search. |
-| `SLICE_EXPAND_TO_PARAGRAPH` | `false` | When `true`, grows the analyzed slice out to the surrounding paragraph boundaries. Off keeps slices tight. |
 | `RESULTS_CALCULATED` | `20` | How many candidate sequences the search computes per run. |
 | `RESULTS_SAVED` | `5` | How many of those candidates are kept and shown. |
 

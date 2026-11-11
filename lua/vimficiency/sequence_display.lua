@@ -135,16 +135,14 @@ function M.chunked_lines_for_tokens(tokens, opts)
 end
 
 ---@param text string
----@param opts { tokenize?: boolean }?
 ---@return string
-function M.typed_text_inline(text, opts)
+function M.typed_text_inline(text)
   return ffi_display.sequence_display_typed_text(text, true)
 end
 
 ---@param text string
----@param opts { tokenize?: boolean }?
 ---@return string
-function M.literal_typed_text_inline(text, opts)
+function M.literal_typed_text_inline(text)
   return ffi_display.sequence_display_typed_text(text, false)
 end
 

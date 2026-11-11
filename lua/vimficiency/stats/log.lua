@@ -51,7 +51,7 @@ function M.build_record(kind, result)
   local beats = (best_cost ~= nil) and (user_cost < best_cost)
   return {
     v = SCHEMA_VERSION,
-    finish_epoch  = os.time(),
+    finish_epoch  = result.finished_wall_epoch,
     type          = require("vimficiency.session.store").session_type(kind),
     kind          = kind,
     key_count     = result.key_count or 0,

@@ -22,8 +22,8 @@ local util = require("vimficiency.util")
 -- Table of all non-root vimficiency commands, grouped by workflow stage. Order
 -- is for the reader only; the bare `:Vimfy` listing sorts alphabetically.
 -- Tab-completion candidates, by the handle grammar each command accepts.
-local function name_aliases()
-  return vim.tbl_filter(alias_mod.is_name, session_store.list_aliases())
+local function named_aliases()
+  return vim.tbl_filter(alias_mod.is_named, session_store.list_aliases())
 end
 --- Live aliases plus recall time hints: everything `close` accepts.
 local function closeable()
@@ -44,7 +44,7 @@ return {
     desc = "Start a mark session (finish it yourself)",
     usage = "start <alias>",
     min_args = 1,
-    complete = { name_aliases },
+    complete = { named_aliases },
     run = function(args) session.start(args[1]) end,
   },
 
@@ -52,7 +52,7 @@ return {
     desc = "Finish a mark or watch session and show results",
     usage = "finish <alias>",
     min_args = 1,
-    complete = { name_aliases },
+    complete = { named_aliases },
     run = function(args) session.finish(args[1]) end,
   },
 
@@ -69,7 +69,7 @@ return {
     desc = "Start a watch session (auto end on idle)",
     usage = "watch <alias>",
     min_args = 1,
-    complete = { name_aliases },
+    complete = { named_aliases },
     run = function(args) session.watch(args[1]) end,
   },
 

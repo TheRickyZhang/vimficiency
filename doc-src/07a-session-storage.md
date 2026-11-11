@@ -20,8 +20,10 @@ and a saved file.
 
 Session memory is small and churns on its own:
 
-- **Mark** slots cap at `NAMED_CAPACITY = 5`. The oldest drops when a
-  6th starts.
+- **Mark** and **Watch** sessions drop on their own when their window closes,
+  the cursor drifts away, or they idle too long. Reusing a name replaces the
+  previous session. A `NAMED_CAPACITY = 100` guard refuses further starts if
+  something runs away.
 - **Recall** / **Suggest** entries age out of the rolling ring by the
   union of `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS` — drop
   only when both say drop.
@@ -66,12 +68,16 @@ is the alias the session was finished under:
 :Vimfy save @ my-refactor    " or pick the filename yourself
 ```
 
+A suggest result was not finished under an alias you typed, so `:Vimfy save $`
+defaults to `suggest-<timestamp>` rather than overwriting the same `3s.json`
+on every fire.
+
 ## Collision rules
 
 - **`save` / `store` onto an existing disk file** → overwrites, emits a
   WARN. No refusal; filesystem-style "save over" semantics.
 - **`fetch` into an occupied workspace alias** → refuses. Close the
-  alias first (`:Vimfy close <alias>`) or fetch under a different name.
+  alias first (`:Vimfy close <alias>`) or fetch under a different alias.
 
 ## Replay: `play` covers both
 
@@ -86,8 +92,8 @@ is the alias the session was finished under:
   workspace copy. To force a refetch, `:Vimfy close <alias>` first, then
   `:Vimfy play <alias>`.
 
-The implicit fetch only works when the filename is also a valid session
-name (letters only). For filenames with digits/dots/hyphens, use an
+The implicit fetch only works when the filename is also a valid named
+alias (letters only). For filenames with digits/dots/hyphens, use an
 explicit `:Vimfy fetch <filename> <alias>` first.
 
 ## Worked example
