@@ -44,8 +44,8 @@ test("finish failure on a recall record preserves the ring slice", function()
   local buf_b = h.new_buf({ "y" })
 
   local ok, err
-  h.silence_notify(function() ok, err = pcall(session.finish, "3s") end)
-  assert_true(ok, "finish should not propagate errors from a failed compute: " .. tostring(err))
+  h.silence_notify(function() ok, err = pcall(session.recall, "3s") end)
+  assert_true(ok, "recall should not propagate errors from a failed compute: " .. tostring(err))
 
   assert_true(session_store.summarize(id) ~= nil,
     "recall record must survive a finish() failure")
@@ -62,7 +62,7 @@ test("can_store_manual: finished records do not consume capacity slots", functio
     local rec = session_store.get_active(alias)
     assert_true(rec ~= nil, "start failed for " .. alias)
     rec = assert(rec)
-    session_store.finish_session(rec.id, h.fake_result({ user_seq = "" }), alias, nil, "manual")
+    session_store.mark_finished(rec.id, h.fake_result({ user_seq = "" }), alias, nil, "manual")
   end
   assert_eq(session_store.can_store_manual("capf"), true,
     "a new alias must be allowed when all existing records are finished")
@@ -75,7 +75,7 @@ test("finish failure on a manual record removes it (regression guard)", function
     "manual session should exist after start")
 
   local buf_b = h.new_buf({ "y" })
-  h.silence_notify(function() pcall(session.finish, "kfinishfail") end)
+  h.silence_notify(function() pcall(session.finish, "kfinishfail", "manual") end)
 
   assert_eq(session_store.get_active("kfinishfail"), nil,
     "manual record must be removed after finish failure")

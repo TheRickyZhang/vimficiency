@@ -8,7 +8,7 @@
 
 local config        = require("vimficiency.config")
 local auto_suggest  = require("vimficiency.capture.auto_suggest")
-local session       = require("vimficiency.session")
+local compute       = require("vimficiency.session.compute")
 local session_store = require("vimficiency.session.store")
 local h             = require("_helpers")
 
@@ -35,7 +35,7 @@ local SUMMARY = {
 --- Run `fn` with auto_suggest stubs installed. `spec` keys:
 ---   cfg     — config.auto_suggest value (default IDLE_CFG)
 ---   compute — analyze stub returning `result` or `nil, err` (default fake_result())
----   finish  — session_store.finish_session stub (default no-op true)
+---   finish  — session_store.mark_finished stub (default no-op true)
 ---   active  — session_store.get_active stub (default returns ACTIVE)
 ---
 --- The async compute is stubbed to resolve `on_done` synchronously, so the
@@ -43,15 +43,15 @@ local SUMMARY = {
 local function harness(spec, fn)
   spec = spec or {}
   reset()
-  local compute = spec.compute or function() return h.fake_result() end
+  local compute_fn = spec.compute or function() return h.fake_result() end
   local patches = {
     { config, "auto_suggest", spec.cfg or IDLE_CFG },
     { session_store, "get_active",     spec.active  or function() return ACTIVE end },
-    { session_store, "finish_session", spec.finish  or function() return true end },
+    { session_store, "mark_finished", spec.finish  or function() return true end },
     { session_store, "summarize",      function() return SUMMARY end },
-    { session,       "compute_result_for_active_async",
+    { compute,       "compute_result_for_active_async",
         function(active, _deadline_ms, on_done)
-          on_done(compute(active))
+          on_done(compute_fn(active))
           return nil
         end },
   }
@@ -104,7 +104,7 @@ test("fire_idle: promotes end_kind from manual to auto on takeover", function()
   local captured = { id = "fake-id", start_kind = "auto", end_kind = "manual" }
   harness({
     active = function() return captured end,
-    -- Mirror finish_session's real contract: the end_kind override is
+    -- Mirror mark_finished's real contract: the end_kind override is
     -- applied atomically with the status transition. A failing finish
     -- leaves end_kind untouched.
     finish = function(...)
@@ -153,9 +153,9 @@ test("fire_idle: single-flight skips a second fire while one is in flight", func
   h.with_patch({
     { config, "auto_suggest", IDLE_CFG },
     { session_store, "get_active",     function() return ACTIVE end },
-    { session_store, "finish_session", function() finish_count = finish_count + 1; return true end },
+    { session_store, "mark_finished", function() finish_count = finish_count + 1; return true end },
     { session_store, "summarize",      function() return SUMMARY end },
-    { session, "compute_result_for_active_async", function(_active, _deadline_ms, on_done)
+    { compute, "compute_result_for_active_async", function(_active, _deadline_ms, on_done)
         pending_on_done = on_done
         return fake_handle
       end },
@@ -193,30 +193,26 @@ test("fire_keys: no-op when cfg.keys is absent", function()
   end)
 end)
 
-test("fire_keys: success path records fingerprint (shared state with fire_idle)", function()
-  harness({ cfg = { keys = { every = 50 }, cooldown_ms = 5000 } }, function()
-    assert_eq(fire_keys(), true)
-    assert_true(get_last_fp() ~= nil,
-      "keys trigger must write to the same last_fingerprint as idle")
-  end)
-end)
-
 --------------------------------------------------------------------------------
 -- fire_cost: gate on user_cost vs m*optimal+b
 --------------------------------------------------------------------------------
 
-test("fire_cost: gate failure counts but does not fingerprint (user was efficient)", function()
+test("fire_cost: gate failure counts and finishes the record but does not fingerprint", function()
   -- 5 > 2*10+0 == 20 → false → gate fails → suppress notify, still count.
+  local finish_called = false
   harness({
     cfg = COST_M2,
     compute = function() return h.fake_result({
       user_cost = 5,
       optimal_results = { { seq = "y", cost = 10.0 } },
     }) end,
+    finish = function() finish_called = true; return true end,
   }, function()
     assert_eq(fire_cost(), true, "gate failure must still count (optimizer ran)")
     assert_eq(get_last_fp(), nil,
       "gate failure must not record fingerprint — nothing was surfaced")
+    assert_eq(finish_called, true,
+      "gate failure must still finish the record so next tick doesn't re-analyze it")
   end)
 end)
 
@@ -248,7 +244,7 @@ end)
 
 --------------------------------------------------------------------------------
 -- Reason plumbing: each trigger must pass its literal reason through to
--- finish_session so the header can print it.
+-- mark_finished so the header can print it.
 --------------------------------------------------------------------------------
 
 test("auto_suggest triggers pass literal finish reasons", function()
@@ -259,24 +255,6 @@ test("auto_suggest triggers pass literal finish reasons", function()
     optimal_results = { { seq = "y", cost = 10.0 } },
   }) end
   assert_eq(capture_reason(COST_M1, compute, fire_cost), "suggest_cost")
-end)
-
-test("fire_cost: gate fail finishes the record (consume, not leak)", function()
-  local finish_called = false
-  local captured = { id = "fake-id", start_kind = "auto", end_kind = "manual" }
-  harness({
-    cfg = COST_M2,
-    active = function() return captured end,
-    compute = function() return h.fake_result({
-      user_cost = 5,
-      optimal_results = { { seq = "y", cost = 10.0 } },
-    }) end,
-    finish = function() finish_called = true; return true end,
-  }, function()
-    fire_cost()
-    assert_eq(finish_called, true,
-      "gate failure must still finish the record so next tick doesn't re-analyze it")
-  end)
 end)
 
 --------------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 return function(ctx)
   local helpers = ctx.helpers
   local sim = ctx.sim
-  local session = ctx.session
+  local playback = require("vimficiency.session.playback")
   local session_store = ctx.session_store
   local with_replay = ctx.with_replay
   local assert_eq = ctx.assert_eq
@@ -78,7 +78,7 @@ return function(ctx)
       local play = require("vimficiency.play")
       play.set_setting("include_user_sequence", true)
       play.set_setting("window_count", 3)
-      session.simulate("simreplay", 3)
+      playback.simulate("simreplay", 3)
 
       local tries = 0
       local function finish(ok, err)

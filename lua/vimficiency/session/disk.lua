@@ -28,7 +28,7 @@ local function encode_pretty(value, level)
     if not vim.islist(value) then return "{}" end
     error(
       "encode_pretty: bare empty table is shape-ambiguous; " ..
-      "use vim.empty_dict() for objects or session.empty_array() for arrays"
+      "use vim.empty_dict() for objects or disk.empty_array() for arrays"
     )
   end
   if vim.islist(value) then

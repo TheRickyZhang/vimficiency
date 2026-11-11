@@ -7,7 +7,7 @@ local config        = require("vimficiency.config")
 local end_trigger   = require("vimficiency.capture.end_trigger")
 local poller        = require("vimficiency.async.poller")
 local result_view   = require("vimficiency.session.result_view")
-local session       = require("vimficiency.session")
+local compute       = require("vimficiency.session.compute")
 local session_store = require("vimficiency.session.store")
 
 local SUBSCRIBER_IDLE = "auto_suggest_idle"
@@ -93,24 +93,24 @@ local function fire_with_window(window, gate, reason)
   local deadline_ms = (cfg and cfg.compute_deadline_ms) or 0
 
   -- Offload the analyze to a worker thread; finish + render in the callback.
-  in_flight = session.compute_result_for_active_async(active, deadline_ms, function(result)
+  in_flight = compute.compute_result_for_active_async(active, deadline_ms, function(result)
     in_flight = nil
     if not result then return end
 
     -- Cost gate: consume the record but suppress the notification.
     if gate and not gate(result) then
-      session_store.finish_session(id, result, window, "auto", reason)
+      session_store.mark_finished(id, result, window, "auto", reason)
       return
     end
 
     local fp = fingerprint_result(result)
     if fp == last_fingerprint then
-      session_store.finish_session(id, result, window, "auto", reason)
+      session_store.mark_finished(id, result, window, "auto", reason)
       return
     end
 
     -- Promote Recall -> Suggest with the finish-time end_kind override.
-    if not session_store.finish_session(id, result, window, "auto", reason) then
+    if not session_store.mark_finished(id, result, window, "auto", reason) then
       return
     end
 
@@ -155,9 +155,10 @@ local function fire_cost()
   end, "suggest_cost")
 end
 
---- Turn on auto-suggest.
----@return boolean success
-function M.enable()
+--- Startup entry: arm only the triggers declared in `setup()`. Default-config
+--- users get nothing here; their path is `:Vimfy suggest on`.
+---@return boolean armed
+function M.enable_configured()
   if #disarms > 0 then return false end
   local cfg = config.auto_suggest
   if not cfg then return false end  -- master off (auto_suggest = false)
@@ -194,19 +195,25 @@ function M.enable()
     if d then table.insert(disarms, d) end
   end
 
-  -- Turnkey: no explicit triggers → arm the default cost gate so
-  -- `:Vimfy suggest on` works with zero config. fire_cost falls back to
-  -- cfg.default_cost when cfg.cost is absent.
-  if not M.is_configured() then
-    local d = end_trigger.arm_idle({
-      name        = SUBSCRIBER_COST,
-      idle_ms     = cfg.default_cost.ms,
-      cooldown_ms = cooldown_ms,
-      on_fire     = fire_cost,
-    })
-    if d then table.insert(disarms, d) end
-  end
+  return #disarms > 0
+end
 
+--- `:Vimfy suggest on`: the declared triggers, or with zero config the turnkey
+--- default cost gate (fire_cost falls back to cfg.default_cost when cfg.cost is absent).
+---@return boolean armed
+function M.enable()
+  if M.enable_configured() then return true end
+  if #disarms > 0 then return false end
+  local cfg = config.auto_suggest
+  if not cfg then return false end
+
+  local d = end_trigger.arm_idle({
+    name        = SUBSCRIBER_COST,
+    idle_ms     = cfg.default_cost.ms,
+    cooldown_ms = cfg.cooldown_ms or 0,
+    on_fire     = fire_cost,
+  })
+  if d then table.insert(disarms, d) end
   return #disarms > 0
 end
 
@@ -225,14 +232,6 @@ end
 ---@return boolean
 function M.is_enabled()
   return #disarms > 0
-end
-
---- True iff at least one trigger is configured.
----@return boolean
-function M.is_configured()
-  local cfg = config.auto_suggest
-  if not cfg then return false end
-  return cfg.idle ~= nil or cfg.keys ~= nil or cfg.cost ~= nil
 end
 
 -- Test-only exports.

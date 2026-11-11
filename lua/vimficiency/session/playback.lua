@@ -52,11 +52,6 @@ end
 ---@param alias string
 ---@param count integer|nil
 function M.simulate(alias, count)
-  if not alias or alias == "" then
-    vim.notify("simulate() requires a session alias or saved name", vim.log.levels.ERROR)
-    return
-  end
-
   -- `@` = most recently finished session; `$` = most recent suggest regression.
   local _, special_result, is_special = session_store.resolve_special(alias)
   if is_special then

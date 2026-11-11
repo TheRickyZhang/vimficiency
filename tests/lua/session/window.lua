@@ -3,7 +3,7 @@
 -- original session window is closed but the buffer is still current via
 -- a different window, we should proceed instead of hard-rejecting.
 
-local session = require("vimficiency.session")
+local compute = require("vimficiency.session.compute")
 local ffi_lib = require("vimficiency.ffi")
 local util    = require("vimficiency.util")
 local h       = require("_helpers")
@@ -44,7 +44,7 @@ test("compute_result_for_active: window-closed fallback to current window", func
   assert_true(not vim.api.nvim_win_is_valid(win_original),
     "sanity: original window is gone")
 
-  local result, err = session.compute_result_for_active(active)
+  local result, err = compute.compute_result_for_active(active)
   -- The optimizer may still reject for unrelated reasons (empty keyseq,
   -- trivial slice). The assertion is narrower: the failure must NOT be
   -- window-related.
@@ -66,7 +66,7 @@ test("compute_result_for_active: buffer-gone still hard-rejects", function()
   vim.cmd("enew")
   vim.api.nvim_buf_delete(buf, { force = true })
 
-  local result, err = session.compute_result_for_active(active)
+  local result, err = compute.compute_result_for_active(active)
   assert_eq(result, nil, "should fail when buffer gone")
   assert_match(err, "buffer", "error must mention buffer")
 end)
@@ -76,7 +76,7 @@ test("compute_result_for_active: different-buffer still hard-rejects", function(
   local active = fake_active(buf_a, vim.api.nvim_get_current_win())
   local buf_b = h.new_buf({ "b" })
 
-  local result, err = session.compute_result_for_active(active)
+  local result, err = compute.compute_result_for_active(active)
   assert_eq(result, nil, "should fail when current buf differs")
   assert_match(err, "buf " .. buf_a, "error must name captured buffer")
   assert_match(err, "buf " .. buf_b, "error must name current buffer")
@@ -105,7 +105,7 @@ test("compute_result_for_active: includes capture key debug", function()
       return {}, 9.0, ""
     end },
   }, function()
-    result = assert(session.compute_result_for_active(active))
+    result = assert(compute.compute_result_for_active(active))
   end)
 
   assert_eq(result.user_seq, "cwW2<Esc>dl")

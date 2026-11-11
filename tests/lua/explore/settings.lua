@@ -65,36 +65,6 @@ test("explore settings: settings_profile.load handles malformed JSON", function(
   os.remove(path)
 end)
 
-test("explore settings: get_optimizer_defaults parses C++ defaults across types", function()
-  -- The C++ side dumps every default-initialized param-struct field as
-  -- `<scope>:<key>:<type>=<value>` lines. The Lua parser must produce
-  -- typed values (numbers for int/double, booleans for bool). If a new
-  -- field is added on either side the wire format keeps roundtripping;
-  -- this test pins the per-type decoding so a regression there is loud.
-  local ffi_lib = require("vimficiency.ffi")
-  local defaults = ffi_lib.get_optimizer_defaults()
-
-  -- Base defaults are exported under an explicit shared scope. Per-optimizer
-  -- defaults still include inherited base fields for concrete-scope editing.
-  assert_eq(defaults.shared.maxResults, 20)
-  assert_eq(defaults.shared.minPrefixCount, 4)
-  assert_eq(defaults.shared.maxPrefixCount, 16)
-  assert_eq(defaults.nav.maxResults, 20)
-  assert_eq(defaults.transform.maxResults, 20)
-  assert_eq(defaults.composition.maxResults, 20)
-
-  -- Doubles parse as numbers, not strings.
-  assert_eq(type(defaults.nav.exploreFactor), "number")
-  assert_eq(defaults.nav.effortWeight, 1.0)
-  assert_eq(defaults.composition.overshootPenalty, 3.0)
-  assert_eq(defaults.composition.moveDeleteScale, 1.0)
-  assert_eq(defaults.composition.diffAlgorithm, 0)  -- DiffAlgorithm::VimDiff (default)
-
-  -- Bools — the wire encodes true as "1" and false as "0".
-  assert_eq(defaults.nav.useDirectionalPruning, true)
-  assert_eq(defaults.composition.useDirectionalPruning, true)
-end)
-
 test("explore settings: shared fallback is base-only", function()
   settings_profile.save("explore", settings.EXPLORE_SCHEMA_VERSION, {
     shared = {

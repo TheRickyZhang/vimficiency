@@ -1,5 +1,5 @@
 -- Full-screen viewer: header + side-by-side initial/final panes. Changed
--- columns come from the optimizer's own diff (result.diffs); see session.view.
+-- columns come from the optimizer's own diff (result.diffs); see archive.view.
 
 local v            = vim.api
 local buf_window   = require("vimficiency.explore.buf_window")

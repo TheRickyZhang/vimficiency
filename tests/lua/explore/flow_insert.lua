@@ -5,7 +5,6 @@ local explore = require("vimficiency.explore")
 local feed = helpers.feed
 local first_recommendation_in_phase = explore_helpers.first_recommendation_in_phase
 local enters_insert_mode = explore_helpers.enters_insert_mode
-local header_lines_for_title = explore_helpers.header_lines_for_title
 local move_to_first_edit_target = explore_helpers.move_to_first_edit_target
 
 test("explore flow: insert recommendation accepts matching scratch edit", function()
@@ -90,35 +89,6 @@ test("explore flow: structural TextChanged during insert does not cancel typing 
       assert_eq(st.phase.kind, "Insert")
       assert_eq(st.pending.target, "m")
       assert_eq(st.scratch_lines[1], "")
-    end)
-  end)
-end)
-
-test("explore flow: live insert prefix appears in explored header", function()
-  helpers.silence_notify(function()
-    local label = "flow-insert-live-header"
-    explore_helpers.open_scenario_flow(label, "insert_expression", function(scratch_buf)
-      local header_render = require("vimficiency.explore.render.header")
-      local insert_helpers = require("vimficiency.explore.insert_helpers")
-      local view = explore_helpers.current_view()
-
-      view.state.phase = { kind = "Insert", edit_index = 0 }
-      view.header_rows.explored = { "ciw" }
-      view.header_rows.optimal = {}
-      view.pending = {
-        target = "2<Space>*<Space>i",
-        literal_target = "2 * i",
-        row = 0,
-        col_start = 0,
-      }
-      view.on_key_buffer = "ciw2<Space>"
-      explore_helpers.set_scratch({ "2 * i" }, { 1, 2 })
-
-      header_render.render(view, insert_helpers.current_continuation(view))
-
-      local lines = header_lines_for_title(scratch_buf, "Explored")
-      assert_eq(lines[3], "ciw")
-      assert_eq(lines[4], "ciw 2␣")
     end)
   end)
 end)

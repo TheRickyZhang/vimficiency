@@ -10,7 +10,6 @@ package.path = tests_root .. "?.lua;" .. package.path
 local helpers = require("_helpers")
 local sim = require("vimficiency.simulate")
 local highlights = require("vimficiency.highlights")
-local session = require("vimficiency.session")
 local session_store = require("vimficiency.session.store")
 
 -- Quiet the environment — mirrors `runner.lua`'s treatment so this test
@@ -207,7 +206,6 @@ local case_context = {
   helpers = helpers,
   sim = sim,
   highlights = highlights,
-  session = session,
   session_store = session_store,
   with_replay = with_replay,
   get_window = get_window,

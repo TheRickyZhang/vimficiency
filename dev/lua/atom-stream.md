@@ -1,104 +1,58 @@
 # Atom stream (`capture/atom_stream.lua`)
 
-Read before changing capture, recall snapshotting, the admission policy, or any
-subscriber (`capture/recall.lua`, `session.lua` manual capture,
-`capture/end_trigger.lua`). Supersedes `neovim_on_key_issues.md` for
-manual/recall/trigger capture; `key_tracking.lua` lives on only for interactive
-Explore.
+Read before changing capture, the admission rule, recall snapshotting, or any
+listener (`capture/recall.lua`, `session.lua`, `capture/end_trigger.lua`).
+`key_tracking.lua` is Explore-only; see `neovim_on_key_issues.md`.
 
-## Why CmdAtom
+## Model
 
-Capture runs off Neovim's `CmdAtom` autocmd (0.13-dev / nightly;
-`vim.fn.exists("##CmdAtom") == 1`). The event fires once per atomic user action,
-*after* the action runs, reporting the resolved post-mapping result rather than
-raw keystrokes.
+Neovim's `CmdAtom` autocmd (0.13-dev) fires once per atomic user action, after
+it runs, with the resolved post-mapping `keys`. `atom_stream.lua` owns the one
+autocmd, normalizes each event into a `VF.Atom`, attaches a decision, and pushes
+both to every named listener. It stores nothing; each listener keeps its own
+atoms and does its own buffer/window scoping.
 
-This dissolves every `vim.on_key` hazard the old layer fought. Operator-pending
-motions no longer double-fire, mapping LHS bytes no longer leak into recordings,
-single-key triggers need no retraction, and text objects carry their final char
-(`ciw` is one atom, not `c i ?`). A `:Vimfy` keymap resolves to an inert
-excmd/no-keys atom and drops out on its own — the old `mapping_scan` warning was
-deleted with the migration.
+`add_listener(name, fn)` lazily creates the autocmd; `remove_listener(name)`
+deletes it when the last listener leaves. A name collision returns `false` so a
+double install is loud. `setup()` raises when `##CmdAtom` is absent.
 
-## Event shape
-
-The autocmd's `ev.data` carries the fields `atom_stream.lua` consumes:
+## Event fields consumed
 
 - `type` — `operator | insert | motion | normal | visual | jump | scroll | excmd | mouse | mapping`.
-- `keys` — the replayable post-mapping sequence (notation). `nil` means a lossy
-  Lua callback, `""` an unreplayable resolution.
-- `lhs` — the as-typed LHS (notation).
-- `count` — the command's count; drives synthetic-count stripping.
-- `changed`, `moved` — whether the action modified buffer text / moved the cursor.
+- `keys` — replayable sequence. `nil` is a Lua callback, `""` an unexpressible resolution.
+- `lhs`, `count` — as typed; `count` drives synthetic-count stripping.
+- `changed`, `moved` — whether the action touched text / cursor.
 
-Only `keys` is forwarded on `VF.Atom`, alongside the buffer/window scope. The
-other event fields are consumed for the decision and synthetic-count stripping
-and then dropped; `reg` and `undoseq` are never read.
+`reg` and `undoseq` are never read.
 
-Standard autocmd `ev.buf` carries the buffer; the focused window is read at
-dispatch time.
+## Synthetic count-1
 
-## Synthetic count-1 prefix
+Vim folds a synthetic `1` onto uncounted commands (`ifoo` arrives as `1ifoo`,
+`count == 1`). Genuine counts arrive as `>= 2` or `nil`; uncounted `J` arrives
+as `2J` by Vim's own join semantics. `strip_synthetic_count` drops a leading `1`
+only when `count == 1`, so `i1` → `1i1` → `i1` keeps its content digit.
 
-Vim folds a *synthetic* count of `1` onto commands the user gave no count to:
-`ifoo` arrives as `1ifoo` with `count == 1`, likewise `A`→`1A`, `rX`→`1rX`.
-Genuine counts arrive as `count >= 2` (or `nil`), e.g. `2dd`, and uncounted `J`
-arrives as `2J` (Vim's own join semantics, not a synthetic prefix).
+## Admission decision
 
-`strip_synthetic_count` drops a leading `1` only when `count == 1`, so replay and
-effort match what the user typed. Stripping just the first char keeps content
-digits intact (`i1` → `1i1` → `i1`).
+An atom is replayable when `keys` is neither `nil` nor `""`, the type is not
+`excmd`, and the keys are not a mouse token. Replayable → `record`. Otherwise
+`abort` if `changed` or `moved`, else `skip`.
 
-## Admission decisions
+`skip` is a measured no-effect fact, not a tolerance: it is what lets `:w`,
+`:noh`, and `:Vimfy` commands pass through a live session. `abort` means the
+recording can no longer be replayed to the end state, so the listener drops its
+session.
 
-`classify` returns one of three decisions from the atom's intrinsic fields.
-Buffer/window scoping is the subscriber's job (it compares against its own
-session), never decided here.
+## Deferred delivery
 
-- `record` — replayable keys; append to in-scope recordings.
-- `skip` — unreplayable but provably inert: neither changed text nor moved the cursor.
-- `abort` — unreplayable and had an effect; an in-scope session can no longer be trusted.
+Atoms are delivered when control returns to the main loop, so a typing burst
+arrives back to back with the buffer already at its final state. A recall record
+at atom `i` therefore takes its start state from the snapshot kept after atom
+`i-1`; `store.lua` shifts one `recall_prev_state[buf]` forward per atom, and the
+first atom in a buffer only seeds it.
 
-One rule: an atom is replayable when it carries real keys (`keys` is neither
-`nil` nor `""`), is not an `excmd`, and is not a mouse token. Replayable records.
-Anything else aborts if Neovim reports `changed` or `moved`, and skips otherwise.
-The skip row is what lets `:w`, `:noh`, and `:Vimfy` commands pass through a live
-session; it is a measured no-effect fact, not a tolerance.
+## Testing
 
-## Subscriber fan-out
-
-`add_listener(name, on_atom)` registers a named listener and lazily creates the
-autocmd in augroup `VimficiencyAtoms`; `remove_listener(name)` removes the autocmd
-when the last subscriber leaves. A name collision returns `false` so a
-double-install surfaces instead of silently shadowing.
-
-`add_listener` fails closed (returns `false`) when `##CmdAtom` is absent, so
-watch / suggest / recall degrade to a no-op on pre-0.13 Neovim rather than
-erroring. `setup()` emits one warning in that case.
-
-## Deferred delivery and recall snapshot-shift
-
-The event is *deferred*. Under fast typeahead, every atom for a burst of input
-arrives back-to-back once control returns to the main loop, by which point the
-buffer is already at its final state.
-
-A recall record created at atom `i` therefore needs the buffer state that
-*preceded* it, which is the state captured right after atom `i-1`. `store.lua`
-keeps one `recall_prev_state[buf]` snapshot and shifts it forward each atom: the
-first atom in a buffer seeds the snapshot without spawning a record (recalling
-"before the very first command" is not meaningful), and each later atom spawns a
-record framed by the shifted predecessor state.
-
-The burst case has a known limitation: when many atoms land in one drain, every
-record's `start_state` is reconstructed from the shift chain, not snapshotted
-live. This is accepted — recall targets command boundaries, and the shift chain
-reproduces them.
-
-## Test harness constraint
-
-`CmdAtom` is deferred and only flushes when Neovim's main loop runs. `nvim -l`
-never consumes `nvim_input` typeahead and never flushes the queue, so the
-wiring smoke test (`tests/lua/capture/atom_stream.lua`) is a standalone async
-script run via `-c luafile` with real `vim.defer_fn` timers, dispatched as its
-own `run.sh` phase. The decision table itself is pure and is exercised directly
-through `atom_stream._classify`.
+`nvim -l` never flushes `CmdAtom`, so the live wiring test
+(`tests/lua/capture/atom_stream.lua`) is a standalone async script run as its own
+`run.sh` phase. The pure decision table is tested through `atom_stream._classify`.

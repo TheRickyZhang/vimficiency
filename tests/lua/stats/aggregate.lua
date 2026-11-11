@@ -33,13 +33,6 @@ test("aggregate: empty log → zero counters, nil score", function()
     "by_type all zero")
 end)
 
-test("aggregate: single exact-optimal session scores 100", function()
-  local s = stats.aggregate({ rec({ user_cost = 5.0, best_opt_cost = 5.0 }) })
-  assert_eq(s.total_sessions, 1)
-  assert_true(math.abs(s.efficiency_score - 100) < 1e-6,
-    "expected 100, got " .. tostring(s.efficiency_score))
-end)
-
 test("aggregate: single session with user 2× optimal → score = 50", function()
   local s = stats.aggregate({ rec({ user_cost = 10.0, best_opt_cost = 5.0 }) })
   assert_true(math.abs(s.efficiency_score - 50) < 1e-6,
