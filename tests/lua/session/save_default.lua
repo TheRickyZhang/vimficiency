@@ -2,10 +2,10 @@
 -- Covers `archive.default_filename` — the helper behind `:Vimfy save <alias>`
 -- when the user omits the filename.
 --
--- Rule under test: a name or recall alias is returned verbatim (every one of
+-- Rule under test: a named or recall alias is returned verbatim (every one of
 -- them already passes `is_valid_filename`). `@` resolves to the alias the
--- caller passed to `session_store.mark_finished`, stored on the record at
--- finish time.
+-- caller passed to `session_store.convert_to_finished`, stored on the record at
+-- finish time, except suggest results, which get `suggest-<timestamp>`.
 
 local archive       = require("vimficiency.session.archive")
 local session_store = require("vimficiency.session.store")
@@ -16,11 +16,11 @@ local h             = require("_helpers")
 local function seed_and_finish(alias, finish_alias)
   local id = "test-save-default-" .. alias
   h.seed_named(alias, id)
-  session_store.mark_finished(id, h.fake_result({ user_seq = "" }), finish_alias)
+  session_store.convert_to_finished(id, h.fake_result({ user_seq = "" }), finish_alias)
   return id
 end
 
-test("default_filename: name and recall aliases are returned verbatim", function()
+test("default_filename: named and recall aliases are returned verbatim", function()
   for _, alias in ipairs({ "a", "refactor", "WIP", "5", "123", "3s", "30s" }) do
     assert_eq(archive.default_filename(alias), alias, alias)
   end
@@ -42,4 +42,16 @@ test("default_filename: @ resolves to the last finish alias", function()
   seed_and_finish("firstalias", "firstalias")
   seed_and_finish("secondalias", "secondalias")
   assert_eq(archive.default_filename("@"), "secondalias")
+end)
+
+test("default_filename: a suggest result gets a timestamped name, not its recall alias", function()
+  local _, _, id = h.seed_recall({ backdate_s = 10 })
+  local epoch = os.time({ year = 2026, month = 11, day = 11, hour = 14, min = 5, sec = 9 })
+  local result = h.fake_result({ user_seq = "", finished_wall_epoch = epoch })
+  assert_true(session_store.convert_to_finished(id, result, "3s", "suggest_idle"))
+  session_store.set_last_suggest_id(id)
+
+  assert_eq(archive.default_filename("$"), "suggest-20261111-140509")
+  assert_eq(archive.default_filename("@"), "suggest-20261111-140509")
+  assert_true(require("vimficiency.session.alias").is_valid_filename(archive.default_filename("$")))
 end)

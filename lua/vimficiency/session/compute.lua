@@ -7,6 +7,10 @@ local poller = require("vimficiency.async.poller")
 local ffi_session = require("vimficiency.ffi.session")
 local util = require("vimficiency.util")
 
+---@class (exact) VF.SessionCompute
+---@field compute_result_for_active       fun(active: VF.Session.Active): VF.Session.Result|nil, string|nil
+---@field compute_result_for_active_async fun(active: VF.Session.Active, deadline_ms: integer, on_done: fun(result: VF.Session.Result|nil, err: string|nil)): VF.Async.PollHandle|nil
+---@field manual_should_evict             fun(session: VF.Session.Active, cursor_row: integer, now_ns: integer): string|nil
 local M = {}
 
 local APPROXIMATE_MOTION_CONVERSIONS = {
@@ -94,12 +98,12 @@ end
 
 -- All the synchronous main-thread work that reads live buffer state (buffer/
 -- window validity, capture, slicing, sequence build, boundary). Must run at
--- fire time, before any analyze is kicked off. Returns a ctx bundle consumed by
+-- fire time, before any analyze is kicked off. Returns the bundle consumed by
 -- both the sync and async analyze paths, or nil + an error string.
 ---@param active VF.Session.Active
----@return table|nil ctx
+---@return table|nil input
 ---@return string|nil err
-local function prepare(active)
+local function snapshot_analyze_input(active)
   local compute_t0 = vim.uv.hrtime()
   if not v.nvim_buf_is_valid(active.buf) then
     return nil, string.format(
@@ -182,12 +186,12 @@ end
 -- Turn the analyze output into a stored result. `analyze_ms` is the analyze
 -- duration; on the async path this is worker wall-time, not a main-thread
 -- stall.
----@param ctx table
+---@param input table
 ---@param analyze VF.Optimizer.AnalyzeResult
 ---@param analyze_ms number
 ---@return VF.Session.Result
-local function finalize(ctx, analyze, analyze_ms)
-  local active = ctx.active
+local function build_result(input, analyze, analyze_ms)
+  local active = input.active
   local results = analyze.results
 
   local dbg = analyze.dbg
@@ -215,16 +219,16 @@ local function finalize(ctx, analyze, analyze_ms)
     diffs = disk.empty_array()
   end
 
-  local compute_ms = (vim.uv.hrtime() - ctx.compute_t0) / 1e6
+  local compute_ms = (vim.uv.hrtime() - input.compute_t0) / 1e6
   local result = {
-    lines = ctx.initial_slice,
-    goal_lines = ctx.goal_slice,
-    start_row = ctx.rel_start_row,
-    start_col = ctx.rel_start_col,
-    end_row = ctx.rel_end_row,
-    end_col = ctx.rel_end_col,
-    has_lines_above = ctx.has_lines_above,
-    has_lines_below = ctx.has_lines_below,
+    lines = input.initial_slice,
+    goal_lines = input.goal_slice,
+    start_row = input.rel_start_row,
+    start_col = input.rel_start_col,
+    end_row = input.rel_end_row,
+    end_col = input.rel_end_col,
+    has_lines_above = input.has_lines_above,
+    has_lines_below = input.has_lines_below,
     -- Reserved boundary context. At the whole-buffer level the slice IS the
     -- edit region (boundary_first_col=0, boundary_last_col=last), so horizontal
     -- prefix/suffix are always empty; nonempty values only arise per planned
@@ -232,13 +236,13 @@ local function finalize(ctx, analyze, analyze_ms)
     prefix = "",
     suffix = "",
     diffs = diffs,
-    window_height = ctx.start_state.window_height,
-    scroll_amount = ctx.start_state.scroll_amount,
-    user_seq = ctx.keyseq_str,
+    window_height = input.start_state.window_height,
+    scroll_amount = input.start_state.scroll_amount,
+    user_seq = input.keyseq_str,
     user_cost = analyze.user_cost,
     optimal_results = optimal_results,
-    capture_debug = build_capture_debug(ctx.atom_seq),
-    key_count = #ctx.atom_seq,
+    capture_debug = build_capture_debug(input.atom_seq),
+    key_count = #input.atom_seq,
     finished_wall_epoch = os.time(),
     analyze_ms = analyze_ms,
     compute_ms = compute_ms,
@@ -253,44 +257,44 @@ end
 ---@return VF.Session.Result|nil result
 ---@return string|nil err
 function M.compute_result_for_active(active)
-  local ctx, err = prepare(active)
-  if not ctx then return nil, err end
+  local input, err = snapshot_analyze_input(active)
+  if not input then return nil, err end
 
   local analyze_t0 = vim.uv.hrtime()
   local ok, results, user_cost, dbg, diffs = pcall(
     ffi_optimizer.analyze,
-    ctx.initial_slice, ctx.goal_slice,
-    ctx.boundary_first_col, ctx.boundary_last_col,
-    ctx.has_lines_above, ctx.has_lines_below,
-    ctx.rel_start_row, ctx.rel_start_col, ctx.rel_end_row, ctx.rel_end_col,
-    ctx.keyseq_str,
-    ctx.start_state.window_height, ctx.start_state.scroll_amount,
+    input.initial_slice, input.goal_slice,
+    input.boundary_first_col, input.boundary_last_col,
+    input.has_lines_above, input.has_lines_below,
+    input.rel_start_row, input.rel_start_col, input.rel_end_row, input.rel_end_col,
+    input.keyseq_str,
+    input.start_state.window_height, input.start_state.scroll_amount,
     config.RESULTS_CALCULATED,
-    ctx.optimizer_overrides
+    input.optimizer_overrides
   )
   local analyze_ms = (vim.uv.hrtime() - analyze_t0) / 1e6
   if not ok then
     return nil, "FFI error: " .. tostring(results)
   end
 
-  return finalize(ctx,
+  return build_result(input,
     { results = results, user_cost = user_cost, dbg = dbg, diffs = diffs },
     analyze_ms), nil
 end
 
 -- Async variant for auto_suggest: the analyze search runs on a C++ worker thread
--- so the main thread never blocks on it. `prepare` still runs synchronously at
+-- so the main thread never blocks on it. `snapshot_analyze_input` still runs synchronously at
 -- call time (it reads the live buffer); only the optimizer search is offloaded.
 -- `on_done(result, err)` is invoked on the main thread once the worker finishes.
--- Returns the poll handle, or nil if prepare/start failed (on_done was already
+-- Returns the poll handle, or nil if snapshot_analyze_input/start failed (on_done was already
 -- called with the error in that case).
 ---@param active VF.Session.Active
 ---@param deadline_ms integer
 ---@param on_done fun(result: VF.Session.Result|nil, err: string|nil)
 ---@return VF.Async.PollHandle|nil
 function M.compute_result_for_active_async(active, deadline_ms, on_done)
-  local ctx, err = prepare(active)
-  if not ctx then
+  local input, err = snapshot_analyze_input(active)
+  if not input then
     on_done(nil, err)
     return nil
   end
@@ -298,14 +302,14 @@ function M.compute_result_for_active_async(active, deadline_ms, on_done)
   local analyze_t0 = vim.uv.hrtime()
   local ok, job_id = pcall(
     ffi_optimizer.analyze_start_async,
-    ctx.initial_slice, ctx.goal_slice,
-    ctx.boundary_first_col, ctx.boundary_last_col,
-    ctx.has_lines_above, ctx.has_lines_below,
-    ctx.rel_start_row, ctx.rel_start_col, ctx.rel_end_row, ctx.rel_end_col,
-    ctx.keyseq_str,
-    ctx.start_state.window_height, ctx.start_state.scroll_amount,
+    input.initial_slice, input.goal_slice,
+    input.boundary_first_col, input.boundary_last_col,
+    input.has_lines_above, input.has_lines_below,
+    input.rel_start_row, input.rel_start_col, input.rel_end_row, input.rel_end_col,
+    input.keyseq_str,
+    input.start_state.window_height, input.start_state.scroll_amount,
     config.RESULTS_CALCULATED,
-    ctx.optimizer_overrides,
+    input.optimizer_overrides,
     deadline_ms
   )
   if not ok then
@@ -326,7 +330,7 @@ function M.compute_result_for_active_async(active, deadline_ms, on_done)
         return
       end
       local analyze_ms = (vim.uv.hrtime() - analyze_t0) / 1e6
-      on_done(finalize(ctx, payload, analyze_ms), nil)
+      on_done(build_result(input, payload, analyze_ms), nil)
     end)
 end
 
@@ -335,12 +339,10 @@ end
 ---@param now_ns integer
 ---@return string|nil
 function M.manual_should_evict(session, cursor_row, now_ns)
-  local seq = session.atoms
-  local last_key_time_ns = (seq and #seq > 0) and seq[#seq].t or nil
   return ffi_session.manual_evict_reason(
     session.start_state.row,
     cursor_row,
-    last_key_time_ns,
+    session.last_atom_mono_ns,
     now_ns,
     config.MAX_SEARCH_LINES,
     config.MANUAL_IDLE_TIMEOUT_SECONDS

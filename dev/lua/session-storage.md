@@ -8,9 +8,9 @@ the on-disk archive (`session/archive.lua`, files at
 ## Indexing
 
 `store.lua` keeps `active_sessions[id]` and `finished_sessions[id]` (finish
-moves a record across), plus `name_to_id`, the ordered `recall_id_order` deque,
-`last_finished_id` (behind `@`) and `last_suggest_id` (behind `$`, set only by
-`auto_suggest` on a toast). `convert_alias_to_id` is the one place any alias
+moves a record across), plus `named_to_id`, the ordered `recall_id_order` deque,
+`last_finished_id` (behind `@`) and `last_suggest_id` (behind `$`, moved by
+`auto_suggest` on every new-fingerprint result, shown or not). `convert_alias_to_id` is the one place any alias
 kind becomes an id; see `session-invocation.md` § Handles for the kinds.
 
 Aliases and filenames are separate namespaces, and every name or recall alias
@@ -24,7 +24,8 @@ filename, and `play`/`explore`/`view` accept either via
 - `save` copies workspace → disk; `store` moves (removes the workspace record).
   Both overwrite an existing file with a WARN (`disk.write_with_overwrite_warn`).
   The filename defaults to the alias, or for `@`/`$` to the alias the record was
-  finished under (`archive.default_filename`).
+  finished under; a suggest result gets `suggest-<timestamp>` instead, since its
+  recall alias would collide on every fire (`archive.default_filename`).
 - `fetch` copies disk → workspace and refuses an occupied alias
   (`register_fetched_result` returns `nil, err`). The file is never touched.
 - `playback.simulate` is workspace-first with a disk fallback and an implicit
@@ -42,7 +43,9 @@ clock), `kind` ∈ `{mark, watch, recall, suggest_idle, suggest_keys, suggest_co
 
 `finished_wall_epoch` replaced the monotonic `start_time`/`timestamp` pair
 (2026-11-11): `hrtime` values from another boot are not comparable, so the
-workspace keeps its own `*_mono_ns` stamps on the record instead.
+workspace keeps its own `*_mono_ns` stamps on the record instead. The stats log
+(`stats/log.lua`) copies this value into its `finish_epoch` rather than reading
+the clock again, so a saved file and its log row always agree.
 
 `kind` replaced `finish_reason` (2026-11-11); files written before that carry
 neither, and `fetch` registers them as `mark`.

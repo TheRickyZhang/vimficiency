@@ -2,12 +2,12 @@
 -- of two things: an alias, which the store resolves to a session id, or a
 -- filename, which names a saved result on disk (`is_valid_filename`).
 --
--- Alias kinds: name (`^%a+$`), recall_key (`^%d+$`), recall_time (`^%d+s$`),
+-- Alias kinds: named (`^%a+$`), recall_key (`^%d+$`), recall_time (`^%d+s$`),
 -- last_finished (`@`), last_suggest (`$`).
 
 local M = {}
 
----@alias VF.Session.AliasKind "name"|"recall_key"|"recall_time"|"last_finished"|"last_suggest"
+---@alias VF.Session.AliasKind "named"|"recall_key"|"recall_time"|"last_finished"|"last_suggest"
 
 --- Common `Ns` windows surfaced by tab completion.
 M.TIME_HINTS = { "3s", "5s", "10s", "30s" }
@@ -15,7 +15,7 @@ M.SPECIAL = { "@", "$" }
 
 --- Kind sets commands accept (see `expect`).
 M.RECALL_KINDS = { "recall_key", "recall_time" }
-M.ALL_KINDS = { "name", "recall_key", "recall_time", "last_finished", "last_suggest" }
+M.ALL_KINDS = { "named", "recall_key", "recall_time", "last_finished", "last_suggest" }
 
 --- Parse an alias. Returns `(kind, value)` for valid aliases, else `(nil, nil)`;
 --- `value` is the numeric window for recall kinds.
@@ -43,14 +43,14 @@ function M.parse(s)
   end
 
   if s:match("^%a+$") then
-    return "name", nil
+    return "named", nil
   end
 
   return nil, nil
 end
 
 local KIND_DESC = {
-  name          = "a session name (letters only, e.g. 'a')",
+  named         = "a named alias (letters only, e.g. 'a')",
   recall_key    = "a recall window (N commands ago, e.g. '5')",
   recall_time   = "a recall window (Ns seconds ago, e.g. '3s')",
   last_finished = "'@' (the last finished session)",
@@ -78,11 +78,11 @@ function M.expect(s, kinds)
   return kind, value
 end
 
---- True iff `s` is a session-name alias.
+--- True iff `s` is a named alias (letters only, like a named register).
 ---@param s any
 ---@return boolean
-function M.is_name(s)
-  return M.parse(s) == "name"
+function M.is_named(s)
+  return M.parse(s) == "named"
 end
 
 --- True iff `s` is a recall-window alias (key or time form).
@@ -94,7 +94,7 @@ function M.is_recall(s)
 end
 
 --- True iff `s` is a safe saved-result filename (without the `.json` suffix).
---- Grammar: `^[%w_][%w._-]*$`. Every name and recall alias is also a valid
+--- Grammar: `^[%w_][%w._-]*$`. Every named and recall alias is also a valid
 --- filename, which is what lets `save <alias>` default the filename to the alias.
 ---@param s any
 ---@return boolean

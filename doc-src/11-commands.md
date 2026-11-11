@@ -6,7 +6,7 @@ title: "Commands reference"
 
 | Command                                    | Purpose                                              |
 |--------------------------------------------|------------------------------------------------------|
-| `:Vimfy start <alias>`                     | Mark a session start (a name: letters only, e.g. `a`). |
+| `:Vimfy start <alias>`                     | Mark a session start (a named alias: letters only, e.g. `a`). |
 | `:Vimfy watch <alias>`                     | Start a Watch session (auto-end on idle).            |
 | `:Vimfy finish <alias>`                    | Finish a Mark or Watch session and optimize.         |
 | `:Vimfy recall <N\|Ns>`                    | Finish a retrospective recall window.                |
@@ -34,7 +34,7 @@ Every handle you type is either an **alias** (a session in memory) or a
 
 | Alias      | Means                                                                |
 |------------|----------------------------------------------------------------------|
-| `a`, `foo` | Letters only → a session name.                                       |
+| `a`, `foo` | Letters only → a named alias, like a named register.                 |
 | `6`        | Digits → recall N commands ago.                                      |
 | `3s`       | Digits + `s` → recall N seconds ago (see [5. Recall](05-recall.md)). |
 | `@`        | The most recently finished session.                                  |
@@ -44,11 +44,11 @@ Which aliases a subcommand accepts:
 
 | Subcommand                   | Accepts                                             |
 |------------------------------|-----------------------------------------------------|
-| `start` / `watch` / `finish` | A name.                                             |
+| `start` / `watch` / `finish` | A named alias.                                      |
 | `recall`                     | `N` or `Ns`.                                        |
 | `close` / `save` / `store`   | Any alias.                                          |
 | `play` / `view` / `explore`  | Any alias or a filename (memory first, then disk).  |
-| `fetch` / `rm`               | A filename (`fetch` also takes the new name alias). |
+| `fetch` / `rm`               | A filename (`fetch` also takes the new named alias). |
 
 `@` is handy when the session you want to keep is a recall window whose alias
 (`3s`) is moving out from under you:
@@ -112,7 +112,7 @@ entry; `<Esc>` returns to the list.
 - `d` — on Active, discards the session (equivalent to `:Vimfy close`);
   on Saved, deletes the file on disk.
 - `r` / `y` — on Saved, renames/duplicates the file. On Active, renames
-  the name alias / registers a duplicate finished record under a new
+  the named alias / registers a duplicate finished record under a new
   alias. Only entries with a stable name alias are renameable this
   way; for recall and auto-suggest results, save to disk first (`:Vimfy
   save <alias> <filename>`) and then rename from the Saved pane.
@@ -159,7 +159,7 @@ no aggregate cache in v1, so changing the efficiency formula or adding
 new buckets only requires re-reducing, not a migration. A trailing
 malformed line (e.g. a crash mid-write) is silently skipped on read.
 
-Per-record schema (version `v: 1`): `finish_epoch`, `type`,
+Per-record schema (version `v: 1`): `finish_epoch` (the same `os.time()` stamp as the saved result's `finished_wall_epoch`), `type`,
 `kind`, `key_count`, `user_cost`, `best_opt_cost`, `user_seq`,
 `best_opt_seq`, `beats`. Only the single lowest-cost optimal result is
 stored; Top-N alternatives are not retained at log-write time.
@@ -169,7 +169,7 @@ stored; Top-N alternatives are not retained at log-write time.
 Works on:
 
 - Subcommands (`:Vimfy s<Tab>` → `save`, `start`, `stats`, `store`, `suggest`).
-- Session names for `start`, `watch`, and `finish`.
+- Named aliases for `start`, `watch`, and `finish`.
 - `3s`/`5s`/`10s`/`30s` hints for `recall`.
 - Live aliases plus time hints for `close`.
 - Every alias (including `@` and `$`) for `save` and `store`.

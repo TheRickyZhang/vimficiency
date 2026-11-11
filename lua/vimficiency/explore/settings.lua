@@ -7,10 +7,7 @@ local EXPLORE_SCHEMA_VERSION = 1
 M.EXPLORE_SCHEMA_VERSION = EXPLORE_SCHEMA_VERSION
 
 local DISPLAY_MODES = { "off", "highlight", "inplace", "above", "below" }
-M.DISPLAY_MODES = DISPLAY_MODES
-
 local RECOMMENDATION_SORT_MODES = { "effort", "distance", "score" }
-M.RECOMMENDATION_SORT_MODES = RECOMMENDATION_SORT_MODES
 
 local SHARED_OPTIMIZER_KEYS = {
   maxResults = true,
@@ -21,7 +18,6 @@ local SHARED_OPTIMIZER_KEYS = {
   minPrefixCount = true,
   maxPrefixCount = true,
 }
-M.SHARED_OPTIMIZER_KEYS = SHARED_OPTIMIZER_KEYS
 
 ---@class VF.Explore.ViewSettingSpec
 ---@field key string
@@ -57,7 +53,6 @@ M.VIEW_SETTINGS = VIEW_SETTINGS
 
 local VIEW_SETTING_BY_KEY = {}
 for _, spec in ipairs(VIEW_SETTINGS) do VIEW_SETTING_BY_KEY[spec.key] = spec end
-M.VIEW_SETTING_BY_KEY = VIEW_SETTING_BY_KEY
 
 -- LSP-only mirror of VIEW_SETTINGS; the runtime table isn't introspectable.
 ---@class VF.Explore.ViewSettings

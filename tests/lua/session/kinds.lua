@@ -6,7 +6,7 @@
 --   mark      via session.start
 --   watch     via session.watch
 --   recall    via session_store.ingest_recall_atom
---   suggest_* a recall record promoted at mark_finished
+--   suggest_* a recall record promoted at convert_to_finished
 
 local config        = require("vimficiency.config")
 local session       = require("vimficiency.session")
@@ -59,18 +59,18 @@ test("session_type: folds the suggest triggers", function()
   end)
 end)
 
-test("mark_finished: promotes only recall -> suggest_*", function()
+test("convert_to_finished: promotes only recall -> suggest_*", function()
   h.new_buf()
   h.seed_named("kindsmark", "test-kinds-mark")
   assert_error(function()
-    session_store.mark_finished(
+    session_store.convert_to_finished(
       "test-kinds-mark", h.fake_result({ user_seq = "" }), "kindsmark", "suggest_idle")
   end, "promotes")
 
   h.seed_named("kindskeep", "test-kinds-keep")
   local result = h.fake_result({ user_seq = "" })
-  assert_eq(session_store.mark_finished("test-kinds-keep", result, "kindskeep"), true)
-  assert_eq(result.kind, "mark", "mark_finished stamps the kind onto the result")
+  assert_eq(session_store.convert_to_finished("test-kinds-keep", result, "kindskeep"), true)
+  assert_eq(result.kind, "mark", "convert_to_finished stamps the kind onto the result")
 end)
 
 test("summarize: surfaces kind + type for active sessions", function()

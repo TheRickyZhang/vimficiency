@@ -233,26 +233,6 @@ VFByteSlice vf_format_result_kind_suffix(
           }));
 }
 
-VFByteSlice vf_format_result_body(
-    const char* encoded_result,
-    size_t encoded_result_len,
-    bool tokenize,
-    bool sectionize) {
-  static string result_storage;
-  return helpers::storeBytes(
-      result_storage,
-      helpers::requiredBytes(
-          encoded_result,
-          encoded_result_len,
-          "encoded_result")
-          .and_then(decodeSessionResult)
-          .transform([&](const VF::SessionView::Result& result) {
-            return encodeStringList(VF::SessionView::formatBody(
-                result,
-                {.tokenize = tokenize, .sectionize = sectionize}));
-          }));
-}
-
 VFByteSlice vf_format_result_message(
     const char* title,
     size_t title_len,
@@ -269,26 +249,6 @@ VFByteSlice vf_format_result_message(
           [](string_view titleText, const VF::SessionView::Result& result,
              VF::SequenceDisplay::Options options) {
             return VF::SessionView::formatMessage(titleText, result, options);
-          }));
-}
-
-VFByteSlice vf_format_saved_result_lines(
-    const char* name,
-    size_t name_len,
-    const char* encoded_result,
-    size_t encoded_result_len,
-    bool tokenize,
-    bool sectionize) {
-  static string result_storage;
-  return helpers::storeBytes(
-      result_storage,
-      formatLabelled(
-          name, name_len, "name", encoded_result, encoded_result_len,
-          tokenize, sectionize,
-          [](string_view nameText, const VF::SessionView::Result& result,
-             VF::SequenceDisplay::Options options) {
-            return encodeStringList(
-                VF::SessionView::formatSavedLines(nameText, result, options));
           }));
 }
 

@@ -111,7 +111,7 @@ end)
 -- Input-driven cases (coroutine-sequenced).
 --------------------------------------------------------------------------------
 
----@type { atom: VF.Atom, verdict: VF.Atom.Verdict }[]
+---@type { atom: VF.Atom, verdict: VF.Atom.Decision }[]
 local captured = {}
 atom_stream.add_listener("recorder", function(atom, verdict)
   captured[#captured + 1] = { atom = atom, verdict = verdict }

@@ -12,7 +12,7 @@ the record is created and changed only by auto-suggest's promotion at finish:
 
 The kind is decided where the trigger lives, never in `subcommands.lua`:
 `session.start`/`watch` create `mark`/`watch`, the ring creates `recall`, and
-`auto_suggest` passes `suggest_<trigger>` to `store.mark_finished`, which is
+`auto_suggest` passes `suggest_<trigger>` to `store.convert_to_finished`, which is
 the only path that may change a kind (recall → suggest_* only). `finish` and
 `recall` take no kind argument. `store.session_type(kind)` folds the three
 suggest triggers into `suggest` for pickers and stats.
@@ -25,7 +25,7 @@ word. An alias is anything `store.lua` resolves to a session id, in one place
 
 | Alias kind      | Form   | Resolves to                                  |
 |-----------------|--------|----------------------------------------------|
-| `name`          | `a`    | `name_to_id`                                 |
+| `named`         | `a`    | `named_to_id`                                |
 | `recall_key`    | `5`    | ring entry N commands ago                    |
 | `recall_time`   | `3s`   | youngest ring entry at least N seconds old   |
 | `last_finished` | `@`    | `last_finished_id`                           |
@@ -37,7 +37,9 @@ A filename names a saved result on disk (`alias.is_valid_filename`,
 filename and try the store first (`archive.resolve_result`). Parameters are
 named `alias`, `filename`, or `alias_or_filename` after the grammar they accept.
 
-Name aliases are alphabetic; at most `NAMED_CAPACITY = 5` are active at once,
+Named aliases are alphabetic (like named registers). Reusing one replaces the
+previous record; `NAMED_CAPACITY = 100` is only a runaway guard (eviction is the
+real bound),
 and finished records keep their slot without counting against it. The recall
 ring holds `config.KEY_SESSION_CAPACITY` records for `config.MAX_RETENTION_SECONDS`,
 in RAM only.

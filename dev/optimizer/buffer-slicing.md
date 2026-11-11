@@ -40,16 +40,15 @@ NavBoundary subsetBoundary(subset, subsetFirst, subsetLast,
 
 ### 1. Lua → C++ (FFI Boundary)
 
-**File**: `lua/vimficiency/util.lua` (function `get_search_boundaries`)
+**File**: `lua/vimficiency/session/compute.lua` (`analyze`), through `util.compute_search_region`
 
 ```lua
-local padding = config.SLICE_PADDING  -- Default: 5 lines
-local start_search = math.max(0, begin_row - padding)
-local end_search = math.min(nlines-1, end_row + padding)
+local start_search, end_search = util.compute_search_region(
+  start_state.row, end_state.row, initial_lines, goal_lines, config.SLICE_PADDING)
 ```
 
-- Adds `SLICE_PADDING` (configurable, default 5) lines above and below the cursor movement region
-- Optional paragraph expansion (`SLICE_EXPAND_TO_PARAGRAPH`)
+- The region itself is computed in C++ (`vf_compute_search_region`): the span covering both cursor rows and every changed line, plus `SLICE_PADDING` (configurable, default 5) lines above and below
+- A region taller than `MAX_SEARCH_LINES` is rejected before any search runs
 - Positions converted to slice-relative coordinates before FFI call
 - Boundary flags (`has_lines_above`, `has_lines_below`) passed to C++
 

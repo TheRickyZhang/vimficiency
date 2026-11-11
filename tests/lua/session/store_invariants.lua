@@ -55,16 +55,16 @@ test("finish failure on a recall record preserves the ring slice", function()
   pcall(vim.api.nvim_buf_delete, buf_b, { force = true })
 end)
 
-test("can_store_named: finished records do not consume capacity slots", function()
+test("has_room_for_named: finished records do not consume capacity slots", function()
   h.new_buf()
   for _, alias in ipairs({ "capa", "capb", "capc", "capd", "cape" }) do
     session.start(alias)
     local rec = session_store.get_active(alias)
     assert_true(rec ~= nil, "start failed for " .. alias)
     rec = assert(rec)
-    session_store.mark_finished(rec.id, h.fake_result({ user_seq = "" }), alias)
+    session_store.convert_to_finished(rec.id, h.fake_result({ user_seq = "" }), alias)
   end
-  assert_eq(session_store.can_store_named("capf"), true,
+  assert_eq(session_store.has_room_for_named("capf"), true,
     "a new alias must be allowed when all existing records are finished")
 end)
 

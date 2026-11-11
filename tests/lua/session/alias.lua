@@ -4,10 +4,10 @@
 
 local alias = require("vimficiency.session.alias")
 
-test("parse: name aliases are alphabetic", function()
+test("parse: named aliases are alphabetic", function()
   for _, input in ipairs({ "a", "refactor", "REFACTOR", "FooBar" }) do
     local t, v = alias.parse(input)
-    assert_eq(t, "name", input)
+    assert_eq(t, "named", input)
     assert_eq(v, nil, input)
   end
 end)
@@ -48,7 +48,7 @@ test("parse: rejects invalid alias shapes", function()
 end)
 
 test("expect: accepts listed kinds and names the actual kind otherwise", function()
-  assert_eq(alias.expect("a", { "name" }), "name")
+  assert_eq(alias.expect("a", { "named" }), "named")
   local kind, value = alias.expect("3s", alias.RECALL_KINDS)
   assert_eq(kind, "recall_time")
   assert_eq(value, 3)
@@ -56,19 +56,19 @@ test("expect: accepts listed kinds and names the actual kind otherwise", functio
     assert_true(alias.expect(s, alias.ALL_KINDS) ~= nil, s)
   end
 
-  assert_error(function() alias.expect("3s", { "name" }) end, "recall window")
-  assert_error(function() alias.expect("a", alias.RECALL_KINDS) end, "session name")
-  assert_error(function() alias.expect("my-ref", { "name" }) end, "Invalid alias")
+  assert_error(function() alias.expect("3s", { "named" }) end, "recall window")
+  assert_error(function() alias.expect("a", alias.RECALL_KINDS) end, "named alias")
+  assert_error(function() alias.expect("my-ref", { "named" }) end, "Invalid alias")
 end)
 
-test("classification helpers distinguish name and recall aliases", function()
+test("classification helpers distinguish named and recall aliases", function()
   for _, input in ipairs({ "a", "refactor", "FOO" }) do
-    assert_eq(alias.is_name(input), true, input)
+    assert_eq(alias.is_named(input), true, input)
   end
   for _, input in ipairs({ "my-ref", "3", "3s", "@", "", "tmp1" }) do
-    assert_eq(alias.is_name(input), false, input)
+    assert_eq(alias.is_named(input), false, input)
   end
-  assert_eq(alias.is_name(nil), false)
+  assert_eq(alias.is_named(nil), false)
 
   for _, input in ipairs({ "3", "3s", "120" }) do
     assert_eq(alias.is_recall(input), true, input)

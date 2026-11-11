@@ -1,10 +1,31 @@
+---@class (exact) VF.Util
+--- Windows and popups
+---@field DEFAULT_SIDE_PANE_WIDTH    integer
+---@field configure_scratch_window   fun(win: integer, overrides?: table<string, any>)
+---@field configure_side_pane        fun(win: integer, overrides?: table<string, any>)
+---@field centered_popup_geometry    fun(content_width: integer, content_height: integer, opts?: { min_width?: integer, min_height?: integer }): integer, integer, integer, integer
+---@field show_output                fun(title: string, text?: string, opts?: { ui_keys?: VF.StandardUiKeyOpts, help_tag?: string, help_title?: string }): integer, integer
+--- Keymaps and help
+---@field DEFAULT_HELP_TAG           string
+---@field open_help                  fun(tag: string)
+---@field set_buffer_keymaps         fun(buf: integer, keymaps: VF.Keymap[])
+---@field show_keymap_help           fun(title: string, keymaps: VF.Keymap[])
+---@field with_standard_ui_keymaps   fun(keymaps: VF.Keymap[], opts: VF.StandardUiKeyOpts): VF.Keymap[]
+--- Filesystem
+---@field basename                   fun(path: string): string
+---@field find_plugin_root           fun(): string
+--- Session ids and buffer state
+---@field new_id                     fun(buf: integer): string
+---@field is_session_id              fun(s: any): boolean
+---@field capture_state              fun(buf: integer, win: integer): VF.BufferState
+---@field check_state_inconsistencies fun(start_state: VF.BufferState, end_state: VF.BufferState)
+---@field compute_search_region      fun(start_row: integer, end_row: integer, start_lines: string[], end_lines: string[], padding: integer): integer, integer
 local M = {}
 
 local v  = vim.api
 local uv = vim.uv
 local fs = vim.fs
 
-local config = require("vimficiency.config")
 local ffi_session = require("vimficiency.ffi.session")
 
 --------------------------------------------------------------------------------
@@ -116,11 +137,6 @@ end
 ---@field expr boolean?
 ---@field remap boolean?
 
----@class VF.HelpKeymapOpts
----@field title string
----@field docs boolean?
----@field settings { lhs?: string, handler: string|function, desc: string }?
-
 ---@class VF.StandardUiKeyOpts
 ---@field title string
 ---@field summary { lhs?: string, desc?: string }|boolean|nil
@@ -132,10 +148,6 @@ M.basename = fs.basename or function(p)
 end
 
 M.DEFAULT_HELP_TAG = "vimficiency"
-
-function M.ensure_dir(p)
-  vim.fn.mkdir(p, "p")
-end
 
 local function sanitize_name(s)
   return (s:gsub("[^%w%._%-]", "_"))
@@ -329,27 +341,6 @@ function M.with_standard_ui_keymaps(keymaps, opts)
   return merged
 end
 
--- Legacy compatibility wrapper around `with_standard_ui_keymaps`.
----@param keymaps VF.Keymap[]
----@param opts VF.HelpKeymapOpts|string
----@param help_tag string?
----@return VF.Keymap[]
-function M.with_help_keymaps(keymaps, opts, help_tag)
-  ---@type VF.StandardUiKeyOpts
-  local standard
-  if type(opts) ~= "table" then
-    standard = { title = opts --[[@as string]], docs = help_tag ~= nil }
-  else
-    standard = {
-      title = opts.title,
-      summary = true,
-      docs = opts.docs == true,
-      settings = opts.settings,
-    }
-  end
-  return M.with_standard_ui_keymaps(keymaps, standard)
-end
-
 ---@param title string
 ---@param text? string
 ---@param opts? { ui_keys?: VF.StandardUiKeyOpts, help_tag?: string, help_title?: string }
@@ -485,36 +476,6 @@ function M.capture_state(buf, win)
     scroll_amount,
     lines
   )
-end
-
-function M.get_search_boundaries(begin_row, end_row)
-  assert(config, "config module not loaded")
-  local padding = config.SLICE_PADDING
-
-  if begin_row > end_row then
-    begin_row, end_row = end_row, begin_row
-  end
-
-  local buf = 0
-  local nlines = vim.api.nvim_buf_line_count(buf) -- count, not last index
-
-  local start_search = math.max(0, begin_row - padding)
-  local end_search = math.min(nlines-1, end_row + padding)
-
-  if config.SLICE_EXPAND_TO_PARAGRAPH then
-    local function is_blank_line(r)
-      local l = vim.api.nvim_buf_get_lines(buf, r, r + 1, false)[1] or ""
-      return l:match("^%s*$") ~= nil
-    end
-    while start_search > 0 and not is_blank_line(start_search - 1) do
-      start_search = start_search - 1
-    end
-    while end_search < nlines and not is_blank_line(end_search) do
-      end_search = end_search + 1
-    end
-  end
-
-  return start_search, end_search, nlines
 end
 
 function M.check_state_inconsistencies(start_state, end_state)

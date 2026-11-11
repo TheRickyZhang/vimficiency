@@ -1,4 +1,4 @@
--- Finished results by handle. An alias (any kind: name, recall window, `@`,
+-- Finished results by handle. An alias (any kind: named, recall window, `@`,
 -- `$`) resolves through the in-memory store; a filename names a saved result
 -- on disk. `play`/`view`/`explore` take either and try the store first.
 
@@ -7,6 +7,21 @@ local disk = require("vimficiency.session.disk")
 local result_window = require("vimficiency.session.result_window")
 local session_store = require("vimficiency.session.store")
 
+---@class (exact) VF.SessionArchive
+--- Resolution
+---@field resolve_alias    fun(alias: string): VF.Session.Result|nil, string|nil
+---@field resolve_result   fun(alias_or_filename: string): VF.Session.Result|nil, string|nil
+---@field default_filename fun(alias: string): string|nil
+--- Workspace <-> disk
+---@field save             fun(alias: string, explicit_filename: string|nil)
+---@field store            fun(alias: string, explicit_filename: string|nil)
+---@field fetch            fun(filename: string, alias: string)
+---@field rm               fun(filename: string)
+--- Workspace only
+---@field rename_active    fun(old_alias: string, new_alias: string): boolean, string|nil
+---@field duplicate_active fun(src_alias: string, dst_alias: string): boolean, string|nil
+--- Display
+---@field view             fun(alias_or_filename: string|nil)
 local M = {}
 
 ---@param filename string
@@ -17,17 +32,21 @@ local function validate_filename(filename)
   end
 end
 
---- Default filename for `save`/`store` when none is given: the alias itself,
---- except `@`/`$` resolve to the alias their record was finished under.
+--- Default filename for `save`/`store` when none is given: the alias itself.
+--- `@`/`$` resolve to the alias their record was finished under, except a
+--- suggest result, whose recall alias (`3s`) would collide on every fire; it
+--- gets a timestamped name instead.
 ---@param alias string
 ---@return string|nil
 function M.default_filename(alias)
   local kind = alias_mod.parse(alias)
-  if kind == "last_finished" or kind == "last_suggest" then
-    local id = session_store.get_id(alias)
-    return id and session_store.get_finish_alias(id) or nil
+  if kind ~= "last_finished" and kind ~= "last_suggest" then return alias end
+  local result = session_store.get_result(alias)
+  if not result then return nil end
+  if session_store.session_type(result.kind) == "suggest" then
+    return "suggest-" .. os.date("%Y%m%d-%H%M%S", result.finished_wall_epoch)
   end
-  return alias
+  return session_store.get_finish_alias(alias)
 end
 
 ---@param alias string
@@ -121,10 +140,9 @@ function M.store(alias, explicit_filename)
 
   -- Pin the id before writing: recall aliases drift.
   local id = session_store.get_id(alias)
-  local result = id and session_store.get_result_by_id(id)
-  if not result then
-    error("No finished result for '" .. alias .. "'.", 0)
-  end
+  if not id then error("No finished result for '" .. alias .. "'.", 0) end
+  local result = session_store.get_result_by_id(id)
+  if not result then error("No finished result for '" .. alias .. "'.", 0) end
 
   local display_path = write_result("store", filename, result)
   session_store.remove(id)
@@ -136,7 +154,7 @@ end
 ---@param alias string
 function M.fetch(filename, alias)
   validate_filename(filename)
-  alias_mod.expect(alias, { "name" })
+  alias_mod.expect(alias, { "named" })
 
   local data, err = disk.load(filename)
   if not data then
@@ -164,10 +182,10 @@ end
 ---@return boolean ok
 ---@return string|nil err
 function M.rename_active(old_alias, new_alias)
-  if not alias_mod.is_name(old_alias) then
-    return false, "source alias must be a session name (letters only)"
+  if not alias_mod.is_named(old_alias) then
+    return false, "source alias must be a named alias (letters only)"
   end
-  return session_store.rename_name(old_alias, new_alias)
+  return session_store.rename_alias(old_alias, new_alias)
 end
 
 ---@param src_alias string
@@ -175,8 +193,8 @@ end
 ---@return boolean ok
 ---@return string|nil err
 function M.duplicate_active(src_alias, dst_alias)
-  if not alias_mod.is_name(dst_alias) then
-    return false, "target alias must be a session name (letters only)"
+  if not alias_mod.is_named(dst_alias) then
+    return false, "target alias must be a named alias (letters only)"
   end
   local result = session_store.get_result(src_alias)
   if not result then

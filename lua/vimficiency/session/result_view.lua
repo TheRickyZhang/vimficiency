@@ -16,25 +16,11 @@ function M.format_kind_suffix(result)
   return ffi_display.format_result_kind_suffix(result)
 end
 
---- Format the result body as display lines.
----@param result VF.Session.Result
----@return string[]
-function M.format_body(result)
-  return ffi_display.format_result_body(result)
-end
-
 ---@param title string
 ---@param result VF.Session.Result
 ---@return string
 function M.format_message(title, result)
   return ffi_display.format_result_message(title, result)
-end
-
----@param name string
----@param result VF.Session.Result
----@return string[]
-function M.format_saved_lines(name, result)
-  return ffi_display.format_saved_result_lines(name, result)
 end
 
 return M

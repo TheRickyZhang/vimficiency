@@ -16,21 +16,12 @@ local NS_PER_SEC = 1e9
 
 --- Build a minimal fake record with just the fields the predicate reads.
 ---@param start_row integer
----@param last_key_t integer|nil  hrtime of last atom; nil for empty seq
----@param atoms_nil boolean|nil  If true, set atoms = nil instead of empty {}
+---@param last_atom_mono_ns integer|nil  nil for a session with no atoms yet
 ---@return table
-local function fake_session(start_row, last_key_t, atoms_nil)
-  local seq
-  if atoms_nil then
-    seq = nil
-  elseif last_key_t then
-    seq = { { t = last_key_t } }
-  else
-    seq = {}
-  end
+local function fake_session(start_row, last_atom_mono_ns)
   return {
     start_state = { row = start_row },
-    atoms = seq,
+    last_atom_mono_ns = last_atom_mono_ns,
   }
 end
 
@@ -74,7 +65,7 @@ test("manual_should_evict: cursor drift beyond search window evicts", function()
   assert_eq(compute.manual_should_evict(boundary, config.MAX_SEARCH_LINES - 1, now), nil)
 end)
 
-test("manual_should_evict: drift wins over idle and nil atoms is safe", function()
+test("manual_should_evict: drift wins over idle and no atoms is safe", function()
   local now = 1e15
   local stale = now - (config.MANUAL_IDLE_TIMEOUT_SECONDS + 10) * NS_PER_SEC
   local s = fake_session(0, stale)
@@ -86,7 +77,7 @@ test("manual_should_evict: drift wins over idle and nil atoms is safe", function
   assert_true(reason:find("drifted", 1, true) ~= nil,
     "expected drift reason (drift checked before idle), got: " .. tostring(reason))
 
-  local finished_shape = fake_session(0, nil, true)
+  local finished_shape = fake_session(0, nil)
   assert_eq(compute.manual_should_evict(finished_shape, 0, now), nil)
   reason = compute.manual_should_evict(
     finished_shape, config.MAX_SEARCH_LINES + 1, now

@@ -6,7 +6,6 @@ local M = {}
 local config        = require("vimficiency.config")
 local end_trigger   = require("vimficiency.capture.end_trigger")
 local poller        = require("vimficiency.async.poller")
-local result_view   = require("vimficiency.session.result_view")
 local compute       = require("vimficiency.session.compute")
 local session_store = require("vimficiency.session.store")
 
@@ -73,16 +72,16 @@ end
 --- Shared path for every trigger.
 --- Returns the cooldown signal for `end_trigger`.
 ---
----@param window string                              Recall alias to analyze.
+---@param recall_alias string                        Recall alias to analyze.
 ---@param gate? fun(result: VF.Session.Result): boolean|nil  Optional veto. Return false to suppress notification; the record is still consumed.
 ---@param kind "suggest_idle"|"suggest_keys"|"suggest_cost"  Which trigger fired; the recall record is promoted to it at finish.
 ---@return boolean counted
-local function fire_with_window(window, gate, kind)
+local function fire_with_window(recall_alias, gate, kind)
   -- Single-flight: a previous suggest analysis is still running on the worker.
   -- Skip this fire (cooldown-like); the in-flight job finishes and renders.
   if in_flight then return false end
 
-  local active = session_store.get_active(window)
+  local active = session_store.get_active(recall_alias)
   if not active then return false end  -- queue too young or no clean boundary
 
   -- Pin the resolved id; recall aliases are time-varying.
@@ -97,17 +96,17 @@ local function fire_with_window(window, gate, kind)
 
     -- Cost gate: consume the record but suppress the notification.
     if gate and not gate(result) then
-      session_store.mark_finished(id, result, window, kind)
+      session_store.convert_to_finished(id, result, recall_alias, kind)
       return
     end
 
     local fp = fingerprint_result(result)
     if fp == last_fingerprint then
-      session_store.mark_finished(id, result, window, kind)
+      session_store.convert_to_finished(id, result, recall_alias, kind)
       return
     end
 
-    if not session_store.mark_finished(id, result, window, kind) then
+    if not session_store.convert_to_finished(id, result, recall_alias, kind) then
       return
     end
 
@@ -119,7 +118,7 @@ local function fire_with_window(window, gate, kind)
     if summary then render_suggestion(summary) end
   end)
 
-  -- Work was started (or prepare failed synchronously); refresh the cooldown so
+  -- Work was started (or the input snapshot failed synchronously); refresh the cooldown so
   -- we don't re-fire while the worker runs.
   return true
 end

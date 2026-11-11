@@ -65,21 +65,6 @@ local function encode_result(result)
   })
 end
 
-local function encode_body_result(result)
-  result = result or {}
-  return encode_result({
-    lines = result.lines or {},
-    start_row = result.start_row or 0,
-    start_col = result.start_col or 0,
-    end_row = result.end_row or 0,
-    end_col = result.end_col or 0,
-    user_seq = result.user_seq,
-    user_cost = result.user_cost,
-    kind = result.kind,
-    optimal_results = result.optimal_results,
-  })
-end
-
 function M.sequence_display_lines(seq, opts)
   local resolved = resolved_opts(opts)
   local payload = checked_string(lib.vf_sequence_display_lines(
@@ -144,18 +129,6 @@ function M.format_result_kind_suffix(result)
   return checked_string(lib.vf_format_result_kind_suffix(kind, #kind))
 end
 
-function M.format_result_body(result, opts)
-  local resolved = resolved_opts(opts)
-  local payload = encode_body_result(result)
-  local encoded_lines = checked_string(lib.vf_format_result_body(
-    payload,
-    #payload,
-    resolved.tokenize,
-    resolved.sectionize
-  ))
-  return core.decode_string_list(encoded_lines)
-end
-
 function M.format_result_message(title, result, opts)
   local resolved = resolved_opts(opts)
   local payload = encode_result(result)
@@ -167,20 +140,6 @@ function M.format_result_message(title, result, opts)
     resolved.tokenize,
     resolved.sectionize
   ))
-end
-
-function M.format_saved_result_lines(name, result, opts)
-  local resolved = resolved_opts(opts)
-  local payload = encode_result(result)
-  local encoded_lines = checked_string(lib.vf_format_saved_result_lines(
-    name or "",
-    #(name or ""),
-    payload,
-    #payload,
-    resolved.tokenize,
-    resolved.sectionize
-  ))
-  return core.decode_string_list(encoded_lines)
 end
 
 return M

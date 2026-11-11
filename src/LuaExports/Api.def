@@ -157,21 +157,9 @@ VFByteSlice vf_format_result_position(
 VFByteSlice vf_format_result_kind_suffix(
   const char* kind,
   size_t kind_len);
-VFByteSlice vf_format_result_body(
-  const char* encoded_result,
-  size_t encoded_result_len,
-  bool tokenize,
-  bool sectionize);
 VFByteSlice vf_format_result_message(
   const char* title,
   size_t title_len,
-  const char* encoded_result,
-  size_t encoded_result_len,
-  bool tokenize,
-  bool sectionize);
-VFByteSlice vf_format_saved_result_lines(
-  const char* name,
-  size_t name_len,
   const char* encoded_result,
   size_t encoded_result_len,
   bool tokenize,
