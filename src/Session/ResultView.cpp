@@ -48,9 +48,9 @@ string formatPosition(const Result& result) {
   return out.str();
 }
 
-string formatReasonSuffix(const Result& result) {
-  if (result.finishReason.empty()) return "";
-  return " [" + result.finishReason + "]";
+string formatKindSuffix(const Result& result) {
+  if (result.kind.empty()) return "";
+  return " [" + result.kind + "]";
 }
 
 vector<string> formatBody(
@@ -79,7 +79,7 @@ string formatMessage(
     SequenceDisplay::Options displayOptions) {
   const vector<string> body = formatBody(result, displayOptions);
   ostringstream out;
-  out << title << " " << formatPosition(result) << formatReasonSuffix(result)
+  out << title << " " << formatPosition(result) << formatKindSuffix(result)
       << "\n";
   for (size_t i = 0; i < body.size(); i++) {
     if (i > 0) out << "\n";

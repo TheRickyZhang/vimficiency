@@ -22,13 +22,13 @@ gate** (`auto_suggest.default_cost`, default
 analyzes the last ~3s of editing and surfaces a result only when your typed
 effort exceeds `1.5 * optimal + 2`. The toast is compact —
 `<your keys> (<your cost>) → <suggested keys> (<best cost>)` — and the result
-is already saved as a session, reachable with the `@` selector (the most
+is already saved as a session, reachable with the `@` alias (the most
 recently finished session):
 
 ```vim
 :Vimfy play @           " side-by-side: before/after buffer + your vs suggested sequences
 :Vimfy explore @        " step through interactively
-:Vimfy save @ <name>    " persist to disk
+:Vimfy save @ <filename>  " persist to disk
 ```
 
 To tune this gate, set `auto_suggest = { default_cost = { ... } }` (any subset
@@ -110,7 +110,7 @@ when you disable Suggest.
 `notif_cooldown_ms` is a separate, finer guard at the notification
 layer: a suggestion landing within that window of the previous *shown*
 toast is not displayed. It is still finished and stored, so it stays
-reachable via the `@` selector and `:Vimfy list` — only the toast is
+reachable via the `@` alias and `:Vimfy list` — only the toast is
 dropped. This lets you lower `cooldown_ms` (so the optimizer keeps
 re-analyzing as you work) without the toasts becoming spammy.
 

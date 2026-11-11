@@ -154,9 +154,9 @@ VFByteSlice vf_format_result_position(
   int start_col,
   int end_row,
   int end_col);
-VFByteSlice vf_format_result_reason_suffix(
-  const char* reason,
-  size_t reason_len);
+VFByteSlice vf_format_result_kind_suffix(
+  const char* kind,
+  size_t kind_len);
 VFByteSlice vf_format_result_body(
   const char* encoded_result,
   size_t encoded_result_len,

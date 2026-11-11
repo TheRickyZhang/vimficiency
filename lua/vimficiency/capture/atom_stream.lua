@@ -45,12 +45,12 @@ local function classify(atom_type, keys_raw, keys_norm, changed, moved)
 end
 
 --------------------------------------------------------------------------------
--- Subscriber fan-out
+-- Listener fan-out
 --------------------------------------------------------------------------------
 
 ---@type table<string, fun(atom: VF.Atom, decision: VF.Atom.Decision)>
-local subs = {}
-local subs_count = 0
+local listener_by_name = {}
+local listener_count = 0
 local augroup = nil
 local autocmd_id = nil
 
@@ -82,8 +82,8 @@ local function dispatch(ev)
     win  = vim.api.nvim_get_current_win(),
   }
 
-  for _, on_atom in pairs(subs) do
-    on_atom(atom, decision)
+  for _, notify_listener in pairs(listener_by_name) do
+    notify_listener(atom, decision)
   end
 end
 
@@ -98,13 +98,13 @@ end
 
 --- Attach a named atom listener
 ---@param name string
----@param on_atom fun(atom: VF.Atom, decision: VF.Atom.Decision)
+---@param listener fun(atom: VF.Atom, decision: VF.Atom.Decision)
 ---@return boolean success
-function M.add_listener(name, on_atom)
+function M.add_listener(name, listener)
   assert(type(name) == "string" and name ~= "", "atom_stream.add_listener: name required")
-  if subs[name] then return false end
-  subs[name] = on_atom
-  subs_count = subs_count + 1
+  if listener_by_name[name] then return false end
+  listener_by_name[name] = listener
+  listener_count = listener_count + 1
   ensure_autocmd()
   return true
 end
@@ -112,10 +112,10 @@ end
 --- Detach a named listener
 ---@param name string
 function M.remove_listener(name)
-  if not subs[name] then return end
-  subs[name] = nil
-  subs_count = subs_count - 1
-  if subs_count == 0 and autocmd_id then
+  if not listener_by_name[name] then return end
+  listener_by_name[name] = nil
+  listener_count = listener_count - 1
+  if listener_count == 0 and autocmd_id then
     -- removes the autocmd when the last one leaves
     vim.api.nvim_del_autocmd(autocmd_id)
     autocmd_id = nil
@@ -132,13 +132,13 @@ function M.shutdown()
     pcall(vim.api.nvim_del_augroup_by_id, augroup)
     augroup = nil
   end
-  subs = {}
-  subs_count = 0
+  listener_by_name = {}
+  listener_count = 0
 end
 
 -- Test-only: exercise the decision table without driving real input, and
 -- assert that sessions and shutdown detach their listeners.
 M._classify = classify
-function M._has_listener(name) return subs[name] ~= nil end
+function M._has_listener(name) return listener_by_name[name] ~= nil end
 
 return M

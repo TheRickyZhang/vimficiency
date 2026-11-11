@@ -51,14 +51,14 @@ local function encode_pretty(value, level)
   return "{\n" .. table.concat(parts, ",\n") .. "\n" .. pad .. "}"
 end
 
----@param name string
+---@param filename string
 ---@param data table
 ---@return string|nil path
 ---@return string|nil error
-function M.save(name, data)
+function M.save(filename, data)
   local save_dir = M.save_dir()
   vim.fn.mkdir(save_dir, "p")
-  local path = save_dir .. "/" .. name .. ".json"
+  local path = save_dir .. "/" .. filename .. ".json"
   local lines = vim.split(encode_pretty(data), "\n")
   local ok, err = pcall(vim.fn.writefile, lines, path)
   if not ok then
@@ -131,12 +131,12 @@ function M.validate(data)
   return nil
 end
 
----@param name string
+---@param filename string
 ---@return table|nil data
 ---@return string|nil error
 ---@return boolean is_missing
-function M.load(name)
-  local path = M.save_dir() .. "/" .. name .. ".json"
+function M.load(filename)
+  local path = M.save_dir() .. "/" .. filename .. ".json"
   if vim.fn.filereadable(path) == 0 then
     return nil, "File not found: " .. path, true
   end
@@ -153,17 +153,17 @@ function M.load(name)
   return data, nil, false
 end
 
----@param name string
+---@param filename string
 ---@param result VF.Session.Result
 ---@return string|nil path
 ---@return string|nil err
-function M.write_with_overwrite_warn(name, result)
-  local dest_path = M.save_dir() .. "/" .. name .. ".json"
+function M.write_with_overwrite_warn(filename, result)
+  local dest_path = M.save_dir() .. "/" .. filename .. ".json"
   local existed = vim.fn.filereadable(dest_path) == 1
-  local path, err = M.save(name, result)
+  local path, err = M.save(filename, result)
   if not path then return nil, err end
   if existed then
-    vim.notify("vimfy: overwrote existing saved result [" .. name .. "]",
+    vim.notify("vimfy: overwrote existing saved result [" .. filename .. "]",
       vim.log.levels.WARN)
   end
   return path, nil
@@ -176,21 +176,20 @@ function M.list()
     return {}
   end
   local files = vim.fn.glob(save_dir .. "/*.json", false, true)
-  local names = {}
+  local filenames = {}
   for _, path in ipairs(files) do
-    local name = vim.fn.fnamemodify(path, ":t:r")
-    table.insert(names, name)
+    table.insert(filenames, vim.fn.fnamemodify(path, ":t:r"))
   end
-  return names
+  return filenames
 end
 
----@param name string
+---@param filename string
 ---@return boolean ok
 ---@return string|nil err
-function M.remove(name)
-  local path = M.save_dir() .. "/" .. name .. ".json"
+function M.remove(filename)
+  local path = M.save_dir() .. "/" .. filename .. ".json"
   if vim.fn.filereadable(path) == 0 then
-    return false, "No saved result '" .. name .. "' at " .. path
+    return false, "No saved result '" .. filename .. "' at " .. path
   end
   if vim.fn.delete(path) ~= 0 then
     return false, "vimfy rm failed for " .. path
@@ -198,27 +197,27 @@ function M.remove(name)
   return true, path
 end
 
----@param old_name string
----@param new_name string
+---@param old_filename string
+---@param new_filename string
 ---@return boolean ok
 ---@return string|nil err
-function M.rename(old_name, new_name)
-  if not alias_mod.is_valid_saved_name(old_name) then
-    return false, "Invalid source name '" .. tostring(old_name) .. "'."
+function M.rename(old_filename, new_filename)
+  if not alias_mod.is_valid_filename(old_filename) then
+    return false, "Invalid source filename '" .. tostring(old_filename) .. "'."
   end
-  if not alias_mod.is_valid_saved_name(new_name) then
-    return false, "Invalid target name '" .. tostring(new_name) .. "'."
+  if not alias_mod.is_valid_filename(new_filename) then
+    return false, "Invalid target filename '" .. tostring(new_filename) .. "'."
   end
-  if old_name == new_name then
-    return false, "Source and target names are identical."
+  if old_filename == new_filename then
+    return false, "Source and target filenames are identical."
   end
-  local src = M.save_dir() .. "/" .. old_name .. ".json"
-  local dst = M.save_dir() .. "/" .. new_name .. ".json"
+  local src = M.save_dir() .. "/" .. old_filename .. ".json"
+  local dst = M.save_dir() .. "/" .. new_filename .. ".json"
   if vim.fn.filereadable(src) == 0 then
-    return false, "No saved result '" .. old_name .. "' at " .. src
+    return false, "No saved result '" .. old_filename .. "' at " .. src
   end
   if vim.fn.filereadable(dst) == 1 then
-    return false, "Target '" .. new_name .. "' already exists."
+    return false, "Target '" .. new_filename .. "' already exists."
   end
   local ok, err = vim.uv.fs_rename(src, dst)
   if not ok then
@@ -227,27 +226,27 @@ function M.rename(old_name, new_name)
   return true, nil
 end
 
----@param src_name string
----@param dst_name string
+---@param src_filename string
+---@param dst_filename string
 ---@return boolean ok
 ---@return string|nil err
-function M.duplicate(src_name, dst_name)
-  if not alias_mod.is_valid_saved_name(src_name) then
-    return false, "Invalid source name '" .. tostring(src_name) .. "'."
+function M.duplicate(src_filename, dst_filename)
+  if not alias_mod.is_valid_filename(src_filename) then
+    return false, "Invalid source filename '" .. tostring(src_filename) .. "'."
   end
-  if not alias_mod.is_valid_saved_name(dst_name) then
-    return false, "Invalid target name '" .. tostring(dst_name) .. "'."
+  if not alias_mod.is_valid_filename(dst_filename) then
+    return false, "Invalid target filename '" .. tostring(dst_filename) .. "'."
   end
-  if src_name == dst_name then
-    return false, "Source and target names are identical."
+  if src_filename == dst_filename then
+    return false, "Source and target filenames are identical."
   end
-  local src = M.save_dir() .. "/" .. src_name .. ".json"
-  local dst = M.save_dir() .. "/" .. dst_name .. ".json"
+  local src = M.save_dir() .. "/" .. src_filename .. ".json"
+  local dst = M.save_dir() .. "/" .. dst_filename .. ".json"
   if vim.fn.filereadable(src) == 0 then
-    return false, "No saved result '" .. src_name .. "' at " .. src
+    return false, "No saved result '" .. src_filename .. "' at " .. src
   end
   if vim.fn.filereadable(dst) == 1 then
-    return false, "Target '" .. dst_name .. "' already exists."
+    return false, "Target '" .. dst_filename .. "' already exists."
   end
   local ok, err = vim.uv.fs_copyfile(src, dst, nil)
   if not ok then

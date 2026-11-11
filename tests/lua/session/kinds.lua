@@ -1,12 +1,12 @@
--- tests/lua/session_kinds.lua
--- Each creation path in the 2x2 session taxonomy must set the
--- structural (start_kind, end_kind) pair truthfully. These tests pin
--- that contract independent of the rest of session behavior.
+-- tests/lua/session/kinds.lua
+-- One enum, `VF.Session.Kind`, says how a session came to be and how it ends.
+-- Each creation path must stamp it truthfully, and only auto_suggest may change
+-- it, by promoting a recall record to the suggest_* that fired.
 --
---   Mark    = (manual, manual)   via session.start
---   Watch   = (manual, auto)     via session.watch
---   Recall  = (auto,   manual)   via session_store.install_recall
---   Suggest = (auto,   auto)     Recall record flipped at Suggest takeover
+--   mark      via session.start
+--   watch     via session.watch
+--   recall    via session_store.ingest_recall_atom
+--   suggest_* a recall record promoted at mark_finished
 
 local config        = require("vimficiency.config")
 local session       = require("vimficiency.session")
@@ -15,7 +15,7 @@ local h             = require("_helpers")
 
 local WATCH_CFG = { idle = { ms = 60000 }, cooldown_ms = 0 }
 
-local function call_new_active(start_kind, end_kind)
+local function call_new_active(kind)
   local win = vim.api.nvim_get_current_win()
   local buf = vim.api.nvim_get_current_buf()
   return session_store.new_active_session(
@@ -33,40 +33,47 @@ local function call_new_active(start_kind, end_kind)
       window_height = vim.api.nvim_win_get_height(win),
       scroll_amount = vim.api.nvim_get_option_value("scroll", { win = win }),
     },
-    start_kind, end_kind
+    kind
   )
 end
 
-test("new_active_session: rejects invalid kinds", function()
-  assert_error(
-    function() call_new_active("bogus", "manual") end,
-    "start_kind", "invalid start_kind must error"
-  )
-  assert_error(
-    function() call_new_active("manual", "bogus") end,
-    "end_kind", "invalid end_kind must error"
-  )
+test("new_active_session: accepts only creatable kinds", function()
+  for _, kind in ipairs({ "mark", "watch", "recall" }) do
+    assert_eq(call_new_active(kind).kind, kind)
+  end
+  assert_error(function() call_new_active("bogus") end, "kind")
+  assert_error(function() call_new_active("suggest_idle") end, "kind",
+    "suggest_* is reached only by promotion")
 end)
 
-test("session_type_from_kinds: covers all four cells", function()
-  assert_eq(session_store.session_type_from_kinds("manual", "manual"), "mark")
-  assert_eq(session_store.session_type_from_kinds("manual", "auto"),   "watch")
-  assert_eq(session_store.session_type_from_kinds("auto",   "manual"), "recall")
-  assert_eq(session_store.session_type_from_kinds("auto",   "auto"),   "suggest")
-end)
-
-test("session_type_from_kinds: rejects invalid pairs", function()
+test("session_type: folds the suggest triggers", function()
+  assert_eq(session_store.session_type("mark"),         "mark")
+  assert_eq(session_store.session_type("watch"),        "watch")
+  assert_eq(session_store.session_type("recall"),       "recall")
+  assert_eq(session_store.session_type("suggest_idle"), "suggest")
+  assert_eq(session_store.session_type("suggest_keys"), "suggest")
+  assert_eq(session_store.session_type("suggest_cost"), "suggest")
   assert_error(function()
     ---@diagnostic disable-next-line: param-type-mismatch
-    session_store.session_type_from_kinds("bogus", "manual")
-  end)
-  assert_error(function()
-    ---@diagnostic disable-next-line: param-type-mismatch
-    session_store.session_type_from_kinds("manual", "bogus")
+    session_store.session_type("bogus")
   end)
 end)
 
-test("summarize: surfaces type + start_kind + end_kind for active sessions", function()
+test("mark_finished: promotes only recall -> suggest_*", function()
+  h.new_buf()
+  h.seed_named("kindsmark", "test-kinds-mark")
+  assert_error(function()
+    session_store.mark_finished(
+      "test-kinds-mark", h.fake_result({ user_seq = "" }), "kindsmark", "suggest_idle")
+  end, "promotes")
+
+  h.seed_named("kindskeep", "test-kinds-keep")
+  local result = h.fake_result({ user_seq = "" })
+  assert_eq(session_store.mark_finished("test-kinds-keep", result, "kindskeep"), true)
+  assert_eq(result.kind, "mark", "mark_finished stamps the kind onto the result")
+end)
+
+test("summarize: surfaces kind + type for active sessions", function()
   h.with_buf({ "line one", "line two" }, function()
     session.start("kindssum")
     local rec = session_store.get_active("kindssum")
@@ -74,9 +81,8 @@ test("summarize: surfaces type + start_kind + end_kind for active sessions", fun
     local summary = session_store.summarize(rec.id)
     assert_true(summary ~= nil, "summary must exist for active session")
     summary = assert(summary)
-    assert_eq(summary.type,       "mark")
-    assert_eq(summary.start_kind, "manual")
-    assert_eq(summary.end_kind,   "manual")
+    assert_eq(summary.kind, "mark")
+    assert_eq(summary.type, "mark")
     session.close("kindssum")
   end)
 
@@ -87,9 +93,8 @@ test("summarize: surfaces type + start_kind + end_kind for active sessions", fun
       rec = assert(rec)
       local summary = session_store.summarize(rec.id)
       summary = assert(summary)
-      assert_eq(summary.type,       "watch")
-      assert_eq(summary.start_kind, "manual")
-      assert_eq(summary.end_kind,   "auto")
+      assert_eq(summary.kind, "watch")
+      assert_eq(summary.type, "watch")
       session.close("kindssumw")
     end)
   end)

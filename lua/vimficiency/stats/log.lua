@@ -39,10 +39,10 @@ local function best_opt(optimal_results)
 end
 
 --- Build a log record from the finished-session result.
----@param session_type string  "mark" | "watch" | "recall" | "suggest"
+---@param kind VF.Session.Kind
 ---@param result VF.Session.Result
 ---@return table|nil  nil if the result is too incomplete to log
-function M.build_record(session_type, result)
+function M.build_record(kind, result)
   if not result or not result.user_seq then return nil end
   local best = best_opt(result.optimal_results)
   local best_cost = best and best.cost or nil
@@ -52,8 +52,8 @@ function M.build_record(session_type, result)
   return {
     v = SCHEMA_VERSION,
     finish_epoch  = os.time(),
-    type          = session_type,
-    finish_reason = result.finish_reason,
+    type          = require("vimficiency.session.store").session_type(kind),
+    kind          = kind,
     key_count     = result.key_count or 0,
     user_cost     = user_cost,
     best_opt_cost = best_cost,

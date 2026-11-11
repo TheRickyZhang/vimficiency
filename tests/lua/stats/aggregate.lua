@@ -11,7 +11,7 @@ local function rec(overrides)
     v = 1,
     finish_epoch = 0,
     type = "mark",
-    finish_reason = "manual",
+    kind = "mark",
     key_count = 0,
     user_cost = 1.0,
     best_opt_cost = 1.0,

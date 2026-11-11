@@ -302,10 +302,10 @@ local function act_open()
     return
   end
   if it.pane == "saved" then
-    -- Load into workspace under a manual alias (default: the filename if alphabetic).
+    -- Load into workspace under a name alias (default: the filename when it is one).
     local function fetch_under(alias)
-      if not alias_mod.is_valid_manual(alias) then
-        vim.notify("Need an alphabetic alias (got '" .. alias .. "')", vim.log.levels.ERROR)
+      if not alias_mod.is_name(alias) then
+        vim.notify("Need a session name, letters only (got '" .. alias .. "')", vim.log.levels.ERROR)
         return
       end
       if not run_or_notify(archive.fetch, it.name, alias) then return end
@@ -316,7 +316,7 @@ local function act_open()
         if state then state.pane = "active"; render() end
       end)
     end
-    if alias_mod.is_valid_manual(it.name) then
+    if alias_mod.is_name(it.name) then
       fetch_under(it.name)
     else
       vim.ui.input({ prompt = "Fetch [" .. it.name .. "] as alias: " }, function(input)
@@ -397,10 +397,10 @@ local function is_ongoing(it)
 end
 
 --- Finished active-pane entries are renameable/duplicable only when they carry
---- a stable manual alias. Recall/suggest entries drift (their display alias is
+--- a stable name alias. Recall/suggest entries drift (their display alias is
 --- a ring index), so the picker points the user at save-to-disk instead.
 local function has_stable_alias(it)
-  return it.pane == "saved" or alias_mod.is_valid_manual(it.name)
+  return it.pane == "saved" or alias_mod.is_name(it.name)
 end
 
 local function notify_needs_save_first(it, verb)

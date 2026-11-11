@@ -10,7 +10,7 @@ A finished session has two places it can live:
   where a session lands the moment `:Vimfy finish`, `:Vimfy recall`, or an
   auto trigger finishes it. Cheap, immediate, ephemeral.
 - **Disk** (the "archive") — a file under
-  `stdpath('data')/vimficiency/saved/<name>.json`. Durable across
+  `stdpath('data')/vimficiency/saved/<filename>.json`. Durable across
   restarts. Indexed by filename.
 
 The two are separate namespaces. The same text can name both an alias
@@ -20,7 +20,7 @@ and a saved file.
 
 Session memory is small and churns on its own:
 
-- **Mark** slots cap at `MANUAL_CAPACITY = 5`. The oldest drops when a
+- **Mark** slots cap at `NAMED_CAPACITY = 5`. The oldest drops when a
   6th starts.
 - **Recall** / **Suggest** entries age out of the rolling ring by the
   union of `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS` — drop
@@ -31,10 +31,10 @@ Anything on disk is durable: it stays until you `:Vimfy rm` it.
 ## Four verbs
 
 ```vim
-:Vimfy save  <selector> [<name>]
-:Vimfy store <alias>    [<name>]
-:Vimfy fetch <name>     [<alias>]
-:Vimfy rm    <name>
+:Vimfy save  <alias>    [<filename>]
+:Vimfy store <alias>    [<filename>]
+:Vimfy fetch <filename> [<alias>]
+:Vimfy rm    <filename>
 ```
 
 | Verb    | Moves             | Workspace after        | Disk after          |
@@ -56,13 +56,14 @@ Omitting the second argument means "repeat the first":
 - `:Vimfy store foo`   ≡ `:Vimfy store foo as foo`
 - `:Vimfy fetch foo`   ≡ `:Vimfy fetch foo as foo`
 
-For selectors that aren't legal saved names (`@`, `3s`, `5`) the first
-argument isn't reusable as a filename — you must pass a name
-explicitly:
+Every name and recall alias (`a`, `3s`, `5`) is also a legal filename, so the
+first argument is reusable. `@` and `$` are not filenames; for them the default
+is the alias the session was finished under:
 
 ```vim
-:Vimfy save @ my-refactor    " OK — explicit name
-:Vimfy save @                " ERROR — @ isn't a legal filename
+:Vimfy recall 3s
+:Vimfy save @                " saves as 3s.json
+:Vimfy save @ my-refactor    " or pick the filename yourself
 ```
 
 ## Collision rules
@@ -74,20 +75,20 @@ explicitly:
 
 ## Replay: `play` covers both
 
-`:Vimfy play <name>` looks up `<name>` in this order:
+`:Vimfy play <alias>|<filename>` looks the argument up in this order:
 
 - **Workspace only** → replays.
-- **Disk only** → implicitly `fetch <name> as <name>` into the
+- **Disk only** → implicitly `fetch <filename> as <filename>` into the
   workspace, then replays. After the command, the session is in your
   current workspace; the disk copy is untouched. This keeps the mental
   model "what I just replayed is in my current session."
 - **Both** → WARN that the disk copy is being shadowed; replays the
-  workspace copy. To force a refetch, `:Vimfy close <name>` first, then
-  `:Vimfy play <name>`.
+  workspace copy. To force a refetch, `:Vimfy close <alias>` first, then
+  `:Vimfy play <alias>`.
 
-The implicit fetch only works when `<name>` is a valid manual alias
-(alphabetic). For names with digits/dots/hyphens on disk, use an
-explicit `:Vimfy fetch <name> <alias>` first.
+The implicit fetch only works when the filename is also a valid session
+name (letters only). For filenames with digits/dots/hyphens, use an
+explicit `:Vimfy fetch <filename> <alias>` first.
 
 ## Worked example
 

@@ -1,13 +1,13 @@
--- tests/lua/alias.lua
+-- tests/lua/session/alias.lua
 -- Grammar tests for lua/vimficiency/session/alias.lua. Pure-function tests:
 -- no buffers, no vim.uv, no state.
 
 local alias = require("vimficiency.session.alias")
 
-test("parse: manual aliases are alphabetic", function()
+test("parse: name aliases are alphabetic", function()
   for _, input in ipairs({ "a", "refactor", "REFACTOR", "FooBar" }) do
     local t, v = alias.parse(input)
-    assert_eq(t, "manual", input)
+    assert_eq(t, "name", input)
     assert_eq(v, nil, input)
   end
 end)
@@ -25,11 +25,19 @@ test("parse: recall aliases carry numeric values", function()
   end
 end)
 
+test("parse: @ and $ are aliases too", function()
+  assert_eq(alias.parse("@"), "last_finished")
+  assert_eq(alias.parse("$"), "last_suggest")
+  for _, s in ipairs(alias.SPECIAL) do
+    assert_true(alias.parse(s) ~= nil, s)
+  end
+end)
+
 test("parse: rejects invalid alias shapes", function()
   for _, input in ipairs({
     "0", "0s", "my-refactor", "_tmp",
     "tmp1", "v2", "1a", "3m", "3ms", "2h",
-    "", " ", "a b", " a",
+    "", " ", "a b", " a", "@@", "$1",
   }) do
     assert_eq(alias.parse(input), nil, input)
   end
@@ -39,19 +47,33 @@ test("parse: rejects invalid alias shapes", function()
   assert_eq(alias.parse(true), nil)
 end)
 
-test("classification helpers distinguish manual and recall aliases", function()
+test("expect: accepts listed kinds and names the actual kind otherwise", function()
+  assert_eq(alias.expect("a", { "name" }), "name")
+  local kind, value = alias.expect("3s", alias.RECALL_KINDS)
+  assert_eq(kind, "recall_time")
+  assert_eq(value, 3)
+  for _, s in ipairs({ "a", "5", "3s", "@", "$" }) do
+    assert_true(alias.expect(s, alias.ALL_KINDS) ~= nil, s)
+  end
+
+  assert_error(function() alias.expect("3s", { "name" }) end, "recall window")
+  assert_error(function() alias.expect("a", alias.RECALL_KINDS) end, "session name")
+  assert_error(function() alias.expect("my-ref", { "name" }) end, "Invalid alias")
+end)
+
+test("classification helpers distinguish name and recall aliases", function()
   for _, input in ipairs({ "a", "refactor", "FOO" }) do
-    assert_eq(alias.is_valid_manual(input), true, input)
+    assert_eq(alias.is_name(input), true, input)
   end
-  for _, input in ipairs({ "my-ref", "3", "3s", "", "tmp1" }) do
-    assert_eq(alias.is_valid_manual(input), false, input)
+  for _, input in ipairs({ "my-ref", "3", "3s", "@", "", "tmp1" }) do
+    assert_eq(alias.is_name(input), false, input)
   end
-  assert_eq(alias.is_valid_manual(nil), false)
+  assert_eq(alias.is_name(nil), false)
 
   for _, input in ipairs({ "3", "3s", "120" }) do
     assert_eq(alias.is_recall(input), true, input)
   end
-  for _, input in ipairs({ "a", "3m", "" }) do
+  for _, input in ipairs({ "a", "3m", "@", "" }) do
     assert_eq(alias.is_recall(input), false, input)
   end
   assert_eq(alias.is_recall(nil), false)
@@ -65,27 +87,27 @@ test("TIME_HINTS all parse as recall_time", function()
   end
 end)
 
-test("is_valid_saved_name: accepts safe filename-like names", function()
+test("is_valid_filename: accepts safe filenames", function()
   for _, input in ipairs({
     "refactor", "bugfix_v2", "refactor-2026-04-13", "my.edit.v2",
-    "a", "_internal", "session42", "42session",
+    "a", "_internal", "session42", "42session", "5", "3s",
   }) do
-    assert_eq(alias.is_valid_saved_name(input), true, input)
+    assert_eq(alias.is_valid_filename(input), true, input)
   end
 end)
 
-test("is_valid_saved_name: rejects unsafe names", function()
+test("is_valid_filename: rejects unsafe filenames and the special aliases", function()
   for _, input in ipairs({
     "..", ".", "../foo", "../../etc/passwd", "foo/bar", "foo\\bar",
     "/etc/passwd", "/absolute", ".hidden", ".bashrc", "-rf", "-name",
     "name with space", "tab\there", "new\nline", "null\0byte",
     " leading", "trailing ", "", "name;rm -rf", "name$VAR",
-    "name|pipe", "name*glob", "name:colon",
+    "name|pipe", "name*glob", "name:colon", "@", "$",
   }) do
-    assert_eq(alias.is_valid_saved_name(input), false, input)
+    assert_eq(alias.is_valid_filename(input), false, input)
   end
-  assert_eq(alias.is_valid_saved_name(nil), false)
-  assert_eq(alias.is_valid_saved_name(42), false)
-  assert_eq(alias.is_valid_saved_name({}), false)
-  assert_eq(alias.is_valid_saved_name(true), false)
+  assert_eq(alias.is_valid_filename(nil), false)
+  assert_eq(alias.is_valid_filename(42), false)
+  assert_eq(alias.is_valid_filename({}), false)
+  assert_eq(alias.is_valid_filename(true), false)
 end)

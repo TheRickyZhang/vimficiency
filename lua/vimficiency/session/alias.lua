@@ -1,20 +1,32 @@
--- Single source of truth for Vimfy alias grammar.
--- Valid forms: manual (`^%a+$`), recall_key (`^%d+$`), recall_time (`^%d+s$`).
+-- Single source of truth for the alias grammar. Every user-typed handle is one
+-- of two things: an alias, which the store resolves to a session id, or a
+-- filename, which names a saved result on disk (`is_valid_filename`).
+--
+-- Alias kinds: name (`^%a+$`), recall_key (`^%d+$`), recall_time (`^%d+s$`),
+-- last_finished (`@`), last_suggest (`$`).
 
 local M = {}
 
----@alias VF.Session.AliasType "manual" | "recall_key" | "recall_time"
+---@alias VF.Session.AliasKind "name"|"recall_key"|"recall_time"|"last_finished"|"last_suggest"
 
 --- Common `Ns` windows surfaced by tab completion.
 M.TIME_HINTS = { "3s", "5s", "10s", "30s" }
+M.SPECIAL = { "@", "$" }
 
---- Parse an alias.
---- Returns `(type, value)` for valid aliases, else `(nil, nil)`.
+--- Kind sets commands accept (see `expect`).
+M.RECALL_KINDS = { "recall_key", "recall_time" }
+M.ALL_KINDS = { "name", "recall_key", "recall_time", "last_finished", "last_suggest" }
+
+--- Parse an alias. Returns `(kind, value)` for valid aliases, else `(nil, nil)`;
+--- `value` is the numeric window for recall kinds.
 ---@param s any
----@return VF.Session.AliasType|nil type
+---@return VF.Session.AliasKind|nil kind
 ---@return integer|nil value
 function M.parse(s)
   if type(s) ~= "string" or s == "" then return nil, nil end
+
+  if s == "@" then return "last_finished", nil end
+  if s == "$" then return "last_suggest", nil end
 
   local secs = s:match("^(%d+)s$")
   if secs then
@@ -31,75 +43,62 @@ function M.parse(s)
   end
 
   if s:match("^%a+$") then
-    return "manual", nil
+    return "name", nil
   end
 
   return nil, nil
 end
 
---- The two shapes an alias can take: a user-chosen `name` or a recall `window`.
---- Distinct from `VF.Session.AliasType` (which splits windows by unit) and from
---- the "manual" of StartKind/FinishReason (which means user-initiated).
----@alias VF.Session.AliasForm "name"|"window"
-
----@type table<VF.Session.AliasType, VF.Session.AliasForm>
-local ALIAS_FORM_OF = { manual = "name", recall_key = "window", recall_time = "window" }
-
-local FORM_NAME = { name = "a manual alias", window = "a recall window" }
-local FORM_HINT = {
-  name = "letters only, e.g. 'a'",
-  window = "N commands ago or Ns seconds ago",
+local KIND_DESC = {
+  name          = "a session name (letters only, e.g. 'a')",
+  recall_key    = "a recall window (N commands ago, e.g. '5')",
+  recall_time   = "a recall window (Ns seconds ago, e.g. '3s')",
+  last_finished = "'@' (the last finished session)",
+  last_suggest  = "'$' (the last suggest regression)",
 }
 
---- Parse `s`, requiring it to have the expected form. Raises a user-facing error
---- otherwise: a format hint for malformed input, or which form `s` actually has
---- when it is well-formed but the wrong one.
+--- Parse `s`, requiring one of `kinds`. Raises a user-facing error otherwise:
+--- the accepted forms for malformed input, or which kind `s` actually is when
+--- it is well-formed but not accepted.
 ---@param s string
----@param expected_alias_form VF.Session.AliasForm
----@return VF.Session.AliasType kind
+---@param kinds VF.Session.AliasKind[]
+---@return VF.Session.AliasKind kind
 ---@return integer|nil value
-function M.expect(s, expected_alias_form)
+function M.expect(s, kinds)
   local kind, value = M.parse(s)
+  local accepted = {}
+  for _, k in ipairs(kinds) do accepted[#accepted + 1] = KIND_DESC[k] end
+  local expected = "Expected " .. table.concat(accepted, " or ") .. "."
   if not kind then
-    error("Invalid alias '" .. tostring(s) .. "'. Expected " .. FORM_NAME[expected_alias_form] ..
-      " (" .. FORM_HINT[expected_alias_form] .. ").", 0)
+    error("Invalid alias '" .. tostring(s) .. "'. " .. expected, 0)
   end
-  local form = ALIAS_FORM_OF[kind]
-  if form ~= expected_alias_form then
-    error("'" .. s .. "' is " .. FORM_NAME[form] .. ", not " .. FORM_NAME[expected_alias_form] .. ".", 0)
+  if not vim.tbl_contains(kinds, kind) then
+    error("'" .. s .. "' is " .. KIND_DESC[kind] .. ". " .. expected, 0)
   end
   return kind, value
 end
 
---- True iff `s` is a valid manual alias.
+--- True iff `s` is a session-name alias.
 ---@param s any
 ---@return boolean
-function M.is_valid_manual(s)
-  return M.parse(s) == "manual"
+function M.is_name(s)
+  return M.parse(s) == "name"
 end
 
---- True iff `s` is any valid recall alias (key or time form).
+--- True iff `s` is a recall-window alias (key or time form).
 ---@param s any
 ---@return boolean
 function M.is_recall(s)
-  return ALIAS_FORM_OF[M.parse(s)] == "window"
+  local kind = M.parse(s)
+  return kind == "recall_key" or kind == "recall_time"
 end
 
---- True iff `s` is a special workspace selector. `@` = most-recent finished
---- session (any kind); `$` = most-recent suggest regression. These are
---- resolved by the store (`resolve_special`), not by `M.parse`, whose
---- grammar only covers manual/recall aliases.
+--- True iff `s` is a safe saved-result filename (without the `.json` suffix).
+--- Grammar: `^[%w_][%w._-]*$`. Every name and recall alias is also a valid
+--- filename, which is what lets `save <alias>` default the filename to the alias.
 ---@param s any
 ---@return boolean
-function M.is_special_selector(s)
-  return s == "@" or s == "$"
-end
-
---- True iff `s` is a safe saved-result name.
---- Grammar: `^[%w_][%w._-]*$`.
----@param s any
----@return boolean
-function M.is_valid_saved_name(s)
+function M.is_valid_filename(s)
   return type(s) == "string" and s:match("^[%w_][%w._-]*$") ~= nil
 end
 

@@ -1,6 +1,7 @@
 -- Smoke tests for the `:Vimfy reload` Lua path.
 
 local vimfy = require("vimficiency")
+local h = require("_helpers")
 
 test("reload: shutdown detaches atom subscribers", function()
   vimfy.setup({})
@@ -18,20 +19,16 @@ test("reload: reload_lua swaps module identities and preserves finished records"
   local store = require("vimficiency.session.store")
   local id = "reload-test-id"
   local stash = store.dump_for_reload()
-  stash.records[id] = {
+  stash.finished[id] = {
     id = id,
-    status = "finished",
-    result = {
-      lines = { "hello" },
-      start_row = 0, start_col = 0,
-      end_row = 0, end_col = 0,
-      user_seq = "",
-      optimal_results = {},
-    },
+    kind = "mark",
+    started_mono_ns = vim.uv.hrtime(),
+    finished_mono_ns = vim.uv.hrtime(),
+    result = h.fake_result({ lines = { "hello" }, user_seq = "" }),
   }
   stash.last_finished = id
   store.restore_from_dump(stash)
-  assert_true(store.get_last_finished_result() ~= nil,
+  assert_true(store.get_result("@") ~= nil,
     "seeded finished record is visible before reload")
 
   local pre_store = store
@@ -44,6 +41,6 @@ test("reload: reload_lua swaps module identities and preserves finished records"
   assert_true(pre_store ~= post_store,
     "session.store module table identity changed across reload")
 
-  assert_true(post_store.get_last_finished_result() ~= nil,
+  assert_true(post_store.get_result("@") ~= nil,
     "finished record survived reload")
 end)

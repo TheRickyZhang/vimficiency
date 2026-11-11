@@ -96,7 +96,5 @@
 ---@field explored string[]
 ---@field optimal string[][]
 
----@alias VF.Session.StartKind "manual"|"auto"
----@alias VF.Session.EndKind "manual"|"auto"
 
 return {}

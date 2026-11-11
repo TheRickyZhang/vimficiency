@@ -11,13 +11,12 @@ local util = require("vimficiency.util")
 
 local M = {}
 
---- Reason to drop an active manual/watch session, or nil to keep it. Checked on
+--- Reason to drop an active mark/watch session, or nil to keep it. Checked on
 --- every atom: window closed, cursor drifted out of range, or idle too long.
 ---@param session VF.Session.Active
----@param end_kind VF.Session.EndKind
 ---@return string|nil
-local function manual_evict_reason(session, end_kind)
-  local noun = end_kind == "auto" and "watch" or "session"
+local function evict_reason(session)
+  local noun = session.kind == "watch" and "watch" or "session"
   if not v.nvim_win_is_valid(session.win) then
     return "Vimfy: " .. noun .. " [" .. session.id .. "] dropped — window closed"
   end
@@ -29,18 +28,17 @@ local function manual_evict_reason(session, end_kind)
   return nil
 end
 
---- Atom handler for one manual/watch session. Eviction runs first on every atom,
+--- Builds the atom listener for one mark/watch session. Eviction runs first on every atom,
 --- then atoms are scoped to the session window and admitted by decision.
 ---@param alias string
 ---@param id string
----@param end_kind VF.Session.EndKind
 ---@return fun(atom: VF.Atom, decision: VF.Atom.Decision)
-local function session_atom_handler(alias, id, end_kind)
+local function make_session_listener(alias, id)
   return function(atom, decision)
     local session = session_store.get_active(alias)
     if not session or session.id ~= id then return end
 
-    local reason = manual_evict_reason(session, end_kind)
+    local reason = evict_reason(session)
     if reason then
       session_store.remove(id)
       vim.schedule(function() vim.notify(reason, vim.log.levels.WARN) end)
@@ -58,18 +56,17 @@ local function session_atom_handler(alias, id, end_kind)
       end)
     elseif decision == "record" then
       table.insert(session.atoms, atom)
-      session.key_count = session.key_count + 1
     end
   end
 end
 
 ---@param alias string
----@param end_kind VF.Session.EndKind
+---@param kind "mark"|"watch"
 ---@return VF.Session.Active
-local function start_manual_session(alias, end_kind)
-  alias_mod.expect(alias, "name")
-  if not session_store.can_store_manual(alias) then
-    error("Manual session capacity reached", 0)
+local function start_named_session(alias, kind)
+  alias_mod.expect(alias, { "name" })
+  if not session_store.can_store_named(alias) then
+    error("Session capacity reached", 0)
   end
 
   local buf = v.nvim_get_current_buf()
@@ -77,10 +74,9 @@ local function start_manual_session(alias, end_kind)
   local id = util.new_id(buf)
   local start_state = util.capture_state(buf, win)
 
-  atom_stream.add_listener(id, session_atom_handler(alias, id, end_kind))
+  atom_stream.add_listener(id, make_session_listener(alias, id))
 
-  return session_store.new_active_session(
-    id, id, win, buf, start_state, "manual", end_kind)
+  return session_store.new_active_session(id, id, win, buf, start_state, kind)
 end
 
 ---@param verb string
@@ -93,8 +89,8 @@ end
 
 ---@param alias string
 function M.start(alias)
-  local active = start_manual_session(alias, "manual")
-  notify_started("started", alias, session_store.store_manual(alias, active))
+  local active = start_named_session(alias, "mark")
+  notify_started("started", alias, session_store.store_named(alias, active))
 end
 
 ---@param alias string
@@ -104,7 +100,7 @@ function M.watch(alias)
     error("Watch is not configured. Add `watch = { idle = { ms = N }, cooldown_ms = N }` to setup{}.", 0)
   end
 
-  local active = start_manual_session(alias, "auto")
+  local active = start_named_session(alias, "watch")
   local id = active.id
 
   local disarm = end_trigger.arm_idle({
@@ -114,7 +110,7 @@ function M.watch(alias)
     on_fire = function()
       local rec = session_store.get_active(alias)
       if not rec or rec.id ~= id then return false end
-      M.finish(alias, "watch_idle")
+      M.finish(alias)
       return true
     end,
   })
@@ -124,21 +120,25 @@ function M.watch(alias)
   end
 
   active.watch_disarm = disarm
-  notify_started("watching", alias, session_store.store_manual(alias, active))
+  notify_started("watching", alias, session_store.store_named(alias, active))
 end
 
+--- Compute, store, and announce the result for an active record. The record's
+--- kind is already decided (mark/watch at start, recall from the ring), so
+--- there is nothing to pass here; auto_suggest is the one promoter and goes
+--- through `session_store.mark_finished` directly.
 ---@param active VF.Session.Active
 ---@param alias string
----@param reason VF.Session.FinishReason
-local function complete_record(active, alias, reason)
+local function complete_record(active, alias)
   local result, err = compute.compute_result_for_active(active)
   if not result then
-    -- Not raised: watch's idle timer also lands here. A manual record is dropped
-    -- (its window is gone); a recall slice stays in the ring for a later window.
+    -- Not raised: watch's idle timer also lands here. A mark/watch record is
+    -- dropped (its window is gone); a recall slice stays in the ring for a
+    -- later window.
     util.show_output("finish()", err or "unknown error", {
       ui_keys = { title = "Vimfy Scratch Output Keys", docs = true },
     })
-    if active.start_kind == "manual" then
+    if active.kind ~= "recall" then
       session_store.remove(active.id)
     end
     vim.schedule(function() vim.notify("finish()", vim.log.levels.ERROR) end)
@@ -146,7 +146,7 @@ local function complete_record(active, alias, reason)
   end
 
   -- `active` came from get_active a moment ago and nothing ran in between.
-  assert(session_store.mark_finished(active.id, result, alias, nil, reason))
+  assert(session_store.mark_finished(active.id, result, alias))
 
   local message = result_view.format_message("vimfy finished [" .. alias .. "]", result)
   if result.analyze_ms then
@@ -156,20 +156,19 @@ local function complete_record(active, alias, reason)
 end
 
 ---@param alias string
----@param reason VF.Session.FinishReason
-function M.finish(alias, reason)
-  alias_mod.expect(alias, "name")
+function M.finish(alias)
+  alias_mod.expect(alias, { "name" })
 
   local active = session_store.get_active(alias)
   if not active then
     error("Session '" .. alias .. "' not found or already finished.", 0)
   end
-  complete_record(active, alias, reason)
+  complete_record(active, alias)
 end
 
 ---@param alias string
 function M.recall(alias)
-  local kind = alias_mod.expect(alias, "window")
+  local kind = alias_mod.expect(alias, alias_mod.RECALL_KINDS)
 
   local active = session_store.get_active(alias)
   if not active then
@@ -179,7 +178,7 @@ function M.recall(alias)
     error("No recall session found within '" .. alias .. "'. " ..
       "Try a larger window or indexing by key count (e.g. 'recall 20').", 0)
   end
-  complete_record(active, alias, "manual")
+  complete_record(active, alias)
 end
 
 ---@param alias string

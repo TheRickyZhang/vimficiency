@@ -62,7 +62,7 @@ Result<VF::SessionView::Result> decodeSessionResult(string_view encoded) {
           return helpers::unexpectedError("invalid user_cost presence flag");
         }
 
-        result.finishReason = fields[8];
+        result.kind = fields[8];
 
         auto recommendationFields =
             payload::decodeLengthPrefixedStrings(fields[9]);
@@ -220,16 +220,16 @@ VFByteSlice vf_format_result_position(
   return helpers::byteSlice(result_storage);
 }
 
-VFByteSlice vf_format_result_reason_suffix(
-    const char* reason,
-    size_t reason_len) {
+VFByteSlice vf_format_result_kind_suffix(
+    const char* kind,
+    size_t kind_len) {
   static string result_storage;
   return helpers::storeBytes(
       result_storage,
-      helpers::requiredBytes(reason, reason_len, "finish_reason")
-          .transform([](string_view reasonText) {
-            return VF::SessionView::formatReasonSuffix(
-                VF::SessionView::Result{.finishReason = string(reasonText)});
+      helpers::requiredBytes(kind, kind_len, "kind")
+          .transform([](string_view kindText) {
+            return VF::SessionView::formatKindSuffix(
+                VF::SessionView::Result{.kind = string(kindText)});
           }));
 }
 

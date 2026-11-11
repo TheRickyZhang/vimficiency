@@ -64,8 +64,9 @@ function M.build_active_items()
         name = s.display_alias or s.id,
         category = s.type,
         status = s.status,
-        start_time_ns = s.start_time,
-        end_time_ns = s.end_time,
+        started_mono_ns = s.started_mono_ns,
+        finished_mono_ns = s.finished_mono_ns,
+        wall_epoch = s.result and s.result.finished_wall_epoch,
         key_count = s.key_count,
         preview_seq = s.preview,
         result = s.result,
@@ -74,11 +75,11 @@ function M.build_active_items()
     end
   end
   if #recall_ring > 0 then
-    local oldest_ns, newest_ns = math.huge, -math.huge
+    local oldest_mono_ns, newest_mono_ns = math.huge, -math.huge
     local total_keys = 0
     for _, s in ipairs(recall_ring) do
-      if s.start_time < oldest_ns then oldest_ns = s.start_time end
-      if s.start_time > newest_ns then newest_ns = s.start_time end
+      oldest_mono_ns = math.min(oldest_mono_ns, s.started_mono_ns)
+      newest_mono_ns = math.max(newest_mono_ns, s.started_mono_ns)
       total_keys = total_keys + (s.key_count or 0)
     end
     table.insert(items, {
@@ -88,10 +89,9 @@ function M.build_active_items()
       category = "recall",
       status = "active",
       is_synthetic = true,
-      start_time_ns = newest_ns,
+      started_mono_ns = newest_mono_ns,
       ring_count = #recall_ring,
-      ring_oldest_ns = oldest_ns,
-      ring_newest_ns = newest_ns,
+      ring_oldest_mono_ns = oldest_mono_ns,
       ring_total_keys = total_keys,
     })
   end
@@ -111,7 +111,7 @@ function M.build_saved_items()
       name = name,
       category = "saved",
       status = "finished",
-      mtime_sec = mtime_sec,
+      wall_epoch = mtime_sec,
       path = path,
     })
   end
@@ -123,8 +123,11 @@ function M.sort_items(items, mode, direction)
     if mode == "alpha" then
       return a.name < b.name
     elseif mode == "created" then
-      local at = a.start_time_ns or (a.mtime_sec or 0) * 1e9
-      local bt = b.start_time_ns or (b.mtime_sec or 0) * 1e9
+      -- Ongoing items only have the monotonic clock; finished and saved items
+      -- compare on wall time. `group_into_sections` sorts the two groups
+      -- separately, so the clocks never meet.
+      local at = a.wall_epoch or a.started_mono_ns
+      local bt = b.wall_epoch or b.started_mono_ns
       return at < bt
     else
       if (a.category or "") ~= (b.category or "") then
@@ -192,14 +195,14 @@ function M.row_for_item(item, marked)
   local cat = item.category or ""
   if item.is_synthetic then
     local name = string.format("%s (%d)", item.name, item.ring_count)
-    local age = string.format("oldest %s", M.format_age_ns(item.ring_oldest_ns))
+    local age = string.format("oldest %s", M.format_age_ns(item.ring_oldest_mono_ns))
     return string.format("  %s %s %-16s  %-8s  %s", mark, sym, name, cat, age)
   end
   local age
   if item.pane == "active" then
-    age = M.format_age_ns(item.start_time_ns)
+    age = M.format_age_ns(item.started_mono_ns)
   else
-    age = M.format_epoch(item.mtime_sec)
+    age = M.format_epoch(item.wall_epoch)
   end
   return string.format("  %s %s %-16s  %-8s  %s", mark, sym, item.name, cat, age)
 end

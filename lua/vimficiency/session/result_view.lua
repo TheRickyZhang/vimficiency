@@ -11,9 +11,9 @@ function M.format_position(result)
 end
 
 ---@param result VF.Session.Result
----@return string  e.g. " [manual]", or ""
-function M.format_reason_suffix(result)
-  return ffi_display.format_result_reason_suffix(result)
+---@return string  e.g. " [mark]", or ""
+function M.format_kind_suffix(result)
+  return ffi_display.format_result_kind_suffix(result)
 end
 
 --- Format the result body as display lines.

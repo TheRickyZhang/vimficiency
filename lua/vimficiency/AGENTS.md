@@ -10,7 +10,7 @@ Top-level modules are the plugin entry and cross-cutting infrastructure:
 |------|---------|
 | `init.lua` | Plugin entry point: `setup()`, the `:Vimfy` dispatcher and its tab completion, teardown and reload. |
 | `session.lua` | Live capture lifecycle: start, watch, finish, recall, close. Argument errors raise to the `:Vimfy` boundary. |
-| `session/archive.lua` | Finished results as named things: selector resolution (`@`, `$`, alias, recall window), save/store/fetch/rm, view. |
+| `session/archive.lua` | Finished results by handle: alias resolution through the store, filename resolution on disk, save/store/fetch/rm, view. |
 | `simulate.lua` | Side-by-side animation of motion sequences. Required as `vimficiency.simulate`. |
 | `explore.lua` | Interactive result exploration view. Required as `vimficiency.explore`. |
 | `play.lua` | Play-screen settings and modal wiring. Required as `vimficiency.play`. |
@@ -28,7 +28,7 @@ Subdirectories hold supporting modules for each domain:
 
 | File | Purpose |
 |------|---------|
-| `session/alias.lua` | Alias grammar validation for Mark / Watch / Recall handles. |
+| `session/alias.lua` | The alias grammar (name, recall window, `@`, `$`) and the filename grammar; every handle is one or the other. |
 | `session/compute.lua` | Active-session capture normalization and optimizer invocation. |
 | `session/disk.lua` | Saved-result JSON encoding, validation, and disk operations. |
 | `session/playback.lua` | Converts stored results into replay sequence pools. |
@@ -80,37 +80,61 @@ Subdirectories hold supporting modules for each domain:
 
 ## Session Architecture
 
-### Session Types (session_store.lua)
+### Handles: alias or filename
 
-1. **Manual** (aliases: arbitrary alphabetic strings — e.g. `a`, `refactor`, `bugfix`;
-   capacity: 5 concurrent active sessions)
-   User-controlled: `:Vimfy start <name>` / `:Vimfy finish <name>`. Grammar is
-   strictly alphabetic (`^%a+$`); recall forms are rejected at the `finish`
-   entry point with a redirect to `:Vimfy recall`.
+Every user-typed handle is one of two things (`session/alias.lua`):
 
-2. **Recall** (rolling ring; queried via `:Vimfy recall N` or `:Vimfy recall Ns`)
-   Creates a retained session on every captured atom (one atomic user action).
-   Both indexing modes share one ring — `N` means "N commands ago", `Ns` means
-   "as far back as N seconds ago". Because each atom is already a complete
-   command boundary, no mode-based backward snapping is needed. Permanently on
-   (started by `recall_capture.start_continuous_capture()` at setup). Retention is bounded
-   under **union** semantics: evict the oldest session only when BOTH
-   `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS` say drop.
+- **alias** — anything the store resolves to a session id: a `name` (`^%a+$`,
+  e.g. `a`, `refactor`), a recall window (`N` commands ago or `Ns` seconds
+  ago), `@` (last finished) or `$` (last suggest regression).
+  `store.convert_alias_to_id` is the one resolver. Commands declare the kinds
+  they accept with `alias.expect(alias, kinds)`.
+- **filename** — a saved result on disk (`alias.is_valid_filename`,
+  `^[%w_][%w._-]*$`), resolved by `session/disk.lua`.
+
+`play`/`view`/`explore` take an `alias_or_filename` and try the store first
+(`archive.resolve_result`). Parameters are named after the grammar they accept.
+
+### Session kind (session/store.lua)
+
+One enum, `VF.Session.Kind`, set at creation and changed only by auto-suggest's
+promotion at finish:
+
+| Kind        | Created by                         | Finished by                       |
+|-------------|------------------------------------|-----------------------------------|
+| `mark`      | `:Vimfy start <alias>`             | `:Vimfy finish <alias>`           |
+| `watch`     | `:Vimfy watch <alias>`             | idle trigger (`config.watch`)     |
+| `recall`    | every captured atom (rolling ring) | `:Vimfy recall <N\|Ns>`           |
+| `suggest_*` | a `recall` record, promoted        | the `auto_suggest` trigger that fired |
+
+Name sessions cap at 5 concurrent active (finished records keep their slot).
+The recall ring retains under **union** semantics: evict the oldest only when
+BOTH `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS` say drop. See
+`dev/lua/session-invocation.md`.
 
 ### Data Structures
 
-- **SessionRecord**: Canonical per-session entry with `status` ("active" | "finished"),
-  `stream_sub` (the atom-subscriber name, while active), the captured `atoms` list
-  (while active), and `result` (after finish).
-- **ResultSession**: Optimizer output + position + captured `start_time`/`key_count`,
-  attached to the record at finish.
-- **SessionSummary**: Normalized view-model for `:Vimfy list` / auto-suggest output.
+- **VF.Session.Active**: A capturing session: `win`/`buf`/`start_state`, the
+  growing `atoms` list, and the capture it owns (`stream_sub` listener name,
+  `watch_disarm`).
+- **VF.Session.Finished**: `result`, `finish_alias`, `finished_mono_ns`. Both
+  shapes extend `VF.Session.Core` (`id`, `kind`, `started_mono_ns`).
+- **VF.Session.Result**: Optimizer output + position + `key_count` +
+  `finished_wall_epoch`, built at finish; `mark_finished` stamps `kind`.
 
-One `session_records[id]` table holds everything; `manual_alias_to_id` and
-`recall_id_order` are the two indexes into it. Finish flips `status` in place
-and drops `atoms` — it does NOT unindex. This removes tombstones from
-`recall_id_order` entirely: a finished session stays reachable via its recall
-alias (for `:Vimfy play Ns`) until the ring slot rotates out.
+Clocks: anything that stays in the process (`*_mono_ns`) is `vim.uv.hrtime()`,
+immune to system-time jumps and used for ring lookup, eviction, cooldowns and
+"N ago". Anything persisted (`*_wall_epoch`) is `os.time()`, since monotonic
+values do not survive a reboot. Never compare across the two.
+- **VF.Session.Summary**: Normalized view-model for `:Vimfy list` / auto-suggest
+  output; `status`, `type` (= `session_type(kind)`) and `key_count` are derived
+  here, not stored.
+
+Two tables keyed by id, `active_sessions` and `finished_sessions`;
+`name_to_id` and `recall_id_order` index across both. Finish moves the
+record from one table to the other — it does NOT unindex. This removes
+tombstones from `recall_id_order` entirely: a finished session stays reachable
+via its recall alias (for `:Vimfy play Ns`) until the ring slot rotates out.
 
 ## Atom stream (capture/atom_stream.lua)
 

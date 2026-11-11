@@ -124,8 +124,7 @@ local function prepare(active)
     win = v.nvim_get_current_win()
   end
 
-  local start_state = assert(active.start_state,
-    "compute_result_for_active: live session must carry a start_state (only fetched/imported records may have nil)")
+  local start_state = active.start_state
   local end_state = util.capture_state(active.buf, win)
 
   util.check_state_inconsistencies(start_state, end_state)
@@ -239,9 +238,8 @@ local function finalize(ctx, analyze, analyze_ms)
     user_cost = analyze.user_cost,
     optimal_results = optimal_results,
     capture_debug = build_capture_debug(ctx.atom_seq),
-    start_time = active.time_started,
     key_count = #ctx.atom_seq,
-    timestamp = vim.uv.hrtime(),
+    finished_wall_epoch = os.time(),
     analyze_ms = analyze_ms,
     compute_ms = compute_ms,
   }
