@@ -1,5 +1,6 @@
--- Finished results as named things: selectors (`@`, `$`, alias, recall window)
--- over the in-memory store, and saved names on disk.
+-- Finished results by handle. An alias (any kind: name, recall window, `@`,
+-- `$`) resolves through the in-memory store; a filename names a saved result
+-- on disk. `play`/`view`/`explore` take either and try the store first.
 
 local alias_mod = require("vimficiency.session.alias")
 local disk = require("vimficiency.session.disk")
@@ -8,63 +9,60 @@ local session_store = require("vimficiency.session.store")
 
 local M = {}
 
----@param name string
-local function validate_saved_name(name)
-  if not alias_mod.is_valid_saved_name(name) then
-    error("Invalid saved name '" .. tostring(name) .. "'. " ..
+---@param filename string
+local function validate_filename(filename)
+  if not alias_mod.is_valid_filename(filename) then
+    error("Invalid filename '" .. tostring(filename) .. "'. " ..
       "Allowed: alphanumeric, '.', '_', '-'; must start with a letter, digit, or underscore.", 0)
   end
 end
 
----@param selector string
+--- Default filename for `save`/`store` when none is given: the alias itself,
+--- except `@`/`$` resolve to the alias their record was finished under.
+---@param alias string
 ---@return string|nil
-function M.default_save_name(selector)
-  local special_id, _, is_special = session_store.resolve_special(selector)
-  if is_special then
-    return special_id and session_store.get_alias_by_id(special_id) or nil
+function M.default_filename(alias)
+  local kind = alias_mod.parse(alias)
+  if kind == "last_finished" or kind == "last_suggest" then
+    local id = session_store.get_id(alias)
+    return id and session_store.get_finish_alias(id) or nil
   end
-  return selector
+  return alias
 end
 
---- Message for a special selector that has nothing recorded yet.
----@param selector string
+---@param alias string
 ---@return string
-local function special_missing_message(selector)
-  if selector == "$" then
+local function missing_message(alias)
+  local kind = alias_mod.parse(alias)
+  if kind == "last_suggest" then
     return "No regression captured yet. vimfy records one when it next " ..
       "suggests a faster sequence."
   end
-  return "No recently finished session. Run ':Vimfy finish <alias>' first."
+  if kind == "last_finished" then
+    return "No recently finished session. Run ':Vimfy finish <alias>' first."
+  end
+  return "No finished result for '" .. alias .. "'. Is the session still active?"
 end
 
----@param selector string
+---@param alias string
 ---@return VF.Session.Result|nil result
 ---@return string|nil err
-local function resolve_in_memory(selector)
-  local _, special_result, is_special = session_store.resolve_special(selector)
-  if is_special then
-    if not special_result then
-      return nil, special_missing_message(selector)
-    end
-    return special_result, nil
-  end
-  local result = session_store.get_result(selector)
-  if not result then
-    return nil, "No finished result for '" .. selector .. "'. Is the session still active?"
-  end
+function M.resolve_alias(alias)
+  local result = session_store.get_result(alias)
+  if not result then return nil, missing_message(alias) end
   return result, nil
 end
 
---- In-memory first, then a saved name on disk.
----@param selector string
+--- Workspace first, then disk.
+---@param alias_or_filename string
 ---@return VF.Session.Result|nil result
 ---@return string|nil err
-function M.resolve_result(selector)
-  local result, err = resolve_in_memory(selector)
+function M.resolve_result(alias_or_filename)
+  local result, err = M.resolve_alias(alias_or_filename)
   if result then return result, nil end
 
-  if not alias_mod.is_special_selector(selector) and alias_mod.is_valid_saved_name(selector) then
-    local data, load_err, is_missing = disk.load(selector)
+  if alias_mod.is_valid_filename(alias_or_filename) then
+    local data, load_err, is_missing = disk.load(alias_or_filename)
     if data then return data, nil end
     if not is_missing then
       return nil, load_err or "unknown error"
@@ -74,76 +72,73 @@ function M.resolve_result(selector)
   return nil, err
 end
 
---- Explicit `[<name>]` wins; otherwise `default_save_name()`.
+--- Explicit `[<filename>]` wins; otherwise `default_filename()`.
 ---@param verb string
----@param selector string
+---@param alias string
 ---@param explicit string|nil
 ---@return string
-local function resolve_save_name(verb, selector, explicit)
-  local name = explicit or M.default_save_name(selector)
-  if not name then
-    error(verb .. " " .. selector .. ": nothing to name automatically. " ..
-      "Pass an explicit <name>, or run a session first.", 0)
+local function resolve_filename(verb, alias, explicit)
+  local filename = explicit or M.default_filename(alias)
+  if not filename then
+    error(verb .. " " .. alias .. ": nothing to name automatically. " ..
+      "Pass an explicit <filename>, or run a session first.", 0)
   end
-  validate_saved_name(name)
-  return name
+  validate_filename(filename)
+  return filename
 end
 
 ---@param verb string
----@param name string
+---@param filename string
 ---@param result VF.Session.Result
 ---@return string display_path
-local function write_result(verb, name, result)
-  local path, err = disk.write_with_overwrite_warn(name, result)
+local function write_result(verb, filename, result)
+  local path, err = disk.write_with_overwrite_warn(filename, result)
   if not path then
     error("vimfy " .. verb .. " failed: " .. (err or "unknown error"), 0)
   end
   return vim.fn.fnamemodify(path, ":~")
 end
 
----@param selector string
----@param explicit_name string|nil
-function M.save(selector, explicit_name)
-  local name = resolve_save_name("save", selector, explicit_name)
-  local result, err = resolve_in_memory(selector)
+---@param alias string
+---@param explicit_filename string|nil
+function M.save(alias, explicit_filename)
+  local filename = resolve_filename("save", alias, explicit_filename)
+  local result, err = M.resolve_alias(alias)
   if not result then error(err, 0) end
 
-  local display_path = write_result("save", name, result)
-  vim.notify("vimfy saved [" .. name .. "] → " .. display_path, vim.log.levels.INFO)
+  local display_path = write_result("save", filename, result)
+  vim.notify("vimfy saved [" .. filename .. "] → " .. display_path, vim.log.levels.INFO)
 end
 
----@param selector string
----@param explicit_name string|nil
-function M.store(selector, explicit_name)
-  local name = resolve_save_name("store", selector, explicit_name)
+---@param alias string
+---@param explicit_filename string|nil
+function M.store(alias, explicit_filename)
+  local filename = resolve_filename("store", alias, explicit_filename)
 
-  if session_store.get_active(selector) then
-    error("Session '" .. selector .. "' is still active. Finish it first.", 0)
+  if session_store.get_active(alias) then
+    error("Session '" .. alias .. "' is still active. Finish it first.", 0)
   end
 
-  local special_id, _, is_special = session_store.resolve_special(selector)
-  local id = is_special and special_id or session_store.get_id(selector)
+  -- Pin the id before writing: recall aliases drift.
+  local id = session_store.get_id(alias)
   local result = id and session_store.get_result_by_id(id)
   if not result then
-    error("No finished result for '" .. selector .. "'.", 0)
+    error("No finished result for '" .. alias .. "'.", 0)
   end
 
-  local display_path = write_result("store", name, result)
+  local display_path = write_result("store", filename, result)
   session_store.remove(id)
-  vim.notify("vimfy stored [" .. selector .. "] → [" .. name .. "] at " ..
+  vim.notify("vimfy stored [" .. alias .. "] → [" .. filename .. "] at " ..
     display_path .. " (removed from session)", vim.log.levels.INFO)
 end
 
----@param name string
+---@param filename string
 ---@param alias string
-function M.fetch(name, alias)
-  validate_saved_name(name)
-  if not alias_mod.is_valid_manual(alias) then
-    error("Invalid alias '" .. tostring(alias) ..
-      "'. Manual aliases must be alphabetic only (e.g. `foo`).", 0)
-  end
+function M.fetch(filename, alias)
+  validate_filename(filename)
+  alias_mod.expect(alias, { "name" })
 
-  local data, err = disk.load(name)
+  local data, err = disk.load(filename)
   if not data then
     error("vimfy fetch failed: " .. (err or "unknown error"), 0)
   end
@@ -151,17 +146,17 @@ function M.fetch(name, alias)
   if not id then
     error("vimfy fetch failed: " .. (reg_err or "unknown error"), 0)
   end
-  vim.notify("vimfy fetched [" .. name .. "] → [" .. alias .. "]", vim.log.levels.INFO)
+  vim.notify("vimfy fetched [" .. filename .. "] → [" .. alias .. "]", vim.log.levels.INFO)
 end
 
----@param name string
-function M.rm(name)
-  validate_saved_name(name)
-  local ok, path_or_err = disk.remove(name)
+---@param filename string
+function M.rm(filename)
+  validate_filename(filename)
+  local ok, path_or_err = disk.remove(filename)
   if not ok then
     error(path_or_err or "vimfy rm failed", 0)
   end
-  vim.notify("vimfy removed [" .. name .. "] ← " .. path_or_err, vim.log.levels.INFO)
+  vim.notify("vimfy removed [" .. filename .. "] ← " .. path_or_err, vim.log.levels.INFO)
 end
 
 ---@param old_alias string
@@ -169,10 +164,10 @@ end
 ---@return boolean ok
 ---@return string|nil err
 function M.rename_active(old_alias, new_alias)
-  if not alias_mod.is_valid_manual(old_alias) then
-    return false, "source alias must be a manual (alphabetic) alias"
+  if not alias_mod.is_name(old_alias) then
+    return false, "source alias must be a session name (letters only)"
   end
-  return session_store.rename_manual_alias(old_alias, new_alias)
+  return session_store.rename_name(old_alias, new_alias)
 end
 
 ---@param src_alias string
@@ -180,8 +175,8 @@ end
 ---@return boolean ok
 ---@return string|nil err
 function M.duplicate_active(src_alias, dst_alias)
-  if not alias_mod.is_valid_manual(dst_alias) then
-    return false, "target alias must be a manual (alphabetic) alias"
+  if not alias_mod.is_name(dst_alias) then
+    return false, "target alias must be a session name (letters only)"
   end
   local result = session_store.get_result(src_alias)
   if not result then
@@ -192,11 +187,10 @@ function M.duplicate_active(src_alias, dst_alias)
   return true, nil
 end
 
---- View a finished result full-screen. Accepts any selector
---- (`@`/`$`/alias/recall window) or a saved disk name; no arg lists saves.
----@param selector string|nil
-function M.view(selector)
-  if not selector or selector == "" then
+--- View a finished result full-screen; no arg lists saved files.
+---@param alias_or_filename string|nil
+function M.view(alias_or_filename)
+  if not alias_or_filename or alias_or_filename == "" then
     local saved = disk.list()
     if #saved == 0 then
       vim.notify("No saved results found", vim.log.levels.INFO)
@@ -206,11 +200,11 @@ function M.view(selector)
     return
   end
 
-  local result, err = M.resolve_result(selector)
+  local result, err = M.resolve_result(alias_or_filename)
   if not result then
     error("vimfy view failed: " .. (err or "unknown error"), 0)
   end
-  result_window.open(selector, result)
+  result_window.open(alias_or_filename, result)
 end
 
 return M

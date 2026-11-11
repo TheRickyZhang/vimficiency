@@ -6,19 +6,19 @@ title: "Commands reference"
 
 | Command                                    | Purpose                                              |
 |--------------------------------------------|------------------------------------------------------|
-| `:Vimfy start <name>`                      | Mark a session start (alphabetic alias, e.g. `a`).   |
-| `:Vimfy watch <name>`                      | Start a Watch session (auto-end on idle).            |
-| `:Vimfy finish <alias>`                    | Finish a manual session (Mark or Watch) and optimize.|
+| `:Vimfy start <alias>`                     | Mark a session start (a name: letters only, e.g. `a`). |
+| `:Vimfy watch <alias>`                     | Start a Watch session (auto-end on idle).            |
+| `:Vimfy finish <alias>`                    | Finish a Mark or Watch session and optimize.         |
 | `:Vimfy recall <N\|Ns>`                    | Finish a retrospective recall window.                |
 | `:Vimfy close <alias>`                     | Discard a session without optimizing.                |
-| `:Vimfy save <selector>\|@ [<name>]`       | Copy a finished result to disk (keeps the workspace copy). Name defaults to selector. `@` = last finished. |
-| `:Vimfy store <selector>\|@ [<name>]`      | Move a finished result to disk (removes from workspace). |
-| `:Vimfy fetch <name> [<alias>]`            | Copy a saved result from disk into the current workspace. |
-| `:Vimfy play <alias> [count]`              | Animate results side-by-side (memory first, disk fallback). |
+| `:Vimfy save <alias> [<filename>]`         | Copy a finished result to disk (keeps the workspace copy). Filename defaults to the alias. |
+| `:Vimfy store <alias> [<filename>]`        | Move a finished result to disk (removes from workspace). |
+| `:Vimfy fetch <filename> [<alias>]`        | Copy a saved result from disk into the current workspace. |
+| `:Vimfy play <alias>\|<filename> [count]`   | Animate results side-by-side (memory first, disk fallback). |
 | `:Vimfy focus <N>`                         | Focus the active replay on the Nth buffer (full-screen).|
 | `:Vimfy escape`                            | Restore the side-by-side replay layout.              |
-| `:Vimfy view [name]`                       | View a saved result (or list saved names).           |
-| `:Vimfy rm <name>`                         | Delete a saved result from disk.                     |
+| `:Vimfy view [<alias>\|<filename>]`         | View a finished result full-screen (no arg lists saved files). |
+| `:Vimfy rm <filename>`                     | Delete a saved result from disk.                     |
 | `:Vimfy list`                              | Open the interactive session picker (see below).     |
 | `:Vimfy stats`                             | Show lifetime session stats (see below).             |
 | `:Vimfy suggest <on\|off\|toggle>`         | Runtime toggle for auto-suggest (works with zero config). |
@@ -27,28 +27,31 @@ title: "Commands reference"
 | `:Vimfy version`                           | Show the plugin version.                             |
 | `:Vimfy help`                              | Show the command list.                               |
 
-## Alias grammar
+## Aliases and filenames
 
-The `<alias>` argument splits by subcommand:
+Every handle you type is either an **alias** (a session in memory) or a
+**filename** (a saved result on disk).
 
-| Subcommand         | Accepts                                     |
-|--------------------|---------------------------------------------|
-| `start` / `watch`  | Alphabetic only (`a`, `refactor`).          |
-| `finish`           | Alphabetic only — manual handles.           |
-| `recall`           | `N` (digits) or `Ns` (digits + `s`).        |
-| `close` / `play`   | Any of the three: alphabetic, `N`, or `Ns`. `play` also accepts a saved name. |
-| `save` / `store`   | Any of the three, plus `@` for last finished. Same grammar. |
-| `fetch`            | Saved name → new workspace alias (alphabetic). |
-
-| Form       | Means                                                                |
+| Alias      | Means                                                                |
 |------------|----------------------------------------------------------------------|
-| `a`, `foo` | Alphabetic → a manual session name.                                  |
-| `6`        | Digits → recall N commands ago.                                     |
+| `a`, `foo` | Letters only → a session name.                                       |
+| `6`        | Digits → recall N commands ago.                                      |
 | `3s`       | Digits + `s` → recall N seconds ago (see [5. Recall](05-recall.md)). |
+| `@`        | The most recently finished session.                                  |
+| `$`        | The most recent auto-suggest regression.                             |
 
-`save` accepts the full grammar plus `@`, which resolves to the most
-recently finished session — handy when the session you want to keep is a
-recall window whose alias (`3s`) is moving out from under you:
+Which aliases a subcommand accepts:
+
+| Subcommand                   | Accepts                                             |
+|------------------------------|-----------------------------------------------------|
+| `start` / `watch` / `finish` | A name.                                             |
+| `recall`                     | `N` or `Ns`.                                        |
+| `close` / `save` / `store`   | Any alias.                                          |
+| `play` / `view` / `explore`  | Any alias or a filename (memory first, then disk).  |
+| `fetch` / `rm`               | A filename (`fetch` also takes the new name alias). |
+
+`@` is handy when the session you want to keep is a recall window whose alias
+(`3s`) is moving out from under you:
 
 ```
 :Vimfy recall 3s
@@ -109,10 +112,10 @@ entry; `<Esc>` returns to the list.
 - `d` — on Active, discards the session (equivalent to `:Vimfy close`);
   on Saved, deletes the file on disk.
 - `r` / `y` — on Saved, renames/duplicates the file. On Active, renames
-  the manual alias / registers a duplicate finished record under a new
-  alias. Only entries with a stable manual alias are renameable this
+  the name alias / registers a duplicate finished record under a new
+  alias. Only entries with a stable name alias are renameable this
   way; for recall and auto-suggest results, save to disk first (`:Vimfy
-  save <alias> <name>`) and then rename from the Saved pane.
+  save <alias> <filename>`) and then rename from the Saved pane.
 
 **Blocked on in-progress sessions:** `<CR>`, `r`, `y` all refuse to run
 on a still-accumulating session. Finish it with `:Vimfy finish` (or let
@@ -157,7 +160,7 @@ new buckets only requires re-reducing, not a migration. A trailing
 malformed line (e.g. a crash mid-write) is silently skipped on read.
 
 Per-record schema (version `v: 1`): `finish_epoch`, `type`,
-`finish_reason`, `key_count`, `user_cost`, `best_opt_cost`, `user_seq`,
+`kind`, `key_count`, `user_cost`, `best_opt_cost`, `user_seq`,
 `best_opt_seq`, `beats`. Only the single lowest-cost optimal result is
 stored; Top-N alternatives are not retained at log-write time.
 
@@ -166,12 +169,12 @@ stored; Top-N alternatives are not retained at log-write time.
 Works on:
 
 - Subcommands (`:Vimfy s<Tab>` → `save`, `start`, `stats`, `store`, `suggest`).
-- Manual (alphabetic) handles for `start`, `watch`, and `finish`.
+- Session names for `start`, `watch`, and `finish`.
 - `3s`/`5s`/`10s`/`30s` hints for `recall`.
-- All active/recall aliases plus time hints for `close`.
-- Active/recall aliases, time hints, and saved names for `play` (matches its disk fallback).
-- Selectors (plus `@`) for `save` and `store`.
-- Saved names for `view`, `rm`, and `fetch`.
+- Live aliases plus time hints for `close`.
+- Every alias (including `@` and `$`) for `save` and `store`.
+- Every alias plus saved filenames for `play`, `view`, and `explore`.
+- Saved filenames for `rm` and `fetch`.
 - `on` / `off` / `toggle` for `suggest`.
 
 ## Scratch output buffer keys

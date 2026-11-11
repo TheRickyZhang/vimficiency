@@ -24,11 +24,12 @@ local KEYS_CFG = { keys = { every = 30 }, cooldown_ms = 5000 }
 local COST_M2  = { cost = { m = 2.0, b = 0.0, ms = 300, window = "100" }, cooldown_ms = 5000 }
 local COST_M1  = { cost = { m = 1.0, b = 0.0, ms = 300, window = "100" }, cooldown_ms = 5000 }
 
-local ACTIVE = { id = "fake-id", start_kind = "auto", end_kind = "manual" }
+local ACTIVE = { id = "fake-id", kind = "recall" }
 
 local SUMMARY = {
   id = "fake-id",
-  type = "suggest", start_kind = "auto", end_kind = "auto",
+  kind = "suggest_idle", type = "suggest",
+  started_mono_ns = vim.uv.hrtime(),
   result = h.fake_result({ user_cost = 0.0, optimal_results = {} }),
 }
 
@@ -58,14 +59,14 @@ local function harness(spec, fn)
   h.with_patch(patches, fn)
 end
 
---- Helper for reason-capture tests.
-local function capture_reason(cfg, compute, trigger)
+--- Helper for kind-capture tests: the 4th mark_finished arg is the promotion.
+local function capture_kind(cfg, compute, trigger)
   local captured
   harness({
     cfg = cfg,
     compute = compute,
     finish = function(...)
-      captured = select(5, ...)
+      captured = select(4, ...)
       return true
     end,
   }, trigger)
@@ -100,28 +101,26 @@ test("fire_idle: success counts and records fingerprint", function()
   end)
 end)
 
-test("fire_idle: promotes end_kind from manual to auto on takeover", function()
-  local captured = { id = "fake-id", start_kind = "auto", end_kind = "manual" }
+test("fire_idle: promotes the recall record to suggest_idle on takeover", function()
+  local captured = { id = "fake-id", kind = "recall" }
   harness({
     active = function() return captured end,
-    -- Mirror mark_finished's real contract: the end_kind override is
-    -- applied atomically with the status transition. A failing finish
-    -- leaves end_kind untouched.
+    -- Mirror mark_finished's real contract: the promotion is applied
+    -- atomically with the status transition. A failing finish leaves kind
+    -- untouched.
     finish = function(...)
-      local override = select(4, ...)
-      if override then captured.end_kind = override end
+      local kind = select(4, ...)
+      if kind then captured.kind = kind end
       return true
     end,
   }, function()
     fire_idle()
-    assert_eq(captured.end_kind, "auto",
-      "Recall -> Suggest promotion must flip end_kind at finish time")
-    assert_eq(captured.start_kind, "auto",
-      "start_kind must stay 'auto' (Suggest is still auto-start)")
+    assert_eq(captured.kind, "suggest_idle",
+      "recall -> suggest promotion must happen at finish time")
   end)
 end)
 
-test("fire_idle: failures leave end_kind = 'manual'", function()
+test("fire_idle: failures leave kind = 'recall'", function()
   for _, spec in ipairs({
     {
       label = "compute failure",
@@ -132,12 +131,12 @@ test("fire_idle: failures leave end_kind = 'manual'", function()
       patch = { finish = function() return false end },
     },
   }) do
-    local captured = { id = "fake-id", start_kind = "auto", end_kind = "manual" }
+    local captured = { id = "fake-id", kind = "recall" }
     spec.patch.active = function() return captured end
     harness(spec.patch, function()
       fire_idle()
-      assert_eq(captured.end_kind, "manual",
-        spec.label .. " must not mutate end_kind")
+      assert_eq(captured.kind, "recall",
+        spec.label .. " must not mutate kind")
     end)
   end
 end)
@@ -243,18 +242,18 @@ test("fire_cost: empty optimal_results suppresses notify", function()
 end)
 
 --------------------------------------------------------------------------------
--- Reason plumbing: each trigger must pass its literal reason through to
--- mark_finished so the header can print it.
+-- Kind plumbing: each trigger must pass its suggest_* kind through to
+-- mark_finished so the record is promoted and the header can print it.
 --------------------------------------------------------------------------------
 
-test("auto_suggest triggers pass literal finish reasons", function()
-  assert_eq(capture_reason(IDLE_CFG, nil, fire_idle), "suggest_idle")
-  assert_eq(capture_reason(KEYS_CFG, nil, fire_keys), "suggest_keys")
+test("auto_suggest triggers pass their suggest_* kind", function()
+  assert_eq(capture_kind(IDLE_CFG, nil, fire_idle), "suggest_idle")
+  assert_eq(capture_kind(KEYS_CFG, nil, fire_keys), "suggest_keys")
   local compute = function() return h.fake_result({
     user_cost = 20,
     optimal_results = { { seq = "y", cost = 10.0 } },
   }) end
-  assert_eq(capture_reason(COST_M1, compute, fire_cost), "suggest_cost")
+  assert_eq(capture_kind(COST_M1, compute, fire_cost), "suggest_cost")
 end)
 
 --------------------------------------------------------------------------------
@@ -315,6 +314,7 @@ end)
 --------------------------------------------------------------------------------
 
 local SUGGEST_SUMMARY = {
+  started_mono_ns = vim.uv.hrtime(),
   result = h.fake_result({
     user_cost = 20,
     optimal_results = { { seq = "ciwx", cost = 1.0 } },

@@ -187,7 +187,7 @@ function M.reload_lua(new_lib_path)
   local status = M.shutdown()
   local dump = session_store.dump_for_reload()
   local preserved_records = 0
-  for _ in pairs(dump.records) do preserved_records = preserved_records + 1 end
+  for _ in pairs(dump.finished) do preserved_records = preserved_records + 1 end
 
   if new_lib_path and new_lib_path ~= "" then
     _G.__vimficiency_reload_lib_path = new_lib_path

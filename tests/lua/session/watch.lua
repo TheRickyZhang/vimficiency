@@ -28,15 +28,14 @@ test("watch: refuses to start when config.watch is falsy", function()
   end)
 end)
 
-test("watch: creates (manual, auto) record with disarm handle", function()
+test("watch: creates a watch record with disarm handle", function()
   h.with_buf({ "hello", "world" }, function()
     with_watch_cfg(WATCH_CFG, function()
       session.watch("wrec")
       local rec = session_store.get_active("wrec")
       assert_true(rec ~= nil, "watch record should be active")
       rec = assert(rec)
-      assert_eq(rec.start_kind, "manual")
-      assert_eq(rec.end_kind,   "auto")
+      assert_eq(rec.kind, "watch")
       assert_true(type(rec.watch_disarm) == "function",
         "watch_disarm must be installed on the record")
       session.close("wrec")
@@ -99,13 +98,13 @@ test("watch: finish (manual :Vimfy finish) disarms the trigger", function()
 
       local fake_result = h.fake_result({ user_seq = "" })
       assert_eq(
-        session_store.mark_finished(rec.id, fake_result, "wfinish", nil, "watch_idle"),
+        session_store.mark_finished(rec.id, fake_result, "wfinish"),
         true)
 
       assert_eq(atom_stream._has_listener(name), false,
         "mark_finished must disarm the watch trigger")
-      assert_eq(fake_result.finish_reason, "watch_idle",
-        "mark_finished must stamp the reason onto the result")
+      assert_eq(fake_result.kind, "watch",
+        "mark_finished must stamp the kind onto the result")
     end)
   end)
 end)

@@ -68,9 +68,8 @@ return function(ctx)
           { seq = opt1, cost = 26 },
           { seq = opt2, cost = 28 },
         },
-        start_time = 1,
         key_count = 1,
-        timestamp = 2,
+        finished_wall_epoch = 2,
       }
 
       helpers.new_buf({ "session simulate source" })

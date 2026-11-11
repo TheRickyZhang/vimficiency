@@ -15,11 +15,8 @@ local function fake_active(buf, win)
     win = win,
     buf = buf,
     start_state = util.capture_state(buf, win),
-    time_started = vim.uv.hrtime(),
-    status = "active",
+    started_mono_ns = vim.uv.hrtime(),
     atoms = {},
-    key_count = 0,
-    result = nil,
   }
 end
 
@@ -96,7 +93,6 @@ test("compute_result_for_active: includes capture key debug", function()
     { keys = "cwW2<Esc>", win = win, buf = buf },
     { keys = "dl",        win = win, buf = buf },
   }
-  active.key_count = #active.atoms
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "cout << W2 << endl;" })
 
   local result

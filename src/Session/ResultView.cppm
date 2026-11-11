@@ -21,12 +21,12 @@ struct Result {
   std::string userSeq;
   bool hasUserCost = false;
   double userCost = 0.0;
-  std::string finishReason;
+  std::string kind;
   std::vector<Recommendation> optimalResults;
 };
 
 std::string formatPosition(const Result& result);
-std::string formatReasonSuffix(const Result& result);
+std::string formatKindSuffix(const Result& result);
 std::vector<std::string> formatBody(
     const Result& result,
     SequenceDisplay::Options displayOptions = {});

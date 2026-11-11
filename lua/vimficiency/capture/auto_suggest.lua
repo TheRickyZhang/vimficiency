@@ -59,10 +59,8 @@ local function render_suggestion(summary)
   end
   last_notify_hrtime = now
 
-  local ago = string.format("%d keys", result.key_count or 0)
-  if result.start_time then
-    ago = ago .. string.format(" · %.0fs ago", (now - result.start_time) / 1e9)
-  end
+  local ago = string.format("%d keys · %.0fs ago",
+    result.key_count or 0, (now - summary.started_mono_ns) / 1e9)
 
   local timing = result.analyze_ms and string.format(" · %.0fms", result.analyze_ms) or ""
   local body = string.format(
@@ -77,9 +75,9 @@ end
 ---
 ---@param window string                              Recall alias to analyze.
 ---@param gate? fun(result: VF.Session.Result): boolean|nil  Optional veto. Return false to suppress notification; the record is still consumed.
----@param reason VF.Session.FinishReason                         Which trigger fired; stored on the result for the header annotation.
+---@param kind "suggest_idle"|"suggest_keys"|"suggest_cost"  Which trigger fired; the recall record is promoted to it at finish.
 ---@return boolean counted
-local function fire_with_window(window, gate, reason)
+local function fire_with_window(window, gate, kind)
   -- Single-flight: a previous suggest analysis is still running on the worker.
   -- Skip this fire (cooldown-like); the in-flight job finishes and renders.
   if in_flight then return false end
@@ -99,18 +97,17 @@ local function fire_with_window(window, gate, reason)
 
     -- Cost gate: consume the record but suppress the notification.
     if gate and not gate(result) then
-      session_store.mark_finished(id, result, window, "auto", reason)
+      session_store.mark_finished(id, result, window, kind)
       return
     end
 
     local fp = fingerprint_result(result)
     if fp == last_fingerprint then
-      session_store.mark_finished(id, result, window, "auto", reason)
+      session_store.mark_finished(id, result, window, kind)
       return
     end
 
-    -- Promote Recall -> Suggest with the finish-time end_kind override.
-    if not session_store.mark_finished(id, result, window, "auto", reason) then
+    if not session_store.mark_finished(id, result, window, kind) then
       return
     end
 

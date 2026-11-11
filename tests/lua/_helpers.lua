@@ -148,10 +148,9 @@ function M.finished_result(user_seq, overrides)
     lines = { "hello" },
     user_seq = seq,
     optimal_results = { { seq = seq, cost = 1.0 } },
-    start_time = 0,
     key_count = 0,
-    timestamp = 0,
-    finish_reason = "manual",
+    finished_wall_epoch = 0,
+    kind = "mark",
   }, overrides or {}))
 end
 
@@ -176,7 +175,7 @@ function M.silence_notify(fn)
 end
 
 --- Seed a recall record in the store. `backdate_s` backdates
---- `time_started` so `Ns` queries can resolve the record deterministically.
+--- `started_mono_ns` so `Ns` queries can resolve the record deterministically.
 ---@param opts { buf?: integer, lines?: string[], id?: string, backdate_s?: number }|nil
 ---@return table rec, integer buf, string id
 function M.seed_recall(opts)
@@ -200,13 +199,28 @@ function M.seed_recall(opts)
       window_height = vim.api.nvim_win_get_height(win),
       scroll_amount = vim.api.nvim_get_option_value("scroll", { win = win }),
     },
-    "auto", "manual"
+    "recall"
   )
   if opts.backdate_s then
-    rec.time_started = vim.uv.hrtime() - opts.backdate_s * 1e9
+    rec.started_mono_ns = vim.uv.hrtime() - opts.backdate_s * 1e9
   end
   session_store.store_recall(rec)
   return rec, buf, id
+end
+
+--- Seed a manual (mark) session under `alias` on the current buffer/window.
+---@param alias string
+---@param id string
+---@return table rec
+function M.seed_named(alias, id)
+  local session_store = require("vimficiency.session.store")
+  local util = require("vimficiency.util")
+  local buf = vim.api.nvim_get_current_buf()
+  local win = vim.api.nvim_get_current_win()
+  local rec = session_store.new_active_session(
+    id, nil, win, buf, util.capture_state(buf, win), "mark")
+  session_store.store_named(alias, rec)
+  return rec
 end
 
 return M

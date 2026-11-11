@@ -55,30 +55,30 @@ test("finish failure on a recall record preserves the ring slice", function()
   pcall(vim.api.nvim_buf_delete, buf_b, { force = true })
 end)
 
-test("can_store_manual: finished records do not consume capacity slots", function()
+test("can_store_named: finished records do not consume capacity slots", function()
   h.new_buf()
   for _, alias in ipairs({ "capa", "capb", "capc", "capd", "cape" }) do
     session.start(alias)
     local rec = session_store.get_active(alias)
     assert_true(rec ~= nil, "start failed for " .. alias)
     rec = assert(rec)
-    session_store.mark_finished(rec.id, h.fake_result({ user_seq = "" }), alias, nil, "manual")
+    session_store.mark_finished(rec.id, h.fake_result({ user_seq = "" }), alias)
   end
-  assert_eq(session_store.can_store_manual("capf"), true,
+  assert_eq(session_store.can_store_named("capf"), true,
     "a new alias must be allowed when all existing records are finished")
 end)
 
-test("finish failure on a manual record removes it (regression guard)", function()
+test("finish failure on a mark record removes it (regression guard)", function()
   local buf_a = h.new_buf()
   session.start("kfinishfail")
   assert_true(session_store.get_active("kfinishfail") ~= nil,
-    "manual session should exist after start")
+    "mark session should exist after start")
 
   local buf_b = h.new_buf({ "y" })
-  h.silence_notify(function() pcall(session.finish, "kfinishfail", "manual") end)
+  h.silence_notify(function() pcall(session.finish, "kfinishfail") end)
 
   assert_eq(session_store.get_active("kfinishfail"), nil,
-    "manual record must be removed after finish failure")
+    "mark record must be removed after finish failure")
 
   pcall(vim.api.nvim_buf_delete, buf_a, { force = true })
   pcall(vim.api.nvim_buf_delete, buf_b, { force = true })

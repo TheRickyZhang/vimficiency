@@ -24,7 +24,7 @@ end
 ---@param result VF.Session.Result
 ---@return string[]
 local function build_header_lines(result)
-  local lines = { result_view.format_position(result) .. result_view.format_reason_suffix(result) }
+  local lines = { result_view.format_position(result) .. result_view.format_kind_suffix(result) }
   lines[#lines + 1] = string.format("you   %s   (%s)",
     ffi_display.sequence_display_inline(result.user_seq or ""), fmt_cost(result.user_cost))
   local recs = result.optimal_results or {}

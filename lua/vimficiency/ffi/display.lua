@@ -60,7 +60,7 @@ local function encode_result(result)
     result.user_seq or "",
     has_user_cost and "1" or "0",
     has_user_cost and tostring(result.user_cost) or "",
-    result.finish_reason or "",
+    result.kind or "",
     core.encode_string_list(recs),
   })
 end
@@ -75,7 +75,7 @@ local function encode_body_result(result)
     end_col = result.end_col or 0,
     user_seq = result.user_seq,
     user_cost = result.user_cost,
-    finish_reason = result.finish_reason,
+    kind = result.kind,
     optimal_results = result.optimal_results,
   })
 end
@@ -139,9 +139,9 @@ function M.format_result_position(result)
   ))
 end
 
-function M.format_result_reason_suffix(result)
-  local reason = result and result.finish_reason or ""
-  return checked_string(lib.vf_format_result_reason_suffix(reason, #reason))
+function M.format_result_kind_suffix(result)
+  local kind = result and result.kind or ""
+  return checked_string(lib.vf_format_result_kind_suffix(kind, #kind))
 end
 
 function M.format_result_body(result, opts)

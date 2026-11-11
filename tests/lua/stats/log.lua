@@ -20,7 +20,7 @@ local function sample_record(overrides)
     v = 1,
     finish_epoch = 1234567,
     type = "mark",
-    finish_reason = "manual",
+    kind = "mark",
     key_count = 4,
     user_cost = 3.0,
     best_opt_cost = 2.0,
@@ -67,7 +67,7 @@ test("stats.log: build_record flags beats when user beats optimizer", function()
     user_seq = "xyz",
     user_cost = 1.0,
     optimal_results = { { seq = "abc", cost = 5.0 } },
-    finish_reason = "manual",
+    kind = "mark",
     key_count = 3,
   }))
   r = assert(r)
@@ -85,7 +85,7 @@ test("stats.log: build_record picks the lowest-cost optimal entry", function()
       { seq = "lo",  cost = 2.0 },
       { seq = "mid", cost = 5.0 },
     },
-    finish_reason = "manual",
+    kind = "mark",
     key_count = 3,
   }))
   r = assert(r)

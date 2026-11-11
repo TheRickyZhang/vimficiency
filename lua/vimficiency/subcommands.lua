@@ -21,39 +21,39 @@ local util = require("vimficiency.util")
 
 -- Table of all non-root vimficiency commands, grouped by workflow stage. Order
 -- is for the reader only; the bare `:Vimfy` listing sorts alphabetically.
--- Tab-completion candidates.
-local function manual_aliases()
-  return vim.tbl_filter(alias_mod.is_valid_manual, session_store.list_aliases())
+-- Tab-completion candidates, by the handle grammar each command accepts.
+local function name_aliases()
+  return vim.tbl_filter(alias_mod.is_name, session_store.list_aliases())
 end
---- In-memory aliases plus recall time hints: everything `close` accepts.
+--- Live aliases plus recall time hints: everything `close` accepts.
 local function closeable()
   return vim.list_extend(session_store.list_aliases(), alias_mod.TIME_HINTS)
 end
---- `closeable()` plus the special selectors (`@` last finished, `$` last regression).
-local function selectors()
-  return vim.list_extend(closeable(), { "@", "$" })
+--- Every alias kind.
+local function aliases()
+  return vim.list_extend(closeable(), alias_mod.SPECIAL)
 end
-local function selectors_and_saved()
-  return vim.list_extend(selectors(), disk.list())
+local function aliases_and_filenames()
+  return vim.list_extend(aliases(), disk.list())
 end
 
 ---@type table<string, VF.Subcommand>
 return {
   -- Capture a session.
   start = {
-    desc = "Start a manual session",
+    desc = "Start a mark session (finish it yourself)",
     usage = "start <alias>",
     min_args = 1,
-    complete = { manual_aliases },
+    complete = { name_aliases },
     run = function(args) session.start(args[1]) end,
   },
 
   finish = {
-    desc = "Finish a manual session and show results",
+    desc = "Finish a mark or watch session and show results",
     usage = "finish <alias>",
     min_args = 1,
-    complete = { manual_aliases },
-    run = function(args) session.finish(args[1], "manual") end,
+    complete = { name_aliases },
+    run = function(args) session.finish(args[1]) end,
   },
 
 
@@ -66,10 +66,10 @@ return {
   },
 
   watch = {
-    desc = "Start a watch session (manual start, auto end on idle)",
+    desc = "Start a watch session (auto end on idle)",
     usage = "watch <alias>",
     min_args = 1,
-    complete = { manual_aliases },
+    complete = { name_aliases },
     run = function(args) session.watch(args[1]) end,
   },
 
@@ -85,9 +85,9 @@ return {
   -- View a finished result.
   play = {
     desc = "Play your sequence side-by-side with the optimizer's suggestions",
-    usage = "play <selector>|@|$ [windows]",
+    usage = "play <alias>|<filename> [windows]",
     min_args = 1,
-    complete = { selectors_and_saved },
+    complete = { aliases_and_filenames },
     run = function(args) playback.simulate(args[1], tonumber(args[2])) end,
   },
 
@@ -111,20 +111,20 @@ return {
   },
 
   view = {
-    desc = "View a finished result full-screen (selector or saved name)",
-    usage = "view [<selector>|@|$|<name>]",
-    complete = { selectors_and_saved },
+    desc = "View a finished result full-screen",
+    usage = "view [<alias>|<filename>]",
+    complete = { aliases_and_filenames },
     run = function(args) archive.view(args[1]) end,
   },
 
   explore = {
     desc = "Open the interactive explore scratch view for a finished result",
-    usage = "explore <selector>|@|$",
+    usage = "explore <alias>|<filename>",
     min_args = 1,
-    complete = { selectors_and_saved },
+    complete = { aliases_and_filenames },
     run = function(args)
-      local selector = args[1]
-      local result, err = archive.resolve_result(selector)
+      local alias_or_filename = args[1]
+      local result, err = archive.resolve_result(alias_or_filename)
       if not result then
         error("vimfy explore failed: " .. (err or "unknown error"), 0)
       end
@@ -133,7 +133,7 @@ return {
         error("vimfy explore failed: " .. validation_err, 0)
       end
       ---@cast result VF.Explore.OpenResult
-      explore.open(selector, result)
+      explore.open(alias_or_filename, result)
     end,
   },
 
@@ -141,23 +141,23 @@ return {
   -- Persist and browse results.
   save = {
     desc = "Copy a finished session result to disk (keeps the session copy)",
-    usage = "save <selector>|@|$ [<name>]",
+    usage = "save <alias> [<filename>]",
     min_args = 1,
-    complete = { selectors },
+    complete = { aliases },
     run = function(args) archive.save(args[1], args[2]) end,
   },
 
   store = {
     desc = "Move a finished session from memory to disk (removes the session copy)",
-    usage = "store <selector>|@|$ [<name>]",
+    usage = "store <alias> [<filename>]",
     min_args = 1,
-    complete = { selectors },
+    complete = { aliases },
     run = function(args) archive.store(args[1], args[2]) end,
   },
 
   fetch = {
     desc = "Copy a saved result from disk into the current session",
-    usage = "fetch <name> [<alias>]",
+    usage = "fetch <filename> [<alias>]",
     min_args = 1,
     complete = { disk.list },
     run = function(args) archive.fetch(args[1], args[2] or args[1]) end,
@@ -165,7 +165,7 @@ return {
 
   rm = {
     desc = "Delete a saved result from disk",
-    usage = "rm <name>",
+    usage = "rm <filename>",
     min_args = 1,
     complete = { disk.list },
     run = function(args) archive.rm(args[1]) end,
