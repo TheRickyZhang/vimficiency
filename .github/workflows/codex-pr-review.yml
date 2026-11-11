@@ -18,7 +18,9 @@ jobs:
     # Bot-opened PRs (vimdoc regeneration) are machine output; codex-action
     # also rejects github-actions[bot] as an actor without write access.
     if: github.event.pull_request.user.login != 'github-actions[bot]'
-    runs-on: ubuntu-latest
+    # Pinned: codex-action's drop-sudo hardening fails on the ubuntu-26.04
+    # image that ubuntu-latest resolves to since 2026-11-11.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout PR head
         uses: actions/checkout@v4

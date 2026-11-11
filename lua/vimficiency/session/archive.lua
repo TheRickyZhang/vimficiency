@@ -118,12 +118,7 @@ function M.store(selector, explicit_name)
   local name = resolve_save_name("store", selector, explicit_name)
 
   if session_store.get_active(selector) then
-    local kind = alias_mod.parse(selector)
-    local resolve_cmd = (kind == "recall_key" or kind == "recall_time")
-      and (":Vimfy recall " .. selector)
-      or (":Vimfy finish " .. selector)
-    error("Session '" .. selector .. "' is still active. Finish it with '" ..
-      resolve_cmd .. "' first.", 0)
+    error("Session '" .. selector .. "' is still active. Finish it first.", 0)
   end
 
   local special_id, _, is_special = session_store.resolve_special(selector)

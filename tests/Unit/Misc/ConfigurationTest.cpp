@@ -45,25 +45,11 @@ protected:
     navContext = NavContext();
   }
 
-  static vector<LandingResult>
-  runOptimizer(const Lines &lines, CursorPos start,
-               CursorPos end, const string &userSeq,
-               Config config) {
-    NavOptimizer opt(config);
-    NavBoundary boundary;
-    return opt.optimize(lines, start, end,
-                        NavOptimizerParams{}
-                            .withMaxResults(30)
-                            .withMaxNodesPopped(20000)
-                            .withMaxResultsPerEndPos(2),
-                        userSeq, boundary, navContext).getResults();
-  }
-
   // Get cost of best result for a motion
   static double getBestCost(const Lines &lines, CursorPos start,
                             CursorPos end, const string &userSeq,
                             Config config) {
-    auto results = runOptimizer(lines, start, end, userSeq, config);
+    auto results = runNavOptimizer(lines, start, end, userSeq, config);
     if (results.empty()) return -1;
     return results[0].getCost();
   }
@@ -217,12 +203,12 @@ TEST_F(ConfigurationTest, CustomKeyCostAffectsOptimizer) {
 
   // Normal uniform config
   Config normal = Config::uniform();
-  auto normalResults = runOptimizer(a2_block_lines, start, end, userSeq, normal);
+  auto normalResults = runNavOptimizer(a2_block_lines, start, end, userSeq, normal);
 
   // Make j very expensive
   Config expensiveJ = Config::uniform();
   expensiveJ.keyInfo[static_cast<size_t>(Key::Key_J)].base_cost = 100.0;
-  auto expensiveResults = runOptimizer(a2_block_lines, start, end, userSeq, expensiveJ);
+  auto expensiveResults = runNavOptimizer(a2_block_lines, start, end, userSeq, expensiveJ);
 
   ASSERT_FALSE(normalResults.empty());
   ASSERT_FALSE(expensiveResults.empty());
