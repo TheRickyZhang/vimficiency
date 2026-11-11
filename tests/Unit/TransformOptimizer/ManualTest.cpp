@@ -9,33 +9,21 @@ namespace {
 
 // Backward visual selection: the inclusive +1 must extend past the HIGHER of
 // {anchor, cursor}. `vhh` from col 2 selects cols 0-2; `d` deletes "abc".
-TEST_F(TransformOptimizer_ManualTest, VisualBackwardSelectionMatchesOracle) {
-  Lines lines = {"abcde"};
-  SimulationResult nvim = oracle->simulate(lines, 0, 2, "vhhd");
+// Multi-motion visual macros are not parseable user sequences, so this goes
+// through `applyEdit` directly.
+TEST_F(TransformOptimizer_ManualTest, VisualSelectionMatchesOracle) {
+  for (auto [col, seq] : {pair{2, "vhhd"}, pair{0, "vlld"}}) {
+    Lines lines = {"abcde"};
+    SimulationResult nvim = oracle->simulate(lines, 0, col, seq);
 
-  Lines ours = lines;
-  CursorPos pos(0, 2);
-  Mode mode = Mode::Normal;
-  Edit::applyEdit(ours, pos, mode, ParsedEdit("vhhd"));
+    CursorPos pos(0, col);
+    Mode mode = Mode::Normal;
+    Edit::applyEdit(lines, pos, mode, ParsedEdit(seq));
 
-  EXPECT_EQ(ours, nvim.lines);
-  EXPECT_EQ(pos.line, nvim.row);
-  EXPECT_EQ(pos.col, nvim.col);
-}
-
-// Forward visual selection must still work after the fix.
-TEST_F(TransformOptimizer_ManualTest, VisualForwardSelectionMatchesOracle) {
-  Lines lines = {"abcde"};
-  SimulationResult nvim = oracle->simulate(lines, 0, 0, "vlld");
-
-  Lines ours = lines;
-  CursorPos pos(0, 0);
-  Mode mode = Mode::Normal;
-  Edit::applyEdit(ours, pos, mode, ParsedEdit("vlld"));
-
-  EXPECT_EQ(ours, nvim.lines);
-  EXPECT_EQ(pos.line, nvim.row);
-  EXPECT_EQ(pos.col, nvim.col);
+    EXPECT_EQ(lines, nvim.lines) << seq;
+    EXPECT_EQ(pos.line, nvim.row) << seq;
+    EXPECT_EQ(pos.col, nvim.col) << seq;
+  }
 }
 
 TEST_F(TransformOptimizer_ManualTest, Boundary_VisualDeleteFallbackRespectsBoundary) {
@@ -98,10 +86,6 @@ TEST_F(TransformOptimizer_ManualTest, Boundary_VisualDeleteFallbackRespectsBound
     }
   }
   EXPECT_TRUE(sawVisualDelete);
-}
-
-TEST_F(TransformOptimizer_ManualTest, BackwardWordDeleteFromCol0_ReanchorsToFirstNonBlank) {
-  verifySequenceWithOracle(oracle.get(), {"abc", "  def"}, CursorPos(1, 0), "db");
 }
 
 }  // namespace

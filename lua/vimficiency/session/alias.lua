@@ -37,19 +37,52 @@ function M.parse(s)
   return nil, nil
 end
 
+--- The two shapes an alias can take: a user-chosen `name` or a recall `window`.
+--- Distinct from `VF.Session.AliasType` (which splits windows by unit) and from
+--- the "manual" of StartKind/FinishReason (which means user-initiated).
+---@alias VF.Session.AliasForm "name"|"window"
+
+---@type table<VF.Session.AliasType, VF.Session.AliasForm>
+local ALIAS_FORM_OF = { manual = "name", recall_key = "window", recall_time = "window" }
+
+local FORM_NAME = { name = "a manual alias", window = "a recall window" }
+local FORM_HINT = {
+  name = "letters only, e.g. 'a'",
+  window = "N commands ago or Ns seconds ago",
+}
+
+--- Parse `s`, requiring it to have the expected form. Raises a user-facing error
+--- otherwise: a format hint for malformed input, or which form `s` actually has
+--- when it is well-formed but the wrong one.
+---@param s string
+---@param expected_alias_form VF.Session.AliasForm
+---@return VF.Session.AliasType kind
+---@return integer|nil value
+function M.expect(s, expected_alias_form)
+  local kind, value = M.parse(s)
+  if not kind then
+    error("Invalid alias '" .. tostring(s) .. "'. Expected " .. FORM_NAME[expected_alias_form] ..
+      " (" .. FORM_HINT[expected_alias_form] .. ").", 0)
+  end
+  local form = ALIAS_FORM_OF[kind]
+  if form ~= expected_alias_form then
+    error("'" .. s .. "' is " .. FORM_NAME[form] .. ", not " .. FORM_NAME[expected_alias_form] .. ".", 0)
+  end
+  return kind, value
+end
+
 --- True iff `s` is a valid manual alias.
 ---@param s any
 ---@return boolean
 function M.is_valid_manual(s)
-  return type(s) == "string" and s:match("^%a+$") ~= nil
+  return M.parse(s) == "manual"
 end
 
 --- True iff `s` is any valid recall alias (key or time form).
 ---@param s any
 ---@return boolean
 function M.is_recall(s)
-  local t = M.parse(s)
-  return t == "recall_key" or t == "recall_time"
+  return ALIAS_FORM_OF[M.parse(s)] == "window"
 end
 
 --- True iff `s` is a special workspace selector. `@` = most-recent finished

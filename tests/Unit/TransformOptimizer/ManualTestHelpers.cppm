@@ -1,6 +1,5 @@
 module;
 #include <gtest/gtest.h>
-#include <cassert>
 #include <climits>
 
 export module vf.tests.Unit.TransformOptimizer.ManualTestHelpers;
@@ -13,8 +12,8 @@ export import vf.Optimizer.TransformOptimizer.TransformOptimizer;
 export import vf.Types.CursorPos;
 export import vf.Types.Lines;
 export import vf.Types.Mode;
-export import vf.tests.Utils.InterpreterModelReplay;
 export import vf.tests.Utils.NeovimOracle;
+export import vf.tests.Utils.OracleReplay;
 
 export {
 
@@ -32,94 +31,24 @@ protected:
                                      TransformBoundary boundary) {
     return opt.optimizePureDeletion(initialLines, boundary, params);
   }
-};
 
-struct ApplyResult {
-  Lines lines;
-  CursorPos pos;
-  Mode mode;
-
-  ApplyResult(Lines lines, CursorPos pos, Mode mode = Mode::Normal)
-      : lines(std::move(lines)), pos(pos), mode(mode) {}
-};
-
-inline ApplyResult applySequence(const Lines& source, CursorPos initialPos,
-                                 const std::string& sequence) {
-  ApplyResult result(source, initialPos);
-  DotRepeat lastEdit;
-  auto parsed = Edit::parseEdits(sequence);
-  assert(parsed);
-  for (const auto& op : *parsed) {
-    Edit::applyEdit(result.lines, result.pos, result.mode, op, &lastEdit);
-  }
-  return result;
-}
-
-inline bool cursorStateMatches(const ApplyResult& ours,
-                               const SimulationResult& nvim) {
-  return ours.pos.line == nvim.row && ours.pos.col == nvim.col &&
-         ours.mode == nvim.mode;
-}
-
-inline SimulationResult verifySequenceWithOracle(
-    NeovimOracle* oracle,
-    const Lines& source,
-    CursorPos initialPos,
-    const std::string& sequence) {
-  SimulationResult nvim =
-      oracle->simulate(source, initialPos.line, initialPos.col, sequence);
-  ApplyResult ours = applySequence(source, initialPos, sequence);
-
-  EXPECT_EQ(ours.lines, nvim.lines)
-      << "Lines mismatch for seq='" << sequence << "' from " << initialPos << "\n"
-      << "  Source: " << source << "\n"
-      << "  Ours:   " << ours.lines << "\n"
-      << "  Neovim: " << nvim.lines;
-
-  EXPECT_TRUE(cursorStateMatches(ours, nvim))
-      << "Cursor mismatch for seq='" << sequence << "'\n"
-      << "  Ours:   " << ours.pos << " mode=" << static_cast<int>(ours.mode) << "\n"
-      << "  Neovim: (" << nvim.row << "," << nvim.col
-      << ") mode=" << static_cast<int>(nvim.mode);
-
-  return nvim;
-}
-
-inline SimulationResult verifyUserSequenceWithOracle(
-    NeovimOracle* oracle,
-    const Lines& source,
-    CursorPos initialPos,
-    const std::string& sequence) {
-  SimulationResult nvim =
-      oracle->simulate(source, initialPos.line, initialPos.col, sequence);
-  InterpreterReplayResult ours =
-      applyUserSequence(source, initialPos, sequence);
-
-  EXPECT_EQ(ours.lines, nvim.lines)
-      << "Lines mismatch for seq='" << sequence << "' from " << initialPos << "\n"
-      << "  Source: " << source << "\n"
-      << "  Ours:   " << ours.lines << "\n"
-      << "  Neovim: " << nvim.lines;
-
-  EXPECT_EQ(ours.cursor.line, nvim.row);
-  EXPECT_EQ(ours.cursor.col, nvim.col);
-  EXPECT_EQ(ours.mode, nvim.mode);
-
-  return nvim;
-}
-
-inline bool allPositionsValid(const std::vector<std::vector<Result>>& results,
-                              const Lines& source) {
-  int idx = 0;
-  for (int r = 0; r < static_cast<int>(source.size()); r++) {
-    for (int c = 0; c < source[r].effectiveSize(); c++) {
-      if (results[idx++].empty()) {
-        return false;
-      }
+  // Replays the first `maxChecked` results of one start-position bucket from
+  // `fullStart` in `fullBuffer` and expects each to reach `expectedFull`.
+  void expectBucketReplays(std::span<const Result> bucket,
+                           const Lines& fullBuffer, CursorPos fullStart,
+                           const Lines& expectedFull, std::string_view context,
+                           size_t maxChecked = SIZE_MAX,
+                           std::optional<CursorPos> goalPos = std::nullopt) {
+    ASSERT_FALSE(bucket.empty()) << context;
+    size_t checked = std::min(maxChecked, bucket.size());
+    for (size_t i = 0; i < checked; i++) {
+      EXPECT_TRUE(OracleReplay::matches(
+          *oracle, fullBuffer, fullStart, bucket[i].getSequence().str(),
+          expectedFull, goalPos, Mode::Normal, context))
+          << "sequence=" << bucket[i].getSequence().str();
     }
   }
-  return true;
-}
+};
 
 template<typename Fn>
 void forEachValidResult(const std::vector<std::vector<Result>>& results,

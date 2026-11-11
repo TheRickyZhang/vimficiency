@@ -11,14 +11,6 @@ local util = require("vimficiency.util")
 
 local M = {}
 
----@param alias string
-local function validate_manual_alias(alias)
-  if not alias_mod.is_valid_manual(alias) then
-    error("Invalid session alias '" .. tostring(alias) .. "'. " ..
-      "Manual aliases are alphabetic only (e.g. 'a', 'refactor').", 0)
-  end
-end
-
 --- Reason to drop an active manual/watch session, or nil to keep it. Checked on
 --- every atom: window closed, cursor drifted out of range, or idle too long.
 ---@param session VF.Session.Active
@@ -75,7 +67,7 @@ end
 ---@param end_kind VF.Session.EndKind
 ---@return VF.Session.Active
 local function start_manual_session(alias, end_kind)
-  validate_manual_alias(alias)
+  alias_mod.expect(alias, "name")
   if not session_store.can_store_manual(alias) then
     error("Manual session capacity reached", 0)
   end
@@ -138,7 +130,7 @@ end
 ---@param active VF.Session.Active
 ---@param alias string
 ---@param reason VF.Session.FinishReason
-local function finish_active(active, alias, reason)
+local function complete_record(active, alias, reason)
   local result, err = compute.compute_result_for_active(active)
   if not result then
     -- Not raised: watch's idle timer also lands here. A manual record is dropped
@@ -166,43 +158,28 @@ end
 ---@param alias string
 ---@param reason VF.Session.FinishReason
 function M.finish(alias, reason)
-  local session_type = alias_mod.parse(alias)
-  if session_type == "recall_key" or session_type == "recall_time" then
-    error("`:Vimfy finish " .. alias .. "` is not a manual handle. " ..
-      "Use `:Vimfy recall " .. alias .. "` for retrospective windows.", 0)
-  end
-  if not session_type then
-    error("Invalid session alias '" .. alias .. "'. Manual aliases are alphabetic only.", 0)
-  end
+  alias_mod.expect(alias, "name")
 
   local active = session_store.get_active(alias)
   if not active then
     error("Session '" .. alias .. "' not found or already finished.", 0)
   end
-  finish_active(active, alias, reason)
+  complete_record(active, alias, reason)
 end
 
 ---@param alias string
 function M.recall(alias)
-  local session_type = alias_mod.parse(alias)
-  if session_type == "manual" then
-    error("`:Vimfy recall " .. alias .. "` expects a recall window (N or Ns). " ..
-      "Use `:Vimfy finish " .. alias .. "` to finish a manual session.", 0)
-  end
-  if session_type ~= "recall_key" and session_type ~= "recall_time" then
-    error("Invalid recall alias '" .. tostring(alias) .. "'. " ..
-      "Expected N (commands ago) or Ns (seconds ago).", 0)
-  end
+  local kind = alias_mod.expect(alias, "window")
 
   local active = session_store.get_active(alias)
   if not active then
-    if session_type == "recall_key" then
+    if kind == "recall_key" then
       error("No recall session found for '" .. alias .. "' commands ago.", 0)
     end
     error("No recall session found within '" .. alias .. "'. " ..
       "Try a larger window or indexing by key count (e.g. 'recall 20').", 0)
   end
-  finish_active(active, alias, "manual")
+  complete_record(active, alias, "manual")
 end
 
 ---@param alias string

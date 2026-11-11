@@ -10,7 +10,6 @@
 import std.compat;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
-import vf.tests.Utils.InterpreterModelReplay;
 import vf.tests.Utils.NeovimOracle;
 import vf.tests.Utils.OracleReplay;
 
@@ -62,11 +61,7 @@ class VerifyCharOperators {
                               max(0, static_cast<int>(spec.line.size()) - 1)));
     string seq = charOpCommand(spec.commandKind, spec.count, spec.replacement);
 
-    InterpreterReplayResult result = applyUserSequence(lines, cursor, seq);
-    OracleReplay::expectMatchesOracle(
-        oracle_, lines, cursor, seq,
-        result.lines, result.cursor, result.mode,
-        "char operator primitive");
+    OracleReplay::expectModelMatchesOracle(oracle_, lines, cursor, seq, "char operator primitive");
   }
 
  private:

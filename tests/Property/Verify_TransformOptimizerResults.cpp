@@ -14,11 +14,35 @@ import vf.Types.Lines;
 import vf.tests.Utils.NeovimOracle;
 import vf.tests.Property.OptimizerResultChecks;
 import vf.tests.Property.PropertyDomains;
-import vf.tests.Unit.TransformOptimizer.EmbeddedRegionTestUtils;
-
 using namespace std;
 
 namespace {
+
+// Edit slice plus the surrounding full-buffer context that must survive it.
+struct EmbeddedEditRegion {
+  Lines fullBuffer;
+  Lines editRegion;
+  string prefix;
+  string suffix;
+
+  int startLine;
+  int startCol;
+  int endLine;
+  int endCol;
+
+  TransformBoundary makeBoundary() const {
+    return TransformBoundary(fullBuffer, {startLine, startCol}, {endLine, endCol});
+  }
+
+  CursorPos toFullBufferPos(const CursorPos& editPos) const {
+    CursorPos result = editPos;
+    result.line += startLine;
+    if (editPos.line == 0) result.col += static_cast<int>(prefix.size());
+    return result;
+  }
+
+  string expectedAfterDeletion() const { return prefix + suffix; }
+};
 
 struct FullBufferSpec {
   vector<string> source;

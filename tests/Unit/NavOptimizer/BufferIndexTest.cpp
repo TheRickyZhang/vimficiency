@@ -59,3 +59,16 @@ TEST_F(BufferIndexEmptyLine, WordEndDoesNotLandOnEmptyLine) {
       LandingType::WordEnd, Pos(0, 0), Pos(0, 2), Pos(2, 2));
   EXPECT_EQ(countForPos(wordEnds, Pos(1, 0)), -1);
 }
+
+TEST(BufferIndexTest, SmallWordLandingsIncludePunctuationRuns) {
+  Lines lines = {"aa.,bb cc"};
+  BufferIndex idx(lines);
+
+  const auto& begins = idx.getPositions(LandingType::WordBegin);
+  EXPECT_NE(std::find(begins.begin(), begins.end(), Pos(0, 2)), begins.end())
+      << "small-word begins must include punctuation runs";
+
+  const auto& ends = idx.getPositions(LandingType::WordEnd);
+  EXPECT_NE(std::find(ends.begin(), ends.end(), Pos(0, 3)), ends.end())
+      << "small-word ends must include punctuation runs";
+}

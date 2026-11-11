@@ -5,6 +5,7 @@ module vf.tests.Utils.OracleReplay;
 
 import std.compat;
 import vf.Utils.PrettyText;
+import vf.tests.Utils.InterpreterModelReplay;
 
 using namespace std;
 
@@ -107,6 +108,17 @@ void expectMatchesOracle(
   EXPECT_EQ(nvim.mode, expectedMode)
       << "expected mode " << modeName(expectedMode)
       << ", got " << modeName(nvim.mode);
+}
+
+void expectModelMatchesOracle(
+    NeovimOracle& oracle,
+    const Lines& initial,
+    CursorPos initialPos,
+    string_view sequence,
+    string_view context) {
+  InterpreterReplayResult ours = applyUserSequence(initial, initialPos, sequence);
+  expectMatchesOracle(oracle, initial, initialPos, sequence,
+                      ours.lines, ours.cursor, ours.mode, context);
 }
 
 }  // namespace OracleReplay

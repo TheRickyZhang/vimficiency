@@ -98,15 +98,10 @@ endfunction()
 file(GLOB VIMFY_TEST_UTIL_SOURCES CONFIGURE_DEPENDS
   ${CMAKE_CURRENT_SOURCE_DIR}/Utils/*.cpp
 )
-list(APPEND VIMFY_TEST_UTIL_SOURCES
-  ${CMAKE_CURRENT_SOURCE_DIR}/Unit/TransformOptimizer/EmbeddedRegionTestUtils.cpp
-)
-
 file(GLOB VIMFY_TEST_UTIL_MODULES CONFIGURE_DEPENDS
   ${CMAKE_CURRENT_SOURCE_DIR}/Utils/*.cppm
 )
 list(APPEND VIMFY_TEST_UTIL_MODULES
-  ${CMAKE_CURRENT_SOURCE_DIR}/Unit/TransformOptimizer/EmbeddedRegionTestUtils.cppm
   ${CMAKE_CURRENT_SOURCE_DIR}/TestMainSupport.cppm
 )
 
@@ -139,17 +134,9 @@ target_link_libraries(test_utils
 file(GLOB_RECURSE VIMFY_UNIT_TEST_SOURCES CONFIGURE_DEPENDS
   ${CMAKE_CURRENT_SOURCE_DIR}/Unit/*.cpp
 )
-# EmbeddedRegionTestUtils lives under Unit/ for proximity to its sibling tests
-# but compiles into test_utils (which the unit binary links), so exclude it here.
-list(REMOVE_ITEM VIMFY_UNIT_TEST_SOURCES
-  ${CMAKE_CURRENT_SOURCE_DIR}/Unit/TransformOptimizer/EmbeddedRegionTestUtils.cpp
-)
 
 file(GLOB_RECURSE VIMFY_UNIT_TEST_MODULES CONFIGURE_DEPENDS
   ${CMAKE_CURRENT_SOURCE_DIR}/Unit/*.cppm
-)
-list(REMOVE_ITEM VIMFY_UNIT_TEST_MODULES
-  ${CMAKE_CURRENT_SOURCE_DIR}/Unit/TransformOptimizer/EmbeddedRegionTestUtils.cppm
 )
 
 add_executable(vimfy_unit_tests

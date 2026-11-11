@@ -17,7 +17,6 @@
 import std.compat;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
-import vf.tests.Utils.InterpreterModelReplay;
 import vf.tests.Utils.NeovimOracle;
 import vf.tests.Utils.OracleReplay;
 
@@ -73,11 +72,7 @@ class VerifyInsertNewline {
     // col > 0.
     string seq = "i" + spec.typed + "<Esc>";
 
-    InterpreterReplayResult result = applyUserSequence(lines, cursor, seq);
-    OracleReplay::expectMatchesOracle(
-        oracle_, lines, cursor, seq,
-        result.lines, result.cursor, result.mode,
-        "insert <CR>/<BS> primitive");
+    OracleReplay::expectModelMatchesOracle(oracle_, lines, cursor, seq, "insert <CR>/<BS> primitive");
   }
 
  private:

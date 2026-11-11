@@ -18,19 +18,9 @@ TEST_F(CompositionOptimizer_ManualTest, PureInsertion_NewLineBetween) {
       initial, initialPos, goal, goalPos, params);
   const auto& results = compResult.getResults();
 
-  for(Result r : results) cout << r;
-
   expectHasValidResults(results, initial, initialPos, goal, "new line insertion");
 
-  // Check that 'o' is used (optimal for this case)
-  bool usesO = false;
-  for (const Result& r : results) {
-    if (r.getSequence().view().find("ob") != string::npos) {
-      usesO = true;
-      break;
-    }
-  }
-  EXPECT_TRUE(usesO) << "Expected 'o' shortcut for new line insertion";
+  EXPECT_TRUE(hasSequenceContaining(results, "ob")) << "Expected 'o' shortcut for new line insertion";
 }
 
 TEST_F(CompositionOptimizer_ManualTest, PureInsertion_AppendToLine) {
@@ -46,15 +36,7 @@ TEST_F(CompositionOptimizer_ManualTest, PureInsertion_AppendToLine) {
 
   expectHasValidResults(results, initial, initialPos, goal, "append to line");
 
-  // Check that 'A' is used (optimal for this case)
-  bool usesA = false;
-  for (const Result& r : results) {
-    if (r.getSequence().view().find("Ab") != string::npos) {
-      usesA = true;
-      break;
-    }
-  }
-  EXPECT_TRUE(usesA) << "Expected 'A' shortcut for append insertion";
+  EXPECT_TRUE(hasSequenceContaining(results, "Ab")) << "Expected 'A' shortcut for append insertion";
 }
 
 }  // namespace

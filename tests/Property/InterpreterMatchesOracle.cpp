@@ -397,11 +397,7 @@ class InterpreterMatchesOracle {
 
   void expectSequenceModelMatchesOracle(
       const Lines& lines, CursorPos cursor, const string& seq) {
-    auto [expectedLines, expectedCursor, expectedMode] =
-        applyUserSequence(lines, cursor, seq);
-    OracleReplay::expectMatchesOracle(
-        oracle_, lines, cursor, seq, expectedLines, expectedCursor,
-        expectedMode);
+    OracleReplay::expectModelMatchesOracle(oracle_, lines, cursor, seq);
   }
 };
 

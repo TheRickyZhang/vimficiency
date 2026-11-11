@@ -17,7 +17,6 @@
 import std.compat;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
-import vf.tests.Utils.InterpreterModelReplay;
 import vf.tests.Utils.NeovimOracle;
 import vf.tests.Utils.OracleReplay;
 
@@ -68,11 +67,7 @@ class VerifyWordTextObjects {
     CursorPos cursor = lines.cursorFromFlatIndexClamped(spec.cursorIndex);
     string seq = textObjectCommand(spec.commandKind);
 
-    InterpreterReplayResult result = applyUserSequence(lines, cursor, seq);
-    OracleReplay::expectMatchesOracle(
-        oracle_, lines, cursor, seq,
-        result.lines, result.cursor, result.mode,
-        "word text object primitive");
+    OracleReplay::expectModelMatchesOracle(oracle_, lines, cursor, seq, "word text object primitive");
   }
 
  private:

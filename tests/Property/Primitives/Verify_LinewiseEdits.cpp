@@ -13,7 +13,6 @@
 import std.compat;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
-import vf.tests.Utils.InterpreterModelReplay;
 import vf.tests.Utils.NeovimOracle;
 import vf.tests.Utils.OracleReplay;
 
@@ -67,11 +66,7 @@ class VerifyLinewiseEdits {
     // Skip `dj` from last line — it requires a line below.
     if (spec.commandKind == 1 && cursor.line == lines.lastLine()) return;
 
-    InterpreterReplayResult result = applyUserSequence(lines, cursor, seq);
-    OracleReplay::expectMatchesOracle(
-        oracle_, lines, cursor, seq,
-        result.lines, result.cursor, result.mode,
-        "linewise edit primitive");
+    OracleReplay::expectModelMatchesOracle(oracle_, lines, cursor, seq, "linewise edit primitive");
   }
 
  private:

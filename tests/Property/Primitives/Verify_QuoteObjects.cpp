@@ -16,7 +16,6 @@
 import std.compat;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
-import vf.tests.Utils.InterpreterModelReplay;
 import vf.tests.Utils.NeovimOracle;
 import vf.tests.Utils.OracleReplay;
 
@@ -66,11 +65,7 @@ class VerifyQuoteObjects {
                               max(0, static_cast<int>(spec.line.size()) - 1)));
     string seq = quoteCommand(spec.commandKind);
 
-    InterpreterReplayResult result = applyUserSequence(lines, cursor, seq);
-    OracleReplay::expectMatchesOracle(
-        oracle_, lines, cursor, seq,
-        result.lines, result.cursor, result.mode,
-        "quote text object primitive");
+    OracleReplay::expectModelMatchesOracle(oracle_, lines, cursor, seq, "quote text object primitive");
   }
 
  private:
