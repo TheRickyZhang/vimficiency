@@ -174,13 +174,6 @@ Works on:
 - Saved names for `view`, `rm`, and `fetch`.
 - `on` / `off` / `toggle` for `suggest`.
 
-## `<Plug>` mappings
-
-For each subcommand above, a `<Plug>VimfyX...` map is also registered so
-you can bind keys without having to type `:Vimfy ...` (cmdline input is
-never counted as motion either way). See [8. Keymaps](08-keymaps.md) for
-the full list and the binding contract.
-
 ## Scratch output buffer keys
 
 Press `:h g?` in a Vimfy scratch output buffer to open this section

@@ -18,22 +18,12 @@ test("disk.validate accepts a complete result", function()
   assert_eq(disk.validate(base()), nil, "complete data must validate")
 end)
 
-test("disk.validate rejects missing end_row", function()
-  local data = base()
-  data.end_row = nil
-  assert_true(disk.validate(data) ~= nil, "missing end_row must be rejected")
-end)
-
-test("disk.validate rejects missing end_col", function()
-  local data = base()
-  data.end_col = nil
-  assert_true(disk.validate(data) ~= nil, "missing end_col must be rejected")
-end)
-
-test("disk.validate rejects non-numeric end_row", function()
-  local data = base()
-  data.end_row = "nope"
-  assert_true(disk.validate(data) ~= nil, "non-numeric end_row must be rejected")
+test("disk.validate rejects missing or non-numeric cursor fields", function()
+  for _, bad in ipairs({ { "end_row", nil }, { "end_col", nil }, { "end_row", "nope" } }) do
+    local data = base()
+    data[bad[1]] = bad[2]
+    assert_true(disk.validate(data) ~= nil, bad[1] .. " = " .. tostring(bad[2]) .. " must be rejected")
+  end
 end)
 
 test("disk.validate accepts diffs/prefix/suffix when present", function()

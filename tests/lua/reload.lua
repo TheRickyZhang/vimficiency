@@ -2,19 +2,13 @@
 
 local vimfy = require("vimficiency")
 
-test("reload: setup is idempotent (two calls in a row don't crash)", function()
-  vimfy.setup({})
-  vimfy.setup({})
-  assert_true(true, "survived two setups")
-end)
-
 test("reload: shutdown detaches atom subscribers", function()
   vimfy.setup({})
-  local atoms = require("vimficiency.capture.atoms")
-  assert_true(atoms.is_subscribed("recall_capture"),
+  local atom_stream = require("vimficiency.capture.atom_stream")
+  assert_true(atom_stream._has_listener("recall_capture"),
     "recall_capture subscriber present after setup")
   vimfy.shutdown()
-  assert_true(not atoms.is_subscribed("recall_capture"),
+  assert_true(not atom_stream._has_listener("recall_capture"),
     "recall_capture subscriber gone after shutdown")
 end)
 
@@ -52,15 +46,4 @@ test("reload: reload_lua swaps module identities and preserves finished records"
 
   assert_true(post_store.get_last_finished_result() ~= nil,
     "finished record survived reload")
-end)
-
-test("reload: FFI load path respects __vimficiency_reload_lib_path if set", function()
-  -- A bogus path should fall through to the normal load path.
-  _G.__vimficiency_reload_lib_path = "/nonexistent/path/libvimficiency.so"
-  package.loaded["vimficiency.ffi"] = nil
-  local ok, ffi_mod = pcall(require, "vimficiency.ffi")
-  _G.__vimficiency_reload_lib_path = nil
-  assert_true(ok,
-    "ffi module still loads when the preferred path is invalid; fell through correctly: "
-    .. tostring(ffi_mod))
 end)

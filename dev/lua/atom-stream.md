@@ -1,4 +1,4 @@
-# Atom capture (`capture/atoms.lua`)
+# Atom stream (`capture/atom_stream.lua`)
 
 Read before changing capture, recall snapshotting, the admission policy, or any
 subscriber (`capture/recall.lua`, `session.lua` manual capture,
@@ -22,15 +22,18 @@ deleted with the migration.
 
 ## Event shape
 
-The autocmd's `ev.data` carries the fields `atoms.lua` consumes:
+The autocmd's `ev.data` carries the fields `atom_stream.lua` consumes:
 
 - `type` — `operator | insert | motion | normal | visual | jump | scroll | excmd | mouse | mapping`.
 - `keys` — the replayable post-mapping sequence (notation). `nil` means a lossy
   Lua callback, `""` an unreplayable resolution.
-- `lhs` — the as-typed LHS (notation), for effort and display.
-- `count`, `reg` — the command's count and register.
+- `lhs` — the as-typed LHS (notation).
+- `count` — the command's count; drives synthetic-count stripping.
 - `changed`, `moved` — whether the action modified buffer text / moved the cursor.
-- `undoseq` — `seq_cur` after the action.
+
+Only `keys` is forwarded on `VF.Atom`, alongside the buffer/window scope. The
+other event fields are consumed for the decision and synthetic-count stripping
+and then dropped; `reg` and `undoseq` are never read.
 
 Standard autocmd `ev.buf` carries the buffer; the focused window is read at
 dispatch time.
@@ -46,30 +49,30 @@ arrives as `2J` (Vim's own join semantics, not a synthetic prefix).
 effort match what the user typed. Stripping just the first char keeps content
 digits intact (`i1` → `1i1` → `i1`).
 
-## Admission verdicts
+## Admission decisions
 
-`classify` returns one of four verdicts from the atom's intrinsic fields.
+`classify` returns one of three decisions from the atom's intrinsic fields.
 Buffer/window scoping is the subscriber's job (it compares against its own
 session), never decided here.
 
 - `record` — replayable keys; append to in-scope recordings.
-- `mouse` — mouse / scroll-wheel activity; don't record, but flag `had_mouse`.
-- `skip` — inert for recordings (meta, or a no-op lossy callback).
-- `abort` — lossy *and* consequential; an in-scope session can no longer be trusted.
+- `skip` — unreplayable but provably inert: neither changed text nor moved the cursor.
+- `abort` — unreplayable and had an effect; an in-scope session can no longer be trusted.
 
-The ordering is load-bearing: mouse tokens win regardless of what else they look
-like; an `excmd` that changed the buffer aborts (can't replay as motion) while an
-unchanged one is a cmdline jump (skip); `keys == nil` aborts only if it changed
-or moved; `keys == ""` always aborts; everything else records.
+One rule: an atom is replayable when it carries real keys (`keys` is neither
+`nil` nor `""`), is not an `excmd`, and is not a mouse token. Replayable records.
+Anything else aborts if Neovim reports `changed` or `moved`, and skips otherwise.
+The skip row is what lets `:w`, `:noh`, and `:Vimfy` commands pass through a live
+session; it is a measured no-effect fact, not a tolerance.
 
 ## Subscriber fan-out
 
-`subscribe(name, on_atom)` registers a named subscriber and lazily creates the
-autocmd in augroup `VimficiencyAtoms`; `unsubscribe(name)` removes the autocmd
+`add_listener(name, on_atom)` registers a named listener and lazily creates the
+autocmd in augroup `VimficiencyAtoms`; `remove_listener(name)` removes the autocmd
 when the last subscriber leaves. A name collision returns `false` so a
 double-install surfaces instead of silently shadowing.
 
-`subscribe` fails closed (returns `false`) when `##CmdAtom` is absent, so
+`add_listener` fails closed (returns `false`) when `##CmdAtom` is absent, so
 watch / suggest / recall degrade to a no-op on pre-0.13 Neovim rather than
 erroring. `setup()` emits one warning in that case.
 
@@ -95,7 +98,7 @@ reproduces them.
 
 `CmdAtom` is deferred and only flushes when Neovim's main loop runs. `nvim -l`
 never consumes `nvim_input` typeahead and never flushes the queue, so the
-characterization test (`tests/lua/capture/atoms.lua`) is a standalone async
+wiring smoke test (`tests/lua/capture/atom_stream.lua`) is a standalone async
 script run via `-c luafile` with real `vim.defer_fn` timers, dispatched as its
-own `run.sh` phase. The verdict table itself is pure and is exercised directly
-through `atoms._classify`.
+own `run.sh` phase. The decision table itself is pure and is exercised directly
+through `atom_stream._classify`.

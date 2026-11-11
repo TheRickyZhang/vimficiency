@@ -4,7 +4,7 @@ local alias_mod = require("vimficiency.session.alias")
 local config = require("vimficiency.config")
 local compute = require("vimficiency.session.compute")
 local disk = require("vimficiency.session.disk")
-local atoms = require("vimficiency.capture.atoms")
+local atom_stream = require("vimficiency.capture.atom_stream")
 local end_trigger = require("vimficiency.capture.end_trigger")
 local playback = require("vimficiency.session.playback")
 local result_view = require("vimficiency.session.result_view")
@@ -76,6 +76,39 @@ local function manual_evict_reason(session, end_kind)
   return nil
 end
 
+--- Atom handler for one manual/watch session. Eviction runs first on every atom,
+--- then atoms are scoped to the session window and admitted by decision.
+---@param alias string
+---@param id string
+---@param end_kind VF.Session.EndKind
+---@return fun(atom: VF.Atom, decision: VF.Atom.Decision)
+local function session_atom_handler(alias, id, end_kind)
+  return function(atom, decision)
+    local session = session_store.get_active(alias)
+    if not session or session.id ~= id then return end
+
+    local reason = manual_evict_reason(session, end_kind)
+    if reason then
+      session_store.remove(id)
+      vim.schedule(function() vim.notify(reason, vim.log.levels.WARN) end)
+      return
+    end
+
+    if atom.win ~= session.win then return end
+
+    if decision == "abort" then
+      session_store.remove(id)
+      vim.schedule(function()
+        vim.notify("Vimfy: session [" .. alias .. "] dropped — an unreplayable " ..
+          "command (ex command, mouse, or lossy mapping) changed the buffer or moved the cursor", vim.log.levels.WARN)
+      end)
+    elseif decision == "record" then
+      table.insert(session.atoms, atom)
+      session.key_count = session.key_count + 1
+    end
+  end
+end
+
 ---@param alias string
 ---@param end_kind VF.Session.EndKind
 ---@return VF.Session.Active
@@ -85,34 +118,7 @@ local function start_manual_session(alias, end_kind)
   local id = util.new_id(buf)
   local start_state = util.capture_state(buf, win)
 
-  atoms.subscribe(id, function(atom, verdict)
-    local session = session_store.get_active(alias)
-    if not session or session.id ~= id then return end
-
-    -- Eviction runs on every atom regardless of which window is focused.
-    local reason = manual_evict_reason(session, end_kind)
-    if reason then
-      session_store.remove(id)
-      vim.schedule(function() vim.notify(reason, vim.log.levels.WARN) end)
-      return
-    end
-
-    -- Scope to the session's window; keys elsewhere are ignored, not fatal.
-    if atom.win ~= session.win then return end
-
-    if verdict == "mouse" then
-      session.had_mouse = true
-    elseif verdict == "abort" then
-      session_store.remove(id)
-      vim.schedule(function()
-        vim.notify("Vimfy: session [" .. alias .. "] dropped — an unreplayable " ..
-          "command (ex command or lossy mapping) changed the buffer", vim.log.levels.WARN)
-      end)
-    elseif verdict == "record" then
-      table.insert(session.atoms, atom)
-      session.key_count = session.key_count + 1
-    end
-  end)
+  atom_stream.add_listener(id, session_atom_handler(alias, id, end_kind))
 
   return session_store.new_active_session(
     id, id, win, buf, start_state, "manual", end_kind)
@@ -178,7 +184,7 @@ function M.watch(alias)
   })
 
   if not disarm then
-    atoms.unsubscribe(active.capture_sub)
+    atom_stream.remove_listener(active.stream_sub)
     vim.notify("vimfy watch [" .. alias .. "] failed to arm idle trigger", vim.log.levels.ERROR)
     return
   end
@@ -215,10 +221,6 @@ local function do_finish(active, alias, reason)
     message = message .. string.format("\n  optimizer: %.0f ms", result.analyze_ms)
   end
   local level = vim.log.levels.INFO
-  if result.had_mouse then
-    message = message .. "\n" .. result_view.MOUSE_WARNING
-    level = vim.log.levels.WARN
-  end
   vim.notify(message, level)
 end
 
@@ -354,17 +356,34 @@ function M.resolve_result(selector)
   return nil, err
 end
 
+--- Explicit `[<name>]` wins; otherwise `default_save_name()`. Nil after notifying on failure.
+---@param verb string
 ---@param selector string
----@param name string
-function M.save(selector, name)
+---@param explicit string|nil
+---@return string|nil
+local function resolve_save_name(verb, selector, explicit)
+  local name = explicit or M.default_save_name(selector)
+  if not name then
+    vim.notify(verb .. " " .. selector .. ": nothing to name automatically. " ..
+      "Pass an explicit <name>, or run a session first.", vim.log.levels.ERROR)
+    return nil
+  end
   if not alias_mod.is_valid_saved_name(name) then
     vim.notify(
-      "Invalid saved name '" .. tostring(name) .. "'. " ..
+      "Invalid saved name '" .. name .. "'. " ..
       "Allowed: alphanumeric, '.', '_', '-'; must start with a letter, digit, or underscore.",
       vim.log.levels.ERROR
     )
-    return
+    return nil
   end
+  return name
+end
+
+---@param selector string
+---@param explicit_name string|nil
+function M.save(selector, explicit_name)
+  local name = resolve_save_name("save", selector, explicit_name)
+  if not name then return end
 
   local result, err = resolve_result_for_selector(selector)
   if not result then
@@ -382,16 +401,10 @@ function M.save(selector, name)
 end
 
 ---@param selector string
----@param name string
-function M.store(selector, name)
-  if not alias_mod.is_valid_saved_name(name) then
-    vim.notify(
-      "Invalid saved name '" .. tostring(name) .. "'. " ..
-      "Allowed: alphanumeric, '.', '_', '-'; must start with a letter, digit, or underscore.",
-      vim.log.levels.ERROR
-    )
-    return
-  end
+---@param explicit_name string|nil
+function M.store(selector, explicit_name)
+  local name = resolve_save_name("store", selector, explicit_name)
+  if not name then return end
 
   if session_store.get_active(selector) then
     local kind = alias_mod.parse(selector)
@@ -538,6 +551,30 @@ end
 ---@return string[]
 function M.list_saved()
   return disk.list()
+end
+
+--- Manual aliases only, no recall windows.
+---@return string[]
+function M.list_manual()
+  return vim.tbl_filter(alias_mod.is_valid_manual, session_store.list_aliases())
+end
+
+--- In-memory aliases plus recall time hints: everything `close` accepts.
+---@return string[]
+function M.list_closeable()
+  return vim.list_extend(session_store.list_aliases(), alias_mod.TIME_HINTS)
+end
+
+--- `list_closeable()` plus the special selectors (`@` last finished, `$` last regression).
+---@return string[]
+function M.list_selectors()
+  return vim.list_extend(M.list_closeable(), { "@", "$" })
+end
+
+--- `list_selectors()` plus saved disk names.
+---@return string[]
+function M.list_selectors_and_saved()
+  return vim.list_extend(M.list_selectors(), disk.list())
 end
 
 --- View a finished result full-screen. Accepts any selector

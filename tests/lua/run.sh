@@ -18,14 +18,6 @@
 #
 # * `simulate/integration.lua` — most fragile to shared-state leakage
 #   (async coroutines, extmarks, tab/window choreography).
-# * `capture/on_key_mapping_probe.lua` — characterization tests that
-#   *intentionally* probe Neovim's `vim.on_key` internals. Running them
-#   primes Neovim's key-encoding state in ways that break downstream
-#   tests relying on the `typed ~= key` heuristic in `key_tracking`
-#   (e.g. `map_helper.lua`'s leak-prevention assertions). The probe
-#   file is a documentation artifact of Neovim behavior; the
-#   contamination is Neovim's, not ours. Fold into the main batch when
-#   `key_tracking` stops depending on that heuristic.
 #
 # The residual ~150ms hit per isolated file is cheap insurance compared
 # to debugging a flake later.
@@ -56,22 +48,17 @@ nvim_bin="${VF_NVIM:-nvim}"
 
 run_phase "main batch" "$nvim_bin" --headless -u NONE -U NONE -l "$here/runner.lua"
 
-run_phase "on_key_mapping_probe.lua (isolated)" \
-  env VF_TEST_FILE="$here/capture/on_key_mapping_probe.lua" \
-  VF_TEST_SUMMARY_FILE="$summary" \
-  "$nvim_bin" --headless -u NONE -U NONE -l "$here/runner.lua"
-
 run_phase "simulate/integration.lua (isolated)" \
   "$nvim_bin" --headless -u NONE -U NONE \
   --cmd 'set noswapfile' -c "luafile $here/simulate/integration.lua"
 
-# CmdAtom capture characterization. Needs a running main loop (deferred event +
+# CmdAtom wiring smoke test. Needs a running main loop (deferred event +
 # real input), so it runs via `-c luafile`, not `-l`. Self-skips (0/0) when the
 # Neovim lacks `##CmdAtom`.
-run_phase "capture/atoms.lua (isolated)" \
+run_phase "capture/atom_stream.lua (isolated)" \
   env VF_TEST_SUMMARY_FILE="$summary" \
   "$nvim_bin" --headless -u NONE -U NONE \
-  --cmd 'set noswapfile' -c "luafile $here/capture/atoms.lua"
+  --cmd 'set noswapfile' -c "luafile $here/capture/atom_stream.lua"
 
 # Aggregate the per-phase summary lines.
 grand_passed=0
@@ -91,10 +78,10 @@ printf '\n'
 # denominator means nothing failed. On failures the line reads
 # "X/N passed, Y FAILED" so the failure count is hard to miss.
 if [[ $grand_failed -eq 0 ]]; then
-  printf '[==========] %d/%d tests passed across 4 processes.\n' \
+  printf '[==========] %d/%d tests passed across 3 processes.\n' \
     "$grand_passed" "$grand_tests"
 else
-  printf '[==========] %d/%d tests passed across 4 processes — %d FAILED.\n' \
+  printf '[==========] %d/%d tests passed across 3 processes — %d FAILED.\n' \
     "$grand_passed" "$grand_tests" "$grand_failed"
 fi
 

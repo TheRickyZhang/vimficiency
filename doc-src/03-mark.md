@@ -22,5 +22,5 @@ Marks are similar semantics to marks in vim, where start/end is similar to creat
 
 - [7. Inspecting results](07-results.md) — how to read the output and replay
   the suggestions.
-- [8. Binding keys](08-keymaps.md) — use `<Plug>VimfyStartA` /
-  `<Plug>VimfyFinishA` so your session markers don't need typing `:Vimfy ...`.
+- [8. Binding keys](08-keymaps.md) — bind `<Cmd>Vimfy start a<CR>` /
+  `<Cmd>Vimfy finish a<CR>` so your session markers don't need typing `:Vimfy ...`.

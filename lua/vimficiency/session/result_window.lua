@@ -32,9 +32,6 @@ local function build_header_lines(result)
     lines[#lines + 1] = string.format("%d.    %s   (%s)",
       i, ffi_display.sequence_display_inline(recs[i].seq or ""), fmt_cost(recs[i].cost))
   end
-  if result.had_mouse then
-    lines[#lines + 1] = result_view.MOUSE_WARNING
-  end
   return lines
 end
 

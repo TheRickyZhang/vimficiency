@@ -1,33 +1,12 @@
--- lua/vimficiency/config_detail.lua
--- Small helpers for config.lua. Keep the public config shape in config.lua;
--- only the imperative merge/validation details live here.
+-- Validators for the structured config blocks. The shape itself is declared in config.lua.
 
 local alias_mod = require("vimficiency.session.alias")
 
 local M = {}
 
-local CPP = {}
 local WATCH_DEFAULTS = {
   cooldown_ms = 5000,
 }
-
-function M.cpp()
-  return CPP
-end
-
-function M.is_cpp(value)
-  return value == CPP
-end
-
-function M.capture_defaults(fields)
-  local out = {}
-  for name, value in pairs(fields) do
-    if type(value) ~= "function" and name:sub(1, 1) ~= "_" and not M.is_cpp(value) then
-      out[name] = vim.deepcopy(value)
-    end
-  end
-  return out
-end
 
 local function expect_table(path, value)
   if type(value) ~= "table" then

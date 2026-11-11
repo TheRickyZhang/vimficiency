@@ -68,9 +68,6 @@ local function render_suggestion(summary)
   local body = string.format(
     "vimfy regression · %s · %.0f → %.0f%s\n:Vimfy view $  ·  play $  ·  explore $",
     ago, result.user_cost or 0, optimal.cost or 0, timing)
-  if result.had_mouse then
-    body = body .. "\n" .. result_view.MOUSE_WARNING
-  end
 
   vim.notify(body, vim.log.levels.INFO, { title = "vimfy suggest", id = "vimfy_suggest" })
 end
@@ -166,7 +163,6 @@ function M.enable()
   if not cfg then return false end  -- master off (auto_suggest = false)
 
   local cooldown_ms = cfg.cooldown_ms or 0
-  local has_user_trigger = cfg.idle ~= nil or cfg.keys ~= nil or cfg.cost ~= nil
 
   if cfg.idle then
     local d = end_trigger.arm_idle({
@@ -201,7 +197,7 @@ function M.enable()
   -- Turnkey: no explicit triggers → arm the default cost gate so
   -- `:Vimfy suggest on` works with zero config. fire_cost falls back to
   -- cfg.default_cost when cfg.cost is absent.
-  if not has_user_trigger then
+  if not M.is_configured() then
     local d = end_trigger.arm_idle({
       name        = SUBSCRIBER_COST,
       idle_ms     = cfg.default_cost.ms,

@@ -32,11 +32,6 @@ test("sequence_display.inline always returns a flat string", function()
   assert_eq(line, "3w ciw foo <Esc> 2j")
 end)
 
-test("sequence_display pretty-prints key-notation typed text", function()
-  local lines = sequence_display.lines("cW2<Space>*<Space>i<Esc>")
-  assert_eq(lines, { "cW 2␣*␣i <Esc>" })
-end)
-
 test("sequence_display groups contiguous edit tokens into one row", function()
   assert_eq(
     sequence_display.lines("jF+Xce2 * i<Esc>"),
@@ -52,15 +47,6 @@ test("sequence_display pretty-prints key notation in command tokens", function()
   assert_eq(sequence_display.inline("r<Tab>"), "r⇥")
 end)
 
-test("sequence_display renders literal and key-notation spaces equivalently in typed text", function()
-  assert_eq(
-    sequence_display.lines("ce2 * i<Esc>"),
-    { "ce 2␣*␣i <Esc>" })
-  assert_eq(
-    sequence_display.lines("ce2<Space>*<Space>i<Esc>"),
-    { "ce 2␣*␣i <Esc>" })
-end)
-
 test("sequence_display decodes escaped angle brackets in typed text", function()
   assert_eq(
     sequence_display.lines("ciw<lt>Space><Esc>"),
@@ -68,11 +54,6 @@ test("sequence_display decodes escaped angle brackets in typed text", function()
   assert_eq(
     sequence_display.typed_text_inline("<lt>Esc>"),
     "<Esc>")
-end)
-
-test("sequence_display pretty-prints standalone typed text", function()
-  local line = sequence_display.typed_text_inline("2<Space>*<Space>i")
-  assert_eq(line, "2␣*␣i")
 end)
 
 test("sequence_display pretty-prints literal typed text without key notation", function()

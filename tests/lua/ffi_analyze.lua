@@ -96,16 +96,16 @@ local function find_result_ending_with(results, suffix)
   return nil
 end
 
-local function with_reset_config(fn)
-  ffi_lib.reset_config()
+local function with_reset_globals(fn)
+  ffi_lib.reset_globals()
   local ok, err = pcall(fn)
-  ffi_lib.reset_config()
+  ffi_lib.reset_globals()
   if not ok then error(err) end
 end
 
 test("ffi.configure: count penalty overrides affect analyze costs", function()
-  with_reset_config(function()
-    -- After reset_config every key costs 1.0 and only the count penalty is
+  with_reset_globals(function()
+    -- After reset_globals every key costs 1.0 and only the count penalty is
     -- added on top, so `4w`/`4W` are the only two-key paths to col 19 and
     -- become the strict minimum once their penalty is zeroed. Asserting on
     -- that extreme (and its opposite) avoids pinning a ranked menu.
@@ -124,7 +124,7 @@ test("ffi.configure: count penalty overrides affect analyze costs", function()
     end
 
     local NO_PENALTY = { base = 0.0, count_slope = 0.0, span_slope = 0.0 }
-    ffi_lib.configure({
+    ffi_lib.apply_globals({
       count_penalty_overrides = { MovementWord = NO_PENALTY, MovementBigWord = NO_PENALTY },
     })
     local free = analyze()
@@ -136,7 +136,7 @@ test("ffi.configure: count penalty overrides affect analyze costs", function()
     assert_eq(free_4W.cost, 2.0, "4W with no count penalty costs its two keys")
     assert_eq(free[1].cost, 2.0, "two-key counted motions must be the cheapest result")
 
-    ffi_lib.configure({
+    ffi_lib.apply_globals({
       count_penalty_overrides = {
         MovementWord = { base = 60.0 },
         MovementBigWord = { base = 60.0 },

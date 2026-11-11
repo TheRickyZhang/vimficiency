@@ -304,10 +304,6 @@ during the investigation and removed after the fix landed).
     — runs through `session.simulate(...)`, not just `simulate_compare`,
     and catches edit-transaction prefixes such as
     `x.ciw2<Space>*<Space>i<Esc>`.
-- `tests/lua/capture/on_key_mapping_probe.lua` — characterizes what
-  `vim.on_key` emits for different mapping shapes. Adjacent concern,
-  not precompute per se, but informs whether a captured sequence can
-  contain a bound LHS (which would confuse the oracle).
 
 ## When to revisit
 

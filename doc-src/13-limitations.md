@@ -4,9 +4,8 @@ title: "Known limitations"
 
 # Known limitations
 
-- **Session capture needs Neovim nightly (0.13-dev).** Capture runs off the
-  `CmdAtom` event. On stable Neovim the commands and replay views still work,
-  but mark/watch/recall/suggest are disabled with a one-time warning.
+- **Needs Neovim nightly (0.13-dev).** Capture runs off the `CmdAtom`
+  event; `setup()` raises on older Neovim.
 
 - **Screen-line motions** `gj`/`gk` are approximated as `j`/`k`. Exact on
   unwrapped lines; off by a little when wrapping is in play.

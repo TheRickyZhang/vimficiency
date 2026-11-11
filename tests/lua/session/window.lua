@@ -11,7 +11,7 @@ local h       = require("_helpers")
 local function fake_active(buf, win)
   return {
     id = "test-" .. tostring(vim.uv.hrtime()),
-    capture_sub = nil,
+    stream_sub = nil,
     win = win,
     buf = buf,
     start_state = util.capture_state(buf, win),
@@ -19,7 +19,6 @@ local function fake_active(buf, win)
     status = "active",
     atoms = {},
     key_count = 0,
-    had_mouse = false,
     result = nil,
   }
 end
@@ -94,8 +93,8 @@ test("compute_result_for_active: includes capture key debug", function()
   -- One atom per command: CmdAtom has already resolved operator-pending, so the
   -- replayable `keys` are just concatenated (no reduction, no mode tracking).
   active.atoms = {
-    { t = 1000, type = "insert",   keys = "cwW2<Esc>", lhs = "cwW2<Esc>", win = win, buf = buf },
-    { t = 2000, type = "operator", keys = "dl",        lhs = "x",         win = win, buf = buf },
+    { keys = "cwW2<Esc>", win = win, buf = buf },
+    { keys = "dl",        win = win, buf = buf },
   }
   active.key_count = #active.atoms
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "cout << W2 << endl;" })
@@ -110,12 +109,7 @@ test("compute_result_for_active: includes capture key debug", function()
   end)
 
   assert_eq(result.user_seq, "cwW2<Esc>dl")
-  assert_eq(result.capture_debug.raw_joined, "cwW2<Esc>dl")
-  assert_eq(result.capture_debug.reduced_sequence, "cwW2<Esc>dl")
-  assert_eq(result.capture_debug.normalized_sequence, "cwW2<Esc>dl")
-  assert_eq(result.capture_debug.event_count, 2)
-  assert_eq(result.capture_debug.events[1].type, "insert")
-  assert_eq(result.capture_debug.events[2].keys, "dl")
+  assert_eq(vim.inspect(result.capture_debug.atom_keys), vim.inspect({ "cwW2<Esc>", "dl" }))
 
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
 end)

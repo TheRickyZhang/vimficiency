@@ -5,7 +5,7 @@
 local M = {}
 
 local alias_mod = require("vimficiency.session.alias")
-local atoms = require("vimficiency.capture.atoms")
+local atom_stream = require("vimficiency.capture.atom_stream")
 local util = require("vimficiency.util")
 local config = require("vimficiency.config")
 
@@ -18,7 +18,7 @@ local config = require("vimficiency.config")
 ---
 ---@class VF.Session.Record
 ---@field id          string                    # Unique identifier
----@field capture_sub string|nil                # Atoms subscriber name this record owns (manual/watch); nil for recall (shared sub) and fetched
+---@field stream_sub string|nil                # Atoms subscriber name this record owns (manual/watch); nil for recall (shared sub) and fetched
 ---@field win         integer                   # Window where session started
 ---@field buf         integer                   # Buffer where session started
 ---@field start_state? VF.BufferState          # Cursor/viewport at start; nil for fetched/imported records
@@ -26,7 +26,6 @@ local config = require("vimficiency.config")
 ---@field status      "active" | "finished"
 ---@field atoms       VF.Atom[]|nil             # Accumulated atoms (active only); dropped at finish
 ---@field key_count   integer                   # Live count of captured atoms (commands) while active; frozen at finish
----@field had_mouse   boolean|nil               # Mouse/scroll activity seen during capture; surfaces a warning at finish
 ---@field result      VF.Session.Result|nil         # Set at finish
 ---@field finish_alias string|nil               # Literal alias passed to finish (`a`, `3s`, ...); used as the default filename for `:Vimfy save`
 ---@field start_kind  "manual"|"auto"           # Who picked the start. Manual = user called :Vimfy start|watch. Auto = created from the recall queue.
@@ -59,9 +58,8 @@ local config = require("vimficiency.config")
 ---@field scroll_amount integer|nil    # Captured 'scroll' option for Ctrl-D/U semantics
 ---@field user_seq string              # What the user typed (keytrans string), mouse events stripped
 ---@field user_cost number             # Effort cost of user's sequence
----@field had_mouse boolean|nil        # Whether mouse/scroll events were stripped from the capture
 ---@field optimal_results VF.Optimizer.Result[] # Top N results from optimizer (seq + cost)
----@field capture_debug table|nil      # Captured key events and reducer output, persisted only for debugging
+---@field capture_debug table|nil      # Per-atom key boundaries behind user_seq, persisted only for debugging
 ---@field start_time integer           # hrtime when the session started
 ---@field key_count integer            # Captured key events at finish (authoritative; user_seq is bytes, not keys)
 ---@field timestamp integer            # hrtime when the result was computed (finish time)
@@ -103,16 +101,16 @@ end
 --------------------------------------------------------------------------------
 
 ---@param id string
----@param capture_sub string|nil  Atoms subscriber this record owns (manual/watch); nil for recall
+---@param stream_sub string|nil  Atoms subscriber this record owns (manual/watch); nil for recall
 ---@param win integer
 ---@param buf integer
 ---@param start_state VF.BufferState
 ---@param start_kind "manual"|"auto"
 ---@param end_kind "manual"|"auto"
 ---@return VF.Session.Record
-function M.new_active_session(id, capture_sub, win, buf, start_state, start_kind, end_kind)
+function M.new_active_session(id, stream_sub, win, buf, start_state, start_kind, end_kind)
   assert(type(id) == "string" and id ~= "", "session.id must be nonempty string")
-  assert(capture_sub == nil or type(capture_sub) == "string", "capture_sub must be a string or nil")
+  assert(stream_sub == nil or type(stream_sub) == "string", "stream_sub must be a string or nil")
   assert(vim.api.nvim_win_is_valid(win), "win must be a valid window id")
   assert(vim.api.nvim_buf_is_valid(buf), "buf is not valid: " .. buf)
   assert(start_kind == "manual" or start_kind == "auto",
@@ -122,7 +120,7 @@ function M.new_active_session(id, capture_sub, win, buf, start_state, start_kind
 
   return {
     id = id,
-    capture_sub = capture_sub,
+    stream_sub = stream_sub,
     win = win,
     buf = buf,
     start_state = start_state,
@@ -130,7 +128,6 @@ function M.new_active_session(id, capture_sub, win, buf, start_state, start_kind
     status = "active",
     atoms = {},
     key_count = 0,
-    had_mouse = false,
     result = nil,
     start_kind = start_kind,
     end_kind = end_kind,
@@ -231,8 +228,8 @@ local function destroy_record(id)
     rec.watch_disarm()
     rec.watch_disarm = nil
   end
-  if rec.capture_sub then
-    atoms.unsubscribe(rec.capture_sub)
+  if rec.stream_sub then
+    atom_stream.remove_listener(rec.stream_sub)
   end
   session_records[id] = nil
   if last_finished_id == id then last_finished_id = nil end
@@ -409,8 +406,8 @@ function M.finish_session(id, result, finish_alias, end_kind_override, reason)
     rec.watch_disarm = nil
   end
 
-  if rec.capture_sub then
-    atoms.unsubscribe(rec.capture_sub)
+  if rec.stream_sub then
+    atom_stream.remove_listener(rec.stream_sub)
   end
 
   if end_kind_override then
@@ -537,7 +534,7 @@ function M.register_fetched_result(alias, result)
 
   session_records[id] = {
     id            = id,
-    capture_sub   = nil,  -- no live capture for fetched records
+    stream_sub   = nil,  -- no live capture for fetched records
     win           = vim.api.nvim_get_current_win(),
     buf           = cur_buf,
     start_state   = nil,  -- not used for already-finished records
@@ -545,7 +542,6 @@ function M.register_fetched_result(alias, result)
     status        = "finished",
     atoms         = nil,
     key_count     = (result.key_count or 0),
-    had_mouse     = result.had_mouse,
     result        = result,
     start_kind    = "manual",
     end_kind      = "manual",
@@ -687,7 +683,7 @@ local recall_prev_state = {}
 
 --- Ingest one recorded atom into the rolling recall ring.
 ---
---- Callers are responsible for verdict filtering (only "record" atoms) and
+--- Callers are responsible for decision filtering (only "record" atoms) and
 --- buffer/window validity.
 ---@param atom VF.Atom
 function M.ingest_recall_atom(atom)
@@ -713,19 +709,6 @@ function M.ingest_recall_atom(atom)
   table.insert(rec.atoms, atom)
   rec.key_count = 1
   M.store_recall(rec)
-end
-
---- Flag mouse/scroll activity on every active recall record in `buf`, so a
---- recall finished across it surfaces the mouse warning (mouse atoms are not
---- appended to the sequence, only remembered).
----@param buf integer
-function M.mark_recall_mouse(buf)
-  for _, id in ipairs(recall_id_order) do
-    local rec = session_records[id]
-    if rec and rec.status == "active" and rec.buf == buf then
-      rec.had_mouse = true
-    end
-  end
 end
 
 --- Test-only: fetch an active record by id.

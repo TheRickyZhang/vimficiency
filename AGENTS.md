@@ -156,7 +156,7 @@ Optimizer:
 Lua:
 - `dev/lua/ffi-separators.md` - Before adding or changing an FFI payload format
 - `dev/lua/key-normalization.md` - Before forwarding captured key bytes (CmdAtom keys/lhs, or Explore's `vim.on_key`) to C++; skipping normalization asserts on Ctrl-letter input
-- `dev/lua/atom-capture.md` - Before changing session capture (manual/recall/triggers), the CmdAtom admission policy, or recall snapshotting
+- `dev/lua/atom-stream.md` - Before changing session capture (manual/recall/triggers), the CmdAtom admission policy, or recall snapshotting
 - `dev/lua/neovim_on_key_issues.md` - Historical: the `vim.on_key` hazards that motivated the CmdAtom migration; still applies to `key_tracking.lua` (Explore-only)
 - `dev/lua/replay-precompute.md` - Before changing simulate/replay
 - `dev/lua/session-invocation.md` - Before changing how optimizer sessions start, finish, or are displayed

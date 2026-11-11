@@ -79,7 +79,7 @@ its own timer and cooldown, configured under its own key.
 | `watch.cooldown_ms` / `auto_suggest.cooldown_ms` | Minimum time between consecutive fires. Safety rail for low `idle.ms`. |
 
 "Real command" excludes cmdline input and Vimfy admin actions, so
-`:Vimfy` commands and `<Cmd>Vimfy`/`<Plug>`-routed bindings don't reset
+`:Vimfy` commands and `<Cmd>Vimfy`-routed bindings don't reset
 the idle timer.
 
 A bare `ms` inside any trigger object universally means "idle

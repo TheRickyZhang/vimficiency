@@ -458,7 +458,8 @@ The main batch reuses one headless Neovim process and calls `reset_state()`
 between files. Two entry-point files are deliberately isolated:
 
 - `simulate/integration.lua`: async coroutine and tab/window state.
-- `capture/on_key_mapping_probe.lua`: Neovim key-encoding characterization.
+- `capture/atom_stream.lua`: standalone async script that drives real input
+  through the main loop for CmdAtom.
 
 Explore flow tests are split under `tests/lua/explore/flow_*.lua`; shared
 helpers belong in `tests/lua/explore/_helpers.lua`.

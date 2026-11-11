@@ -97,9 +97,6 @@ function M.validate(data)
   if data.has_lines_below ~= nil and type(data.has_lines_below) ~= "boolean" then
     return "non-boolean 'has_lines_below' field"
   end
-  if data.had_mouse ~= nil and type(data.had_mouse) ~= "boolean" then
-    return "non-boolean 'had_mouse' field"
-  end
   if data.prefix ~= nil and type(data.prefix) ~= "string" then
     return "non-string 'prefix' field"
   end

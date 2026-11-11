@@ -9,17 +9,17 @@ if not ok_ffi then
 end
 
 local config        = require("vimficiency.config")
-local config_detail = require("vimficiency.config_detail")
+local validate = require("vimficiency.config.validate")
 local h             = require("_helpers")
 
 -- Thin wrappers around the normalizers that also assign the result onto
 -- `config`. Matches what the plugin's setup path does on real user input.
 local function validate_watch(raw)
-  config.watch = config_detail.normalize_watch(raw)
+  config.watch = validate.normalize_watch(raw)
 end
 
 local function validate_auto_suggest(raw)
-  config.auto_suggest = config_detail.normalize_auto_suggest(raw, config._defaults.auto_suggest)
+  config.auto_suggest = validate.normalize_auto_suggest(raw, config._defaults.auto_suggest)
 end
 
 local function with_saved_watch(fn)
@@ -43,28 +43,28 @@ end
 
 test("configure: validates weight keys", function()
   assert_error(
-    function() ffi_lib.configure({ weights = { downwrad = 5 } }) end,
+    function() ffi_lib.apply_globals({ weights = { downwrad = 5 } }) end,
     "weights.downwrad", "typo in weights must error"
   )
-  ffi_lib.configure({ weights = { key_weight = 1.0 } })
+  ffi_lib.apply_globals({ weights = { key_weight = 1.0 } })
 end)
 
 test("configure: validates count penalty override shape", function()
   local class_name = first_count_class()
   assert_error(
     function()
-      ffi_lib.configure({
+      ffi_lib.apply_globals({
         count_penalty_overrides = { [class_name] = { base_slope = 1.0 } },
       })
     end,
     "base_slope", "typo in count_penalty_overrides must error"
   )
-  ffi_lib.configure({
+  ffi_lib.apply_globals({
     count_penalty_overrides = { [class_name] = { base = 1.0, count_slope = 0.5 } },
   })
   assert_error(
     function()
-      ffi_lib.configure({ count_penalty_overrides = { FakeClass = { base = 1.0 } } })
+      ffi_lib.apply_globals({ count_penalty_overrides = { FakeClass = { base = 1.0 } } })
     end,
     "Unknown count penalty class", "bogus class name must error"
   )
@@ -179,7 +179,7 @@ end)
 test("validate_auto_suggest: default_cost always present and tunable without a trigger", function()
   with_saved_auto_suggest(function()
     -- Zero config still yields the fallback gate.
-    config.auto_suggest = config_detail.normalize_auto_suggest(nil, config._defaults.auto_suggest)
+    config.auto_suggest = validate.normalize_auto_suggest(nil, config._defaults.auto_suggest)
     assert_eq(config.auto_suggest.default_cost.m, 1.5)
     assert_eq(config.auto_suggest.default_cost.window, "3s")
 
@@ -202,7 +202,7 @@ end)
 
 test("validate_auto_suggest: notif_cooldown_ms defaults and validates", function()
   with_saved_auto_suggest(function()
-    config.auto_suggest = config_detail.normalize_auto_suggest(nil, config._defaults.auto_suggest)
+    config.auto_suggest = validate.normalize_auto_suggest(nil, config._defaults.auto_suggest)
     assert_eq(config.auto_suggest.notif_cooldown_ms, 2000, "default notif cooldown")
 
     assert_error(

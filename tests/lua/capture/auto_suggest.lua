@@ -285,7 +285,7 @@ end)
 --------------------------------------------------------------------------------
 
 -- Mirrors a normalized config: no explicit trigger, but default_cost is always
--- present (config_detail fills it from defaults).
+-- present (config.validate fills it from defaults).
 local NO_TRIGGERS = {
   cooldown_ms = 5000,
   default_cost = { m = 1.5, b = 2.0, ms = 1000, window = "3s" },
