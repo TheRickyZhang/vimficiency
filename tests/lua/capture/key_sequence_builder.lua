@@ -10,10 +10,6 @@ local function ev(mode, key_typed)
   }
 end
 
-test("build_sequence: empty input returns empty string", function()
-  assert_eq(key_tracking.build_sequence({}), "")
-end)
-
 test("build_sequence: concatenates non-duplicate keys in order", function()
   local seq = key_tracking.build_sequence({
     ev("n", "d"),

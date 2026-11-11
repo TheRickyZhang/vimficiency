@@ -1,96 +1,43 @@
-For many useful features, like ability to replay/store calculated optimizations for a snapshot, and smooth integration with workflow, it is useful to know:
-- When are calls to start/end invoked?
-- How can we keep track of distinct instance?
+# Session kinds and output
 
-Three main ways that optimizers can be invoked. Each will store up to N = 5 in memory, and additional will evict in FIFO order.
+A session is `(start_kind, end_kind)`, each `manual | auto`:
 
-If any sessions go longer than MAX_SESSION_MOTION_LENGTH, they should be automatically terminated with a warning.
+| Kind    | Pair             | Started by                      | Ended by                        |
+|---------|------------------|---------------------------------|---------------------------------|
+| Mark    | (manual, manual) | `:Vimfy start <alias>`          | `:Vimfy finish <alias>`         |
+| Watch   | (manual, auto)   | `:Vimfy watch <alias>`          | idle timer (`config.watch`)     |
+| Recall  | (auto, manual)   | every atom, rolling ring        | `:Vimfy recall <N\|Ns>`         |
+| Suggest | (auto, auto)     | a Recall record                 | an `auto_suggest` trigger fires |
 
-= Manual (5):
-Alias = Whatever the user decides (or limit to a b c d e for simplicity). Use a as example
-The user invokes "VimficiencyStart a" and "VimficiencyEnd a" to set explicit start/end points. So, it is pretty easy to handle state and keep in memory, and map a -> underlying state id.
+Manual aliases are alphabetic; at most `MANUAL_CAPACITY = 5` are active at once,
+and finished records keep their slot without counting against it. The recall
+ring holds `config.KEY_SESSION_CAPACITY` records for `config.MAX_RETENTION_SECONDS`,
+in RAM only. `N` means N commands ago, `Ns` means N seconds ago.
 
-= Time (5):
-Alias = ., .., ... (#.)
-User can set INVOCATION_WAIT_TIME in the config. We monitor their keystrokes, and as soon as INVOCATION_WAIT_TIME passes without any actions, end the ongoing session.
-So we guarantee that there is only one time session occurring at once. We keep the 5 most recent sessions in memory; the user can refer to them with number of dots that are going. This relies on accurate detection of the correct type of actions (similar to manual key detection, doing :VimficiencyEnd . should not be updating any state except once executed)
+Active manual sessions are evicted when their window closes, the cursor drifts
+past `config.MAX_SEARCH_LINES`, or they idle too long (`compute.manual_should_evict`).
 
-= Key Count Back (10):
-Alias = 1, 2, 3, 4, 5
-User can set INVOCATION_MAX_KEYS_TYPED = 10 in the config. We maintain sessions that called begin() everything from 1 to INVOCATION_MAX_KEYS_TYPED keys typed ago. When the user refers to 3, it uses id of session from 3 ago, and does optimization with current state.
+## Output
 
-Note that keys_typed != semantic actions, as gg = 2 keys typed, 1 action, but it is the best solution without maintaining parsing state.
+`:Vimfy finish` notifies the full result: positions, the user's tokenized
+sequence with its effort, and the ranked optimal sequences.
 
-## Output Format
-
-When a session completes, results are displayed with:
-
-1. **Position info**: `(start_row, start_col) -> (end_row, end_col)` (0-indexed)
-2. **User sequence**: What the user typed, formatted with spaces between logical units, with effort cost
-3. **Optimal results**: Up to N best sequences found, sorted by cost (ascending)
-
-Example output:
 ```
 vimficiency finished [a] (0,0) -> (2,2)
   user: cw xxx <Esc> jj ci yyy <Esc> (15.00)
   1. 3rx <C-d> ciw yyy <Esc> (8.00)
-  2. 3rx w <C-d> 3ry (11.00)
-  3. 3rx Wlj ciw yyy <Esc> (13.00)
 ```
 
-The full multi-line display above is for explicit finishes (`:Vimfy finish`).
-
-### Auto-suggest regression toast
-
-When `auto_suggest` detects a regression, it shows a deliberately terse,
-in-place-replaceable toast (`capture/auto_suggest.lua` `render_suggestion`) —
-just enough to decide whether to look closer:
+An auto-suggest regression shows a terse, replaceable toast instead
+(`auto_suggest.lua` `render_suggestion`); `$` resolves to that regression.
 
 ```
 vimfy regression · 17 keys · 3s ago · 15 → 8
 :Vimfy view $  ·  play $  ·  explore $
 ```
 
-"how long ago" is `key_count` + wall-clock since `start_time`; the delta is
-`user_cost → best_cost` (rounded). The `$` selector resolves to this exact
-regression (see [session-storage.md](session-storage.md)); `:Vimfy view $`
-opens the full side-by-side breakdown.
-
-### Sequence Formatting
-
-Sequences are tokenized into logical units using `SequenceParser`:
-- Motions: `w`, `3j`, `fa`, `;`, `<C-d>`
-- Edit commands: `ciw`, `dd`, `D`, `3rx`
-- Typed text: Characters typed after entering insert mode
-- Special keys: `<Esc>`
-
-Raw sequence: `3rx<C-d>ciwfoo<Esc>` → Formatted: `3rx <C-d> ciw foo <Esc>`
-
-`parseSequence` is fallible (returns
-`std::expected<..., SequenceParseError>`). The FFI's tokenizer exports
-(`vf_tokenize_movements`, `vf_tokenize_sequence`) return `ERROR: ...`
-strings on parse failure so Lua callers can distinguish a real error
-from an empty result.
-
-### Cost Calculation
-
-User cost is calculated using `getEffort(keyseq, config)` from `RunningEffort.cppm`, which:
-- Converts the sequence to physical key presses
-- Applies keyboard effort model (finger travel, hand alternation, etc.)
-- Returns total effort score
-
-Mouse events (`<ScrollWheelDown>`, `<LeftRelease>`, clicks, drags, …) are
-**stripped before the sequence is built** (`compute.lua` `filter_mouse_events`,
-via `keynorm.is_mouse`). They are uncapturable as keyboard motion and, being
-unknown `<…>` tokens, the C++ tokenizer would otherwise cost them
-character-by-character (one wheel event ≈ 17 keystrokes). The stripped capture
-sets `result.had_mouse`, which surfaces a one-line warning wherever the result
-is shown (toast, `:Vimfy finish` output, `:Vimfy view` header).
-
-## After a session finishes
-
-Finished sessions live in an in-memory workspace (indexed by alias) and/or
-an on-disk archive (indexed by filename). Moving between the two is handled
-by `:Vimfy save` / `store` / `fetch`; `:Vimfy play` covers both transparently.
-See [`session-storage.md`](session-storage.md) for the full Lua-layer model,
-APIs, and JSON schema.
+Sequences are tokenized by the C++ `SequenceParser`; `parseSequence` is
+fallible and the FFI tokenizer exports return `ERROR: ...` strings so Lua can
+tell a failure from an empty result. User cost is `getEffort(keyseq, config)`.
+Finished results then live in the workspace or the archive; see
+`session-storage.md`.

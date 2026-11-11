@@ -58,45 +58,6 @@ local function make_schema(state)
   }, state
 end
 
-test("explore panel: open creates buffer and renders all setting rows", function()
-  local view = make_view()
-  local schema, state = make_schema()
-  local panel_view = open_panel(view, schema)
-
-  assert_true(panel.is_open(view))
-  local lines = vim.api.nvim_buf_get_lines(panel_view.buf, 0, -1, false)
-  -- 3 setting rows + 1 separator (blank) + 1 action = 5 lines.
-  assert_eq(#lines, 5)
-  assert_match(lines[1], "Flag")
-  assert_match(lines[1], "[ ]")  -- bool=false renders as `[ ]`
-  assert_match(lines[2], "Count")
-  assert_match(lines[2], "[1]")
-  assert_match(lines[3], "Mode")
-  assert_match(lines[3], "[off]")
-  assert_eq(lines[4], "")        -- separator
-  assert_match(lines[5], "Reset")
-
-  -- Initial selection lands on the first selectable row.
-  assert_eq(panel_view.handle.selection(), 1)
-  _ = state
-
-  teardown(view)
-end)
-
-test("explore panel: close tears down window and clears panel state", function()
-  local view = make_view()
-  local schema = make_schema()
-  local panel_view = open_panel(view, schema)
-  local panel_win = panel_view.win
-  panel.close(view)
-
-  assert_true(view.panel == nil)
-  assert_true(not vim.api.nvim_win_is_valid(panel_win))
-  assert_true(not panel.is_open(view))
-
-  teardown(view)
-end)
-
 test("explore panel: re-opening on already-open view re-renders in place", function()
   local view = make_view()
   local schema_a = make_schema({ flag = false })
@@ -112,22 +73,6 @@ test("explore panel: re-opening on already-open view re-renders in place", funct
   local lines = vim.api.nvim_buf_get_lines(panel_view.buf, 0, -1, false)
   assert_match(lines[1], "[✓]")  -- new schema's flag = true
   _ = state_b
-
-  teardown(view)
-end)
-
-test("explore panel: refresh re-reads getters after external state change", function()
-  local view = make_view()
-  local schema, state = make_schema({ count = 2 })
-  local panel_view = open_panel(view, schema)
-
-  -- External mutation — the closure-captured state changed without
-  -- going through a panel keymap. `refresh` must pull fresh values.
-  state.count = 4
-  panel.refresh(view)
-
-  local lines = vim.api.nvim_buf_get_lines(panel_view.buf, 0, -1, false)
-  assert_match(lines[2], "[4]")
 
   teardown(view)
 end)

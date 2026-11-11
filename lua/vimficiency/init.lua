@@ -1,7 +1,6 @@
 local config = require("vimficiency.config")
 local atom_stream = require("vimficiency.capture.atom_stream")
 local auto_suggest = require("vimficiency.capture.auto_suggest")
-local commands = require("vimficiency.commands")
 local subcommands = require("vimficiency.subcommands")
 local recall_capture = require("vimficiency.capture.recall")
 local ffi_config = require("vimficiency.ffi.config")
@@ -22,7 +21,7 @@ local function cmdline_entry(opts)
   local args = vim.split(opts.args, "%s+", { trimempty = true })
   local subcmd = table.remove(args, 1)
 
-  --- No subcommand called -> list all subcommands
+  --- No subcommand called
   if not subcmd then
     local cmd_lines = {}
     for _, cmd in pairs(subcommands) do
@@ -38,11 +37,50 @@ local function cmdline_entry(opts)
     return
   end
 
-  -- Dispatch to subcommands
-  local ok, err = pcall(commands.dispatch_subcommand, subcmd, args)
+  -- Otherwise, dispatch to subcommand handlers (cmd.run)
+  ---@type VF.Subcommand?
+  local cmd = subcommands[subcmd]
+  if not cmd then
+    vim.notify("Unknown subcommand '" .. subcmd .. "'. Run :Vimfy help for usage", vim.log.levels.ERROR)
+    return
+  end
+  if #args < (cmd.min_args or 0) then
+    vim.notify("Usage: Vimfy " .. cmd.usage, vim.log.levels.ERROR)
+    return
+  end
+
+  local ok, err = pcall(cmd.run, args)
   if not ok then
     vim.notify(tostring(err), vim.log.levels.ERROR)
   end
+end
+
+--- `:Vimfy` tab completion: subcommand names first, then each subcommand's
+--- per-position candidates.
+local function autocomplete_command(arg_lead, cmd_line, cursor_pos)
+  -- Escape pattern magic up front: arg_lead is used only as a `^`-anchored
+  -- match prefix below, and the user can type `(`, `[`, `%`, etc.
+  local prefix = "^" .. vim.pesc(arg_lead)
+  local function matching(candidates)
+    local matches = vim.tbl_filter(function(v) return v:find(prefix) ~= nil end, candidates)
+    table.sort(matches)
+    return matches
+  end
+
+  -- Not trimmed: a trailing "" is the (empty) argument being completed, and
+  -- `#args` tells the subcommand which argument position that is.
+  local args = vim.split(cmd_line:sub(1, cursor_pos), "%s+")
+  table.remove(args, 1)
+
+  if #args <= 1 then
+    return matching(vim.tbl_keys(subcommands))
+  end
+
+  local cmd = subcommands[args[1]]
+  local candidates = cmd and cmd.complete and cmd.complete[#args - 1]
+  if not candidates then return {} end
+  if type(candidates) == "function" then candidates = candidates() end
+  return matching(candidates)
 end
 
 
@@ -100,7 +138,7 @@ function M.setup(user_config)
   for _, name in ipairs({ "Vimfy", "Vimficiency" }) do
     vim.api.nvim_create_user_command(name, cmdline_entry, {
       nargs = "*",
-      complete = commands.complete,
+      complete = autocomplete_command,
       desc = "Vimfy movement optimizer",
     })
   end
@@ -108,9 +146,7 @@ function M.setup(user_config)
   -- Capture: recall always listens; auto-suggest only if the user configured a trigger.
   recall_capture.start_continuous_capture()
 
-  if auto_suggest.is_configured() then
-    auto_suggest.enable()
-  end
+  auto_suggest.enable_configured()
 end
 
 --- Tear down runtime state that should not outlive a Lua reload.

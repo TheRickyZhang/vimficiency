@@ -65,7 +65,7 @@ local config = require("vimficiency.config")
 ---@field timestamp integer            # hrtime when the result was computed (finish time)
 ---@field analyze_ms number|nil        # Wall-time of the optimizer analyze() FFI call (ms); running-model telemetry
 ---@field compute_ms number|nil        # Wall-time of the full compute_result_for_active block (ms): analyze + diff + marshaling
----@field finish_reason? VF.Session.FinishReason  # Why the session ended; set by finish_session, absent on pre-reason saved files
+---@field finish_reason? VF.Session.FinishReason  # Why the session ended; set by mark_finished, absent on pre-reason saved files
 
 --- Normalized view-model for list/suggest UIs.
 --- `display_alias` is presentation-only; use `id` for follow-up actions.
@@ -391,7 +391,7 @@ end
 ---@param end_kind_override "manual"|"auto"|nil  When non-nil, atomically update rec.end_kind as part of the same status transition. Used by auto_suggest to promote a Recall record (`auto, manual`) to Suggest (`auto, auto`) only on confirmed finish — a speculative mutation before finish would leave a failed compute/finish path with a mislabeled record.
 ---@param reason VF.Session.FinishReason           Why the session ended; stored on the result for display and debugging.
 ---@return boolean success
-function M.finish_session(id, result, finish_alias, end_kind_override, reason)
+function M.mark_finished(id, result, finish_alias, end_kind_override, reason)
   local rec = session_records[id]
   if not rec or rec.status ~= "active" then return false end
 

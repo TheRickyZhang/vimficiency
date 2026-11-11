@@ -1,6 +1,6 @@
 local uv = vim.uv
 
-local session = require("vimficiency.session")
+local disk = require("vimficiency.session.disk")
 local session_store = require("vimficiency.session.store")
 
 local M = {}
@@ -99,7 +99,7 @@ function M.build_active_items()
 end
 
 function M.build_saved_items()
-  local names = session.list_saved()
+  local names = disk.list()
   local items = {}
   for _, name in ipairs(names) do
     local path = M.save_dir() .. "/" .. name .. ".json"

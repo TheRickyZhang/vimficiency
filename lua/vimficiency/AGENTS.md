@@ -8,14 +8,14 @@ Top-level modules are the plugin entry and cross-cutting infrastructure:
 
 | File | Purpose |
 |------|---------|
-| `init.lua` | Plugin entry point. Registers `:Vimfy` command with subcommands. |
-| `session.lua` | Session lifecycle: start, finish, simulate, view. Required as `vimficiency.session`. |
+| `init.lua` | Plugin entry point: `setup()`, the `:Vimfy` dispatcher and its tab completion, teardown and reload. |
+| `session.lua` | Live capture lifecycle: start, watch, finish, recall, close. Argument errors raise to the `:Vimfy` boundary. |
+| `session/archive.lua` | Finished results as named things: selector resolution (`@`, `$`, alias, recall window), save/store/fetch/rm, view. |
 | `simulate.lua` | Side-by-side animation of motion sequences. Required as `vimficiency.simulate`. |
 | `explore.lua` | Interactive result exploration view. Required as `vimficiency.explore`. |
 | `play.lua` | Play-screen settings and modal wiring. Required as `vimficiency.play`. |
 | `stats.lua` | Stats aggregation and display. Required as `vimficiency.stats`. |
-| `commands.lua` | `:Vimfy` generic dispatch, usage checks, and tab completion over the subcommand table. |
-| `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, fn) per `:Vimfy` verb. Depends on the domain modules; nothing depends on it except `commands.lua` and `init.lua`. |
+| `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, run) per `:Vimfy` verb. Depends on the domain modules; only `init.lua` depends on it. |
 | `dev_reload.lua` | `:Vimfy reload`: cmake rebuild, then hot-reload the `.so` and every Lua module. |
 | `config.lua` | Shared configuration constants (Lua-side only). |
 | `config/validate.lua` | Validators for the structured `watch` and `auto_suggest` blocks; the shape itself stays in `config.lua`. |

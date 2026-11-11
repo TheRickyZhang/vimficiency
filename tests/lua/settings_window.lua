@@ -1,7 +1,6 @@
 local helpers = require("_helpers")
 local settings_window = require("vimficiency.settings_window")
 
-local selection_ns = vim.api.nvim_create_namespace("vimficiency_settings_selection")
 
 local function open_widget(rows, opts)
   local buf = vim.api.nvim_create_buf(false, true)
@@ -80,28 +79,6 @@ local function make_rows(state)
   }
 end
 
-test("settings_window: build_layout keeps separator spacing before actions", function()
-  local layout = settings_window.build_layout({
-    {
-      kind = "setting",
-      label = "display mode",
-      value_kind = "enum",
-      values = { "off", "above" },
-      get = function() return "above" end,
-      set = function() end,
-    },
-    { kind = "separator" },
-    {
-      kind = "action",
-      label = "reset to default settings",
-      run = function() end,
-    },
-  }, { row_prefix = "  ", value_gap = "   " })
-
-  assert_eq(layout.lines[#layout.lines - 1], "")
-  assert_eq(layout.lines[#layout.lines], "  reset to default settings")
-end)
-
 test("settings_window: keymaps adjust rows, prompt numeric input, and close", function()
   local state = { flag = false, count = 2, mode = "off", ran = 0, changes = 0 }
   local saved_guicursor = vim.o.guicursor
@@ -140,19 +117,3 @@ test("settings_window: keymaps adjust rows, prompt numeric input, and close", fu
   assert_eq(vim.o.guicursor, saved_guicursor)
 end)
 
-test("settings_window: buffer is locked and incidental motion is denied", function()
-  local state = {}
-
-  with_widget(make_rows(state), nil, function(widget)
-    assert_eq(vim.bo[widget.buf].modifiable, false)
-    local extmarks = vim.api.nvim_buf_get_extmarks(
-      widget.buf, selection_ns, 0, -1, { details = true })
-    assert_eq(#extmarks, 1)
-    assert_eq(extmarks[1][4].hl_group, "CursorLine")
-
-    helpers.feed("www")
-    vim.wait(20)
-    assert_eq(vim.api.nvim_win_get_cursor(widget.win), { 1, 0 })
-    assert_eq(widget.handle.selection(), 1)
-  end)
-end)

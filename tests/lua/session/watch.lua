@@ -22,7 +22,7 @@ end
 
 test("watch: refuses to start when config.watch is falsy", function()
   with_watch_cfg(false, function()
-    h.silence_notify(function() session.watch("wnone") end)
+    assert_error(function() session.watch("wnone") end, "not configured")
     assert_eq(session_store.get_active("wnone"), nil,
       "no record should be created when watch is disabled")
   end)
@@ -99,13 +99,13 @@ test("watch: finish (manual :Vimfy finish) disarms the trigger", function()
 
       local fake_result = h.fake_result({ user_seq = "" })
       assert_eq(
-        session_store.finish_session(rec.id, fake_result, "wfinish", nil, "watch_idle"),
+        session_store.mark_finished(rec.id, fake_result, "wfinish", nil, "watch_idle"),
         true)
 
       assert_eq(atom_stream._has_listener(name), false,
-        "finish_session must disarm the watch trigger")
+        "mark_finished must disarm the watch trigger")
       assert_eq(fake_result.finish_reason, "watch_idle",
-        "finish_session must stamp the reason onto the result")
+        "mark_finished must stamp the reason onto the result")
     end)
   end)
 end)

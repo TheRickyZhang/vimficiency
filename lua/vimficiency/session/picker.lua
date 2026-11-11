@@ -7,7 +7,9 @@
 
 local v = vim.api
 
-local session = require("vimficiency.session")
+local archive = require("vimficiency.session.archive")
+local disk = require("vimficiency.session.disk")
+local playback = require("vimficiency.session.playback")
 local session_store = require("vimficiency.session.store")
 local alias_mod = require("vimficiency.session.alias")
 local highlights = require("vimficiency.highlights")
@@ -20,6 +22,13 @@ local util = require("vimficiency.util")
 -- Namespace for picker-owned extmarks (header pane indicator, section
 -- dividers). Cleared and re-populated on every render().
 local picker_ns = v.nvim_create_namespace("vimficiency.session.picker")
+
+--- Picker callbacks are an error boundary like `:Vimfy`: archive actions raise.
+local function run_or_notify(fn, ...)
+  local ok, err = pcall(fn, ...)
+  if not ok then vim.notify(tostring(err), vim.log.levels.ERROR) end
+  return ok
+end
 
 local M = {}
 
@@ -299,7 +308,7 @@ local function act_open()
         vim.notify("Need an alphabetic alias (got '" .. alias .. "')", vim.log.levels.ERROR)
         return
       end
-      session.fetch(it.name, alias)
+      if not run_or_notify(archive.fetch, it.name, alias) then return end
       close()
       -- Reopen on Active pane so the user sees the newly fetched entry.
       vim.schedule(function()
@@ -323,11 +332,11 @@ local function act_open()
       it.name .. "' first.", vim.log.levels.INFO)
     return
   end
-  -- Finished active: run simulate. `session.simulate` opens its own window,
+  -- Finished active: run simulate. `playback.simulate` opens its own window,
   -- so close the picker first.
   local alias = it.name
   close()
-  vim.schedule(function() session.simulate(alias) end)
+  vim.schedule(function() playback.simulate(alias) end)
 end
 
 local function act_delete()
@@ -349,7 +358,7 @@ local function act_delete()
     if it.pane == "active" then
       session_store.remove(it.key)
     else
-      session.rm(it.name)
+      run_or_notify(archive.rm, it.name)
     end
     s.marked[model.mark_key(it)] = nil
     render()
@@ -372,7 +381,7 @@ local function act_delete_marked()
       if pane == "active" then
         session_store.remove(rest)
       elseif pane == "saved" then
-        session.rm(rest)
+        run_or_notify(archive.rm, rest)
       end
     end
     state.marked = {}
@@ -417,9 +426,9 @@ local function act_rename()
     if not input or input == "" or input == it.name then return end
     local ok, err
     if it.pane == "saved" then
-      ok, err = session.rename_saved(it.name, input)
+      ok, err = disk.rename(it.name, input)
     else
-      ok, err = session.rename_active(it.name, input)
+      ok, err = archive.rename_active(it.name, input)
     end
     if not ok then
       vim.notify(err or "rename failed", vim.log.levels.ERROR)
@@ -448,9 +457,9 @@ local function act_duplicate()
       if not input or input == "" then return end
       local ok, err
       if it.pane == "saved" then
-        ok, err = session.duplicate_saved(it.name, input)
+        ok, err = disk.duplicate(it.name, input)
       else
-        ok, err = session.duplicate_active(it.name, input)
+        ok, err = archive.duplicate_active(it.name, input)
       end
       if not ok then
         vim.notify(err or "duplicate failed", vim.log.levels.ERROR)

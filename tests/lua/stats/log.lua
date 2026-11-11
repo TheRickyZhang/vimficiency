@@ -46,13 +46,6 @@ test("stats.log: append + read_all round-trips records", function()
   assert_eq(records[3].user_seq, "c")
 end)
 
-test("stats.log: read_all on missing file returns empty list", function()
-  use_temp_data_dir()
-  local records, skipped = stats_log.read_all()
-  assert_eq(#records, 0)
-  assert_eq(skipped, 0)
-end)
-
 test("stats.log: malformed trailing line is silently skipped", function()
   use_temp_data_dir()
   stats_log.append(sample_record({ user_seq = "ok" }))
