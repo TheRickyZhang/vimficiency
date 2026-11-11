@@ -3,7 +3,7 @@
 > **Superseded for capture.** Manual sessions, recall, and the Watch/Suggest
 > triggers now capture through the `CmdAtom` autocmd (Neovim 0.13-dev / nightly),
 > which reports one resolved, replayable unit per command and sidesteps every
-> issue below. See `dev/lua/atom-capture.md`. This document remains as the
+> issue below. See `dev/lua/atom-stream.md`. This document remains as the
 > rationale for that migration and still applies to `capture/key_tracking.lua`,
 > which lives on only for interactive Explore's frontier replay.
 
@@ -192,8 +192,8 @@ For sequences with text objects (`ciw`, `daw`, `yi"`, etc.):
 ## Binding-shape characterization (2026-04)
 
 Recorded behavior of `vim.on_key` when the user types the LHS of a
-multi-key Normal-mode mapping. Pinned down by
-`tests/lua/capture/on_key_mapping_probe.lua`. **Two distinct paths
+multi-key Normal-mode mapping, recorded with a throwaway `vim.on_key` probe
+(since deleted). **Two distinct paths
 depending on how the LHS is delivered:**
 
 ### Path A — LHS delivered as one burst (no delay between keys)

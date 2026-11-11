@@ -1,7 +1,7 @@
 -- Pure key-sequence helpers for interactive Explore's frontier replay.
 --
 -- Capture (manual/recall/triggers) moved to the `CmdAtom` event; see
--- `capture/atoms.lua` and `dev/lua/atom-capture.md`. Explore still runs its own
+-- `capture/atom_stream.lua` and `dev/lua/atom-stream.md`. Explore still runs its own
 -- `vim.on_key` namespace (`explore/key_capture.lua`) and accumulates raw
 -- `VF.KeyEvent`s on the view, then reduces them with the helpers below.
 local M = {}

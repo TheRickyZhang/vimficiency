@@ -20,7 +20,7 @@ local function seed_and_finish_manual(alias, finish_alias)
   ---@diagnostic disable-next-line: missing-fields
   session_store.store_manual(alias, {
     id = id,
-    capture_sub = nil,   -- no live subscriber to detach in finish_session
+    stream_sub = nil,   -- no live subscriber to detach in finish_session
     status = "active",
     atoms = {},
   })

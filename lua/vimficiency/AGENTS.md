@@ -15,10 +15,10 @@ Top-level modules are the plugin entry and cross-cutting infrastructure:
 | `play.lua` | Play-screen settings and modal wiring. Required as `vimficiency.play`. |
 | `stats.lua` | Stats aggregation and display. Required as `vimficiency.stats`. |
 | `commands.lua` | `:Vimfy` generic dispatch, usage checks, and tab completion over the subcommand table. |
-| `commands/defs.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, fn) per `:Vimfy` verb. |
+| `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, fn) per `:Vimfy` verb. Depends on the domain modules; nothing depends on it except `commands.lua` and `init.lua`. |
 | `dev_reload.lua` | `:Vimfy reload`: cmake rebuild, then hot-reload the `.so` and every Lua module. |
 | `config.lua` | Shared configuration constants (Lua-side only). |
-| `config_detail.lua` | Config introspection / validation helpers. |
+| `config/validate.lua` | Validators for the structured `watch` and `auto_suggest` blocks; the shape itself stays in `config.lua`. |
 | `ffi.lua` | Compatibility surface for LuaJIT FFI bindings to `libvimficiency.so`. |
 | `util.lua` | State capture, ID generation, UI helpers. |
 
@@ -72,7 +72,7 @@ Subdirectories hold supporting modules for each domain:
 
 | File | Purpose |
 |------|---------|
-| `capture/atoms.lua` | CmdAtom-driven capture: one atom per atomic user action, normalized and fanned out to named subscribers (manual/recall/triggers). See `dev/lua/atom-capture.md`. |
+| `capture/atom_stream.lua` | CmdAtom-driven capture: one atom per atomic user action, normalized and fanned out to named subscribers (manual/recall/triggers). See `dev/lua/atom-stream.md`. |
 | `capture/key_tracking.lua` | Legacy `vim.on_key()` capture, now used only by interactive Explore's frontier replay. |
 | `capture/recall.lua` | Rolling recall-ring capture driven by atom events. |
 | `capture/end_trigger.lua` | Idle/command-count auto-end triggers (Watch / Suggest). |
@@ -93,14 +93,14 @@ Subdirectories hold supporting modules for each domain:
    Both indexing modes share one ring — `N` means "N commands ago", `Ns` means
    "as far back as N seconds ago". Because each atom is already a complete
    command boundary, no mode-based backward snapping is needed. Permanently on
-   (installed by `recall_capture.install()` at setup). Retention is bounded
+   (started by `recall_capture.start_continuous_capture()` at setup). Retention is bounded
    under **union** semantics: evict the oldest session only when BOTH
    `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS` say drop.
 
 ### Data Structures
 
 - **SessionRecord**: Canonical per-session entry with `status` ("active" | "finished"),
-  `capture_sub` (the atom-subscriber name, while active), the captured `atoms` list
+  `stream_sub` (the atom-subscriber name, while active), the captured `atoms` list
   (while active), and `result` (after finish).
 - **ResultSession**: Optimizer output + position + captured `start_time`/`key_count`,
   attached to the record at finish.
@@ -112,15 +112,15 @@ and drops `atoms` — it does NOT unindex. This removes tombstones from
 `recall_id_order` entirely: a finished session stays reachable via its recall
 alias (for `:Vimfy play Ns`) until the ring slot rotates out.
 
-## Capture (capture/atoms.lua)
+## Atom stream (capture/atom_stream.lua)
 
 Capture (manual sessions, recall, Watch/Suggest triggers) runs off Neovim's
 `CmdAtom` autocmd (0.13-dev / nightly). The event fires once per atomic user
 action, AFTER it runs, carrying the resolved post-mapping `keys`, the `lhs`
 that produced it, the count, and whether the buffer changed or the cursor
-moved. `atoms.lua` normalizes each event into a `VF.Atom`, classifies it
-(record / mouse / skip / abort), and fans it out to named subscribers; buffer
-and window scoping is each subscriber's job. See `dev/lua/atom-capture.md` for
+moved. `atom_stream.lua` normalizes each event into a `VF.Atom`, classifies it
+(record / skip / abort), and fans it out to named subscribers; buffer
+and window scoping is each subscriber's job. See `dev/lua/atom-stream.md` for
 the full design (admission policy, synthetic-count stripping, recall
 snapshot-shift, the deferred-burst limitation).
 
@@ -143,7 +143,7 @@ interactive Explore's frontier replay, which still consumes raw key events.
 
 ```lua
 ffi_optimizer.analyze(lines, ...) → VF.Optimizer.Result[], user_cost, debug_str, VF.Diff.Region[]
-ffi_config.configure(user_config)  -- Push config to C++
+ffi_config.apply_globals(user_config)  -- Push the C++ process globals (cost model, Vim options)
 ffi_sequence.tokenize_sequence(seq) → VF.Sequence.Token[]  -- {text, kind} tokens
 ffi_sequence.tokenize_movements(seq) → VF.Sequence.Token[]   -- all kind="motion"
 ```
@@ -152,7 +152,7 @@ ffi_sequence.tokenize_movements(seq) → VF.Sequence.Token[]   -- all kind="moti
 
 ## Configuration (config.lua)
 
-Lua-side constants (not pushed to C++):
+Config keys are owned by exactly one side. C++ owns process globals (`VFConfig`: keyboard cost model, shiftwidth), pushed once by `ffi_config.apply_globals`. Lua owns everything read at call time, including per-search optimizer parameters passed as FFI arguments:
 
 | Setting | Default | Description |
 |---------|---------|-------------|

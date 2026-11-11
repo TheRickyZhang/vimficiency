@@ -6,51 +6,14 @@ local alias_mod = require("vimficiency.session.alias")
 local explore = require("vimficiency.explore")
 local explore_result = require("vimficiency.explore.result")
 local dev_reload = require("vimficiency.dev_reload")
+local util = require("vimficiency.util")
 
 ---@class VF.Subcommand
 ---@field desc string
 ---@field usage string
 ---@field min_args? integer  Dispatch raises "Usage: Vimfy <usage>" when fewer are given
----@field complete? fun(args: string[]): string[]  Candidates for `args[#args]`; prefix filtering is generic
+---@field complete? (string[]|fun(): string[])[]  Candidates indexed by argument position; prefix filtering is generic
 ---@field fn fun(args: string[])
-
---- In-memory aliases plus the special selectors (`@` last finished, `$` last
---- regression) and recall time hints; optionally the saved disk names too.
----@param include_saved boolean
----@return string[]
-local function selector_candidates(include_saved)
-  local candidates = session.list()
-  table.insert(candidates, "@")
-  table.insert(candidates, "$")
-  for _, t in ipairs(alias_mod.TIME_HINTS) do
-    table.insert(candidates, t)
-  end
-  if include_saved then
-    for _, name in ipairs(session.list_saved()) do
-      table.insert(candidates, name)
-    end
-  end
-  return candidates
-end
-
-local function manual_aliases()
-  return vim.tbl_filter(alias_mod.is_valid_manual, session.list())
-end
-
-local function all_selectors()
-  return selector_candidates(true)
-end
-
---- Explicit `[<name>]` arg wins; otherwise defer to `session.default_save_name()`.
-local function resolve_save_name(verb, selector, explicit)
-  if explicit then return explicit end
-  local name = session.default_save_name(selector)
-  if not name then
-    error(verb .. " " .. selector .. ": nothing to name automatically. " ..
-      "Pass an explicit <name>, or run a session first.", 0)
-  end
-  return name
-end
 
 ---@type table<string, VF.Subcommand>
 return {
@@ -58,7 +21,7 @@ return {
     desc = "Start a manual session",
     usage = "start <alias>",
     min_args = 1,
-    complete = manual_aliases,
+    complete = { session.list_manual },
     fn = function(args) session.start(args[1]) end,
   },
 
@@ -66,7 +29,7 @@ return {
     desc = "Start a watch session (manual start, auto end on idle)",
     usage = "watch <alias>",
     min_args = 1,
-    complete = manual_aliases,
+    complete = { session.list_manual },
     fn = function(args) session.watch(args[1]) end,
   },
 
@@ -74,7 +37,7 @@ return {
     desc = "Finish a manual session and show results",
     usage = "finish <alias>",
     min_args = 1,
-    complete = manual_aliases,
+    complete = { session.list_manual },
     fn = function(args) session.finish(args[1]) end,
   },
 
@@ -82,7 +45,7 @@ return {
     desc = "Finish a retrospective recall window (N commands ago or Ns)",
     usage = "recall <N|Ns>",
     min_args = 1,
-    complete = function() return alias_mod.TIME_HINTS end,
+    complete = { alias_mod.TIME_HINTS },
     fn = function(args) session.recall(args[1]) end,
   },
 
@@ -90,13 +53,7 @@ return {
     desc = "Close a session without finishing",
     usage = "close <alias>",
     min_args = 1,
-    complete = function()
-      local aliases = session.list()
-      for _, t in ipairs(alias_mod.TIME_HINTS) do
-        table.insert(aliases, t)
-      end
-      return aliases
-    end,
+    complete = { session.list_closeable },
     fn = function(args) session.close(args[1]) end,
   },
 
@@ -104,10 +61,8 @@ return {
     desc = "Play your sequence side-by-side with the optimizer's suggestions",
     usage = "play <selector>|@|$ [windows]",
     min_args = 1,
-    complete = all_selectors,
-    fn = function(args)
-      session.simulate(args[1], args[2] and tonumber(args[2]) or nil)
-    end,
+    complete = { session.list_selectors_and_saved },
+    fn = function(args) session.simulate(args[1], tonumber(args[2])) end,
   },
 
   focus = {
@@ -133,34 +88,30 @@ return {
     desc = "Copy a finished session result to disk (keeps the session copy)",
     usage = "save <selector>|@|$ [<name>]",
     min_args = 1,
-    complete = function(args) return #args == 2 and selector_candidates(false) or {} end,
-    fn = function(args)
-      session.save(args[1], resolve_save_name("save", args[1], args[2]))
-    end,
+    complete = { session.list_selectors },
+    fn = function(args) session.save(args[1], args[2]) end,
   },
 
   store = {
     desc = "Move a finished session from memory to disk (removes the session copy)",
     usage = "store <selector>|@|$ [<name>]",
     min_args = 1,
-    complete = function(args) return #args == 2 and selector_candidates(false) or {} end,
-    fn = function(args)
-      session.store(args[1], resolve_save_name("store", args[1], args[2]))
-    end,
+    complete = { session.list_selectors },
+    fn = function(args) session.store(args[1], args[2]) end,
   },
 
   fetch = {
     desc = "Copy a saved result from disk into the current session",
     usage = "fetch <name> [<alias>]",
     min_args = 1,
-    complete = function(args) return #args == 2 and session.list_saved() or {} end,
+    complete = { session.list_saved },
     fn = function(args) session.fetch(args[1], args[2] or args[1]) end,
   },
 
   view = {
     desc = "View a finished result full-screen (selector or saved name)",
     usage = "view [<selector>|@|$|<name>]",
-    complete = all_selectors,
+    complete = { session.list_selectors_and_saved },
     fn = function(args) session.view(args[1]) end,
   },
 
@@ -168,7 +119,7 @@ return {
     desc = "Delete a saved result from disk",
     usage = "rm <name>",
     min_args = 1,
-    complete = session.list_saved,
+    complete = { session.list_saved },
     fn = function(args) session.rm(args[1]) end,
   },
 
@@ -188,34 +139,22 @@ return {
     desc = "Control auto-suggest (cost-based suggestions)",
     usage = "suggest <on|off|toggle>",
     min_args = 1,
-    complete = function() return { "on", "off", "toggle" } end,
+    complete = { { "on", "off", "toggle" } },
     fn = function(args)
       local action = args[1]
-      local function enable_or_warn()
-        if config.auto_suggest == false then
-          error("auto-suggest is turned off in setup{} (auto_suggest = false). Remove that to enable.", 0)
-        end
-        if auto_suggest.enable() then
-          vim.notify("vimfy auto-suggest enabled", vim.log.levels.INFO)
-        else
-          vim.notify("vimfy auto-suggest already enabled", vim.log.levels.WARN)
-        end
+      if action ~= "on" and action ~= "off" and action ~= "toggle" then
+        error("Usage: Vimfy suggest <on|off|toggle>", 0)
       end
-
-      if action == "on" then
-        enable_or_warn()
-      elseif action == "off" then
+      local turn_on = action == "on" or (action == "toggle" and not auto_suggest.is_enabled())
+      if not turn_on then
         auto_suggest.disable()
         vim.notify("vimfy auto-suggest disabled", vim.log.levels.INFO)
-      elseif action == "toggle" then
-        if auto_suggest.is_enabled() then
-          auto_suggest.disable()
-          vim.notify("vimfy auto-suggest disabled", vim.log.levels.INFO)
-        else
-          enable_or_warn()
-        end
+      elseif config.auto_suggest == false then
+        error("auto-suggest is turned off in setup{} (auto_suggest = false). Remove that to enable.", 0)
+      elseif auto_suggest.enable() then
+        vim.notify("vimfy auto-suggest enabled", vim.log.levels.INFO)
       else
-        error("Usage: Vimfy suggest <on|off|toggle>", 0)
+        vim.notify("vimfy auto-suggest already enabled", vim.log.levels.WARN)
       end
     end,
   },
@@ -229,14 +168,7 @@ return {
   config = {
     desc = "Show current configuration",
     usage = "config",
-    fn = function()
-      local debug_output = ffi_core.debug_config()
-      vim.cmd("botright new")
-      local buf = vim.api.nvim_get_current_buf()
-      vim.bo[buf].buftype = "nofile"
-      vim.bo[buf].bufhidden = "wipe"
-      vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(debug_output, "\n"))
-    end,
+    fn = function() util.show_output("Vimfy Config", ffi_core.debug_config()) end,
   },
 
   version = {
@@ -257,7 +189,7 @@ return {
     desc = "Open the interactive explore scratch view for a finished result",
     usage = "explore <selector>|@|$",
     min_args = 1,
-    complete = all_selectors,
+    complete = { session.list_selectors_and_saved },
     fn = function(args)
       local selector = args[1]
       local result, err = session.resolve_result(selector)

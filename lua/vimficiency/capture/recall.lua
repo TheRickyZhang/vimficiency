@@ -1,32 +1,30 @@
-local atoms = require("vimficiency.capture.atoms")
+local atom_stream = require("vimficiency.capture.atom_stream")
 local session_store = require("vimficiency.session.store")
 
 local M = {}
 
 local SUBSCRIBER = "recall_capture"
 
---- Install the global recall-capture subscriber. Idempotent: a redundant
---- call (e.g. a second `setup()` invocation) returns false and emits a
---- warning so the double-setup bug surfaces instead of silently leaving
---- recall disabled.
----@return boolean installed  true if the subscriber was newly attached
-function M.install()
-  if not atoms.available() then
-    return false
-  end
+---@param atom VF.Atom
+---@return boolean
+local function in_live_file_buffer(atom)
+  return vim.api.nvim_buf_is_valid(atom.buf)
+    and vim.bo[atom.buf].buftype == ""
+    and vim.api.nvim_win_is_valid(atom.win)
+end
 
-  local ok = atoms.subscribe(SUBSCRIBER, function(atom, verdict)
-    if verdict == "mouse" then
-      session_store.mark_recall_mouse(atom.buf)
-      return
-    end
-    if verdict ~= "record" then return end
-    if not vim.api.nvim_buf_is_valid(atom.buf) then return end
-    if vim.bo[atom.buf].buftype ~= "" then return end
-    if not vim.api.nvim_win_is_valid(atom.win) then return end
+--- Silently drops anything that is not a replayable command in a live file buffer.
+---@param atom VF.Atom
+---@param decision VF.Atom.Decision
+local function on_atom(atom, decision)
+  if decision == "record" and in_live_file_buffer(atom) then
     session_store.ingest_recall_atom(atom)
-  end)
+  end
+end
 
+---@return boolean started  true if the listener was newly attached
+function M.start_continuous_capture()
+  local ok = atom_stream.add_listener(SUBSCRIBER, on_atom)
   if not ok then
     vim.notify(
       "vimfy: recall capture already installed (subscriber name " ..

@@ -1,9 +1,11 @@
 local config = require("vimficiency.config")
-local atoms = require("vimficiency.capture.atoms")
+local atom_stream = require("vimficiency.capture.atom_stream")
 local auto_suggest = require("vimficiency.capture.auto_suggest")
 local commands = require("vimficiency.commands")
+local subcommands = require("vimficiency.subcommands")
 local recall_capture = require("vimficiency.capture.recall")
 local ffi_config = require("vimficiency.ffi.config")
+local util = require("vimficiency.util")
 
 local M = {}
 
@@ -17,22 +19,47 @@ M.AUGROUP = "Vimficiency"
 
 --- The only error boundary for `:Vimfy`. Everything below raises.
 local function cmdline_entry(opts)
-  local ok, err = pcall(commands.handle, opts.args)
+  local args = vim.split(opts.args, "%s+", { trimempty = true })
+  local subcmd = table.remove(args, 1)
+
+  --- No subcommand called -> list all subcommands
+  if not subcmd then
+    local cmd_lines = {}
+    for _, cmd in pairs(subcommands) do
+      table.insert(cmd_lines, string.format("  Vimfy %-20s %s", cmd.usage, cmd.desc))
+    end
+    table.sort(cmd_lines)
+    util.show_output("Vimfy Commands", table.concat(cmd_lines, "\n"), {
+      ui_keys = {
+        title = "Vimfy Scratch Output Keys",
+        docs = true,
+      },
+    })
+    return
+  end
+
+  -- Dispatch to subcommands
+  local ok, err = pcall(commands.dispatch_subcommand, subcmd, args)
   if not ok then
     vim.notify(tostring(err), vim.log.levels.ERROR)
   end
 end
 
 
--- Binding keys: no plugin API. CmdAtom reports the resolved command, so a key
--- bound to a `:Vimfy` action produces an inert excmd atom and is excluded from
--- recordings on its own — users bind directly with
--- `vim.keymap.set('n', lhs, '<Cmd>Vimfy start a<CR>', { silent = true })` or a
--- `<Plug>Vimfy*` map. The `<Plug>` maps below are registered the same way.
-
 -- Lifecycle: setup, teardown, and dev reload.
 
+--- Plugin entry point
+--- called from user's config (`require("vimficiency").setup{...}`) and by `:Vimfy reload`.
+--- In order:
+--- * apply config to Lua and C++,
+--- * register the `:Vimfy` command
+--- * setup capture mechanism
+---@param user_config? table  Keys from `config.lua` and `ffi/config.lua`; unknown keys warn
 function M.setup(user_config)
+  -- Require CmdAtom for our capture semantics to work
+  if not atom_stream.supported() then
+    error("vimfy: this Neovim lacks the CmdAtom event; session capture needs 0.13-dev / nightly", 0)
+  end
   user_config = user_config or {}
   config.reset()
 
@@ -45,13 +72,14 @@ function M.setup(user_config)
   vim.cmd.helptags(plugin_dir .. "/doc")
 
   if not user_config.shiftwidth then
-    -- vim.fn.shiftwidth() resolves the "0 means follow tabstop" case to the
-    -- effective width; vim.o.shiftwidth can be 0, which the C++ side can't model.
+    -- Handle 'shiftwidth=0' means "follow tabstop" -> use real width
     user_config.shiftwidth = vim.fn.shiftwidth()
   end
 
+  -- Lua is for runtime concerns
   local lua_consumed = config.apply(user_config)
-  local cpp_consumed = ffi_config.configure(user_config)
+  -- C++ is for per-process globals (keyboard cost model, Vim options), pushed once here.
+  local cpp_consumed = ffi_config.apply_globals(user_config)
 
   local unknown = {}
   for key in pairs(user_config) do
@@ -59,6 +87,7 @@ function M.setup(user_config)
       table.insert(unknown, tostring(key))
     end
   end
+  -- Warn about unknown keys
   if #unknown > 0 then
     table.sort(unknown)
     vim.notify(
@@ -67,6 +96,7 @@ function M.setup(user_config)
     )
   end
 
+  -- aliases of Vimfy and Vimficiency will work
   for _, name in ipairs({ "Vimfy", "Vimficiency" }) do
     vim.api.nvim_create_user_command(name, cmdline_entry, {
       nargs = "*",
@@ -75,38 +105,10 @@ function M.setup(user_config)
     })
   end
 
-  local function register_plug(name, spec)
-    vim.keymap.set("n", "<Plug>Vimfy" .. name, "<Cmd>Vimfy " .. spec .. "<CR>",
-      { silent = true, desc = "Vimfy " .. spec })
-  end
-  for _, alias in ipairs({ "a", "b", "c", "d", "e" }) do
-    local upper = alias:upper()
-    register_plug("Start" .. upper, "start " .. alias)
-    register_plug("Watch" .. upper, "watch " .. alias)
-    register_plug("Finish" .. upper, "finish " .. alias)
-    register_plug("Close" .. upper, "close " .. alias)
-    register_plug("Play" .. upper, "play " .. alias)
-  end
-  register_plug("SuggestOn", "suggest on")
-  register_plug("SuggestOff", "suggest off")
-  register_plug("SuggestToggle", "suggest toggle")
-  register_plug("List", "list")
-  register_plug("Config", "config")
-  register_plug("Help", "help")
+  -- Capture: recall always listens; auto-suggest only if the user configured a trigger.
+  recall_capture.start_continuous_capture()
 
-  if not atoms.available() then
-    vim.schedule(function()
-      vim.notify(
-        "vimfy: this Neovim lacks the CmdAtom event (needs 0.13-dev / nightly). " ..
-        "Commands and views work, but session capture (mark/watch/recall/suggest) " ..
-        "is disabled until you upgrade.",
-        vim.log.levels.WARN)
-    end)
-  end
-
-  recall_capture.install()
-
-  if config.auto_suggest and auto_suggest.is_configured() then
+  if auto_suggest.is_configured() then
     auto_suggest.enable()
   end
 end
@@ -130,7 +132,7 @@ function M.shutdown()
   if ok_drop then dropped_active = n or 0 end
 
   -- Tear down the CmdAtom capture and every subscriber last.
-  pcall(atoms.shutdown)
+  pcall(atom_stream.shutdown)
 
   pcall(vim.api.nvim_create_augroup, M.AUGROUP, { clear = true })
 

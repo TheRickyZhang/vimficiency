@@ -87,15 +87,3 @@ test("result_window: recomputes diffs when the result lacks them", function()
   assert_true(#v.nvim_tabpage_list_wins(0) == 3, "view still opens with recomputed diffs")
   close_view_tab()
 end)
-
-test("result_window: header carries the mouse warning when had_mouse", function()
-  open_fixture({ had_mouse = true })
-  local header
-  for _, w in ipairs(v.nvim_tabpage_list_wins(0)) do
-    local b = v.nvim_win_get_buf(w)
-    if v.nvim_buf_get_name(b):find("/header$") then header = b end
-  end
-  local text = table.concat(v.nvim_buf_get_lines(header, 0, -1, false), "\n")
-  assert_true(text:find("mouse/scroll") ~= nil, "header warns about mouse input")
-  close_view_tab()
-end)

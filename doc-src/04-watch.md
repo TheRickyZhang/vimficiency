@@ -37,5 +37,5 @@ does. Ask if you'd use them and we can extend.
 
 ## See also
 
-- [8. Binding keys](08-keymaps.md) — `<Plug>VimfyWatchA` / `<Plug>VimfyWatchB`.
+- [8. Binding keys](08-keymaps.md) — bind `<Cmd>Vimfy watch a<CR>`.
 - [9. Configuration](09-configuration.md) — full shape of the `watch` key in `setup{}`.

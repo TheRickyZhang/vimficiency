@@ -1,5 +1,5 @@
 -- Convert raw input bytes into the C++ tokenizer's printable form. Fed by the
--- CmdAtom capture (`capture/atoms.lua`, the keys/lhs fields) and by Explore's
+-- CmdAtom capture (`capture/atom_stream.lua`, the keys/lhs fields) and by Explore's
 -- own `vim.on_key` listener. See dev/lua/key-normalization.md for the contract.
 
 local M = {}

@@ -24,7 +24,7 @@ internals and implementation notes, see `dev/`.
 6. [Suggest](06-suggest.md) — auto start, auto end (idle-surfaces result)
 7. [Inspecting results](07-results.md) — notifications, simulate, list, view
    - [7a. Session storage](07a-session-storage.md) — workspace (memory) vs. archive (disk)
-8. [Binding keys to Vimfy](08-keymaps.md) — `<Cmd>Vimfy ...<CR>` and `<Plug>` maps
+8. [Binding keys to Vimfy](08-keymaps.md) — `<Cmd>Vimfy ...<CR>` maps
 9. [Configuration](09-configuration.md) — setup knobs
 10. [The effort model](10-effort-model.md) — how "cost" is computed
 11. [Commands reference](11-commands.md) — cheat sheet
@@ -64,7 +64,6 @@ command, so a non-editing binding is excluded automatically. Bind it
 whichever way you like:
 
 - `vim.keymap.set('n', '<leader>vs', '<Cmd>Vimfy start a<CR>', { silent = true })` — recommended
-- `<Plug>VimfyStartA` — for users who prefer the Vim convention
 - a plain `nnoremap X :Vimfy start a<CR>` also works
 
 Full detail: [8. Keymaps](08-keymaps.md). Later pages use these mappings

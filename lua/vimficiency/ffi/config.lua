@@ -39,8 +39,12 @@ local function apply_scalars(src, dst, key_prefix, strict)
   return consumed
 end
 
+--- Push the process-global C++ state: the keyboard cost model (layout, per-key
+--- costs, effort weights, count penalties) plus the Vim options the simulator needs
+--- (shiftwidth). Applied once per `setup()`; every search reads it from C++ globals.
+--- Everything else in `user_config` is Lua-owned and passed per call or read lazily.
 ---@return table<string, true> consumed
-function M.configure(user_config)
+function M.apply_globals(user_config)
   local config = lib.vf_get_config()
 
   local consumed = apply_scalars(user_config, config)
@@ -109,7 +113,7 @@ function M.configure(user_config)
   return consumed
 end
 
-function M.reset_config()
+function M.reset_globals()
   lib.vf_reset_config()
 end
 

@@ -20,7 +20,7 @@ to see it animated.
 
 Pair with [8. Keymaps](08-keymaps.md):
 ```vim
-nmap <leader>vv <Plug>VimfyPlayA  " or ...bind to PlayA / PlayB / etc.
+nnoremap <leader>vv <Cmd>Vimfy play a<CR>  " or ...bind to play b / play c / etc.
 ```
 ...so replaying a suggestion is a single keystroke.
 

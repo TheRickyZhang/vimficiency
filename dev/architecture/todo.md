@@ -226,7 +226,7 @@ behavior is the right default in the meantime.
 **Threshold to revisit.** A concrete request to have suggestions respect or
 propose user mappings, or activity-log evidence that resolved-keys suggestions
 are routinely worse for users who lean on custom mappings. Pointer:
-`lua/vimficiency/capture/atoms.lua` (`VF.Atom.lhs`/`count`) and wherever
+`lua/vimficiency/capture/atom_stream.lua` (`VF.Atom.lhs`/`count`) and wherever
 `user_seq`/`keyseq` is costed in `AnalyzeExports.cpp`.
 
 ---

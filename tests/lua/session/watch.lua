@@ -11,7 +11,7 @@ local config        = require("vimficiency.config")
 local session       = require("vimficiency.session")
 local session_store = require("vimficiency.session.store")
 local end_trigger   = require("vimficiency.capture.end_trigger")
-local atoms         = require("vimficiency.capture.atoms")
+local atom_stream         = require("vimficiency.capture.atom_stream")
 local h             = require("_helpers")
 
 local WATCH_CFG = { idle = { ms = 60000 }, cooldown_ms = 0 }
@@ -51,11 +51,11 @@ test("watch: close disarms the idle trigger", function()
       local rec = session_store.get_active("wclose")
       assert_true(rec ~= nil)
       rec = assert(rec)
-      assert_eq(atoms.is_subscribed("watch_" .. rec.id), true,
+      assert_eq(atom_stream._has_listener("watch_" .. rec.id), true,
         "global subscriber must be live while watching")
 
       session.close("wclose")
-      assert_eq(atoms.is_subscribed("watch_" .. rec.id), false,
+      assert_eq(atom_stream._has_listener("watch_" .. rec.id), false,
         "close must detach the global subscriber")
     end)
   end)
@@ -77,9 +77,9 @@ test("watch: overwrite disarms the prior trigger", function()
       assert_true(rec_a.id ~= rec_b.id,
         "overwrite must allocate a new id")
 
-      assert_eq(atoms.is_subscribed(name_a), false,
+      assert_eq(atom_stream._has_listener(name_a), false,
         "previous watch's global subscriber must be detached on overwrite")
-      assert_eq(atoms.is_subscribed("watch_" .. rec_b.id), true,
+      assert_eq(atom_stream._has_listener("watch_" .. rec_b.id), true,
         "new watch's global subscriber must be live")
       session.close("wover")
     end)
@@ -102,7 +102,7 @@ test("watch: finish (manual :Vimfy finish) disarms the trigger", function()
         session_store.finish_session(rec.id, fake_result, "wfinish", nil, "watch_idle"),
         true)
 
-      assert_eq(atoms.is_subscribed(name), false,
+      assert_eq(atom_stream._has_listener(name), false,
         "finish_session must disarm the watch trigger")
       assert_eq(fake_result.finish_reason, "watch_idle",
         "finish_session must stamp the reason onto the result")

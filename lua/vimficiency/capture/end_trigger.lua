@@ -3,7 +3,7 @@
 
 local M = {}
 
-local atoms = require("vimficiency.capture.atoms")
+local atom_stream = require("vimficiency.capture.atom_stream")
 
 ---@class VF.Capture.EndTriggerOpts
 ---@field name         string                       # Unique subscriber name.
@@ -49,7 +49,7 @@ function M.arm_idle(opts)
     timer:start(idle_ms, 0, vim.schedule_wrap(fire))
   end
 
-  local ok = atoms.subscribe(name, function()
+  local ok = atom_stream.add_listener(name, function()
     reset_timer()
   end)
   if not ok then
@@ -60,7 +60,7 @@ function M.arm_idle(opts)
   return function()
     if disarmed then return end
     disarmed = true
-    atoms.unsubscribe(name)
+    atom_stream.remove_listener(name)
     timer:stop()
     timer:close()
   end
@@ -92,9 +92,9 @@ function M.arm_keys(opts)
 
   -- One atom == one command, so `every` now counts commands, not raw
   -- keystrokes. The trigger fires every N captured atoms.
-  local ok = atoms.subscribe(name, function(_, verdict)
+  local ok = atom_stream.add_listener(name, function(_, decision)
     if disarmed then return end
-    if verdict ~= "record" then return end
+    if decision ~= "record" then return end
     count = count + 1
     if count < every then return end
     count = 0
@@ -116,7 +116,7 @@ function M.arm_keys(opts)
   return function()
     if disarmed then return end
     disarmed = true
-    atoms.unsubscribe(name)
+    atom_stream.remove_listener(name)
   end
 end
 

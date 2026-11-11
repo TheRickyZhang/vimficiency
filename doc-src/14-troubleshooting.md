@@ -55,12 +55,11 @@ errored — see the two sections above.
   setting can skew the cost.
 - See [13. Limitations](13-limitations.md) for the full list.
 
-## Session capture isn't recording anything
+## `setup()` fails with "lacks the CmdAtom event"
 
 Capture runs off the `CmdAtom` event, which only Neovim nightly
-(0.13-dev) exposes. On stable Neovim the commands and views work, but
-mark/watch/recall/suggest are disabled — `setup()` warns once at
-startup. Upgrade to a recent nightly to enable capture.
+(0.13-dev) exposes. The plugin refuses to load without it. Upgrade to a
+recent nightly.
 
 ## "unknown config keys ignored" warning
 

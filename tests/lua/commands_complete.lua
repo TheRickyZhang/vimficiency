@@ -20,3 +20,11 @@ test("commands.complete still prefix-matches subcommands", function()
   end
   assert_true(has_start, "literal prefix 'st' should still match start/stats/store")
 end)
+
+test("commands.complete offers candidates only at declared argument positions", function()
+  local first = "Vimfy suggest t"
+  assert_eq(vim.inspect(commands.complete("t", first, #first)), vim.inspect({ "toggle" }))
+
+  local second = "Vimfy suggest on "
+  assert_eq(#commands.complete("", second, #second), 0)
+end)

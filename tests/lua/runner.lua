@@ -128,10 +128,9 @@ else
   -- and files that `run.sh` dispatches to their own processes.
   local isolated = {
     ["simulate/integration.lua"] = true,
-    ["capture/on_key_mapping_probe.lua"] = true,
     -- Standalone async script (own harness, drives real input through the
     -- main loop for CmdAtom); run_sh dispatches it via `-c luafile`.
-    ["capture/atoms.lua"] = true,
+    ["capture/atom_stream.lua"] = true,
   }
   local candidates = vim.fn.glob(tests_dir .. "**/*.lua", false, true)
   for _, path in ipairs(candidates) do
@@ -147,13 +146,13 @@ end
 -- Reset stateful plugin/test surfaces while keeping one Neovim process.
 local function reset_state()
   -- The CmdAtom autocmd + subscriber registry survive module reload.
-  local atoms = package.loaded["vimficiency.capture.atoms"]
-  if atoms and type(atoms.shutdown) == "function" then atoms.shutdown() end
+  local atom_stream = package.loaded["vimficiency.capture.atom_stream"]
+  if atoms and type(atom_stream.shutdown) == "function" then atom_stream.shutdown() end
 
   -- C++ config lives in the shared library, not package.loaded.
   local ffi_lib = package.loaded["vimficiency.ffi"]
-  if ffi_lib and type(ffi_lib.reset_config) == "function" then
-    local ok, err = pcall(ffi_lib.reset_config)
+  if ffi_lib and type(ffi_lib.reset_globals) == "function" then
+    local ok, err = pcall(ffi_lib.reset_globals)
     if not ok then error("failed to reset native config: " .. tostring(err), 0) end
   end
 

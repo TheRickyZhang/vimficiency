@@ -51,41 +51,16 @@ local function apply_motion_conversions(keyseq)
   return result
 end
 
----@param atom_seq VF.Atom[]|nil
----@param reduced_sequence string
----@param normalized_sequence string
+--- Per-atom key boundaries behind `user_seq` (pre motion-conversion), which the
+--- concatenation loses. Persisted only for debugging.
+---@param atom_seq VF.Atom[]
 ---@return table
-local function build_capture_debug(atom_seq, reduced_sequence, normalized_sequence)
-  atom_seq = atom_seq or {}
-  local events = {}
-  local raw_parts = {}
-  local first_t = atom_seq[1] and tonumber(atom_seq[1].t) or nil
-
-  for i, atom in ipairs(atom_seq) do
-    raw_parts[#raw_parts + 1] = atom.keys or ""
-    local t = tonumber(atom.t)
-    events[#events + 1] = {
-      index = i,
-      t = tostring(atom.t or ""),
-      dt_ms = first_t and t and ((t - first_t) / 1000000) or 0,
-      type = atom.type or "",
-      keys = atom.keys or "",
-      lhs = atom.lhs or "",
-      count = atom.count,
-      changed = atom.changed,
-      moved = atom.moved,
-      win = atom.win or 0,
-      buf = atom.buf or 0,
-    }
-  end
-
+local function build_capture_debug(atom_seq)
+  local atom_keys = {}
+  for i, atom in ipairs(atom_seq) do atom_keys[i] = atom.keys end
   return {
-    version = 2,
-    event_count = #atom_seq,
-    raw_joined = table.concat(raw_parts),
-    reduced_sequence = reduced_sequence,
-    normalized_sequence = normalized_sequence,
-    events = #events > 0 and events or disk.empty_array(),
+    version = 3,
+    atom_keys = #atom_keys > 0 and atom_keys or disk.empty_array(),
   }
 end
 
@@ -174,8 +149,7 @@ local function prepare(active)
   -- Snapshot: a recall record keeps accumulating atoms while the async worker
   -- runs, and capture_debug must describe the atoms user_seq was built from.
   -- CmdAtom already resolves mappings and operator-pending duplication, so the
-  -- replayable sequence is just each atom's keys concatenated — no reduction,
-  -- no mouse filtering (mouse atoms never enter the stream).
+  -- replayable sequence is just each atom's keys concatenated — no reduction.
   local atom_seq = vim.list_extend({}, active.atoms)
   local raw_parts = {}
   for _, atom in ipairs(atom_seq) do raw_parts[#raw_parts + 1] = atom.keys end
@@ -202,7 +176,6 @@ local function prepare(active)
     keyseq_str = keyseq_str,
     keyseq_raw = keyseq_raw,
     atom_seq = atom_seq,
-    had_mouse = active.had_mouse or false,
     optimizer_overrides = ffi_optimizer.encode_optimizer_overrides({ shared = config.optimizer }),
   }
 end
@@ -264,9 +237,8 @@ local function finalize(ctx, analyze, analyze_ms)
     scroll_amount = ctx.start_state.scroll_amount,
     user_seq = ctx.keyseq_str,
     user_cost = analyze.user_cost,
-    had_mouse = ctx.had_mouse,
     optimal_results = optimal_results,
-    capture_debug = build_capture_debug(ctx.atom_seq, ctx.keyseq_raw, ctx.keyseq_str),
+    capture_debug = build_capture_debug(ctx.atom_seq),
     start_time = active.time_started,
     key_count = #ctx.atom_seq,
     timestamp = vim.uv.hrtime(),
