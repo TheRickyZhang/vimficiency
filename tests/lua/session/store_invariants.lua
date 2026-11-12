@@ -26,16 +26,8 @@ test("get_active('1s'): resolves when a record is older than the window", functi
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
 end)
 
-test("remove: rejects alias-shaped strings", function()
-  assert_error(function() session_store.remove("a") end,
-    "not an alias", "remove must reject alias 'a'")
-  assert_error(function() session_store.remove("3") end)
-  assert_error(function() session_store.remove("3s") end)
-end)
-
-test("remove: accepts a well-formed session id (no-op when unknown)", function()
-  local ok = pcall(session_store.remove, "NoName__20250101-000000-000__1__0001__b1")
-  assert_eq(ok, true, "well-formed id must pass the guard")
+test("remove: no-op when the id is unknown", function()
+  session_store.remove("NoName__20250101-000000-000__1__0001__b1")
 end)
 
 test("finish failure on a recall record preserves the ring slice", function()
@@ -43,9 +35,10 @@ test("finish failure on a recall record preserves the ring slice", function()
 
   local buf_b = h.new_buf({ "y" })
 
-  local ok, err
-  h.silence_notify(function() ok, err = pcall(session.recall, "3s") end)
-  assert_true(ok, "recall should not propagate errors from a failed compute: " .. tostring(err))
+  h.silence_notify(function()
+    assert_error(function() session.recall("3s") end, "buf " .. buf_b,
+      "recall from another buffer must raise, naming the current buffer")
+  end)
 
   assert_true(session_store.summarize(id) ~= nil,
     "recall record must survive a finish() failure")
@@ -68,17 +61,20 @@ test("has_room_for_named: finished records do not consume capacity slots", funct
     "a new alias must be allowed when all existing records are finished")
 end)
 
-test("finish failure on a mark record removes it (regression guard)", function()
+test("finish from another buffer raises and keeps the mark record for a re-run", function()
   local buf_a = h.new_buf()
   session.start("kfinishfail")
   assert_true(session_store.get_active("kfinishfail") ~= nil,
     "mark session should exist after start")
 
   local buf_b = h.new_buf({ "y" })
-  h.silence_notify(function() pcall(session.finish, "kfinishfail") end)
+  h.silence_notify(function()
+    assert_error(function() session.finish("kfinishfail") end, "buf " .. buf_b,
+      "finish from another buffer must raise, naming the current buffer")
+  end)
 
-  assert_eq(session_store.get_active("kfinishfail"), nil,
-    "mark record must be removed after finish failure")
+  assert_true(session_store.get_active("kfinishfail") ~= nil,
+    "mark record must survive so the user can refocus and re-run")
 
   pcall(vim.api.nvim_buf_delete, buf_a, { force = true })
   pcall(vim.api.nvim_buf_delete, buf_b, { force = true })

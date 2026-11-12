@@ -41,8 +41,8 @@ test("capture_end_state: window-closed fallback to current window", function()
   assert_true(not vim.api.nvim_win_is_valid(win_original),
     "sanity: original window is gone")
 
-  local end_state, err = compute.capture_end_state(active)
-  assert_true(end_state ~= nil, "must capture via the surviving window, got: " .. tostring(err))
+  local end_state = compute.capture_end_state(active)
+  assert_eq(end_state.lines[1], "hello world", "must capture via the surviving window")
 
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
 end)
@@ -54,9 +54,8 @@ test("capture_end_state: buffer-gone still hard-rejects", function()
   vim.cmd("enew")
   vim.api.nvim_buf_delete(buf, { force = true })
 
-  local end_state, err = compute.capture_end_state(active)
-  assert_eq(end_state, nil, "should fail when buffer gone")
-  assert_match(err, "buffer", "error must mention buffer")
+  assert_error(function() compute.capture_end_state(active) end,
+    "buffer", "should fail when buffer gone, naming the buffer")
 end)
 
 test("capture_end_state: different-buffer still hard-rejects", function()
@@ -64,8 +63,8 @@ test("capture_end_state: different-buffer still hard-rejects", function()
   local active = fake_active(buf_a, vim.api.nvim_get_current_win())
   local buf_b = h.new_buf({ "b" })
 
-  local end_state, err = compute.capture_end_state(active)
-  assert_eq(end_state, nil, "should fail when current buf differs")
+  local ok, err = pcall(compute.capture_end_state, active)
+  assert_eq(ok, false, "should fail when current buf differs")
   assert_match(err, "buf " .. buf_a, "error must name captured buffer")
   assert_match(err, "buf " .. buf_b, "error must name current buffer")
 

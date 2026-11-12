@@ -1,4 +1,3 @@
-local config = require("vimficiency.config")
 local core = require("vimficiency.ffi.core")
 
 local M = {}
@@ -13,133 +12,93 @@ local function checked_string(slice)
   return text
 end
 
-local function resolved_opts(opts)
-  local defaults = config.sequence_display or {}
-  opts = opts or {}
-  local tokenize = defaults.tokenize ~= false
-  local sectionize = defaults.sectionize ~= false
-  if opts.tokenize ~= nil then
-    tokenize = opts.tokenize
-  end
-  if opts.sectionize ~= nil then
-    sectionize = opts.sectionize
-  end
-  return {
-    tokenize = tokenize,
-    sectionize = sectionize,
-  }
-end
-
-local function required_number(result, key)
-  local value = result[key]
-  assert(type(value) == "number", "result." .. key .. " must be a number")
-  return tostring(value)
-end
-
-local function required_integer(result, key)
-  local value = result[key]
-  assert(type(value) == "number", "result." .. key .. " must be a number")
-  return value
-end
-
+---@param result VF.Session.Result
 local function encode_result(result)
-  result = result or {}
   local recs = {}
-  for _, rec in ipairs(result.optimal_results or {}) do
-    recs[#recs + 1] = rec.seq or ""
-    recs[#recs + 1] = tostring(rec.cost or 0)
+  for _, rec in ipairs(result.optimal_results) do
+    recs[#recs + 1] = rec.seq
+    recs[#recs + 1] = tostring(rec.cost)
   end
 
-  local has_user_cost = type(result.user_cost) == "number"
   return core.encode_string_list({
-    core.encode_string_list(result.lines or {}),
-    required_number(result, "start_row"),
-    required_number(result, "start_col"),
-    required_number(result, "end_row"),
-    required_number(result, "end_col"),
-    result.user_seq or "",
-    has_user_cost and "1" or "0",
-    has_user_cost and tostring(result.user_cost) or "",
+    core.encode_string_list(result.lines),
+    tostring(result.start_row),
+    tostring(result.start_col),
+    tostring(result.end_row),
+    tostring(result.end_col),
+    result.user_seq,
+    "1",
+    tostring(result.user_cost),
     result.kind or "",
     core.encode_string_list(recs),
   })
 end
 
-function M.sequence_display_lines(seq, opts)
-  local resolved = resolved_opts(opts)
-  local payload = checked_string(lib.vf_sequence_display_lines(
-    seq or "",
-    #(seq or ""),
-    resolved.tokenize,
-    resolved.sectionize
-  ))
+---@param seq string
+---@param tokenize boolean
+---@param sectionize boolean
+---@return string[]
+function M.sequence_display_lines(seq, tokenize, sectionize)
+  local payload = checked_string(lib.vf_sequence_display_lines(seq, #seq, tokenize, sectionize))
   return core.decode_string_list(payload)
 end
 
-function M.sequence_display_inline(seq, opts)
-  local resolved = resolved_opts(opts)
-  return checked_string(lib.vf_sequence_display_inline(
-    seq or "",
-    #(seq or ""),
-    resolved.tokenize
-  ))
+---@param seq string
+---@param tokenize boolean
+---@return string
+function M.sequence_display_inline(seq, tokenize)
+  return checked_string(lib.vf_sequence_display_inline(seq, #seq, tokenize))
 end
 
+---@param text string
+---@return string
 function M.sequence_display_key_notation(text)
-  text = text or ""
   return checked_string(lib.vf_sequence_display_key_notation(text, #text))
 end
 
+---@param text string
+---@param key_notation boolean
+---@return string
 function M.sequence_display_typed_text(text, key_notation)
-  text = text or ""
-  return checked_string(lib.vf_sequence_display_typed_text(
-    text,
-    #text,
-    key_notation
-  ))
+  return checked_string(lib.vf_sequence_display_typed_text(text, #text, key_notation))
 end
 
-function M.sequence_display_typed_chunks(chunks, opts)
-  local resolved = resolved_opts(opts)
+---@param chunks { kind: string, text: string }[]
+---@param tokenize boolean
+---@return string
+function M.sequence_display_typed_chunks(chunks, tokenize)
   local fields = {}
-  for _, chunk in ipairs(chunks or {}) do
-    fields[#fields + 1] = chunk.kind or ""
-    fields[#fields + 1] = chunk.text or ""
+  for _, chunk in ipairs(chunks) do
+    fields[#fields + 1] = chunk.kind
+    fields[#fields + 1] = chunk.text
   end
   local payload = core.encode_string_list(fields)
-  return checked_string(lib.vf_sequence_display_typed_chunks(
-    payload,
-    #payload,
-    resolved.tokenize
-  ))
+  return checked_string(lib.vf_sequence_display_typed_chunks(payload, #payload, tokenize))
 end
 
+---@param result VF.Session.Result
+---@return string
 function M.format_result_position(result)
-  result = result or {}
   return checked_string(lib.vf_format_result_position(
-    required_integer(result, "start_row"),
-    required_integer(result, "start_col"),
-    required_integer(result, "end_row"),
-    required_integer(result, "end_col")
-  ))
+    result.start_row, result.start_col, result.end_row, result.end_col))
 end
 
+---@param result VF.Session.Result
+---@return string
 function M.format_result_kind_suffix(result)
-  local kind = result and result.kind or ""
+  local kind = result.kind or ""
   return checked_string(lib.vf_format_result_kind_suffix(kind, #kind))
 end
 
-function M.format_result_message(title, result, opts)
-  local resolved = resolved_opts(opts)
+---@param title string
+---@param result VF.Session.Result
+---@param tokenize boolean
+---@param sectionize boolean
+---@return string
+function M.format_result_message(title, result, tokenize, sectionize)
   local payload = encode_result(result)
   return checked_string(lib.vf_format_result_message(
-    title or "",
-    #(title or ""),
-    payload,
-    #payload,
-    resolved.tokenize,
-    resolved.sectionize
-  ))
+    title, #title, payload, #payload, tokenize, sectionize))
 end
 
 return M

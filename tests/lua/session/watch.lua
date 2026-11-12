@@ -14,7 +14,7 @@ local end_trigger   = require("vimficiency.capture.end_trigger")
 local atom_stream         = require("vimficiency.capture.atom_stream")
 local h             = require("_helpers")
 
-local WATCH_CFG = { idle = { ms = 60000 }, cooldown_ms = 0 }
+local WATCH_CFG = h.watch_config({ idle = { ms = 60000 }, cooldown_ms = 0 })
 
 local function with_watch_cfg(cfg, fn)
   h.with_patch({ { config, "watch", cfg } }, fn)

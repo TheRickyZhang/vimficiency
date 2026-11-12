@@ -3,7 +3,10 @@
     "version": "LuaJIT"
   },
   "diagnostics": {
-    "globals": ["vim", "describe", "it", "before_each", "after_each"],
+    "globals": [
+      "vim", "describe", "it", "before_each", "after_each",
+      "test", "assert_eq", "assert_true", "assert_match", "assert_error"
+    ],
     "unusedLocalExclude": ["_*"],
     "severity": {
       "unused-local": "Warning",

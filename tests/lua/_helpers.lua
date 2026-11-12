@@ -115,11 +115,10 @@ function M.with_patch(patches, fn)
   if not ok then error(err, 2) end
 end
 
---- Canonical result table used by auto_suggest / session_kinds tests.
---- Accepts overrides to customize per-test specifics (user_cost,
---- optimal_results, etc.).
+--- A complete VF.Session.Result. `disk.validate` is the schema oracle, so a
+--- fixture that drifts from production fails here, not in the code under test.
 ---@param overrides table|nil
----@return table
+---@return VF.Session.Result
 function M.fake_result(overrides)
   local r = {
     start_row = 0, start_col = 0, end_row = 0, end_col = 0,
@@ -127,22 +126,27 @@ function M.fake_result(overrides)
     goal_lines = { "x" },
     has_lines_above = false,
     has_lines_below = false,
+    prefix = "",
+    suffix = "",
+    diffs = require("vimficiency.session.disk").empty_array(),
     window_height = 20,
     scroll_amount = 10,
     user_seq = "x",
     user_cost = 1.0,
     optimal_results = { { seq = "y", cost = 1.0 } },
+    key_count = 1,
     finished_wall_epoch = os.time(),
+    kind = "mark",
   }
-  if overrides then
-    for k, v in pairs(overrides) do r[k] = v end
-  end
+  for k, val in pairs(overrides or {}) do r[k] = val end
+  local err = require("vimficiency.session.disk").validate(r)
+  assert(err == nil, "fake_result does not satisfy disk.validate: " .. tostring(err))
   return r
 end
 
 ---@param user_seq string|nil
 ---@param overrides table|nil
----@return table
+---@return VF.Session.Result
 function M.finished_result(user_seq, overrides)
   local seq = user_seq or "abc"
   return M.fake_result(vim.tbl_deep_extend("force", {
@@ -151,8 +155,27 @@ function M.finished_result(user_seq, overrides)
     optimal_results = { { seq = seq, cost = 1.0 } },
     key_count = 0,
     finished_wall_epoch = 0,
-    kind = "mark",
   }, overrides or {}))
+end
+
+--- Config the way `setup()` would install it, so tests never hand-build the shape.
+--- `raw` is the user block (nil = no block, the default-gate shape); `patch` is
+--- applied on top of the normalized result.
+---@param raw table|nil
+---@param patch table|nil
+---@return table|false
+function M.auto_suggest_config(raw, patch)
+  local config = require("vimficiency.config")
+  local validate = require("vimficiency.config.validate")
+  local cfg = validate.normalize_auto_suggest(raw, config._defaults.auto_suggest)
+  for k, val in pairs(patch or {}) do cfg[k] = val end
+  return cfg
+end
+
+---@param raw table
+---@return table|false
+function M.watch_config(raw)
+  return require("vimficiency.config.validate").normalize_watch(raw)
 end
 
 ---@param name string
@@ -183,25 +206,12 @@ function M.seed_recall(opts)
   opts = opts or {}
   local session_store = require("vimficiency.session.store")
   local util = require("vimficiency.util")
-  local lines = opts.lines or { "x" }
-  local buf = opts.buf or M.new_buf(lines)
+  local buf = opts.buf or M.new_buf(opts.lines or { "x" })
   local win = vim.api.nvim_get_current_win()
   local id = opts.id or util.new_id(buf)
+  vim.api.nvim_win_set_buf(win, buf)
   local rec = session_store.new_active_session(
-    id, nil, win, buf,
-    {
-      row = 0,
-      col = 0,
-      lines = lines,
-      bufname = vim.api.nvim_buf_get_name(buf),
-      filetype = vim.bo[buf].filetype,
-      top_row = 0,
-      bottom_row = math.max(0, #lines - 1),
-      window_height = vim.api.nvim_win_get_height(win),
-      scroll_amount = vim.api.nvim_get_option_value("scroll", { win = win }),
-    },
-    "recall"
-  )
+    id, nil, win, buf, util.capture_state(buf, win), "recall")
   if opts.backdate_s then
     rec.started_mono_ns = vim.uv.hrtime() - opts.backdate_s * 1e9
   end

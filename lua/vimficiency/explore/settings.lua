@@ -75,7 +75,11 @@ function M.default_settings()
   local view = {}
   for _, spec in ipairs(VIEW_SETTINGS) do
     local user_override = config.explore[spec.key]
-    view[spec.key] = user_override ~= nil and user_override or spec.default
+    if user_override == nil then
+      view[spec.key] = spec.default
+    else
+      view[spec.key] = user_override
+    end
   end
   return { shared = {}, nav = {}, transform = {}, composition = {}, view = view }
 end
@@ -126,7 +130,7 @@ end
 ---@return any|nil
 function M.resolve_param(key, scope)
   local store = M.settings_store()
-  local scoped = store[scope] and store[scope][key]
+  local scoped = store[scope][key]
   if scoped ~= nil then return scoped end
   if not SHARED_OPTIMIZER_KEYS[key] then return nil end
   return store.shared[key]

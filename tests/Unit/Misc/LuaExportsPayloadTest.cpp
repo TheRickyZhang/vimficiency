@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 import std.compat;
-import vf.LuaExports.Common;
+import vf.LuaExports.Payload;
 import vf.Types.Lines;
 
 namespace payload = VF::LuaExports::payload;

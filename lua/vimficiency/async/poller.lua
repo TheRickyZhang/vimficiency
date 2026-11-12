@@ -1,3 +1,5 @@
+local util = require("vimficiency.util")
+
 local M = {}
 
 -- Cadence for checking the worker. The search is off-thread, so this only
@@ -33,16 +35,22 @@ function M.start(poll_fn, cancel_fn, on_ready)
   end
   handle.close_timer = close_timer
 
-  timer:start(0, POLL_INTERVAL_MS, vim.schedule_wrap(function()
+  timer:start(0, POLL_INTERVAL_MS, vim.schedule_wrap(util.entry(function()
     -- Guard against an already-queued tick firing after we resolved/cancelled:
     -- polling a taken job would abort in C++ (registry get on a freed id).
     if handle.done or handle.cancelled then return end
-    local value = poll_fn()
+    local ok, value = pcall(poll_fn)
+    if not ok then
+      -- A failed poll must stop the timer, or the error repeats every tick.
+      handle.done = true
+      close_timer()
+      error(value, 0)
+    end
     if value == nil then return end
     handle.done = true
     close_timer()
     on_ready(value)
-  end))
+  end)))
 
   return handle
 end

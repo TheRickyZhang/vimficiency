@@ -135,6 +135,41 @@ function M.encode_line_array(lines, name)
   return M.encode_string_list(lines)
 end
 
+local VFSearchRequest = ffi.typeof("VFSearchRequest")
+
+--- Fills a `VFSearchRequest` from `req` and passes it to `call`. The cdata holds
+--- raw pointers into Lua strings, which LuaJIT pins only when a string is itself
+--- the FFI argument, so the encoded payloads live in this frame until `call`
+--- returns.
+---@generic T
+---@param req VF.SearchRequest
+---@param call fun(request: VF.C.SearchRequest): T
+---@return T
+function M.with_search_request(req, call)
+  local initial_payload = M.encode_line_array(req.initial_lines, "initial_lines")
+  local goal_payload = M.encode_line_array(req.goal_lines, "goal_lines")
+  local request = VFSearchRequest() --[[@as VF.C.SearchRequest]]
+  request.encoded_initial_lines = initial_payload
+  request.encoded_initial_lines_len = #initial_payload
+  request.encoded_goal_lines = goal_payload
+  request.encoded_goal_lines_len = #goal_payload
+  request.start_row = req.start_row
+  request.start_col = req.start_col
+  request.end_row = req.end_row
+  request.end_col = req.end_col
+  request.boundary_first_col = req.boundary_first_col
+  request.boundary_last_col = req.boundary_last_col
+  request.has_lines_above = req.has_lines_above
+  request.has_lines_below = req.has_lines_below
+  request.window_height = req.window_height
+  request.scroll_amount = req.scroll_amount
+  request.user_seq = req.user_seq
+  request.user_seq_len = #req.user_seq
+  request.optimizer_overrides = req.optimizer_overrides
+  request.optimizer_overrides_len = #req.optimizer_overrides
+  return call(request)
+end
+
 ---@param encoded string
 ---@return string[]
 function M.decode_string_list(encoded)

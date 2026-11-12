@@ -30,6 +30,7 @@ test("reload: reload_lua swaps module identities and preserves finished records"
     kind = "mark",
     started_mono_ns = vim.uv.hrtime(),
     finished_mono_ns = vim.uv.hrtime(),
+    finish_alias = "reloadtest",
     result = h.fake_result({ lines = { "hello" }, user_seq = "" }),
   }
   stash.last_finished = id

@@ -4,6 +4,7 @@
 local M = {}
 
 local atom_stream = require("vimficiency.capture.atom_stream")
+local util = require("vimficiency.util")
 
 ---@class VF.Capture.EndTriggerOpts
 ---@field name         string                       # Unique subscriber name.
@@ -15,11 +16,6 @@ local atom_stream = require("vimficiency.capture.atom_stream")
 ---@param opts VF.Capture.EndTriggerOpts
 ---@return fun()|nil disarm
 function M.arm_idle(opts)
-  assert(type(opts.name) == "string" and #opts.name > 0, "end_trigger: name required")
-  assert(type(opts.idle_ms) == "number" and opts.idle_ms > 0, "end_trigger: idle_ms > 0 required")
-  assert(type(opts.cooldown_ms) == "number" and opts.cooldown_ms >= 0, "end_trigger: cooldown_ms >= 0 required")
-  assert(type(opts.on_fire) == "function", "end_trigger: on_fire required")
-
   local idle_ms     = opts.idle_ms
   local cooldown_ns = opts.cooldown_ms * 1e6
   local on_fire     = opts.on_fire
@@ -44,9 +40,8 @@ function M.arm_idle(opts)
   end
 
   local function reset_timer()
-    if disarmed then return end
     timer:stop()
-    timer:start(idle_ms, 0, vim.schedule_wrap(fire))
+    timer:start(idle_ms, 0, vim.schedule_wrap(util.entry(fire)))
   end
 
   local ok = atom_stream.add_listener(name, function()
@@ -76,11 +71,6 @@ end
 ---@param opts VF.Capture.ArmKeysOpts
 ---@return fun()|nil disarm
 function M.arm_keys(opts)
-  assert(type(opts.name) == "string" and #opts.name > 0, "end_trigger: name required")
-  assert(type(opts.every) == "number" and opts.every > 0, "end_trigger: every > 0 required")
-  assert(type(opts.cooldown_ms) == "number" and opts.cooldown_ms >= 0, "end_trigger: cooldown_ms >= 0 required")
-  assert(type(opts.on_fire) == "function", "end_trigger: on_fire required")
-
   local every       = opts.every
   local cooldown_ns = opts.cooldown_ms * 1e6
   local on_fire     = opts.on_fire
@@ -93,7 +83,6 @@ function M.arm_keys(opts)
   -- One atom == one command, so `every` now counts commands, not raw
   -- keystrokes. The trigger fires every N captured atoms.
   local ok = atom_stream.add_listener(name, function(_, decision)
-    if disarmed then return end
     if decision ~= "record" then return end
     count = count + 1
     if count < every then return end
@@ -103,13 +92,13 @@ function M.arm_keys(opts)
       return
     end
     -- Defer so `on_fire` can safely touch Neovim API.
-    vim.schedule(function()
+    vim.schedule(util.entry(function()
       if disarmed then return end
       local counted = on_fire()
       if counted then
         last_fire_hrtime = vim.uv.hrtime()
       end
-    end)
+    end))
   end)
   if not ok then return nil end
 

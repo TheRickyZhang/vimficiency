@@ -8,6 +8,7 @@ local list_render    = require("vimficiency.explore.render.list")
 local registry       = require("vimficiency.explore.registry")
 local state          = require("vimficiency.explore.state")
 local autocmds       = require("vimficiency.explore.autocmds")
+local util           = require("vimficiency.util")
 
 local M = {}
 local v = vim.api
@@ -57,12 +58,6 @@ local function notify_plan_deviation(reason)
 end
 
 local function check_background_invariants(view, context)
-  if not (view and view.scratch
-      and v.nvim_win_is_valid(view.scratch.win)
-      and v.nvim_buf_is_valid(view.scratch.buf)) then
-    return
-  end
-
   local ok, expected_lines = pcall(ffi_explore.explore_current_lines, view.view_id)
   if not ok then
     set_background_warning(view, "Explore invariant check could not read backend lines", {
@@ -109,16 +104,8 @@ local function check_background_invariants(view, context)
   set_background_warning(view, "Explore invariant check failed", violations)
 end
 
-local function valid_scratch(view)
-  return view and view.scratch
-    and v.nvim_win_is_valid(view.scratch.win)
-    and v.nvim_buf_is_valid(view.scratch.buf)
-end
-
 local function finish_rejected_restore(view)
-  if not (view and view.restoring) then return end
   local context = view.restoring.context
-  if not valid_scratch(view) then return end
   state.restore(view)
   check_background_invariants(view, context)
 end
@@ -132,19 +119,20 @@ local function restore_rejected_snapshot(view, reason, leave_insert_first)
     return
   end
 
-  vim.schedule(function()
-    if mode_is_insert() then
-      pcall(vim.cmd, "stopinsert")
-    end
-    vim.defer_fn(function()
-      if not (view and view.restoring) then return end
+  vim.schedule(util.entry(function()
+    if mode_is_insert() then vim.cmd("stopinsert") end
+    vim.defer_fn(util.entry(function()
+      if not view.restoring then return end
+      if not (v.nvim_win_is_valid(view.scratch.win) and v.nvim_buf_is_valid(view.scratch.buf)) then
+        return
+      end
       if mode_is_insert() then
-        pcall(vim.cmd, "stopinsert")
+        vim.cmd("stopinsert")
         return
       end
       finish_rejected_restore(view)
-    end, 20)
-  end)
+    end), 20)
+  end))
 end
 
 local function render_insert_phase(view)
@@ -265,7 +253,6 @@ function M.capture_key(key, typed)
   if not (typed and typed ~= "") then return end
   if not registry.current_buffer_is_scratch() then return end
   local view = registry.current()
-  view.on_key_events = view.on_key_events or {}
   local sent = key or ""
 
   -- Resolution events carry the whole LHS; drop already-recorded pending bytes.

@@ -163,8 +163,8 @@ local function reset_state()
   pcall(vim.api.nvim_del_user_command, "Vimficiency")
 
   -- Simulate/session tests leave tabs, windows, and scratch buffers.
-  pcall(vim.cmd, "silent! tabonly")
-  pcall(vim.cmd, "silent! only")
+  vim.cmd("silent! tabonly")
+  vim.cmd("silent! only")
   local cur = vim.api.nvim_get_current_buf()
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if b ~= cur and vim.api.nvim_buf_is_valid(b) then

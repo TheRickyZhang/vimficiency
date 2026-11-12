@@ -22,7 +22,7 @@ local function lines_for_active(item)
 
   local lines = {
     string.format("Alias:    %s", item.name),
-    string.format("Type:     %s", item.category or "?"),
+    string.format("Type:     %s", item.category),
     string.format("Status:   %s", item.status),
     string.format("Started:  %s", model.format_age_ns(item.started_mono_ns)),
   }
@@ -38,16 +38,16 @@ local function lines_for_active(item)
   local result = item.result
   if result then
     table.insert(lines, "")
-    local user_cost = result.user_cost and string.format(" (cost: %.2f)", result.user_cost) or ""
     vim.list_extend(lines,
-      sequence_display.prefixed_lines("User full: ", result.user_seq or "", nil, user_cost))
+      sequence_display.prefixed_lines("User full: ", result.user_seq, nil,
+        string.format(" (cost: %.2f)", result.user_cost)))
     table.insert(lines, "")
     table.insert(lines, "Optimal:")
-    for i, r in ipairs(result.optimal_results or {}) do
+    for i, r in ipairs(result.optimal_results) do
       if i > 5 then break end
       vim.list_extend(lines,
-        sequence_display.prefixed_lines(string.format("  %d. ", i), r.seq or "", nil,
-          string.format("  (cost: %.2f)", r.cost or 0)))
+        sequence_display.prefixed_lines(string.format("  %d. ", i), r.seq, nil,
+          string.format("  (cost: %.2f)", r.cost)))
     end
   end
   return lines

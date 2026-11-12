@@ -12,13 +12,17 @@ local util = require("vimficiency.util")
 local M = {}
 
 --- Reason to drop an active mark/watch session, or nil to keep it. Checked on
---- every atom: window closed, cursor drifted out of range, or idle too long.
+--- every atom: window closed or showing another buffer, cursor drifted out of
+--- range, or idle too long.
 ---@param session VF.Session.Active
 ---@return string|nil
 local function evict_reason(session)
   local noun = session.kind == "watch" and "watch" or "session"
   if not v.nvim_win_is_valid(session.win) then
     return "Vimfy: " .. noun .. " [" .. session.id .. "] dropped — window closed"
+  end
+  if v.nvim_win_get_buf(session.win) ~= session.buf then
+    return "Vimfy: " .. noun .. " [" .. session.id .. "] dropped — window switched buffers"
   end
   local cursor = v.nvim_win_get_cursor(session.win)
   local reason = compute.manual_should_evict(session, cursor[1] - 1, vim.uv.hrtime())
@@ -128,23 +132,8 @@ end
 ---@param active VF.Session.Active
 ---@param alias string
 local function finish_active(active, alias)
-  local end_state, err = compute.capture_end_state(active)
-  local result
-  if end_state then
-    result, err = compute.compute_result_for_active(active, end_state)
-  end
-  if not result then
-    util.show_output("finish()", err or "unknown error", {
-      ui_keys = { title = "Vimfy Scratch Output Keys", docs = true },
-    })
-    if active.kind ~= "recall" then
-      session_store.remove(active.id)
-    end
-    vim.schedule(function() vim.notify("finish()", vim.log.levels.ERROR) end)
-    return
-  end
-
-  assert(session_store.convert_to_finished(active.id, result, alias))
+  local result = compute.compute_result_for_active(active, compute.capture_end_state(active))
+  session_store.convert_to_finished(active.id, result, alias)
 
   local message = result_view.format_message("vimfy finished [" .. alias .. "]", result)
   if result.analyze_ms then

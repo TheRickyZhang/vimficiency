@@ -1,7 +1,7 @@
 # FFI payload framing
 
-Code of record: `src/LuaExports/Common.cppm` (constants, `encodeDiffRegions`),
-`src/LuaExports/Payload.cpp` (decoders), `lua/vimficiency/ffi/core.lua` (Lua
+Code of record: `src/LuaExports/Common.cppm` (constants), `src/LuaExports/Payload.cppm`
+(`payload::` encoders/decoders), `lua/vimficiency/ffi/core.lua` (Lua
 mirrors, `encode_string_list`).
 
 **Rule.** A field that can contain arbitrary bytes is length-prefixed. A field

@@ -93,10 +93,3 @@ test("stats.log: build_record picks the lowest-cost optimal entry", function()
   assert_eq(r.best_opt_seq, "lo")
 end)
 
-test("stats.log: build_record returns nil when result is missing user_seq", function()
-  local result = h.fake_result({ user_cost = 1.0 })
-  result.user_seq = nil
-  ---@diagnostic disable-next-line: param-type-mismatch
-  local r = stats_log.build_record("mark", result)
-  assert_eq(r, nil)
-end)

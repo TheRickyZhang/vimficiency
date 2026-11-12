@@ -61,7 +61,7 @@ function M.states(tokens, lines, row, col, should_cancel, on_done)
   })
 
   local safe_row = max(1, min(row + 1, #lines))
-  local line_len = #(lines[safe_row] or "")
+  local line_len = #lines[safe_row]
   v.nvim_win_set_cursor(probe_win, { safe_row, max(0, min(col, max(0, line_len - 1))) })
 
   local esc = v.nvim_replace_termcodes("<Esc>", true, false, true)
@@ -83,7 +83,7 @@ function M.states(tokens, lines, row, col, should_cancel, on_done)
     v.nvim_set_current_win(probe_win)
     v.nvim_buf_set_lines(buf, 0, -1, true, state.lines)
     local snap_row = max(1, min(state.cursor[1], #state.lines))
-    local line = state.lines[snap_row] or ""
+    local line = state.lines[snap_row]
     local safe_col = max(0, min(state.cursor[2], max(0, #line - 1)))
     v.nvim_win_set_cursor(probe_win, { snap_row, safe_col })
   end
@@ -95,7 +95,7 @@ function M.states(tokens, lines, row, col, should_cancel, on_done)
   local function restore_snapshot(state)
     if not v.nvim_win_is_valid(probe_win) then return end
     v.nvim_set_current_win(probe_win)
-    pcall(function() cmd("stopinsert") end)
+    cmd("stopinsert")
     v.nvim_feedkeys(esc, "nx", false)
     apply_probe_snapshot(state)
   end

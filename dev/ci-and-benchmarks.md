@@ -8,8 +8,10 @@ This page covers the benchmark pipeline. The separate
 ## CI Workflow (`.github/workflows/bench.yml`)
 
 `bench.yml` runs correctness only — `dependency-lint` (module dependency and
-in-class `inline` lints; needs `ripgrep` and `gawk`), `doc-lint`,
-`debug-build`, and `test`. Benchmark numbers are deliberately not produced in
+in-class `inline` lints; needs `ripgrep` and `gawk`), `lua-lint`
+(`scripts/lint-lua.sh`: the `assert(type(` / `pcall(` ratchets plus
+lua-language-server with `$VIMRUNTIME` from the pinned Neovim, so `vim.*`
+types resolve), `doc-lint`, `debug-build`, and `test`. Benchmark numbers are deliberately not produced in
 CI: GitHub-hosted runners vary by ~10% in wall-clock time, so the numbers
 were too noisy to compare across pushes. The bench pipeline moved to a local
 hook (next section) on the maintainer's machine, where hardware is stable.

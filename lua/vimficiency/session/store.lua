@@ -19,16 +19,16 @@
 ---
 --- Lifecycle
 ---@field convert_to_finished           fun(id: string, result: VF.Session.Result, finish_alias: string|nil, kind?: VF.Session.Kind): boolean
----@field register_fetched_result fun(alias: string, result: VF.Session.Result): string|nil, string|nil
+---@field register_fetched_result fun(alias: string, result: VF.Session.Result): string
 ---@field remove                  fun(id: string)
----@field rename_alias            fun(old_alias: string, new_alias: string): boolean, string|nil
+---@field rename_alias            fun(old_alias: string, new_alias: string)
 ---
 --- Lookup by alias or id
 ---@field get_id                  fun(alias: string): string|nil
 ---@field get_active              fun(alias: string): VF.Session.Active|nil
 ---@field get_result              fun(alias: string): VF.Session.Result|nil
 ---@field has_result              fun(alias: string): boolean
----@field get_result_by_id        fun(id: string): VF.Session.Result|nil
+---@field get_result_by_id        fun(id: string): VF.Session.Result
 ---@field get_finish_alias        fun(alias: string): string|nil
 ---@field list_aliases            fun(): string[]
 ---
@@ -110,24 +110,24 @@ end
 --- persisted clock, `finished_wall_epoch`.
 ---@class VF.Session.Finished : VF.Session.Core
 ---@field finished_mono_ns integer       # vim.uv.hrtime() at finish (fetch time for disk-loaded records)
----@field finish_alias     string|nil    # Literal alias passed to finish (`a`, `3s`, ...); the default filename for `:Vimfy save`
+---@field finish_alias     string        # Literal alias passed to finish (`a`, `3s`, ...); the default filename for `:Vimfy save`
 ---@field result           VF.Session.Result
 
 --- VF.Session.Result: data for a completed session, ready for simulate().
 ---@class VF.Session.Result
 ---@field lines string[]               # Trimmed buffer lines used for optimization
----@field goal_lines string[]|nil      # Goal buffer slice for recomputing explore recommendations
+---@field goal_lines string[]          # Goal buffer slice for recomputing explore recommendations
 ---@field start_row integer            # 0-indexed, relative to lines
 ---@field start_col integer            # 0-indexed
 ---@field end_row integer              # 0-indexed, relative to lines
 ---@field end_col integer              # 0-indexed
----@field has_lines_above boolean|nil  # Whether the optimization slice omitted lines above
----@field has_lines_below boolean|nil  # Whether the optimization slice omitted lines below
----@field prefix string|nil            # Reserved boundary prefix; empty at the whole-buffer level (see compute.lua)
----@field suffix string|nil            # Reserved boundary suffix; empty at the whole-buffer level
----@field diffs VF.Diff.Region[]|nil   # Optimizer character-level diff regions for column highlighting; absent on pre-diff saved files
----@field window_height integer|nil    # Captured window height for page/scroll semantics
----@field scroll_amount integer|nil    # Captured 'scroll' option for Ctrl-D/U semantics
+---@field has_lines_above boolean      # Whether the optimization slice omitted lines above
+---@field has_lines_below boolean      # Whether the optimization slice omitted lines below
+---@field prefix string                # Reserved boundary prefix; empty at the whole-buffer level (see compute.lua)
+---@field suffix string                # Reserved boundary suffix; empty at the whole-buffer level
+---@field diffs VF.Diff.Region[]       # Optimizer character-level diff regions for column highlighting; `disk.load` fills `{}` for pre-diff saved files
+---@field window_height integer        # Captured window height for page/scroll semantics
+---@field scroll_amount integer        # Captured 'scroll' option for Ctrl-D/U semantics
 ---@field user_seq string              # What the user typed (keytrans string), mouse events stripped
 ---@field user_cost number             # Effort cost of user's sequence
 ---@field optimal_results VF.Optimizer.Result[] # Top N results from optimizer (seq + cost)
@@ -163,10 +163,6 @@ end
 ---@param kind "mark"|"watch"|"recall"
 ---@return VF.Session.Active
 function M.new_active_session(id, stream_sub, win, buf, start_state, kind)
-  assert(type(id) == "string" and id ~= "", "session.id must be nonempty string")
-  assert(stream_sub == nil or type(stream_sub) == "string", "stream_sub must be a string or nil")
-  assert(vim.api.nvim_win_is_valid(win), "win must be a valid window id")
-  assert(vim.api.nvim_buf_is_valid(buf), "buf is not valid: " .. buf)
   assert(CREATABLE_KINDS[kind],
     "kind must be 'mark', 'watch', or 'recall', got: " .. tostring(kind))
 
@@ -245,8 +241,7 @@ end
 ---@return integer|nil index
 local function resolve_recall_cutoff(target_mono_ns)
   for i = #recall_id_order, 1, -1 do
-    local rec = any_session(recall_id_order[i])
-    if rec and rec.started_mono_ns <= target_mono_ns then
+    if any_session(recall_id_order[i]).started_mono_ns <= target_mono_ns then
       return i
     end
   end
@@ -256,8 +251,6 @@ end
 --- Id of the most recently finished session, or nil if none / evicted.
 ---@return string|nil id
 function M.get_last_finished_id()
-  if not last_finished_id then return nil end
-  if not finished_sessions[last_finished_id] then return nil end
   return last_finished_id
 end
 
@@ -303,10 +296,8 @@ end
 
 --- Detach atom capture for a record and drop it from whichever table holds it.
 ---@param id string
----@return boolean removed
 local function destroy_record(id)
   local active = active_sessions[id]
-  if not active and not finished_sessions[id] then return false end
   if active then
     if active.watch_disarm then active.watch_disarm() end
     if active.stream_sub then atom_stream.remove_listener(active.stream_sub) end
@@ -315,7 +306,6 @@ local function destroy_record(id)
   finished_sessions[id] = nil
   if last_finished_id == id then last_finished_id = nil end
   if last_suggest_id == id then last_suggest_id = nil end
-  return true
 end
 
 --- Splice an id out of `recall_id_order`, if present.
@@ -335,19 +325,14 @@ local function evict_old_recall()
   local max_age_ns = config.MAX_RETENTION_SECONDS * 1e9
   while #recall_id_order > 0 do
     local oldest_id = recall_id_order[1]
-    local rec = any_session(oldest_id)
-    if not rec then
+    local age_ns = now - any_session(oldest_id).started_mono_ns
+    local count_would_drop = #recall_id_order > config.KEY_SESSION_CAPACITY
+    local age_would_drop = age_ns > max_age_ns
+    if count_would_drop and age_would_drop then
       table.remove(recall_id_order, 1)
+      destroy_record(oldest_id)
     else
-      local age_ns = now - rec.started_mono_ns
-      local count_would_drop = #recall_id_order > config.KEY_SESSION_CAPACITY
-      local age_would_drop = age_ns > max_age_ns
-      if count_would_drop and age_would_drop then
-        table.remove(recall_id_order, 1)
-        destroy_record(oldest_id)
-      else
-        break
-      end
+      break
     end
   end
 end
@@ -377,7 +362,6 @@ end
 ---@param record VF.Session.Active
 ---@return boolean overwrote  True if an existing session was replaced
 function M.store_named(alias, record)
-  assert(M.has_room_for_named(alias), "named session capacity reached")
   local existing_id = named_to_id[alias]
 
   if existing_id then
@@ -417,11 +401,11 @@ end
 --- Id-keyed variant of `get_result`.
 --- Use this after pinning a time-varying alias to a stable id.
 ---@param id string
----@return VF.Session.Result|nil
+---@return VF.Session.Result
 function M.get_result_by_id(id)
-  if not util.is_session_id(id) then return nil end
   local rec = finished_sessions[id]
-  return rec and rec.result or nil
+  if not rec then error("no finished result for id " .. id, 0) end
+  return rec.result
 end
 
 ---@param alias string
@@ -433,11 +417,6 @@ end
 --- Remove a session entirely by stable id.
 ---@param id string
 function M.remove(id)
-  -- Removing by alias is unsafe because recall aliases drift.
-  assert(util.is_session_id(id),
-    "session_store.remove requires a session id (from util.new_id), not an alias: "
-    .. tostring(id))
-
   if not any_session(id) then return end
 
   -- Un-index from whichever side holds this id.
@@ -486,15 +465,9 @@ function M.convert_to_finished(id, result, finish_alias, kind)
   finished_sessions[id] = finished
   last_finished_id = id
 
-  -- Append to the persistent stats log. Best-effort — the log module
-  -- swallows I/O errors, so this call must not raise and must not block
-  -- the finish transition. Required deferred require (log → … → store
-  -- would cycle if loaded eagerly at the top of this file).
-  local ok, stats_log = pcall(require, "vimficiency.stats.log")
-  if ok and stats_log then
-    local record = stats_log.build_record(finished.kind, result)
-    if record then stats_log.append(record) end
-  end
+  -- Deferred require: log → … → store would cycle at load time.
+  local stats_log = require("vimficiency.stats.log")
+  stats_log.append(stats_log.build_record(finished.kind, result))
 
   return true
 end
@@ -525,16 +498,14 @@ end
 --- Insert a disk-loaded result as a finished session under `alias`.
 ---@param alias string  Must satisfy `alias.is_named`.
 ---@param result VF.Session.Result
----@return string|nil id
----@return string|nil err
+---@return string id
 function M.register_fetched_result(alias, result)
   if not alias_mod.is_named(alias) then
-    return nil, "alias '" .. tostring(alias) .. "' is not a named alias (letters only)"
+    error("alias '" .. tostring(alias) .. "' is not a named alias (letters only)", 0)
   end
   if named_to_id[alias] then
-    return nil, "alias '" .. alias .. "' is already in use in the current session"
+    error("alias '" .. alias .. "' is already in use in the current session", 0)
   end
-  assert(type(result) == "table", "result must be a table")
 
   -- `util.new_id()` needs a valid buffer; the id itself is opaque.
   local id = util.new_id(vim.api.nvim_get_current_buf())
@@ -550,7 +521,7 @@ function M.register_fetched_result(alias, result)
   }
   named_to_id[alias] = id
   last_finished_id = id
-  return id, nil
+  return id
 end
 
 --- Move a named alias to a new named alias in-place. Refuses if the source is missing
@@ -558,28 +529,25 @@ end
 --- record's default save filename are touched.
 ---@param old_alias string
 ---@param new_alias string
----@return boolean ok
----@return string|nil err
 function M.rename_alias(old_alias, new_alias)
   if old_alias == new_alias then
-    return false, "source and target aliases are identical"
+    error("source and target aliases are identical", 0)
   end
   if not alias_mod.is_named(new_alias) then
-    return false, "invalid target alias '" .. tostring(new_alias) ..
-      "' (named aliases are letters only)"
+    error("invalid target alias '" .. tostring(new_alias) ..
+      "' (named aliases are letters only)", 0)
   end
   local id = named_to_id[old_alias]
   if not id then
-    return false, "no named alias '" .. tostring(old_alias) .. "' in the workspace"
+    error("no named alias '" .. tostring(old_alias) .. "' in the workspace", 0)
   end
   if named_to_id[new_alias] then
-    return false, "alias '" .. new_alias .. "' is already in use"
+    error("alias '" .. new_alias .. "' is already in use", 0)
   end
   named_to_id[old_alias] = nil
   named_to_id[new_alias] = id
   local finished = finished_sessions[id]
   if finished then finished.finish_alias = new_alias end
-  return true, nil
 end
 
 --- All named and recall-key aliases that currently resolve, for tab completion.
@@ -653,8 +621,7 @@ function M.summarize(id)
     status        = active and "active" or "finished",
     started_mono_ns  = core.started_mono_ns,
     finished_mono_ns = finished and finished.finished_mono_ns or nil,
-    -- `or 0`: saved files predating key_count are still loadable
-    key_count     = active and #active.atoms or (result.key_count or 0),
+    key_count     = active and #active.atoms or result.key_count,
     preview       = preview,
     result        = result,
   }

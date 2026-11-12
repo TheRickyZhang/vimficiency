@@ -86,14 +86,11 @@ function M.run()
         local unique = build_dir .. "/libvimficiency-reload-"
           .. string.format("%.0f", vim.uv.hrtime())
           .. ffi_core.lib_filename:match("%.[^.]+$")
-        local copied = false
-        local copy_ok, copy_err = pcall(function()
-          copied = vim.uv.fs_copyfile(src, unique)
-        end)
-        if not copy_ok or not copied then
+        local copied, copy_err = vim.uv.fs_copyfile(src, unique)
+        if not copied then
           vim.notify(
             "vimfy reload: rebuild succeeded but copying " ..
-            ffi_core.lib_filename .. " for reload failed: " .. tostring(copy_err or "?")
+            ffi_core.lib_filename .. " for reload failed: " .. tostring(copy_err)
             .. " — restart Neovim to load new library.",
             vim.log.levels.WARN, { title = "Vimfy" })
           return
@@ -108,7 +105,7 @@ function M.run()
         -- useless anyway. Done here (not inside reload_lua) so the
         -- reload API stays agnostic about how its path argument was
         -- produced.
-        pcall(vim.uv.fs_unlink, unique)
+        vim.uv.fs_unlink(unique)
 
         if not reload_ok then
           vim.notify(

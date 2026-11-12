@@ -80,7 +80,7 @@ function M.build_active_items()
     for _, s in ipairs(recall_ring) do
       oldest_mono_ns = math.min(oldest_mono_ns, s.started_mono_ns)
       newest_mono_ns = math.max(newest_mono_ns, s.started_mono_ns)
-      total_keys = total_keys + (s.key_count or 0)
+      total_keys = total_keys + s.key_count
     end
     table.insert(items, {
       pane = "active",
@@ -130,8 +130,8 @@ function M.sort_items(items, mode, direction)
       local bt = b.wall_epoch or b.started_mono_ns
       return at < bt
     else
-      if (a.category or "") ~= (b.category or "") then
-        return (a.category or "") < (b.category or "")
+      if a.category ~= b.category then
+        return a.category < b.category
       end
       return a.name < b.name
     end
@@ -165,7 +165,7 @@ function M.group_into_sections(items, mode, direction)
     local by_cat = {}
     local order = {}
     for _, it in ipairs(rest) do
-      local c = it.category or "other"
+      local c = it.category
       if not by_cat[c] then
         by_cat[c] = {}
         table.insert(order, c)
@@ -192,7 +192,7 @@ function M.row_for_item(item, marked)
     sym = STATUS_SYMBOLS.blank
   end
   local mark = item.is_synthetic and " " or (marked[M.mark_key(item)] and "*" or " ")
-  local cat = item.category or ""
+  local cat = item.category
   if item.is_synthetic then
     local name = string.format("%s (%d)", item.name, item.ring_count)
     local age = string.format("oldest %s", M.format_age_ns(item.ring_oldest_mono_ns))

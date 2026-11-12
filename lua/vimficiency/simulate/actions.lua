@@ -203,7 +203,7 @@ function M.new(ctx)
   function actions.adjust_window_count(step)
     local play = require("vimficiency.play")
     local settings = play.get_settings()
-    local current = settings.window_count or 2
+    local current = settings.window_count
     local new_count = max(1, min(4, current + step))
     if new_count == current then return end
     play.set_setting("window_count", new_count)
@@ -240,7 +240,7 @@ function M.new(ctx)
       local pool_entry = ctx.pool_entry_for(entry)
       if not pool_entry or not pool_entry.states then return end
       if not v.nvim_win_is_valid(entry.win) then return end
-      local states = assert(pool_entry.states)
+      local states = pool_entry.states
       ctx.apply_state(entry, states[min(ctx.state.global_step + 1, #states)])
       ctx.refresh()
     end)

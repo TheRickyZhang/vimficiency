@@ -96,6 +96,29 @@ local function find_result_ending_with(results, suffix)
   return nil
 end
 
+-- Cursor at (0,0) in a 40-line window with a zero-width boundary unless
+-- `overrides` says otherwise.
+---@param initial_lines string[]
+---@param goal_lines string[]
+---@param overrides table
+---@return VF.SearchRequest
+local function request(initial_lines, goal_lines, overrides)
+  ---@type VF.SearchRequest
+  local req = {
+    initial_lines = initial_lines,
+    goal_lines = goal_lines,
+    start_row = 0, start_col = 0,
+    end_row = 0, end_col = 0,
+    boundary_first_col = 0, boundary_last_col = 0,
+    has_lines_above = false, has_lines_below = false,
+    window_height = 40, scroll_amount = 20,
+    user_seq = "",
+    optimizer_overrides = "",
+  }
+  for k, val in pairs(overrides) do req[k] = val end
+  return req
+end
+
 local function with_reset_globals(fn)
   ffi_lib.reset_globals()
   local ok, err = pcall(fn)
@@ -111,16 +134,10 @@ test("ffi.configure: count penalty overrides affect analyze costs", function()
     -- that extreme (and its opposite) avoids pinning a ranked menu.
     local line = "one two three four five six"
     local function analyze()
-      return ffi_lib.analyze(
-        { line }, { line },
-        0, #line - 1,
-        false, false,
-        0, 0,
-        0, 19,
-        "",
-        40, 20,
-        20
-      )
+      return ffi_lib.analyze(request({ line }, { line }, {
+        boundary_last_col = #line - 1,
+        end_col = 19,
+      }), 20)
     end
 
     local NO_PENALTY = { base = 0.0, count_slope = 0.0, span_slope = 0.0 }
@@ -171,16 +188,11 @@ test("ffi.analyze: preserves substitute payload and cost for exact 2->3 scenario
     "}",
   }
 
-  local results, user_cost, _, diffs = ffi_lib.analyze(
-    initial_lines, goal_lines,
-    0, 0,
-    false, false,
-    1, 2,
-    2, 14,
-    "jf;i<BS>3<Esc>",
-    40, 20,
-    20
-  )
+  local results, user_cost, _, diffs = ffi_lib.analyze(request(initial_lines, goal_lines, {
+    start_row = 1, start_col = 2,
+    end_row = 2, end_col = 14,
+    user_seq = "jf;i<BS>3<Esc>",
+  }), 20)
 
   assert_true(user_cost > 0, "user cost should parse as a positive number")
 
@@ -216,31 +228,17 @@ end)
 test("ffi.analyze_start_async: worker result matches sync analyze", function()
   local initial_lines = { "for(int i = 2; i < n; i++) {" }
   local goal_lines    = { "for(int i = 3; i < n; i++) {" }
-  local last_col = #initial_lines[1] - 1
+  local req = request(initial_lines, goal_lines, {
+    boundary_last_col = #initial_lines[1] - 1,
+    start_col = 11,
+    end_col = 11,
+    user_seq = "f2r3",
+  })
 
-  local sync_results, sync_user_cost, _, sync_diffs = ffi_lib.analyze(
-    initial_lines, goal_lines,
-    0, last_col,
-    false, false,
-    0, 11,
-    0, 11,
-    "f2r3",
-    40, 20,
-    20
-  )
+  local sync_results, sync_user_cost, _, sync_diffs = ffi_lib.analyze(req, 20)
 
   -- 0 = no deadline, so the worker runs to the same natural caps as sync.
-  local job_id = ffi_lib.analyze_start_async(
-    initial_lines, goal_lines,
-    0, last_col,
-    false, false,
-    0, 11,
-    0, 11,
-    "f2r3",
-    40, 20,
-    20,
-    nil, 0
-  )
+  local job_id = ffi_lib.analyze_start_async(req, 20, 0)
 
   local payload
   vim.wait(5000, function()
@@ -268,32 +266,17 @@ test("ffi.analyze_start_async: worker result matches sync analyze", function()
 end)
 
 test("ffi.analyze: accepts one empty physical line", function()
-  local results, user_cost = ffi_lib.analyze(
-    { "" }, { "" },
-    0, 0,
-    false, false,
-    0, 0,
-    0, 0,
-    "",
-    40, 20,
-    1
-  )
+  local results, user_cost = ffi_lib.analyze(request({ "" }, { "" }, {}), 1)
 
   assert_true(type(results) == "table", "results should parse")
   assert_true(user_cost >= 0, "user cost should parse")
 end)
 
 test("ffi.analyze: preserves trailing empty physical lines", function()
-  local results, user_cost = ffi_lib.analyze(
-    { "a", "" }, { "a", "" },
-    0, 0,
-    false, false,
-    0, 0,
-    1, 0,
-    "j",
-    40, 20,
-    1
-  )
+  local results, user_cost = ffi_lib.analyze(request({ "a", "" }, { "a", "" }, {
+    end_row = 1,
+    user_seq = "j",
+  }), 1)
 
   assert_true(type(results) == "table", "results should parse")
   assert_true(user_cost > 0, "user cost should include j")
@@ -301,30 +284,12 @@ end)
 
 test("ffi.analyze: rejects empty line arrays", function()
   assert_error(function()
-    ffi_lib.analyze(
-      {}, { "" },
-      0, 0,
-      false, false,
-      0, 0,
-      0, 0,
-      "",
-      40, 20,
-      1
-    )
+    ffi_lib.analyze(request({}, { "" }, {}), 1)
   end, "at least one line")
 end)
 
 test("ffi.analyze: rejects NUL bytes inside lines", function()
   assert_error(function()
-    ffi_lib.analyze(
-      { "a" .. string.char(0) .. "b" }, { "a" },
-      0, 0,
-      false, false,
-      0, 0,
-      0, 0,
-      "",
-      40, 20,
-      1
-    )
+    ffi_lib.analyze(request({ "a" .. string.char(0) .. "b" }, { "a" }, {}), 1)
   end, "NUL byte")
 end)

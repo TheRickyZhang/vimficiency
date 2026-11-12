@@ -89,7 +89,7 @@ local function capture_defaults()
   local out = {}
   for name, value in pairs(fields) do
     if type(value) ~= "function" and name:sub(1, 1) ~= "_" and value ~= CPP then
-      out[name] = vim.deepcopy(value)
+      out[name] = type(value) == "table" and vim.deepcopy(value) or value
     end
   end
   return out
@@ -103,9 +103,9 @@ end
 
 --- Install the Lua-owned settings: defaults deep-merged with `user_config`, then
 --- assigned onto this module so readers see live values. Returns the keys taken.
+---@param user_config table
 ---@return table<string, true> consumed
 function fields.apply(user_config)
-  user_config = user_config or {}
   fields.reset()
 
   local merged = vim.tbl_deep_extend("force", vim.deepcopy(fields._defaults), user_config)

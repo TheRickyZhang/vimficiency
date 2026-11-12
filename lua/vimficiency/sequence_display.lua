@@ -100,11 +100,21 @@ function section_tokens(tokens)
 end
 
 function M.lines(seq, opts)
-  return ffi_display.sequence_display_lines(seq, opts)
+  local resolved = resolved_opts(opts)
+  return ffi_display.sequence_display_lines(seq, resolved.tokenize, resolved.sectionize)
 end
 
 function M.inline(seq, opts)
-  return ffi_display.sequence_display_inline(seq, opts)
+  return ffi_display.sequence_display_inline(seq, resolved_opts(opts).tokenize)
+end
+
+---@param title string
+---@param result VF.Session.Result
+---@param opts { tokenize?: boolean, sectionize?: boolean }?
+---@return string
+function M.result_message(title, result, opts)
+  local resolved = resolved_opts(opts)
+  return ffi_display.format_result_message(title, result, resolved.tokenize, resolved.sectionize)
 end
 
 ---@param tokens VF.Sequence.Token[]
@@ -150,7 +160,7 @@ end
 ---@param opts { tokenize?: boolean }?
 ---@return string
 function M.typed_chunks_inline(chunks, opts)
-  return ffi_display.sequence_display_typed_chunks(chunks, opts)
+  return ffi_display.sequence_display_typed_chunks(chunks, resolved_opts(opts).tokenize)
 end
 
 function M.prefixed_lines(prefix, seq, opts, suffix)

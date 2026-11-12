@@ -53,19 +53,44 @@ end
 
 ---@param filename string
 ---@param data table
----@return string|nil path
----@return string|nil error
+---@return string path
 function M.save(filename, data)
   local save_dir = M.save_dir()
   vim.fn.mkdir(save_dir, "p")
   local path = save_dir .. "/" .. filename .. ".json"
   local lines = vim.split(encode_pretty(data), "\n")
   local ok, err = pcall(vim.fn.writefile, lines, path)
-  if not ok then
-    return nil, err
-  end
-  return path, nil
+  if not ok then error(tostring(err), 0) end
+  return path
 end
+
+local REQUIRED_FIELDS = {
+  { key = "lines",               kind = "table" },
+  { key = "goal_lines",          kind = "table" },
+  { key = "start_row",           kind = "number" },
+  { key = "start_col",           kind = "number" },
+  { key = "end_row",             kind = "number" },
+  { key = "end_col",             kind = "number" },
+  { key = "has_lines_above",     kind = "boolean" },
+  { key = "has_lines_below",     kind = "boolean" },
+  { key = "window_height",       kind = "number" },
+  { key = "scroll_amount",       kind = "number" },
+  { key = "user_seq",            kind = "string" },
+  { key = "user_cost",           kind = "number" },
+  { key = "optimal_results",     kind = "table" },
+  { key = "key_count",           kind = "number" },
+  { key = "finished_wall_epoch", kind = "number" },
+}
+
+-- Recomputable or debug-only; `load` fills the first three when absent.
+local OPTIONAL_FIELDS = {
+  { key = "prefix",        kind = "string" },
+  { key = "suffix",        kind = "string" },
+  { key = "diffs",         kind = "table" },
+  { key = "capture_debug", kind = "table" },
+  { key = "analyze_ms",    kind = "number" },
+  { key = "kind",          kind = "string" },
+}
 
 ---@param data any
 ---@return string|nil err
@@ -73,49 +98,18 @@ function M.validate(data)
   if type(data) ~= "table" then
     return "top-level must be a JSON object"
   end
-  if type(data.lines) ~= "table" or #data.lines == 0 then
-    return "missing or empty 'lines' field"
+  for _, f in ipairs(REQUIRED_FIELDS) do
+    if type(data[f.key]) ~= f.kind then
+      return string.format("missing or non-%s '%s' field", f.kind, f.key)
+    end
   end
-  if data.goal_lines ~= nil and type(data.goal_lines) ~= "table" then
-    return "non-array 'goal_lines' field"
+  for _, f in ipairs(OPTIONAL_FIELDS) do
+    if data[f.key] ~= nil and type(data[f.key]) ~= f.kind then
+      return string.format("non-%s '%s' field", f.kind, f.key)
+    end
   end
-  if type(data.start_row) ~= "number" then
-    return "missing or non-numeric 'start_row' field"
-  end
-  if type(data.start_col) ~= "number" then
-    return "missing or non-numeric 'start_col' field"
-  end
-  if type(data.end_row) ~= "number" then
-    return "missing or non-numeric 'end_row' field"
-  end
-  if type(data.end_col) ~= "number" then
-    return "missing or non-numeric 'end_col' field"
-  end
-  if data.has_lines_above ~= nil and type(data.has_lines_above) ~= "boolean" then
-    return "non-boolean 'has_lines_above' field"
-  end
-  if data.has_lines_below ~= nil and type(data.has_lines_below) ~= "boolean" then
-    return "non-boolean 'has_lines_below' field"
-  end
-  if data.prefix ~= nil and type(data.prefix) ~= "string" then
-    return "non-string 'prefix' field"
-  end
-  if data.suffix ~= nil and type(data.suffix) ~= "string" then
-    return "non-string 'suffix' field"
-  end
-  -- diffs are recomputable from lines/goal_lines, so a missing or coarse value
-  -- is tolerated (the view recomputes); we only reject a wrong top-level type.
-  if data.diffs ~= nil and type(data.diffs) ~= "table" then
-    return "non-array 'diffs' field"
-  end
-  if data.window_height ~= nil and type(data.window_height) ~= "number" then
-    return "non-numeric 'window_height' field"
-  end
-  if data.scroll_amount ~= nil and type(data.scroll_amount) ~= "number" then
-    return "non-numeric 'scroll_amount' field"
-  end
-  if type(data.optimal_results) ~= "table" then
-    return "missing or non-array 'optimal_results' field"
+  if #data.lines == 0 then
+    return "empty 'lines' field"
   end
   for i, r in ipairs(data.optimal_results) do
     if type(r) ~= "table" then
@@ -150,23 +144,24 @@ function M.load(filename)
   if schema_err then
     return nil, "Malformed result file: " .. schema_err, false
   end
+  if data.prefix == nil then data.prefix = "" end
+  if data.suffix == nil then data.suffix = "" end
+  if data.diffs == nil then data.diffs = M.empty_array() end
   return data, nil, false
 end
 
 ---@param filename string
 ---@param result VF.Session.Result
----@return string|nil path
----@return string|nil err
+---@return string path
 function M.write_with_overwrite_warn(filename, result)
   local dest_path = M.save_dir() .. "/" .. filename .. ".json"
   local existed = vim.fn.filereadable(dest_path) == 1
-  local path, err = M.save(filename, result)
-  if not path then return nil, err end
+  local path = M.save(filename, result)
   if existed then
     vim.notify("vimfy: overwrote existing saved result [" .. filename .. "]",
       vim.log.levels.WARN)
   end
-  return path, nil
+  return path
 end
 
 ---@return string[]
@@ -184,75 +179,70 @@ function M.list()
 end
 
 ---@param filename string
----@return boolean ok
----@return string|nil err
+---@return string path
 function M.remove(filename)
   local path = M.save_dir() .. "/" .. filename .. ".json"
   if vim.fn.filereadable(path) == 0 then
-    return false, "No saved result '" .. filename .. "' at " .. path
+    error("No saved result '" .. filename .. "' at " .. path, 0)
   end
   if vim.fn.delete(path) ~= 0 then
-    return false, "vimfy rm failed for " .. path
+    error("vimfy rm failed for " .. path, 0)
   end
-  return true, path
+  return path
 end
 
 ---@param old_filename string
 ---@param new_filename string
----@return boolean ok
----@return string|nil err
 function M.rename(old_filename, new_filename)
   if not alias_mod.is_valid_filename(old_filename) then
-    return false, "Invalid source filename '" .. tostring(old_filename) .. "'."
+    error("Invalid source filename '" .. tostring(old_filename) .. "'.", 0)
   end
   if not alias_mod.is_valid_filename(new_filename) then
-    return false, "Invalid target filename '" .. tostring(new_filename) .. "'."
+    error("Invalid target filename '" .. tostring(new_filename) .. "'.", 0)
   end
   if old_filename == new_filename then
-    return false, "Source and target filenames are identical."
+    error("Source and target filenames are identical.", 0)
   end
   local src = M.save_dir() .. "/" .. old_filename .. ".json"
   local dst = M.save_dir() .. "/" .. new_filename .. ".json"
   if vim.fn.filereadable(src) == 0 then
-    return false, "No saved result '" .. old_filename .. "' at " .. src
+    error("No saved result '" .. old_filename .. "' at " .. src, 0)
   end
   if vim.fn.filereadable(dst) == 1 then
-    return false, "Target '" .. new_filename .. "' already exists."
+    error("Target '" .. new_filename .. "' already exists.", 0)
   end
   local ok, err = vim.uv.fs_rename(src, dst)
   if not ok then
-    return false, "rename failed: " .. tostring(err)
+    error("rename failed: " .. tostring(err), 0)
   end
-  return true, nil
+
 end
 
 ---@param src_filename string
 ---@param dst_filename string
----@return boolean ok
----@return string|nil err
 function M.duplicate(src_filename, dst_filename)
   if not alias_mod.is_valid_filename(src_filename) then
-    return false, "Invalid source filename '" .. tostring(src_filename) .. "'."
+    error("Invalid source filename '" .. tostring(src_filename) .. "'.", 0)
   end
   if not alias_mod.is_valid_filename(dst_filename) then
-    return false, "Invalid target filename '" .. tostring(dst_filename) .. "'."
+    error("Invalid target filename '" .. tostring(dst_filename) .. "'.", 0)
   end
   if src_filename == dst_filename then
-    return false, "Source and target filenames are identical."
+    error("Source and target filenames are identical.", 0)
   end
   local src = M.save_dir() .. "/" .. src_filename .. ".json"
   local dst = M.save_dir() .. "/" .. dst_filename .. ".json"
   if vim.fn.filereadable(src) == 0 then
-    return false, "No saved result '" .. src_filename .. "' at " .. src
+    error("No saved result '" .. src_filename .. "' at " .. src, 0)
   end
   if vim.fn.filereadable(dst) == 1 then
-    return false, "Target '" .. dst_filename .. "' already exists."
+    error("Target '" .. dst_filename .. "' already exists.", 0)
   end
   local ok, err = vim.uv.fs_copyfile(src, dst, nil)
   if not ok then
-    return false, "copy failed: " .. tostring(err)
+    error("copy failed: " .. tostring(err), 0)
   end
-  return true, nil
+
 end
 
 return M

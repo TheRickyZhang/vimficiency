@@ -56,8 +56,9 @@ return function(ctx)
       local user_seq = "jwwrmf;i0<Esc>jfnrmjBBBcWi<BS>2<Space>*<Space>i<Esc>"
       local opt1 = "Wjwrm$i0<Esc>jfnrmjF+Xce2<Space>*<Space>i<Esc>"
       local opt2 = "Wjwrm$i0<Esc>jfnrmjFix.ciw2<Space>*<Space>i<Esc>"
-      local result = {
+      local result = helpers.fake_result({
         lines = lines,
+        goal_lines = lines,
         start_row = 3,
         start_col = 0,
         end_row = 6,
@@ -68,12 +69,11 @@ return function(ctx)
           { seq = opt1, cost = 26 },
           { seq = opt2, cost = 28 },
         },
-        key_count = 1,
         finished_wall_epoch = 2,
-      }
+      })
 
       helpers.new_buf({ "session simulate source" })
-      local id = assert(session_store.register_fetched_result("simreplay", result))
+      local id = session_store.register_fetched_result("simreplay", result)
       local play = require("vimficiency.play")
       play.set_setting("include_user_sequence", true)
       play.set_setting("window_count", 3)

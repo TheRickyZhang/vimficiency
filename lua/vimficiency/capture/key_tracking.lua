@@ -31,12 +31,11 @@ end
 ---@param typed_raw string
 ---@return integer popped
 function M.strip_matching_tail(key_seq, typed_raw)
-	if #typed_raw == 0 or #key_seq == 0 then return 0 end
 	local acc = ""
 	local i = #key_seq
 	while i > 0 and #acc < #typed_raw do
 		local ev = key_seq[i]
-		acc = (ev.key_typed_raw or "") .. acc
+		acc = ev.key_typed_raw .. acc
 		i = i - 1
 	end
 	if acc ~= typed_raw then return 0 end

@@ -3,7 +3,6 @@ local highlights      = require("vimficiency.explore.highlights")
 local lifecycle       = require("vimficiency.explore.lifecycle")
 local panel_render    = require("vimficiency.explore.render.panel")
 local registry        = require("vimficiency.explore.registry")
-local result_mod      = require("vimficiency.explore.result")
 local runtime         = require("vimficiency.explore.runtime")
 local settings        = require("vimficiency.explore.settings")
 local settings_schema = require("vimficiency.explore.settings_schema")
@@ -88,24 +87,15 @@ end
 --- BEGIN actual external API
 
 ---@param label string
----@param result VF.Explore.OpenResult
----@return boolean
+---@param result VF.Session.Result
 function M.open(label, result)
   highlights.refresh()
-
-  local valid, err = result_mod.validate(result)
-  if not valid then
-    vim.notify("vimfy explore failed: " .. err, vim.log.levels.ERROR)
-    return false
-  end
-  ---@cast result VF.Explore.OpenResult
 
   -- runtime.start opens the tab immediately and computes the plan on a worker
   -- thread; the panel renders "Computing…" and fills via the poller once ready,
   -- so there is no refresh_ui here (the view has no view_id yet).
   runtime.start(label, result, header_handlers())
   vim.notify("vimfy explore opened [" .. label .. "]", vim.log.levels.INFO)
-  return true
 end
 
 function M.cancel()

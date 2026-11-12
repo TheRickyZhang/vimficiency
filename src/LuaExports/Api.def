@@ -46,6 +46,30 @@ typedef struct {
   size_t len;
 } VFByteSlice;
 
+// One search problem, shared by analyze (sync and async) and explore-start.
+// The pointers borrow Lua strings for the duration of the call only; the C++
+// decoder copies everything it keeps.
+typedef struct {
+  const char* encoded_initial_lines;
+  size_t encoded_initial_lines_len;
+  const char* encoded_goal_lines;
+  size_t encoded_goal_lines_len;
+  int start_row;
+  int start_col;
+  int end_row;
+  int end_col;
+  int boundary_first_col;
+  int boundary_last_col;
+  bool has_lines_above;
+  bool has_lines_below;
+  int window_height;
+  int scroll_amount;
+  const char* user_seq;
+  size_t user_seq_len;
+  const char* optimizer_overrides;
+  size_t optimizer_overrides_len;
+} VFSearchRequest;
+
 VFConfig* vf_get_config();
 void vf_apply_config();
 void vf_reset_config();
@@ -54,46 +78,10 @@ const char* vf_key_name(int index);
 const char* vf_finger_name(int index);
 const char* vf_hand_name(int index);
 const char* vf_count_class_name(int index);
-VFByteSlice vf_analyze(
-  const char* encoded_initial_lines,
-  size_t encoded_initial_lines_len,
-  const char* encoded_goal_lines,
-  size_t encoded_goal_lines_len,
-  int boundary_first_col,
-  int boundary_last_col,
-  bool has_lines_above,
-  bool has_lines_below,
-  int start_row,
-  int start_col,
-  int end_row,
-  int end_col,
-  const char* keyseq,
-  size_t keyseq_len,
-  int window_height,
-  int scroll_amount,
-  int results_calculated,
-  const char* optimizer_overrides,
-  size_t optimizer_overrides_len);
+VFByteSlice vf_analyze(const VFSearchRequest* request, int results_calculated);
 VFByteSlice vf_analyze_start_async(
-  const char* encoded_initial_lines,
-  size_t encoded_initial_lines_len,
-  const char* encoded_goal_lines,
-  size_t encoded_goal_lines_len,
-  int boundary_first_col,
-  int boundary_last_col,
-  bool has_lines_above,
-  bool has_lines_below,
-  int start_row,
-  int start_col,
-  int end_row,
-  int end_col,
-  const char* keyseq,
-  size_t keyseq_len,
-  int window_height,
-  int scroll_amount,
+  const VFSearchRequest* request,
   int results_calculated,
-  const char* optimizer_overrides,
-  size_t optimizer_overrides_len,
   int deadline_ms);
 VFByteSlice vf_analyze_poll(int job_id);
 int vf_analyze_cancel(int job_id);
@@ -165,26 +153,7 @@ VFByteSlice vf_format_result_message(
   bool tokenize,
   bool sectionize);
 
-VFByteSlice vf_explore_start_async(
-  const char* encoded_initial_lines,
-  size_t encoded_initial_lines_len,
-  int start_row,
-  int start_col,
-  const char* encoded_goal_lines,
-  size_t encoded_goal_lines_len,
-  int end_row,
-  int end_col,
-  int boundary_first_col,
-  int boundary_last_col,
-  bool has_lines_above,
-  bool has_lines_below,
-  int window_height,
-  int scroll_amount,
-  const char* user_seq,
-  size_t user_seq_len,
-  const char* optimizer_overrides,
-  size_t optimizer_overrides_len,
-  int deadline_ms);
+VFByteSlice vf_explore_start_async(const VFSearchRequest* request, int deadline_ms);
 VFByteSlice vf_explore_poll(int job_id);
 int vf_explore_cancel(int job_id);
 int vf_explore_destroy(int view_id);

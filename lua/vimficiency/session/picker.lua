@@ -23,13 +23,6 @@ local util = require("vimficiency.util")
 -- dividers). Cleared and re-populated on every render().
 local picker_ns = v.nvim_create_namespace("vimficiency.session.picker")
 
---- Picker callbacks are an error boundary like `:Vimfy`: archive actions raise.
-local function run_or_notify(fn, ...)
-  local ok, err = pcall(fn, ...)
-  if not ok then vim.notify(tostring(err), vim.log.levels.ERROR) end
-  return ok
-end
-
 local M = {}
 
 -- Singleton state: nil when closed.
@@ -175,7 +168,7 @@ local function render()
     end
   end
   state.cursor = target
-  pcall(v.nvim_win_set_cursor, state.win, { target, 0 })
+  v.nvim_win_set_cursor(state.win, { target, 0 })
 
   M.update_preview()
 end
@@ -185,7 +178,7 @@ end
 --------------------------------------------------------------------------------
 
 function M.update_preview()
-  if not state or not v.nvim_buf_is_valid(state.prev_buf) then return end
+  if not state then return end
   local row = state.cursor
   local entry = state.rows[row]
   local lines
@@ -263,7 +256,7 @@ local function move_list(delta)
     target = target + step
   end
   if target < 1 or target > max then return end
-  pcall(v.nvim_win_set_cursor, state.win, { target, 0 })
+  v.nvim_win_set_cursor(state.win, { target, 0 })
   state.cursor = target
   M.update_preview()
 end
@@ -271,9 +264,8 @@ end
 --- Leave the prompt and return focus to the list in normal mode.
 local function exit_prompt_to_list()
   vim.cmd("stopinsert")
-  if state and v.nvim_win_is_valid(state.win) then
-    v.nvim_set_current_win(state.win)
-  end
+  if not state then return end
+  v.nvim_set_current_win(state.win)
 end
 
 local function act_mark()
@@ -308,21 +300,22 @@ local function act_open()
         vim.notify("Need a named alias, letters only (got '" .. alias .. "')", vim.log.levels.ERROR)
         return
       end
-      if not run_or_notify(archive.fetch, it.name, alias) then return end
+      archive.fetch(it.name, alias)
       close()
       -- Reopen on Active pane so the user sees the newly fetched entry.
-      vim.schedule(function()
+      vim.schedule(util.entry(function()
         M.open()
-        if state then state.pane = "active"; render() end
-      end)
+        state.pane = "active"
+        render()
+      end))
     end
     if alias_mod.is_named(it.name) then
       fetch_under(it.name)
     else
-      vim.ui.input({ prompt = "Fetch [" .. it.name .. "] as alias: " }, function(input)
+      vim.ui.input({ prompt = "Fetch [" .. it.name .. "] as alias: " }, util.entry(function(input)
         if not input or input == "" then return end
         fetch_under(input)
-      end)
+      end))
     end
     return
   end
@@ -336,7 +329,7 @@ local function act_open()
   -- so close the picker first.
   local alias = it.name
   close()
-  vim.schedule(function() playback.simulate(alias) end)
+  vim.schedule(util.entry(function() playback.simulate(alias) end))
 end
 
 local function act_delete()
@@ -353,16 +346,16 @@ local function act_delete()
   else
     prompt = "Delete saved [" .. it.name .. "]? (y/N): "
   end
-  vim.ui.input({ prompt = prompt }, function(input)
+  vim.ui.input({ prompt = prompt }, util.entry(function(input)
     if not input or input:lower() ~= "y" then return end
     if it.pane == "active" then
       session_store.remove(it.key)
     else
-      run_or_notify(archive.rm, it.name)
+      archive.rm(it.name)
     end
     s.marked[model.mark_key(it)] = nil
     render()
-  end)
+  end))
 end
 
 local function act_delete_marked()
@@ -373,7 +366,7 @@ local function act_delete_marked()
     vim.notify("No marked entries.", vim.log.levels.INFO)
     return
   end
-  vim.ui.input({ prompt = "Delete " .. #keys .. " marked? (y/N): " }, function(input)
+  vim.ui.input({ prompt = "Delete " .. #keys .. " marked? (y/N): " }, util.entry(function(input)
     if not input or input:lower() ~= "y" then return end
     -- Split keys into active vs saved via the pane prefix.
     for _, mk in ipairs(keys) do
@@ -381,12 +374,12 @@ local function act_delete_marked()
       if pane == "active" then
         session_store.remove(rest)
       elseif pane == "saved" then
-        run_or_notify(archive.rm, rest)
+        archive.rm(rest)
       end
     end
     state.marked = {}
     render()
-  end)
+  end))
 end
 
 --- True iff this item is still accumulating keystrokes (ongoing), so actions
@@ -422,21 +415,13 @@ local function act_rename()
     notify_needs_save_first(it, "rename")
     return
   end
-  vim.ui.input({ prompt = "Rename " .. it.name .. " -> ", default = it.name }, function(input)
+  vim.ui.input({ prompt = "Rename " .. it.name .. " -> ", default = it.name }, util.entry(function(input)
     if not input or input == "" or input == it.name then return end
-    local ok, err
-    if it.pane == "saved" then
-      ok, err = disk.rename(it.name, input)
-    else
-      ok, err = archive.rename_active(it.name, input)
-    end
-    if not ok then
-      vim.notify(err or "rename failed", vim.log.levels.ERROR)
-      return
-    end
+    local rename = it.pane == "saved" and disk.rename or archive.rename_active
+    rename(it.name, input)
     vim.notify("renamed " .. it.name .. " -> " .. input, vim.log.levels.INFO)
     render()
-  end)
+  end))
 end
 
 local function act_duplicate()
@@ -453,21 +438,13 @@ local function act_duplicate()
   end
   local default = it.pane == "saved" and (it.name .. "_copy") or ""
   vim.ui.input({ prompt = "Duplicate " .. it.name .. " -> ", default = default },
-    function(input)
+    util.entry(function(input)
       if not input or input == "" then return end
-      local ok, err
-      if it.pane == "saved" then
-        ok, err = disk.duplicate(it.name, input)
-      else
-        ok, err = archive.duplicate_active(it.name, input)
-      end
-      if not ok then
-        vim.notify(err or "duplicate failed", vim.log.levels.ERROR)
-        return
-      end
+      local duplicate = it.pane == "saved" and disk.duplicate or archive.duplicate_active
+      duplicate(it.name, input)
       vim.notify("duplicated " .. it.name .. " -> " .. input, vim.log.levels.INFO)
       render()
-    end)
+    end))
 end
 
 local act_help = popups.help
@@ -475,7 +452,7 @@ local act_help = popups.help
 function M.open()
   if state then
     -- Already open: focus it.
-    pcall(v.nvim_set_current_win, state.win)
+    v.nvim_set_current_win(state.win)
     return
   end
 
@@ -510,7 +487,7 @@ function M.open()
   vim.bo[prompt_buf].swapfile = false
   vim.bo[prompt_buf].filetype = "vimficiency_picker_prompt"
   v.nvim_win_set_buf(prompt_win, prompt_buf)
-  v.nvim_win_set_height(prompt_win, 1)
+  v.nvim_win_resize(prompt_win, -1, 1)
   util.configure_scratch_window(prompt_win, {
     winfixheight = true,
     statusline   = "/",
@@ -528,7 +505,7 @@ function M.open()
   v.nvim_win_set_buf(prev_win, prev_buf)
   util.configure_scratch_window(prev_win)
   local prev_width = math.floor(width * 0.4)
-  pcall(v.nvim_win_set_width, prev_win, prev_width)
+  v.nvim_win_resize(prev_win, prev_width, -1)
 
   v.nvim_set_current_win(win)
 
@@ -569,32 +546,31 @@ function M.open()
   -- Live-filter on every prompt-buffer change (insert or normal mode edits).
   v.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
     buffer = prompt_buf,
-    callback = function()
+    callback = util.entry(function()
       if not state then return end
-      local line = v.nvim_buf_get_lines(prompt_buf, 0, 1, false)[1] or ""
+      local line = v.nvim_buf_get_lines(prompt_buf, 0, 1, false)[1]
       if line ~= state.query then
         state.query = line
         render()
       end
-    end,
+    end),
   })
 
   -- Update preview as the user moves the cursor in the list.
   v.nvim_create_autocmd("CursorMoved", {
     buffer = buf,
-    callback = function()
+    callback = util.entry(function()
       if not state then return end
-      local row_now = v.nvim_win_get_cursor(state.win)[1]
-      state.cursor = row_now
+      state.cursor = v.nvim_win_get_cursor(state.win)[1]
       M.update_preview()
-    end,
+    end),
   })
 
   -- Close cleanly if any of the picker windows is closed by other means.
   v.nvim_create_autocmd("WinClosed", {
     pattern = { tostring(win), tostring(prev_win), tostring(prompt_win) },
     once = true,
-    callback = function() close() end,
+    callback = util.entry(close),
   })
 
   render()

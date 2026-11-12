@@ -20,8 +20,7 @@ end
 test("workspace/storage: save copies to disk without touching memory", function()
   h.use_temp_data_home()
   h.silence_notify(function()
-    local id, err = session_store.register_fetched_result("aaa", fake_result("user-seq"))
-    assert_true(id, "seed failed: " .. tostring(err))
+    session_store.register_fetched_result("aaa", fake_result("user-seq"))
 
     archive.save("aaa", "aaa")
 
@@ -184,8 +183,7 @@ end)
 
 test("workspace/storage: register_fetched_result rejects a non-named alias", function()
   h.silence_notify(function()
-    local id, err = session_store.register_fetched_result("3s", fake_result("abc"))
-    assert_true(not id, "alias '3s' must be rejected")
-    assert_match(err or "", "not a named alias")
+    assert_error(function() session_store.register_fetched_result("3s", fake_result("abc")) end,
+      "not a named alias")
   end)
 end)

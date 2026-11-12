@@ -15,8 +15,7 @@ local function pending_typed_so_far(a)
   if cur_row ~= pending.row or cur_col < pending.col_start then
     return literal_target, ""
   end
-  local line = assert(v.nvim_buf_get_lines(a.scratch.buf, pending.row, pending.row + 1, false)[1],
-    "vimfy explore: pending insert row missing")
+  local line = v.nvim_buf_get_lines(a.scratch.buf, pending.row, pending.row + 1, false)[1]
   return literal_target, line:sub(pending.col_start + 1, cur_col)
 end
 
