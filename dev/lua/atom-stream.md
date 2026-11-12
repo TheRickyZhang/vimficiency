@@ -40,8 +40,10 @@ An atom is replayable when `keys` is neither `nil` nor `""`, the type is not
 
 `skip` is a measured no-effect fact, not a tolerance: it is what lets `:w`,
 `:noh`, and `:Vimfy` commands pass through a live session. `abort` means the
-recording can no longer be replayed to the end state, so the listener drops its
-session.
+recording can no longer be replayed to the end state, so every listener drops
+what it was recording: the named-session listener removes its session, and the
+recall listener removes the buffer's active recall records
+(`store.abort_recall`).
 
 ## Deferred delivery
 
@@ -49,7 +51,10 @@ Atoms are delivered when control returns to the main loop, so a typing burst
 arrives back to back with the buffer already at its final state. A recall record
 at atom `i` therefore takes its start state from the snapshot kept after atom
 `i-1`; `store.lua` shifts one `recall_prev_state[buf]` forward per atom, and the
-first atom in a buffer only seeds it.
+first atom in a buffer only seeds it. Records and the snapshot are per buffer:
+an atom extends only the records of its own buffer, and an abort reseeds the
+snapshot from the post-abort state so the next record starts from text the
+chain can actually reach.
 
 ## Testing
 

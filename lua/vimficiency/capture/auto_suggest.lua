@@ -89,8 +89,13 @@ local function fire_with_window(recall_alias, gate, kind)
   local cfg = config.auto_suggest
   local deadline_ms = (cfg and cfg.compute_deadline_ms) or 0
 
-  -- Offload the analyze to a worker thread; finish + render in the callback.
-  in_flight = compute.compute_result_for_active_async(active, deadline_ms, function(result)
+  -- Snapshot the live buffer on the main thread, then offload the analyze to a
+  -- worker; finish + render in the callback. A snapshot failure (wrong buffer
+  -- focused) is silent for suggest, but still counts toward the cooldown.
+  local end_state = compute.capture_end_state(active)
+  if not end_state then return true end
+
+  in_flight = compute.compute_result_for_active_async(active, end_state, deadline_ms, function(result)
     in_flight = nil
     if not result then return end
 

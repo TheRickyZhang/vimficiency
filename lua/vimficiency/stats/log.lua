@@ -61,7 +61,6 @@ function M.build_record(kind, result)
     best_opt_seq  = best_seq,
     beats         = beats or false,
     analyze_ms    = result.analyze_ms,
-    compute_ms    = result.compute_ms,
   }
 end
 
