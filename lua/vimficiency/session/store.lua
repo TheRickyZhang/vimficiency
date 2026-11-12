@@ -15,6 +15,7 @@
 ---@field store_recall            fun(record: VF.Session.Active)
 ---@field append_atom             fun(record: VF.Session.Active, atom: VF.Atom)
 ---@field ingest_recall_atom      fun(atom: VF.Atom)
+---@field abort_recall            fun(buf: integer, win: integer)
 ---
 --- Lifecycle
 ---@field convert_to_finished           fun(id: string, result: VF.Session.Result, finish_alias: string|nil, kind?: VF.Session.Kind): boolean
@@ -133,8 +134,7 @@ end
 ---@field capture_debug table|nil      # Per-atom key boundaries behind user_seq, persisted only for debugging
 ---@field key_count integer            # Captured key events at finish (authoritative; user_seq is bytes, not keys)
 ---@field finished_wall_epoch integer  # os.time() at finish. Wall clock because it is saved to disk; monotonic values do not survive a reboot
----@field analyze_ms number|nil        # Wall-time of the optimizer analyze() FFI call (ms); running-model telemetry
----@field compute_ms number|nil        # Wall-time of the full compute_result_for_active block (ms): analyze + diff + marshaling
+---@field analyze_ms number|nil        # Wall-time of the optimizer analyze() FFI call only (ms); running-model telemetry
 ---@field kind? VF.Session.Kind        # Set by convert_to_finished; absent on saved files that predate it (fetch treats them as mark)
 
 --- Normalized view-model for list/suggest UIs.
@@ -691,10 +691,10 @@ local recall_prev_state = {}
 --- buffer/window validity.
 ---@param atom VF.Atom
 function M.ingest_recall_atom(atom)
-  -- Extend every still-active recall record with this atom.
+  -- Extend every still-active recall record in this buffer with this atom.
   for _, id in ipairs(recall_id_order) do
     local rec = active_sessions[id]
-    if rec then M.append_atom(rec, atom) end
+    if rec and rec.buf == atom.buf then M.append_atom(rec, atom) end
   end
 
   local prev = recall_prev_state[atom.buf]
@@ -708,6 +708,19 @@ function M.ingest_recall_atom(atom)
   local rec = M.new_active_session(id, nil, atom.win, atom.buf, prev, "recall")
   M.append_atom(rec, atom)
   M.store_recall(rec)
+end
+
+--- An unreplayable atom changed `buf`: its active recall records can no longer
+--- reach their end state, so drop them and restart the predecessor chain from
+--- the post-abort state.
+---@param buf integer
+---@param win integer
+function M.abort_recall(buf, win)
+  for _, id in ipairs(vim.list_slice(recall_id_order)) do
+    local rec = active_sessions[id]
+    if rec and rec.buf == buf then M.remove(id) end
+  end
+  recall_prev_state[buf] = util.capture_state(buf, win)
 end
 
 --------------------------------------------------------------------------------

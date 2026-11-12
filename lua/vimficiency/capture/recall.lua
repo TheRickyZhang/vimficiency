@@ -13,12 +13,14 @@ local function in_live_file_buffer(atom)
     and vim.api.nvim_win_is_valid(atom.win)
 end
 
---- Silently drops anything that is not a replayable command in a live file buffer.
 ---@param atom VF.Atom
 ---@param decision VF.Atom.Decision
 local function recall_listener(atom, decision)
-  if decision == "record" and in_live_file_buffer(atom) then
+  if not in_live_file_buffer(atom) then return end
+  if decision == "record" then
     session_store.ingest_recall_atom(atom)
+  elseif decision == "abort" then
+    session_store.abort_recall(atom.buf, atom.win)
   end
 end
 

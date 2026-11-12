@@ -8,8 +8,9 @@ local ffi_session = require("vimficiency.ffi.session")
 local util = require("vimficiency.util")
 
 ---@class (exact) VF.SessionCompute
----@field compute_result_for_active       fun(active: VF.Session.Active): VF.Session.Result|nil, string|nil
----@field compute_result_for_active_async fun(active: VF.Session.Active, deadline_ms: integer, on_done: fun(result: VF.Session.Result|nil, err: string|nil)): VF.Async.PollHandle|nil
+---@field capture_end_state               fun(active: VF.Session.Active): VF.BufferState|nil, string|nil
+---@field compute_result_for_active       fun(active: VF.Session.Active, end_state: VF.BufferState): VF.Session.Result|nil, string|nil
+---@field compute_result_for_active_async fun(active: VF.Session.Active, end_state: VF.BufferState, deadline_ms: integer, on_done: fun(result: VF.Session.Result|nil, err: string|nil)): VF.Async.PollHandle|nil
 ---@field manual_should_evict             fun(session: VF.Session.Active, cursor_row: integer, now_ns: integer): string|nil
 local M = {}
 
@@ -18,8 +19,8 @@ local APPROXIMATE_MOTION_CONVERSIONS = {
   ["gk"] = "k",
 }
 
--- Diagnostic probe for a slow optimizer run. On any compute over the threshold,
--- dump the exact slice for offline replay and surface the timing. compute_ms is
+-- Diagnostic probe for a slow optimizer run. On any analyze over the threshold,
+-- dump the exact slice for offline replay and surface the timing. analyze_ms is
 -- a main-thread stall on the sync (explicit-finish) path, but worker wall-time
 -- on the async (auto_suggest) path. Tune/disable via vim.g.vimficiency_slow_fire_ms.
 local SLOW_FIRE_DEFAULT_MS = 500
@@ -38,8 +39,8 @@ local function log_slow_fire(active, result)
     vim.fn.writefile({ vim.json.encode(result) }, path)
     vim.schedule(function()
       vim.notify(string.format(
-        "vimfy: optimizer ran %.0fms (analyze %.0fms) on a %d-line slice — repro: %s",
-        result.compute_ms or 0, result.analyze_ms or 0, #result.lines,
+        "vimfy: optimizer ran %.0fms on a %d-line slice — repro: %s",
+        result.analyze_ms or 0, #result.lines,
         vim.fn.fnamemodify(path, ":~")), vim.log.levels.WARN)
     end)
   end)
@@ -96,21 +97,13 @@ local function slice_lines(lines, region_start, region_end)
   return sliced
 end
 
--- All the synchronous main-thread work that reads live buffer state (buffer/
--- window validity, capture, slicing, sequence build, boundary). Must run at
--- fire time, before any analyze is kicked off. Returns the bundle consumed by
--- both the sync and async analyze paths, or nil + an error string.
+-- The session's end snapshot: the counterpart of `active.start_state`. Reads
+-- the live buffer, so callers take it at fire time, before any analyze is
+-- kicked off. Falls back to the current window when the captured one is gone.
 ---@param active VF.Session.Active
----@return table|nil input
+---@return VF.BufferState|nil end_state
 ---@return string|nil err
-local function snapshot_analyze_input(active)
-  local compute_t0 = vim.uv.hrtime()
-  if not v.nvim_buf_is_valid(active.buf) then
-    return nil, string.format(
-      "original buffer %s is no longer valid",
-      buf_display_name(active.buf))
-  end
-
+function M.capture_end_state(active)
   local curr_buf = v.nvim_get_current_buf()
   if curr_buf ~= active.buf then
     return nil, string.format(
@@ -128,11 +121,19 @@ local function snapshot_analyze_input(active)
     win = v.nvim_get_current_win()
   end
 
-  local start_state = active.start_state
   local end_state = util.capture_state(active.buf, win)
+  util.check_state_inconsistencies(active.start_state, end_state)
+  return end_state, nil
+end
 
-  util.check_state_inconsistencies(start_state, end_state)
-
+-- Slice both snapshots to the search region and marshal the keystroke stream
+-- into the bundle consumed by both the sync and async analyze paths.
+---@param active VF.Session.Active
+---@param end_state VF.BufferState
+---@return table|nil input
+---@return string|nil err
+local function build_analyze_input(active, end_state)
+  local start_state = active.start_state
   local initial_lines = start_state.lines
   local goal_lines = end_state.lines
 
@@ -164,7 +165,6 @@ local function snapshot_analyze_input(active)
 
   return {
     active = active,
-    compute_t0 = compute_t0,
     start_state = start_state,
     initial_slice = initial_slice,
     goal_slice = goal_slice,
@@ -219,7 +219,6 @@ local function build_result(input, analyze, analyze_ms)
     diffs = disk.empty_array()
   end
 
-  local compute_ms = (vim.uv.hrtime() - input.compute_t0) / 1e6
   local result = {
     lines = input.initial_slice,
     goal_lines = input.goal_slice,
@@ -245,19 +244,19 @@ local function build_result(input, analyze, analyze_ms)
     key_count = #input.atom_seq,
     finished_wall_epoch = os.time(),
     analyze_ms = analyze_ms,
-    compute_ms = compute_ms,
   }
-  if compute_ms >= slow_fire_threshold_ms() then
+  if analyze_ms >= slow_fire_threshold_ms() then
     log_slow_fire(active, result)
   end
   return result
 end
 
 ---@param active VF.Session.Active
+---@param end_state VF.BufferState
 ---@return VF.Session.Result|nil result
 ---@return string|nil err
-function M.compute_result_for_active(active)
-  local input, err = snapshot_analyze_input(active)
+function M.compute_result_for_active(active, end_state)
+  local input, err = build_analyze_input(active, end_state)
   if not input then return nil, err end
 
   local analyze_t0 = vim.uv.hrtime()
@@ -283,17 +282,16 @@ function M.compute_result_for_active(active)
 end
 
 -- Async variant for auto_suggest: the analyze search runs on a C++ worker thread
--- so the main thread never blocks on it. `snapshot_analyze_input` still runs synchronously at
--- call time (it reads the live buffer); only the optimizer search is offloaded.
--- `on_done(result, err)` is invoked on the main thread once the worker finishes.
--- Returns the poll handle, or nil if snapshot_analyze_input/start failed (on_done was already
--- called with the error in that case).
+-- so the main thread never blocks on it. `on_done(result, err)` is invoked on
+-- the main thread once the worker finishes. Returns the poll handle, or nil if
+-- slicing/start failed (on_done was already called with the error in that case).
 ---@param active VF.Session.Active
+---@param end_state VF.BufferState
 ---@param deadline_ms integer
 ---@param on_done fun(result: VF.Session.Result|nil, err: string|nil)
 ---@return VF.Async.PollHandle|nil
-function M.compute_result_for_active_async(active, deadline_ms, on_done)
-  local input, err = snapshot_analyze_input(active)
+function M.compute_result_for_active_async(active, end_state, deadline_ms, on_done)
+  local input, err = build_analyze_input(active, end_state)
   if not input then
     on_done(nil, err)
     return nil

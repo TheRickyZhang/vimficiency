@@ -3,6 +3,12 @@
 local vimfy = require("vimficiency")
 local h = require("_helpers")
 
+test("reload: setup is idempotent (two calls in a row don't crash)", function()
+  vimfy.setup({})
+  vimfy.setup({})
+  assert_true(vim.fn.exists(":Vimfy") == 2, ":Vimfy still defined after second setup")
+end)
+
 test("reload: shutdown detaches atom subscribers", function()
   vimfy.setup({})
   local atom_stream = require("vimficiency.capture.atom_stream")

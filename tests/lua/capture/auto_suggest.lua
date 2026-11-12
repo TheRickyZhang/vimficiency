@@ -50,8 +50,9 @@ local function harness(spec, fn)
     { session_store, "get_active",     spec.active  or function() return ACTIVE end },
     { session_store, "convert_to_finished", spec.finish  or function() return true end },
     { session_store, "summarize",      function() return SUMMARY end },
+    { compute,       "capture_end_state", function() return {} end },
     { compute,       "compute_result_for_active_async",
-        function(_active, _deadline_ms, on_done)
+        function(_active, _end_state, _deadline_ms, on_done)
           on_done(compute_fn())
           return nil
         end },
@@ -154,7 +155,8 @@ test("fire_idle: single-flight skips a second fire while one is in flight", func
     { session_store, "get_active",     function() return ACTIVE end },
     { session_store, "convert_to_finished", function() finish_count = finish_count + 1; return true end },
     { session_store, "summarize",      function() return SUMMARY end },
-    { compute, "compute_result_for_active_async", function(_active, _deadline_ms, on_done)
+    { compute, "capture_end_state", function() return {} end },
+    { compute, "compute_result_for_active_async", function(_active, _end_state, _deadline_ms, on_done)
         pending_on_done = on_done
         return fake_handle
       end },

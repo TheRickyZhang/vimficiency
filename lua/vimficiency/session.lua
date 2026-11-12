@@ -128,7 +128,11 @@ end
 ---@param active VF.Session.Active
 ---@param alias string
 local function finish_active(active, alias)
-  local result, err = compute.compute_result_for_active(active)
+  local end_state, err = compute.capture_end_state(active)
+  local result
+  if end_state then
+    result, err = compute.compute_result_for_active(active, end_state)
+  end
   if not result then
     util.show_output("finish()", err or "unknown error", {
       ui_keys = { title = "Vimfy Scratch Output Keys", docs = true },
