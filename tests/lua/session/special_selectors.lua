@@ -25,8 +25,7 @@ test("$ resolves to the pinned suggest regression, independent of @", function()
   assert_eq(session_store.get_id("@"), "test-special-other")
   assert_eq(archive.default_filename("@"), "other")
 
-  local dollar, err = archive.resolve_result("$")
-  dollar = assert(dollar, "$ resolves to the pinned regression: " .. tostring(err))
+  local dollar = archive.resolve_result("$")
   assert_eq(dollar.user_seq, "ciwx")
   assert_eq(archive.default_filename("$"), "regr")
 end)
@@ -36,9 +35,6 @@ test("$ unset yields a regression-specific error", function()
   -- get_last_suggest_id reports nothing.
   session_store.set_last_suggest_id("test-special-evicted")
 
-  local res, err = archive.resolve_result("$")
-  assert_eq(res, nil)
-  assert_true(err and err:find("regression") ~= nil,
-    "error should mention regression: " .. tostring(err))
+  assert_error(function() archive.resolve_result("$") end, "regression")
   assert_eq(archive.default_filename("$"), nil)
 end)

@@ -122,10 +122,10 @@ end
 ---@param seq string
 ---@return VF.Sequence.Token[] tokens
 function M.for_animation(seq)
-  local tokens, err = ffi_sequence.tokenize_sequence(seq)
-  if err or not tokens or #tokens == 0 then
-    tokens, err = ffi_sequence.tokenize_movements(seq)
-    if err or not tokens or #tokens == 0 then
+  local tokens = ffi_sequence.tokenize_sequence(seq)
+  if not tokens or #tokens == 0 then
+    tokens = ffi_sequence.tokenize_movements(seq)
+    if not tokens or #tokens == 0 then
       return fallback_tokens(seq)
     end
   end

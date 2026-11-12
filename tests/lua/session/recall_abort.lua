@@ -59,3 +59,18 @@ test("ingest_recall_atom: an atom extends only its own buffer's records", functi
   pcall(vim.api.nvim_buf_delete, buf_a, { force = true })
   pcall(vim.api.nvim_buf_delete, buf_b, { force = true })
 end)
+
+test("recall listener: drops an atom whose window no longer shows its buffer", function()
+  local recall = require("vimficiency.capture.recall")
+  local shown = h.new_buf({ "shown" })
+  local other = h.new_buf({ "other" })
+  local win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(win, shown)
+
+  local before = #session_store.summarize_all()
+  recall._for_test.listener({ keys = "x", buf = other, win = win }, "record")
+  assert_eq(#session_store.summarize_all(), before, "a buffer/window mismatch must not record")
+
+  pcall(vim.api.nvim_buf_delete, shown, { force = true })
+  pcall(vim.api.nvim_buf_delete, other, { force = true })
+end)

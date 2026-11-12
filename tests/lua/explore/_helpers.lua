@@ -151,12 +151,12 @@ function M.open_flow(label, result, fn)
   local scratch_tab
   local ok, err = pcall(function()
     base.new_buf(result.lines)
-    assert_true(explore_mod.open(label, result), "explore.open should succeed")
+    explore_mod.open(label, result)
     scratch_tab = vim.api.nvim_get_current_tabpage()
 
     local scratch_win, scratch_buf = M.find_window_by_name("vimficiency://explore/" .. label)
-    assert_true(scratch_win ~= nil, "missing scratch window")
     assert_true(scratch_buf ~= nil, "missing scratch buffer")
+    scratch_win = assert(scratch_win, "missing scratch window")
     vim.api.nvim_set_current_win(scratch_win)
 
     -- Open now computes the plan on a worker thread; pump the loop until the
@@ -175,7 +175,7 @@ function M.open_flow(label, result, fn)
       return not vim.api.nvim_tabpage_is_valid(scratch_tab)
     end, 10)
   end
-  pcall(vim.cmd, "silent! tabonly")
+  vim.cmd("silent! tabonly")
 
   if not ok then error(err, 0) end
 end

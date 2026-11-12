@@ -19,19 +19,12 @@ local render      = auto_suggest._for_test.render_suggestion
 local get_last_fp = auto_suggest._for_test.get_last_fingerprint
 local reset       = auto_suggest._for_test.reset
 
-local IDLE_CFG = { idle = { ms = 200, window = "3s" }, cooldown_ms = 5000 }
-local KEYS_CFG = { keys = { every = 30 }, cooldown_ms = 5000 }
-local COST_M2  = { cost = { m = 2.0, b = 0.0, ms = 300, window = "100" }, cooldown_ms = 5000 }
-local COST_M1  = { cost = { m = 1.0, b = 0.0, ms = 300, window = "100" }, cooldown_ms = 5000 }
+local IDLE_CFG = h.auto_suggest_config({ idle = { ms = 200, window = "3s" }, cooldown_ms = 5000 })
+local KEYS_CFG = h.auto_suggest_config({ keys = { every = 30 }, cooldown_ms = 5000 })
+local COST_M2  = h.auto_suggest_config({ cost = { m = 2.0, b = 0.0, ms = 300, window = "100" }, cooldown_ms = 5000 })
+local COST_M1  = h.auto_suggest_config({ cost = { m = 1.0, b = 0.0, ms = 300, window = "100" }, cooldown_ms = 5000 })
 
-local ACTIVE = { id = "fake-id", kind = "recall" }
-
-local SUMMARY = {
-  id = "fake-id",
-  kind = "suggest_idle", type = "suggest",
-  started_mono_ns = vim.uv.hrtime(),
-  result = h.fake_result({ user_cost = 0.0, optimal_results = {} }),
-}
+local ACTIVE = { id = "fake-id", kind = "recall", started_mono_ns = vim.uv.hrtime() }
 
 --- Run `fn` with auto_suggest stubs installed. `spec` keys:
 ---   cfg     — config.auto_suggest value (default IDLE_CFG)
@@ -44,12 +37,12 @@ local SUMMARY = {
 local function harness(spec, fn)
   spec = spec or {}
   reset()
+  ACTIVE.buf = vim.api.nvim_get_current_buf()
   local compute_fn = spec.compute or function() return h.fake_result() end
   local patches = {
     { config, "auto_suggest", spec.cfg or IDLE_CFG },
     { session_store, "get_active",     spec.active  or function() return ACTIVE end },
     { session_store, "convert_to_finished", spec.finish  or function() return true end },
-    { session_store, "summarize",      function() return SUMMARY end },
     { compute,       "capture_end_state", function() return {} end },
     { compute,       "compute_result_for_active_async",
         function(_active, _end_state, _deadline_ms, on_done)
@@ -103,7 +96,8 @@ test("fire_idle: success counts and records fingerprint", function()
 end)
 
 test("fire_idle: promotes the recall record to suggest_idle on takeover", function()
-  local captured = { id = "fake-id", kind = "recall" }
+  local captured = { id = "fake-id", kind = "recall", started_mono_ns = vim.uv.hrtime(),
+    buf = vim.api.nvim_get_current_buf() }
   harness({
     active = function() return captured end,
     -- Mirror convert_to_finished's real contract: the promotion is applied
@@ -132,7 +126,8 @@ test("fire_idle: failures leave kind = 'recall'", function()
       patch = { finish = function() return false end },
     },
   }) do
-    local captured = { id = "fake-id", kind = "recall" }
+    local captured = { id = "fake-id", kind = "recall", started_mono_ns = vim.uv.hrtime(),
+      buf = vim.api.nvim_get_current_buf() }
     spec.patch.active = function() return captured end
     harness(spec.patch, function()
       fire_idle()
@@ -150,11 +145,11 @@ test("fire_idle: single-flight skips a second fire while one is in flight", func
   -- safely cancel it on a failure path.
   local fake_handle = { done = false, cancelled = false,
     close_timer = function() end, cancel_fn = function() end }
+  ACTIVE.buf = vim.api.nvim_get_current_buf()
   h.with_patch({
     { config, "auto_suggest", IDLE_CFG },
     { session_store, "get_active",     function() return ACTIVE end },
     { session_store, "convert_to_finished", function() finish_count = finish_count + 1; return true end },
-    { session_store, "summarize",      function() return SUMMARY end },
     { compute, "capture_end_state", function() return {} end },
     { compute, "compute_result_for_active_async", function(_active, _end_state, _deadline_ms, on_done)
         pending_on_done = on_done
@@ -263,12 +258,8 @@ end)
 -- to the built-in cost gate (DEFAULT_COST = m 1.5, b 2.0).
 --------------------------------------------------------------------------------
 
--- Mirrors a normalized config: no explicit trigger, but default_cost is always
--- present (config.validate fills it from defaults).
-local NO_TRIGGERS = {
-  cooldown_ms = 5000,
-  default_cost = { m = 1.5, b = 2.0, ms = 1000, window = "3s" },
-}
+local NO_TRIGGERS = h.auto_suggest_config(nil)
+NO_TRIGGERS.cooldown_ms = 5000
 
 test("fire_cost: uses default gate when cfg.cost absent", function()
   harness({
@@ -315,23 +306,20 @@ end)
 -- toast does not advance last_notify_hrtime; only a shown one does.
 --------------------------------------------------------------------------------
 
-local SUGGEST_SUMMARY = {
-  started_mono_ns = vim.uv.hrtime(),
-  result = h.fake_result({
-    user_cost = 20,
-    optimal_results = { { seq = "ciwx", cost = 1.0 } },
-  }),
-}
+local SUGGEST_RESULT = h.fake_result({
+  user_cost = 20,
+  optimal_results = { { seq = "ciwx", cost = 1.0 } },
+})
 
 test("render_suggestion: suppresses a toast within notif_cooldown_ms", function()
   local count = 0
   h.with_patch({
-    { config, "auto_suggest", { notif_cooldown_ms = 600000 } },
+    { config, "auto_suggest", h.auto_suggest_config(nil, { notif_cooldown_ms = 600000 }) },
     { vim, "notify", function() count = count + 1 end },
   }, function()
     reset()
-    render(SUGGEST_SUMMARY)
-    render(SUGGEST_SUMMARY)
+    render(SUGGEST_RESULT, vim.uv.hrtime())
+    render(SUGGEST_RESULT, vim.uv.hrtime())
     assert_eq(count, 1, "second toast within cooldown must be suppressed")
   end)
 end)
@@ -339,12 +327,12 @@ end)
 test("render_suggestion: notif_cooldown_ms = 0 never suppresses", function()
   local count = 0
   h.with_patch({
-    { config, "auto_suggest", { notif_cooldown_ms = 0 } },
+    { config, "auto_suggest", h.auto_suggest_config(nil, { notif_cooldown_ms = 0 }) },
     { vim, "notify", function() count = count + 1 end },
   }, function()
     reset()
-    render(SUGGEST_SUMMARY)
-    render(SUGGEST_SUMMARY)
+    render(SUGGEST_RESULT, vim.uv.hrtime())
+    render(SUGGEST_RESULT, vim.uv.hrtime())
     assert_eq(count, 2, "no cooldown → both toasts show")
   end)
 end)

@@ -126,53 +126,17 @@ function M.get_optimizer_defaults()
   return out
 end
 
----@param initial_lines string[]
----@param goal_lines string[]
----@param boundary_first_col integer
----@param boundary_last_col integer
----@param has_lines_above boolean
----@param has_lines_below boolean
----@param start_row integer
----@param start_col integer
----@param end_row integer
----@param end_col integer
----@param key_seq string
----@param window_height integer
----@param scroll_amount integer
----@param RESULTS_CALCULATED integer
----@param optimizer_overrides? string
+---@param req VF.SearchRequest
+---@param results_calculated integer
 ---@return VF.Optimizer.Result[] results, number user_cost, string debug, VF.Diff.Region[] diffs
-function M.analyze(
-  initial_lines, goal_lines,
-  boundary_first_col, boundary_last_col,
-  has_lines_above, has_lines_below,
-  start_row, start_col, end_row, end_col,
-  key_seq,
-  window_height, scroll_amount,
-  RESULTS_CALCULATED,
-  optimizer_overrides
-)
-  local initial_payload = core.encode_line_array(initial_lines, "initial_lines")
-  local goal_payload = core.encode_line_array(goal_lines, "goal_lines")
-  local user_seq = key_seq or ""
-  local override_payload = optimizer_overrides or ""
-
-  local result = lib.vf_analyze(
-    initial_payload, #initial_payload,
-    goal_payload, #goal_payload,
-    boundary_first_col, boundary_last_col,
-    has_lines_above, has_lines_below,
-    start_row, start_col, end_row, end_col,
-    user_seq, #user_seq,
-    window_height, scroll_amount,
-    RESULTS_CALCULATED,
-    override_payload, #override_payload
-  )
+function M.analyze(req, results_calculated)
+  local result_str = core.with_search_request(req, function(request)
+    return core.slice_to_string(lib.vf_analyze(request, results_calculated))
+  end)
   local dbg = core.slice_to_string(lib.vf_get_debug())
-  local result_str = core.slice_to_string(result)
 
   if result_str:sub(1, 6) == "ERROR:" then
-    error(result_str)
+    error(result_str, 0)
   end
 
   local results, user_cost, diffs = parse_analyze_results(result_str)
@@ -186,43 +150,22 @@ end
 ---@field diffs VF.Diff.Region[]   # The planner's regions the search ran against; empty for pure navigation
 
 --- Kicks off `analyze` on a C++ worker thread and returns a job id immediately.
---- Same arguments as `M.analyze` plus `deadline_ms` (0 = run to natural caps).
---- Poll with `analyze_poll` until it stops returning nil.
----@param deadline_ms integer|nil
+--- `deadline_ms` 0 = run to natural caps. Poll with `analyze_poll` until it
+--- stops returning nil.
+---@param req VF.SearchRequest
+---@param results_calculated integer
+---@param deadline_ms integer
 ---@return integer job_id
-function M.analyze_start_async(
-  initial_lines, goal_lines,
-  boundary_first_col, boundary_last_col,
-  has_lines_above, has_lines_below,
-  start_row, start_col, end_row, end_col,
-  key_seq,
-  window_height, scroll_amount,
-  RESULTS_CALCULATED,
-  optimizer_overrides,
-  deadline_ms
-)
-  local initial_payload = core.encode_line_array(initial_lines, "initial_lines")
-  local goal_payload = core.encode_line_array(goal_lines, "goal_lines")
-  local user_seq = key_seq or ""
-  local override_payload = optimizer_overrides or ""
-
-  local payload = core.slice_to_string(lib.vf_analyze_start_async(
-    initial_payload, #initial_payload,
-    goal_payload, #goal_payload,
-    boundary_first_col, boundary_last_col,
-    has_lines_above, has_lines_below,
-    start_row, start_col, end_row, end_col,
-    user_seq, #user_seq,
-    window_height, scroll_amount,
-    RESULTS_CALCULATED,
-    override_payload, #override_payload,
-    deadline_ms or 0
-  ))
+function M.analyze_start_async(req, results_calculated, deadline_ms)
+  local payload = core.with_search_request(req, function(request)
+    return core.slice_to_string(
+      lib.vf_analyze_start_async(request, results_calculated, deadline_ms))
+  end)
   if payload:sub(1, 6) == "ERROR:" then
     error(payload)
   end
   return tonumber(payload)
-    or error("analyze_start_async returned non-numeric job_id: " .. payload)
+    or error("analyze_start_async returned non-numeric job_id: " .. payload, 0)
 end
 
 --- Returns the parsed analyze result once the worker finishes, or nil while it
@@ -233,7 +176,7 @@ function M.analyze_poll(job_id)
   local result_str = core.slice_to_string(lib.vf_analyze_poll(job_id))
   if result_str == "pending" then return nil end
   if result_str:sub(1, 6) == "ERROR:" then
-    error(result_str)
+    error(result_str, 0)
   end
   local results, user_cost, diffs = parse_analyze_results(result_str)
   return {
@@ -267,7 +210,7 @@ function M.compute_diffs(initial_lines, goal_lines, diff_algorithm)
   local result_str = core.slice_to_string(lib.vf_compute_diffs(
     initial_payload, #initial_payload, goal_payload, #goal_payload, diff_algorithm))
   if result_str:sub(1, 6) == "ERROR:" then
-    error(result_str)
+    error(result_str, 0)
   end
   return parse_diff_regions(result_str)
 end

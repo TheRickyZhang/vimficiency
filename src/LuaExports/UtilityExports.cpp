@@ -3,20 +3,19 @@
 
 import std.compat;
 import vf.LuaExports.Common;
+import vf.LuaExports.Logic;
+import vf.LuaExports.Payload;
 import vf.Interpreter.MovementInterpreter;
 import vf.Interpreter.SequenceParser;
 import vf.Optimizer.CompositionOptimizer.CompositionOptimizerParams;
 import vf.Optimizer.NavOptimizer.NavOptimizerParams;
 import vf.Optimizer.OptimizerParamsBase;
 import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
+import vf.Types.Lines;
 import vf.Utils.Debug;
 
 using namespace std;
-namespace helpers = VF::LuaExports::helpers;
-namespace payload = VF::LuaExports::payload;
-namespace logic = VF::LuaExports::logic;
-using VF::LuaExports::ExportError;
-using VF::LuaExports::Result;
+using namespace VF::LuaExports;
 
 namespace {
 
@@ -47,8 +46,8 @@ extern "C" {
 
 VFByteSlice vf_tokenize_movements(const char *seq, size_t seq_len) {
   static string result_storage;
-  return helpers::storeBytes(result_storage,
-      helpers::requiredBytes(seq, seq_len, "seq")
+  return storeBytes(result_storage,
+      requiredBytes(seq, seq_len, "seq")
           .and_then([](string_view seqText) -> Result<string> {
             return parseMovements(seqText)
           .transform([](const vector<ParsedMovement>& motions) {
@@ -60,7 +59,7 @@ VFByteSlice vf_tokenize_movements(const char *seq, size_t seq_len) {
               oss << motion;
               rows.push_back(string{tokenKindChar(TokenKind::Movement)} + "\t" + oss.str());
             }
-            return helpers::joinWithTrailingNewline(rows);
+            return joinWithTrailingNewline(rows);
           })
           .transform_error([](const MovementParseError& error) {
             return ExportError{formatMovementParseError(error)};
@@ -70,8 +69,8 @@ VFByteSlice vf_tokenize_movements(const char *seq, size_t seq_len) {
 
 VFByteSlice vf_tokenize_sequence(const char *seq, size_t seq_len) {
   static string result_storage;
-  return helpers::storeBytes(result_storage,
-      helpers::requiredBytes(seq, seq_len, "seq")
+  return storeBytes(result_storage,
+      requiredBytes(seq, seq_len, "seq")
           .and_then([](string_view seqText) {
             return parseSequence(seqText)
           .transform([](const vector<TaggedToken>& tokens) {
@@ -80,7 +79,7 @@ VFByteSlice vf_tokenize_sequence(const char *seq, size_t seq_len) {
             for (const auto& tok : tokens) {
               rows.push_back(string{tokenKindChar(tok.kind)} + "\t" + tok.token);
             }
-            return helpers::joinWithTrailingNewline(rows);
+            return joinWithTrailingNewline(rows);
           })
           .transform_error([](const SequenceParseError& error) {
             return ExportError{formatSequenceParseError(error)};
@@ -90,8 +89,8 @@ VFByteSlice vf_tokenize_sequence(const char *seq, size_t seq_len) {
 
 VFByteSlice vf_build_sequence(const char *encoded_events, size_t encoded_events_len) {
   static string result_storage;
-  return helpers::storeBytes(result_storage,
-      helpers::requiredBytes(encoded_events, encoded_events_len, "encoded_events")
+  return storeBytes(result_storage,
+      requiredBytes(encoded_events, encoded_events_len, "encoded_events")
           .and_then(logic::buildKeySequence));
 }
 
@@ -104,14 +103,14 @@ VFByteSlice vf_compute_search_region(
     int end_row,
     int padding) {
   static string result_storage;
-  return helpers::storeBytes(result_storage,
-      helpers::requiredBytes(
+  return storeBytes(result_storage,
+      requiredBytes(
           encoded_start_lines,
           encoded_start_lines_len,
           "encoded_start_lines")
           .and_then(payload::decodeLineArray)
           .and_then([&](const Lines& startLines) {
-            return helpers::requiredBytes(
+            return requiredBytes(
                     encoded_end_lines,
                     encoded_end_lines_len,
                     "encoded_end_lines")
@@ -119,7 +118,7 @@ VFByteSlice vf_compute_search_region(
                 .transform([&](const Lines& endLines) {
                   const auto [regionStart, regionEnd] = logic::computeSearchRegion(
                       start_row, end_row, startLines, endLines, padding);
-                  return helpers::packInts(regionStart, regionEnd);
+                  return packInts(regionStart, regionEnd);
                 });
           }));
 }
@@ -213,7 +212,7 @@ VFByteSlice vf_get_optimizer_defaults() {
 
     cached = out.str();
   }
-  return helpers::byteSlice(cached);
+  return byteSlice(cached);
 }
 
 }

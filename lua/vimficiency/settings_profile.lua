@@ -74,7 +74,7 @@ end
 ---Delete the sidecar for `feature`, reverting to the layered defaults.
 ---@param feature string
 function M.clear(feature)
-  pcall(os.remove, path(feature))
+  os.remove(path(feature))
 end
 
 return M

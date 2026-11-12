@@ -8,9 +8,9 @@ local ffi_session = require("vimficiency.ffi.session")
 local util = require("vimficiency.util")
 
 ---@class (exact) VF.SessionCompute
----@field capture_end_state               fun(active: VF.Session.Active): VF.BufferState|nil, string|nil
----@field compute_result_for_active       fun(active: VF.Session.Active, end_state: VF.BufferState): VF.Session.Result|nil, string|nil
----@field compute_result_for_active_async fun(active: VF.Session.Active, end_state: VF.BufferState, deadline_ms: integer, on_done: fun(result: VF.Session.Result|nil, err: string|nil)): VF.Async.PollHandle|nil
+---@field capture_end_state               fun(active: VF.Session.Active): VF.BufferState
+---@field compute_result_for_active       fun(active: VF.Session.Active, end_state: VF.BufferState): VF.Session.Result
+---@field compute_result_for_active_async fun(active: VF.Session.Active, end_state: VF.BufferState, deadline_ms: integer, on_done: fun(result: VF.Session.Result|nil, err: string|nil)): VF.Async.PollHandle
 ---@field manual_should_evict             fun(session: VF.Session.Active, cursor_row: integer, now_ns: integer): string|nil
 local M = {}
 
@@ -97,41 +97,38 @@ local function slice_lines(lines, region_start, region_end)
   return sliced
 end
 
--- The session's end snapshot: the counterpart of `active.start_state`. Reads
--- the live buffer, so callers take it at fire time, before any analyze is
--- kicked off. Falls back to the current window when the captured one is gone.
+-- Raises when the captured buffer is not the current one.
 ---@param active VF.Session.Active
----@return VF.BufferState|nil end_state
----@return string|nil err
+---@return VF.BufferState end_state
 function M.capture_end_state(active)
   local curr_buf = v.nvim_get_current_buf()
   if curr_buf ~= active.buf then
-    return nil, string.format(
+    error(string.format(
       "session captured in %s, but you're now in %s. " ..
       "For recall, this usually means one of the recent keystrokes fired " ..
       "while a different buffer was focused (scratch/result window from a " ..
       "prior :Vimfy command, help buffer, popup, or a <C-^>/<C-w>w switch). " ..
       "Focus the captured buffer and re-run, or use a smaller window.",
       buf_display_name(active.buf),
-      buf_display_name(curr_buf))
+      buf_display_name(curr_buf)), 0)
   end
 
   local win = active.win
+  -- Use current if can't find
   if not v.nvim_win_is_valid(win) or v.nvim_win_get_buf(win) ~= active.buf then
     win = v.nvim_get_current_win()
   end
 
   local end_state = util.capture_state(active.buf, win)
   util.check_state_inconsistencies(active.start_state, end_state)
-  return end_state, nil
+  return end_state
 end
 
 -- Slice both snapshots to the search region and marshal the keystroke stream
 -- into the bundle consumed by both the sync and async analyze paths.
 ---@param active VF.Session.Active
 ---@param end_state VF.BufferState
----@return table|nil input
----@return string|nil err
+---@return table input
 local function build_analyze_input(active, end_state)
   local start_state = active.start_state
   local initial_lines = start_state.lines
@@ -144,7 +141,7 @@ local function build_analyze_input(active, end_state)
   )
 
   if end_search - start_search > config.MAX_SEARCH_LINES then
-    return nil, "search range exceeds MAX_SEARCH_LINES"
+    error("search range exceeds MAX_SEARCH_LINES", 0)
   end
 
   local initial_slice = slice_lines(initial_lines, start_search, end_search)
@@ -163,29 +160,31 @@ local function build_analyze_input(active, end_state)
   local boundary_last_col = #initial_slice[#initial_slice] - 1
   if boundary_last_col < 0 then boundary_last_col = 0 end
 
-  return {
-    active = active,
-    start_state = start_state,
-    initial_slice = initial_slice,
-    goal_slice = goal_slice,
+  ---@type VF.SearchRequest
+  local request = {
+    initial_lines = initial_slice,
+    goal_lines = goal_slice,
+    start_row = start_state.row - start_search,
+    start_col = start_state.col,
+    end_row = end_state.row - start_search,
+    end_col = end_state.col,
     boundary_first_col = 0,
     boundary_last_col = boundary_last_col,
     has_lines_above = start_search > 0,
     has_lines_below = end_search < math.max(#initial_lines, #goal_lines) - 1,
-    rel_start_row = start_state.row - start_search,
-    rel_start_col = start_state.col,
-    rel_end_row = end_state.row - start_search,
-    rel_end_col = end_state.col,
-    keyseq_str = keyseq_str,
-    keyseq_raw = keyseq_raw,
-    atom_seq = atom_seq,
+    window_height = start_state.window_height,
+    scroll_amount = start_state.scroll_amount,
+    user_seq = keyseq_str,
     optimizer_overrides = ffi_optimizer.encode_optimizer_overrides({ shared = config.optimizer }),
+  }
+
+  return {
+    active = active,
+    request = request,
+    atom_seq = atom_seq,
   }
 end
 
--- Turn the analyze output into a stored result. `analyze_ms` is the analyze
--- duration; on the async path this is worker wall-time, not a main-thread
--- stall.
 ---@param input table
 ---@param analyze VF.Optimizer.AnalyzeResult
 ---@param analyze_ms number
@@ -219,15 +218,16 @@ local function build_result(input, analyze, analyze_ms)
     diffs = disk.empty_array()
   end
 
+  local request = input.request
   local result = {
-    lines = input.initial_slice,
-    goal_lines = input.goal_slice,
-    start_row = input.rel_start_row,
-    start_col = input.rel_start_col,
-    end_row = input.rel_end_row,
-    end_col = input.rel_end_col,
-    has_lines_above = input.has_lines_above,
-    has_lines_below = input.has_lines_below,
+    lines = request.initial_lines,
+    goal_lines = request.goal_lines,
+    start_row = request.start_row,
+    start_col = request.start_col,
+    end_row = request.end_row,
+    end_col = request.end_col,
+    has_lines_above = request.has_lines_above,
+    has_lines_below = request.has_lines_below,
     -- Reserved boundary context. At the whole-buffer level the slice IS the
     -- edit region (boundary_first_col=0, boundary_last_col=last), so horizontal
     -- prefix/suffix are always empty; nonempty values only arise per planned
@@ -235,9 +235,9 @@ local function build_result(input, analyze, analyze_ms)
     prefix = "",
     suffix = "",
     diffs = diffs,
-    window_height = input.start_state.window_height,
-    scroll_amount = input.start_state.scroll_amount,
-    user_seq = input.keyseq_str,
+    window_height = request.window_height,
+    scroll_amount = request.scroll_amount,
+    user_seq = request.user_seq,
     user_cost = analyze.user_cost,
     optimal_results = optimal_results,
     capture_debug = build_capture_debug(input.atom_seq),
@@ -253,67 +253,37 @@ end
 
 ---@param active VF.Session.Active
 ---@param end_state VF.BufferState
----@return VF.Session.Result|nil result
----@return string|nil err
+---@return VF.Session.Result result
 function M.compute_result_for_active(active, end_state)
-  local input, err = build_analyze_input(active, end_state)
-  if not input then return nil, err end
+  local input = build_analyze_input(active, end_state)
 
+  -- Timestamp and call analyze()
   local analyze_t0 = vim.uv.hrtime()
-  local ok, results, user_cost, dbg, diffs = pcall(
-    ffi_optimizer.analyze,
-    input.initial_slice, input.goal_slice,
-    input.boundary_first_col, input.boundary_last_col,
-    input.has_lines_above, input.has_lines_below,
-    input.rel_start_row, input.rel_start_col, input.rel_end_row, input.rel_end_col,
-    input.keyseq_str,
-    input.start_state.window_height, input.start_state.scroll_amount,
-    config.RESULTS_CALCULATED,
-    input.optimizer_overrides
-  )
+  local results, user_cost, dbg, diffs =
+    ffi_optimizer.analyze(input.request, config.RESULTS_CALCULATED)
   local analyze_ms = (vim.uv.hrtime() - analyze_t0) / 1e6
-  if not ok then
-    return nil, "FFI error: " .. tostring(results)
-  end
 
+  -- Save to corresponding file name, preserve cost, results, and debug info
   return build_result(input,
     { results = results, user_cost = user_cost, dbg = dbg, diffs = diffs },
-    analyze_ms), nil
+    analyze_ms)
 end
 
 -- Async variant for auto_suggest: the analyze search runs on a C++ worker thread
 -- so the main thread never blocks on it. `on_done(result, err)` is invoked on
--- the main thread once the worker finishes. Returns the poll handle, or nil if
--- slicing/start failed (on_done was already called with the error in that case).
+-- the main thread once the worker finishes; `err` is a worker-side failure.
+-- Slicing/start failures raise synchronously instead.
 ---@param active VF.Session.Active
 ---@param end_state VF.BufferState
 ---@param deadline_ms integer
 ---@param on_done fun(result: VF.Session.Result|nil, err: string|nil)
----@return VF.Async.PollHandle|nil
+---@return VF.Async.PollHandle
 function M.compute_result_for_active_async(active, end_state, deadline_ms, on_done)
-  local input, err = build_analyze_input(active, end_state)
-  if not input then
-    on_done(nil, err)
-    return nil
-  end
+  local input = build_analyze_input(active, end_state)
 
   local analyze_t0 = vim.uv.hrtime()
-  local ok, job_id = pcall(
-    ffi_optimizer.analyze_start_async,
-    input.initial_slice, input.goal_slice,
-    input.boundary_first_col, input.boundary_last_col,
-    input.has_lines_above, input.has_lines_below,
-    input.rel_start_row, input.rel_start_col, input.rel_end_row, input.rel_end_col,
-    input.keyseq_str,
-    input.start_state.window_height, input.start_state.scroll_amount,
-    config.RESULTS_CALCULATED,
-    input.optimizer_overrides,
-    deadline_ms
-  )
-  if not ok then
-    on_done(nil, "FFI error: " .. tostring(job_id))
-    return nil
-  end
+  local job_id = ffi_optimizer.analyze_start_async(
+    input.request, config.RESULTS_CALCULATED, deadline_ms)
 
   return poller.start(
     function()

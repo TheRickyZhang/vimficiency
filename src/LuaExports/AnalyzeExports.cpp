@@ -3,114 +3,31 @@
 
 import std.compat;
 import vf.LuaExports.Common;
+import vf.LuaExports.Logic;
+import vf.LuaExports.Payload;
 import vf.LuaExports.AsyncJob;
 import vf.LuaExports.AsyncJobRegistry;
-import vf.Boundary.NavBoundary;
+import vf.Keyboard.Config;
 import vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
 import vf.Optimizer.DiffPlanner.DiffState;
 import vf.Optimizer.NavOptimizer.NavOptimizer;
-import vf.Optimizer.OptimizerParamOverrides;
 import vf.Optimizer.SearchControl;
 import vf.Utils.Debug;
 
 using namespace std;
-namespace helpers = VF::LuaExports::helpers;
-namespace payload = VF::LuaExports::payload;
-using VF::LuaExports::g_config_internal;
-using VF::LuaExports::EVENT_FIELD_SEP;
-using VF::LuaExports::AsyncJob;
-using VF::LuaExports::JobRegistry;
+using namespace VF::LuaExports;
+using logic::SearchInputs;
 
 namespace {
-
-// Fully-owning decode of the analyze FFI inputs. Owns its Lines and keyseq so it
-// can outlive the FFI buffers on the async worker thread (same ownership rule as
-// StartInputs in InteractiveExports.cpp). `overrides` is kept un-resolved
-// because analyze branches on initial==goal and applies them to different param
-// types (Nav vs Composition).
-struct AnalyzeInputs {
-  Lines initialLines;
-  Lines goalLines;
-  CursorPos initialPos{0, 0};
-  CursorPos goalPos{0, 0};
-  NavBoundary boundary;
-  NavContext navContext;
-  string keyseqText;
-  OptimizerParamOverrides overrides;
-  int resultsCalculated = 0;
-};
-
-VF::LuaExports::Result<AnalyzeInputs> decodeAnalyzeInputs(
-    const char *encoded_initial_lines,
-    size_t encoded_initial_lines_len,
-    const char *encoded_goal_lines,
-    size_t encoded_goal_lines_len,
-    int boundaryFirstCol,
-    int boundaryLastCol,
-    bool hasLinesAbove,
-    bool hasLinesBelow,
-    int start_row,
-    int start_col,
-    int end_row,
-    int end_col,
-    const char *keyseq,
-    size_t keyseq_len,
-    int window_height,
-    int scroll_amount,
-    int results_calculated,
-    const char *optimizer_overrides,
-    size_t optimizer_overrides_len) {
-  CHECK(results_calculated >= 0, "results_calculated must be non-negative");
-  auto overridesText = helpers::requiredBytes(
-      optimizer_overrides,
-      optimizer_overrides_len,
-      "optimizer_overrides");
-  if (!overridesText) return unexpected(overridesText.error());
-  auto overridesResult = helpers::parseOverrides(*overridesText);
-  if (!overridesResult) return unexpected(overridesResult.error());
-
-  auto initialText = helpers::requiredBytes(
-      encoded_initial_lines,
-      encoded_initial_lines_len,
-      "encoded_initial_lines");
-  if (!initialText) return unexpected(initialText.error());
-  auto goalText = helpers::requiredBytes(
-      encoded_goal_lines,
-      encoded_goal_lines_len,
-      "encoded_goal_lines");
-  if (!goalText) return unexpected(goalText.error());
-  auto keyseqTextResult = helpers::requiredBytes(keyseq, keyseq_len, "keyseq");
-  if (!keyseqTextResult) return unexpected(keyseqTextResult.error());
-
-  auto initialLinesResult = payload::decodeLineArray(*initialText);
-  if (!initialLinesResult) return unexpected(initialLinesResult.error());
-  auto goalLinesResult = payload::decodeLineArray(*goalText);
-  if (!goalLinesResult) return unexpected(goalLinesResult.error());
-
-  AnalyzeInputs in;
-  in.initialLines = std::move(*initialLinesResult);
-  in.goalLines = std::move(*goalLinesResult);
-  in.keyseqText.assign(*keyseqTextResult);
-  in.overrides = std::move(*overridesResult);
-  in.resultsCalculated = results_calculated;
-
-  // Neovim can capture an insert-mode / 'virtualedit' cursor one past
-  // end-of-line, or (for recall windows) a row outside the sliced buffer. The
-  // optimizer requires normal-mode-valid endpoints, so clamp at the boundary
-  // rather than aborting on the downstream CHECK.
-  in.initialPos = in.initialLines.clamp(CursorPos(start_row, start_col));
-  in.goalPos = in.goalLines.clamp(CursorPos(end_row, end_col));
-  in.navContext = NavContext(window_height, scroll_amount);
-  in.boundary = helpers::sliceBoundary(
-      in.initialLines, boundaryFirstCol, boundaryLastCol, hasLinesAbove, hasLinesBelow);
-  return in;
-}
 
 // The heavy half: the Nav-vs-Composition branch plus result-string formatting.
 // Runs on the calling thread for `vf_analyze` and on a worker for the async
 // trio. `control` bounds whichever search runs.
 string runAnalyze(
-    const AnalyzeInputs& in, const Config& config, const SearchControl* control) {
+    const SearchInputs& in,
+    int resultsCalculated,
+    const Config& config,
+    const SearchControl* control) {
   vector<::Result> results;
   vector<DiffState> diffs;
 
@@ -119,7 +36,7 @@ string runAnalyze(
     // surface (sequence, cost), so down-convert to Result for shared output.
     NavOptimizer opt(config);
     NavOptimizerParams navParams = NavOptimizerParams{}
-        .withMaxResults(in.resultsCalculated)
+        .withMaxResults(resultsCalculated)
         .withMaxResultsPerEndPos(2);
     in.overrides.applyTo(navParams);
     auto navResults = opt.optimize(
@@ -127,7 +44,7 @@ string runAnalyze(
         in.initialPos,
         in.goalPos,
         navParams,
-        in.keyseqText,
+        in.userSeq,
         in.boundary,
         in.navContext,
         control).getResults();
@@ -138,7 +55,7 @@ string runAnalyze(
   } else {
     CompositionOptimizer opt(config);
     CompositionOptimizerParams compParams =
-        CompositionOptimizerParams{}.withMaxResults(in.resultsCalculated);
+        CompositionOptimizerParams{}.withMaxResults(resultsCalculated);
     in.overrides.applyTo(compParams);
     const CompositionResult composed = opt.optimize(
         in.initialLines,
@@ -146,7 +63,7 @@ string runAnalyze(
         in.goalLines,
         in.goalPos,
         compParams,
-        in.keyseqText,
+        in.userSeq,
         in.boundary,
         in.navContext,
         control);
@@ -154,7 +71,7 @@ string runAnalyze(
     diffs = composed.getDiffs();
   }
 
-  const double userCost = getEffort(in.keyseqText, config);
+  const double userCost = getEffort(in.userSeq, config);
   vector<const ::Result*> validResults;
   for (const ::Result& result : results) {
     if (result.getSequence().empty()) continue;
@@ -193,7 +110,8 @@ string runAnalyze(
 // the worker is independent of the FFI buffers and the main thread. The result
 // string is read once `vf_analyze_poll` observes `ready()`.
 struct AnalyzeState {
-  AnalyzeInputs inputs;
+  SearchInputs inputs;
+  int resultsCalculated;
   Config config;
   string result;
 };
@@ -201,72 +119,24 @@ using AnalyzeJob = AsyncJob<AnalyzeState>;
 
 JobRegistry<AnalyzeJob> g_analyze_jobs;
 
-VF::LuaExports::Result<string> analyzeImpl(
-    const char *encoded_initial_lines,
-    size_t encoded_initial_lines_len,
-    const char *encoded_goal_lines,
-    size_t encoded_goal_lines_len,
-    int boundaryFirstCol,
-    int boundaryLastCol,
-    bool hasLinesAbove,
-    bool hasLinesBelow,
-    int start_row,
-    int start_col,
-    int end_row,
-    int end_col,
-    const char *keyseq,
-    size_t keyseq_len,
-    int window_height,
-    int scroll_amount,
-    int results_calculated,
-    const char *optimizer_overrides,
-    size_t optimizer_overrides_len) {
-  auto inputsRes = decodeAnalyzeInputs(
-      encoded_initial_lines, encoded_initial_lines_len,
-      encoded_goal_lines, encoded_goal_lines_len,
-      boundaryFirstCol, boundaryLastCol, hasLinesAbove, hasLinesBelow,
-      start_row, start_col, end_row, end_col,
-      keyseq, keyseq_len, window_height, scroll_amount, results_calculated,
-      optimizer_overrides, optimizer_overrides_len);
+VF::LuaExports::Result<string> analyzeImpl(const VFSearchRequest* request, int results_calculated) {
+  CHECK(results_calculated >= 0, "results_calculated must be non-negative");
+  auto inputsRes = logic::decodeSearchRequest(request);
   if (!inputsRes) return unexpected(inputsRes.error());
-
-  return runAnalyze(*inputsRes, g_config_internal, nullptr);
+  return runAnalyze(*inputsRes, results_calculated, g_config_internal, nullptr);
 }
 
 VF::LuaExports::Result<string> startAsyncImpl(
-    const char *encoded_initial_lines,
-    size_t encoded_initial_lines_len,
-    const char *encoded_goal_lines,
-    size_t encoded_goal_lines_len,
-    int boundaryFirstCol,
-    int boundaryLastCol,
-    bool hasLinesAbove,
-    bool hasLinesBelow,
-    int start_row,
-    int start_col,
-    int end_row,
-    int end_col,
-    const char *keyseq,
-    size_t keyseq_len,
-    int window_height,
-    int scroll_amount,
-    int results_calculated,
-    const char *optimizer_overrides,
-    size_t optimizer_overrides_len,
-    int deadline_ms) {
-  auto inputsRes = decodeAnalyzeInputs(
-      encoded_initial_lines, encoded_initial_lines_len,
-      encoded_goal_lines, encoded_goal_lines_len,
-      boundaryFirstCol, boundaryLastCol, hasLinesAbove, hasLinesBelow,
-      start_row, start_col, end_row, end_col,
-      keyseq, keyseq_len, window_height, scroll_amount, results_calculated,
-      optimizer_overrides, optimizer_overrides_len);
+    const VFSearchRequest* request, int results_calculated, int deadline_ms) {
+  CHECK(results_calculated >= 0, "results_calculated must be non-negative");
+  auto inputsRes = logic::decodeSearchRequest(request);
   if (!inputsRes) return unexpected(inputsRes.error());
 
   auto job = std::make_unique<AnalyzeJob>(
-      AnalyzeState{std::move(*inputsRes), g_config_internal, {}}, deadline_ms,
+      AnalyzeState{std::move(*inputsRes), results_calculated, g_config_internal, {}},
+      deadline_ms,
       [](AnalyzeState& s, const SearchControl* control) {
-        s.result = runAnalyze(s.inputs, s.config, control);
+        s.result = runAnalyze(s.inputs, s.resultsCalculated, s.config, control);
       });
   const int job_id = g_analyze_jobs.create(std::move(job));
   return to_string(job_id);
@@ -276,98 +146,17 @@ VF::LuaExports::Result<string> startAsyncImpl(
 
 extern "C" {
 
-VFByteSlice vf_analyze(
-    const char *encoded_initial_lines,
-    size_t encoded_initial_lines_len,
-    const char *encoded_goal_lines,
-    size_t encoded_goal_lines_len,
-    int boundaryFirstCol,
-    int boundaryLastCol,
-    bool hasLinesAbove,
-    bool hasLinesBelow,
-    int start_row,
-    int start_col,
-    int end_row,
-    int end_col,
-    const char *keyseq,
-    size_t keyseq_len,
-    int window_height,
-    int scroll_amount,
-    int results_calculated,
-    const char *optimizer_overrides,
-    size_t optimizer_overrides_len) {
-  static string result_storage;
-  return helpers::storeBytes(
-      result_storage,
-      analyzeImpl(
-          encoded_initial_lines,
-          encoded_initial_lines_len,
-          encoded_goal_lines,
-          encoded_goal_lines_len,
-          boundaryFirstCol,
-          boundaryLastCol,
-          hasLinesAbove,
-          hasLinesBelow,
-          start_row,
-          start_col,
-          end_row,
-          end_col,
-          keyseq,
-          keyseq_len,
-          window_height,
-          scroll_amount,
-          results_calculated,
-          optimizer_overrides,
-          optimizer_overrides_len));
+VFByteSlice vf_analyze(const VFSearchRequest* request, int results_calculated) {
+  static string storage;
+  return storeBytes(storage, analyzeImpl(request, results_calculated));
 }
 
 // Kicks off the analyze search on a worker thread and returns a job-id string
 // immediately. Poll with vf_analyze_poll until it stops returning "pending".
 VFByteSlice vf_analyze_start_async(
-    const char *encoded_initial_lines,
-    size_t encoded_initial_lines_len,
-    const char *encoded_goal_lines,
-    size_t encoded_goal_lines_len,
-    int boundaryFirstCol,
-    int boundaryLastCol,
-    bool hasLinesAbove,
-    bool hasLinesBelow,
-    int start_row,
-    int start_col,
-    int end_row,
-    int end_col,
-    const char *keyseq,
-    size_t keyseq_len,
-    int window_height,
-    int scroll_amount,
-    int results_calculated,
-    const char *optimizer_overrides,
-    size_t optimizer_overrides_len,
-    int deadline_ms) {
+    const VFSearchRequest* request, int results_calculated, int deadline_ms) {
   static string storage;
-  return helpers::storeBytes(
-      storage,
-      startAsyncImpl(
-          encoded_initial_lines,
-          encoded_initial_lines_len,
-          encoded_goal_lines,
-          encoded_goal_lines_len,
-          boundaryFirstCol,
-          boundaryLastCol,
-          hasLinesAbove,
-          hasLinesBelow,
-          start_row,
-          start_col,
-          end_row,
-          end_col,
-          keyseq,
-          keyseq_len,
-          window_height,
-          scroll_amount,
-          results_calculated,
-          optimizer_overrides,
-          optimizer_overrides_len,
-          deadline_ms));
+  return storeBytes(storage, startAsyncImpl(request, results_calculated, deadline_ms));
 }
 
 // Returns "pending" while the worker runs; once done, returns the same result
@@ -377,11 +166,11 @@ VFByteSlice vf_analyze_poll(int job_id) {
   AnalyzeJob& job = g_analyze_jobs.get(job_id);
   if (!job.ready()) {
     storage = "pending";
-    return helpers::byteSlice(storage);
+    return byteSlice(storage);
   }
   std::unique_ptr<AnalyzeJob> owned = g_analyze_jobs.take(job_id);
   storage = std::move(owned->state().result);
-  return helpers::byteSlice(storage);
+  return byteSlice(storage);
 }
 
 // Signals cancellation and frees the job; dropping it joins the worker on this

@@ -20,9 +20,7 @@ local METRIC_FIELDS = {
 }
 
 local function recommendation_metric(active, item)
-  local mode = active.recommendation_sort or "effort"
-  local field = METRIC_FIELDS[mode] or "cost_diff"
-  return item[field] or item.cost_diff or 0
+  return item[METRIC_FIELDS[active.recommendation_sort]]
 end
 
 ---@class VF.Explore.RecRow
@@ -39,7 +37,7 @@ local strwidth = vim.fn.strdisplaywidth
 local function format_rec_row(row)
   local parts = { row.rank }
   for i, chunk in ipairs(row.chunks) do
-    local w = row.widths[i] or strwidth(chunk)
+    local w = row.widths[i]
     local pad = math.max(0, w - strwidth(chunk))
     local sep = (i == 1) and " " or "  "
     parts[#parts + 1] = sep .. chunk .. string.rep(" ", pad)
@@ -53,8 +51,7 @@ end
 function M.render(active, continuation)
   if not v.nvim_buf_is_valid(active.list_buf) then return end
 
-  local mode = active.recommendation_sort or "effort"
-  local label = METRIC_LABELS[mode] or METRIC_LABELS.effort
+  local label = METRIC_LABELS[active.recommendation_sort]
   local lines = { "Recommendations (" .. label .. ")", "" }
   local hl_entries = {}
 
@@ -116,7 +113,7 @@ function M.render(active, continuation)
   end
   for _, row in ipairs(rows) do
     for i = 1, #row.chunks do
-      row.widths[i] = col_widths[i] or strwidth(row.chunks[i])
+      row.widths[i] = col_widths[i]
     end
     lines[#lines + 1] = format_rec_row(row)
     hl_entries[#hl_entries + 1] = {

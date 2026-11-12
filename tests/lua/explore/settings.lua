@@ -28,16 +28,20 @@ end)
 
 test("explore settings: user config.explore overrides VIEW_SETTINGS defaults", function()
   local config = require("vimficiency.config")
-  local saved = config.explore.display_mode
-  config.explore.display_mode = "below"
+  require("_helpers").with_patch({ { config.explore, "display_mode", "below" } }, function()
+    local defaults = helpers.default_settings()
+    assert_eq(defaults.view.display_mode, "below")
+    -- Untouched keys still come from the spec.
+    assert_eq(defaults.view.recommendation_sort, "effort")
+    assert_eq(defaults.view.recommendation_count, 5)
+  end)
+end)
 
-  local defaults = helpers.default_settings()
-  assert_eq(defaults.view.display_mode, "below")
-  -- Untouched keys still come from the spec.
-  assert_eq(defaults.view.recommendation_sort, "effort")
-  assert_eq(defaults.view.recommendation_count, 5)
-
-  config.explore.display_mode = saved
+test("explore settings: a false override is not collapsed to the spec default", function()
+  local config = require("vimficiency.config")
+  require("_helpers").with_patch({ { config.explore, "show_user_typed", false } }, function()
+    assert_eq(helpers.default_settings().view.show_user_typed, false)
+  end)
 end)
 
 test("explore settings: settings_profile.load handles missing sidecar", function()

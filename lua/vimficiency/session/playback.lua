@@ -10,22 +10,18 @@ local M = {}
 ---@param label string
 ---@param count integer|nil
 local function run_compare(result, label, count)
-  local function fmt_cost(c)
-    return c and string.format("%.2f", c) or nil
-  end
-
-  local optimal_results = result.optimal_results or {}
-  local user_seq = result.user_seq or ""
+  local optimal_results = result.optimal_results
+  local user_seq = result.user_seq
   local first_optimal = optimal_results[1] and optimal_results[1].seq or ""
 
   local user_item = nil
   if user_seq ~= "" and user_seq ~= first_optimal then
-    user_item = { seq = user_seq, cost = fmt_cost(result.user_cost) }
+    user_item = { seq = user_seq, cost = string.format("%.2f", result.user_cost) }
   end
 
   local suggestions = {}
   for _, r in ipairs(optimal_results) do
-    table.insert(suggestions, { seq = r.seq, cost = fmt_cost(r.cost) })
+    table.insert(suggestions, { seq = r.seq, cost = string.format("%.2f", r.cost) })
   end
 
   if user_item == nil and #suggestions == 0 then
@@ -62,7 +58,7 @@ function M.simulate(alias_or_filename, count)
     if data then
       on_disk = data
     elseif not is_missing then
-      vim.notify("simulate: " .. (err or "unknown error"), vim.log.levels.ERROR)
+      vim.notify("simulate: " .. err, vim.log.levels.ERROR)
       return
     end
   end
@@ -81,14 +77,13 @@ function M.simulate(alias_or_filename, count)
     result = in_memory
   elseif on_disk then
     if alias_mod.is_named(alias_or_filename) then
-      local id, reg_err = session_store.register_fetched_result(alias_or_filename, on_disk)
-      if id then
-        vim.notify("vimfy: fetched [" .. alias_or_filename .. "] into session", vim.log.levels.INFO)
-      else
+      if session_store.has_active(alias_or_filename) then
         vim.notify("vimfy: replaying '" .. alias_or_filename .. "' directly from disk " ..
-          "(implicit fetch failed: " .. (reg_err or "unknown error") ..
-          "). Use `:Vimfy fetch " .. alias_or_filename .. " <alias>` to keep it in the workspace.",
-          vim.log.levels.WARN)
+          "(an active session holds that alias). Use `:Vimfy fetch " .. alias_or_filename ..
+          " <alias>` to keep it in the workspace.", vim.log.levels.WARN)
+      else
+        session_store.register_fetched_result(alias_or_filename, on_disk)
+        vim.notify("vimfy: fetched [" .. alias_or_filename .. "] into session", vim.log.levels.INFO)
       end
     end
     result = on_disk

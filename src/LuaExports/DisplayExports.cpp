@@ -2,27 +2,26 @@
 
 import std.compat;
 import vf.LuaExports.Common;
+import vf.LuaExports.Payload;
 import vf.Interpreter.SequenceDisplay;
 import vf.Session.ResultView;
 import vf.Utils.ParseNumber;
 
 using namespace std;
-namespace helpers = VF::LuaExports::helpers;
-namespace payload = VF::LuaExports::payload;
-using VF::LuaExports::Result;
+using namespace VF::LuaExports;
 using payload::encodeStringList;
 
 namespace {
 
 Result<int> parseIntField(string_view text, string_view name) {
   auto parsed = parseInt(text);
-  if (!parsed) return helpers::unexpectedError("invalid " + string(name));
+  if (!parsed) return unexpectedError("invalid " + string(name));
   return *parsed;
 }
 
 Result<double> parseDoubleField(string_view text, string_view name) {
   auto parsed = parseDouble(text);
-  if (!parsed) return helpers::unexpectedError("invalid " + string(name));
+  if (!parsed) return unexpectedError("invalid " + string(name));
   return *parsed;
 }
 
@@ -31,7 +30,7 @@ Result<VF::SessionView::Result> decodeSessionResult(string_view encoded) {
       .and_then([](const vector<string>& fields)
           -> Result<VF::SessionView::Result> {
         if (fields.size() != 10) {
-          return helpers::unexpectedError(
+          return unexpectedError(
               "invalid session result display payload");
         }
 
@@ -59,7 +58,7 @@ Result<VF::SessionView::Result> decodeSessionResult(string_view encoded) {
           result.hasUserCost = true;
           result.userCost = *userCost;
         } else if (fields[6] != "0") {
-          return helpers::unexpectedError("invalid user_cost presence flag");
+          return unexpectedError("invalid user_cost presence flag");
         }
 
         result.kind = fields[8];
@@ -70,7 +69,7 @@ Result<VF::SessionView::Result> decodeSessionResult(string_view encoded) {
           return unexpected(recommendationFields.error());
         }
         if (recommendationFields->size() % 2 != 0) {
-          return helpers::unexpectedError("invalid recommendation payload");
+          return unexpectedError("invalid recommendation payload");
         }
         for (size_t i = 0; i < recommendationFields->size(); i += 2) {
           auto cost = parseDoubleField((*recommendationFields)[i + 1],
@@ -97,9 +96,9 @@ Result<string> formatLabelled(
     bool tokenize,
     bool sectionize,
     Format format) {
-  return helpers::requiredBytes(label, labelLen, labelName)
+  return requiredBytes(label, labelLen, labelName)
       .and_then([&](string_view labelText) {
-        return helpers::requiredBytes(
+        return requiredBytes(
             encodedResult,
             encodedResultLen,
             "encoded_result")
@@ -124,9 +123,9 @@ VFByteSlice vf_sequence_display_lines(
     bool tokenize,
     bool sectionize) {
   static string result_storage;
-  return helpers::storeBytes(
+  return storeBytes(
       result_storage,
-      helpers::requiredBytes(seq, seq_len, "seq")
+      requiredBytes(seq, seq_len, "seq")
           .transform([&](string_view seqText) {
             return encodeStringList(VF::SequenceDisplay::lines(
                 seqText,
@@ -139,9 +138,9 @@ VFByteSlice vf_sequence_display_inline(
     size_t seq_len,
     bool tokenize) {
   static string result_storage;
-  return helpers::storeBytes(
+  return storeBytes(
       result_storage,
-      helpers::requiredBytes(seq, seq_len, "seq")
+      requiredBytes(seq, seq_len, "seq")
           .transform([&](string_view seqText) {
             return VF::SequenceDisplay::inlineText(
                 seqText,
@@ -153,9 +152,9 @@ VFByteSlice vf_sequence_display_key_notation(
     const char* text,
     size_t text_len) {
   static string result_storage;
-  return helpers::storeBytes(
+  return storeBytes(
       result_storage,
-      helpers::requiredBytes(text, text_len, "text")
+      requiredBytes(text, text_len, "text")
           .transform([](string_view textValue) {
             return VF::SequenceDisplay::displayKeyNotation(textValue);
           }));
@@ -166,9 +165,9 @@ VFByteSlice vf_sequence_display_typed_text(
     size_t text_len,
     bool key_notation) {
   static string result_storage;
-  return helpers::storeBytes(
+  return storeBytes(
       result_storage,
-      helpers::requiredBytes(text, text_len, "text")
+      requiredBytes(text, text_len, "text")
           .transform([&](string_view textValue) {
             return key_notation
                 ? VF::SequenceDisplay::displayTypedText(textValue)
@@ -181,16 +180,16 @@ VFByteSlice vf_sequence_display_typed_chunks(
     size_t encoded_chunks_len,
     bool tokenize) {
   static string result_storage;
-  return helpers::storeBytes(
+  return storeBytes(
       result_storage,
-      helpers::requiredBytes(
+      requiredBytes(
           encoded_chunks,
           encoded_chunks_len,
           "encoded_chunks")
           .and_then(payload::decodeLengthPrefixedStrings)
           .and_then([&](const vector<string>& fields) -> Result<string> {
             if (fields.size() % 2 != 0) {
-              return helpers::unexpectedError("invalid typed chunk payload");
+              return unexpectedError("invalid typed chunk payload");
             }
 
             vector<VF::SequenceDisplay::TypedChunk> chunks;
@@ -217,16 +216,16 @@ VFByteSlice vf_format_result_position(
       .endRow = end_row,
       .endCol = end_col,
   });
-  return helpers::byteSlice(result_storage);
+  return byteSlice(result_storage);
 }
 
 VFByteSlice vf_format_result_kind_suffix(
     const char* kind,
     size_t kind_len) {
   static string result_storage;
-  return helpers::storeBytes(
+  return storeBytes(
       result_storage,
-      helpers::requiredBytes(kind, kind_len, "kind")
+      requiredBytes(kind, kind_len, "kind")
           .transform([](string_view kindText) {
             return VF::SessionView::formatKindSuffix(
                 VF::SessionView::Result{.kind = string(kindText)});
@@ -241,7 +240,7 @@ VFByteSlice vf_format_result_message(
     bool tokenize,
     bool sectionize) {
   static string result_storage;
-  return helpers::storeBytes(
+  return storeBytes(
       result_storage,
       formatLabelled(
           title, title_len, "title", encoded_result, encoded_result_len,

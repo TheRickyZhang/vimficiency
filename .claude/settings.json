@@ -1,4 +1,7 @@
 {
+  "enabledPlugins": {
+    "clangd-lsp@claude-plugins-official": false
+  },
   "permissions": {
     "allow": ["Bash", "Edit", "Write", "Read", "WebFetch", "WebSearch"],
     "deny": [

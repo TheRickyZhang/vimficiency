@@ -6,7 +6,7 @@
 
 import std.compat;
 import vf.Interpreter.SequenceParser;
-import vf.LuaExports.Common;
+import vf.LuaExports.Payload;
 
 using namespace std;
 

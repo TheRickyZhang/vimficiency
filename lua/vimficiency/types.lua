@@ -4,6 +4,46 @@
 ---@field data ffi.cdata*
 ---@field len ffi.cdata*
 
+--- cdata view of `VFSearchRequest` (Api.def); pointer fields borrow Lua strings.
+---@class VF.C.SearchRequest
+---@field encoded_initial_lines string
+---@field encoded_initial_lines_len integer
+---@field encoded_goal_lines string
+---@field encoded_goal_lines_len integer
+---@field start_row integer
+---@field start_col integer
+---@field end_row integer
+---@field end_col integer
+---@field boundary_first_col integer
+---@field boundary_last_col integer
+---@field has_lines_above boolean
+---@field has_lines_below boolean
+---@field window_height integer
+---@field scroll_amount integer
+---@field user_seq string
+---@field user_seq_len integer
+---@field optimizer_overrides string
+---@field optimizer_overrides_len integer
+
+--- One search problem for analyze or explore-start; marshalled into a
+--- `VF.C.SearchRequest` by `ffi/core.with_search_request`. Rows/cols are
+--- 0-indexed and relative to the slice.
+---@class VF.SearchRequest
+---@field initial_lines string[]
+---@field goal_lines string[]
+---@field start_row integer
+---@field start_col integer
+---@field end_row integer
+---@field end_col integer
+---@field boundary_first_col integer
+---@field boundary_last_col integer         # inclusive
+---@field has_lines_above boolean
+---@field has_lines_below boolean
+---@field window_height integer
+---@field scroll_amount integer
+---@field user_seq string
+---@field optimizer_overrides string        # `ffi/optimizer.encode_optimizer_overrides` output; "" for none
+
 ---@class VF.Optimizer.Result
 ---@field seq string
 ---@field cost number

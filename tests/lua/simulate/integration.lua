@@ -86,6 +86,7 @@ local function header_lines(buf)
   local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
   for _, mark in ipairs(marks) do
     local details = mark[4]
+    ---@cast details -nil
     if details.virt_lines then
       ---@type string[]
       local lines = {}
@@ -108,6 +109,7 @@ local function header_virt_lines(buf)
   local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
   for _, mark in ipairs(marks) do
     local details = mark[4]
+    ---@cast details -nil
     if details.virt_lines then
       return details.virt_lines
     end

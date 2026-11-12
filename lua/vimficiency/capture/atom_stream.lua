@@ -21,6 +21,7 @@
 ---@field _has_listener   fun(name: string): boolean
 local M = {}
 local keynorm = require("vimficiency.capture.keynorm")
+local util = require("vimficiency.util")
 
 --------------------------------------------------------------------------------
 -- Types
@@ -101,7 +102,7 @@ local function ensure_autocmd()
   augroup = vim.api.nvim_create_augroup("VimficiencyAtoms", { clear = true })
   autocmd_id = vim.api.nvim_create_autocmd("CmdAtom", {
     group = augroup,
-    callback = dispatch,
+    callback = util.entry(dispatch),
   })
 end
 
@@ -110,7 +111,6 @@ end
 ---@param listener fun(atom: VF.Atom, decision: VF.Atom.Decision)
 ---@return boolean success
 function M.add_listener(name, listener)
-  assert(type(name) == "string" and name ~= "", "atom_stream.add_listener: name required")
   if listener_by_name[name] then return false end
   listener_by_name[name] = listener
   listener_count = listener_count + 1
@@ -138,7 +138,7 @@ function M.shutdown()
     autocmd_id = nil
   end
   if augroup then
-    pcall(vim.api.nvim_del_augroup_by_id, augroup)
+    vim.api.nvim_del_augroup_by_id(augroup)
     augroup = nil
   end
   listener_by_name = {}

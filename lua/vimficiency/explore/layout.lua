@@ -36,9 +36,7 @@ function M.build(label, initial_lines, source_buf, source_win)
     modified   = false,
   })
   v.nvim_win_set_buf(scratch_win, scratch_buf)
-  if v.nvim_buf_is_valid(tabnew_buf) then
-    pcall(v.nvim_buf_delete, tabnew_buf, { force = true })
-  end
+  v.nvim_buf_delete(tabnew_buf, { force = true })
   v.nvim_buf_set_lines(scratch_buf, 0, -1, false, initial_lines)
   buf_window.copy_buffer_options(source_buf, scratch_buf)
   buf_window.copy_window_options(source_win, scratch_win)

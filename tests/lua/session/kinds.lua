@@ -13,28 +13,13 @@ local session       = require("vimficiency.session")
 local session_store = require("vimficiency.session.store")
 local h             = require("_helpers")
 
-local WATCH_CFG = { idle = { ms = 60000 }, cooldown_ms = 0 }
+local WATCH_CFG = h.watch_config({ idle = { ms = 60000 }, cooldown_ms = 0 })
 
 local function call_new_active(kind)
   local win = vim.api.nvim_get_current_win()
   local buf = vim.api.nvim_get_current_buf()
   return session_store.new_active_session(
-    "id1", nil,
-    win,
-    buf,
-    {
-      row = 0,
-      col = 0,
-      lines = {},
-      bufname = vim.api.nvim_buf_get_name(buf),
-      filetype = vim.bo[buf].filetype,
-      top_row = 0,
-      bottom_row = 0,
-      window_height = vim.api.nvim_win_get_height(win),
-      scroll_amount = vim.api.nvim_get_option_value("scroll", { win = win }),
-    },
-    kind
-  )
+    "id1", nil, win, buf, require("vimficiency.util").capture_state(buf, win), kind)
 end
 
 test("new_active_session: accepts only creatable kinds", function()

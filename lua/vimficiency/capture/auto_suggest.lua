@@ -26,13 +26,13 @@ local in_flight = nil
 ---@return string
 local function fingerprint_result(result)
   -- Include the top result so slice changes still count as new suggestions.
-  local first_opt = (result.optimal_results or {})[1]
+  local first_opt = result.optimal_results[1]
   local opt_str = first_opt
     and string.format("%s:%.4f", first_opt.seq, first_opt.cost)
     or ""
   return string.format("%d:%d:%d:%d|%s|%s",
     result.start_row, result.start_col, result.end_row, result.end_col,
-    result.user_seq or "", opt_str)
+    result.user_seq, opt_str)
 end
 
 -- Compact, glanceable toast: how long ago the capture was (keys + seconds) and
@@ -40,18 +40,16 @@ end
 -- away via the `$` selector (the record is already finished + stored at this
 -- point). `id` lets a notifier (snacks/nvim-notify) replace the prior suggestion
 -- in place instead of stacking; plain `vim.notify` ignores it.
----@param summary VF.Session.Summary
-local function render_suggestion(summary)
-  local result = summary.result
-  if not result then return end
-  local optimal = (result.optimal_results or {})[1]
+---@param result VF.Session.Result
+---@param started_mono_ns integer
+local function render_suggestion(result, started_mono_ns)
+  local optimal = result.optimal_results[1]
   if not optimal then return end
 
   -- Drop toasts landing within notif_cooldown_ms of the previous shown one.
   -- The record is already finished + stored, so a suppressed suggestion is
   -- still reachable via `$` / `:Vimfy list`.
-  local cfg = config.auto_suggest
-  local notif_cooldown_ns = ((cfg and cfg.notif_cooldown_ms) or 0) * 1e6
+  local notif_cooldown_ns = config.auto_suggest.notif_cooldown_ms * 1e6
   local now = vim.uv.hrtime()
   if last_notify_hrtime > 0 and (now - last_notify_hrtime) < notif_cooldown_ns then
     return
@@ -59,12 +57,12 @@ local function render_suggestion(summary)
   last_notify_hrtime = now
 
   local ago = string.format("%d keys · %.0fs ago",
-    result.key_count or 0, (now - summary.started_mono_ns) / 1e9)
+    result.key_count, (now - started_mono_ns) / 1e9)
 
   local timing = result.analyze_ms and string.format(" · %.0fms", result.analyze_ms) or ""
   local body = string.format(
     "vimfy regression · %s · %.0f → %.0f%s\n:Vimfy view $  ·  play $  ·  explore $",
-    ago, result.user_cost or 0, optimal.cost or 0, timing)
+    ago, result.user_cost, optimal.cost, timing)
 
   vim.notify(body, vim.log.levels.INFO, { title = "vimfy suggest", id = "vimfy_suggest" })
 end
@@ -86,15 +84,15 @@ local function fire_with_window(recall_alias, gate, kind)
 
   -- Pin the resolved id; recall aliases are time-varying.
   local id = active.id
-  local cfg = config.auto_suggest
-  local deadline_ms = (cfg and cfg.compute_deadline_ms) or 0
+  local deadline_ms = config.auto_suggest.compute_deadline_ms
+
+  -- The ring is cross-buffer; a record from a buffer the user has left is
+  -- skipped silently but still counts toward the cooldown.
+  if active.buf ~= vim.api.nvim_get_current_buf() then return true end
 
   -- Snapshot the live buffer on the main thread, then offload the analyze to a
-  -- worker; finish + render in the callback. A snapshot failure (wrong buffer
-  -- focused) is silent for suggest, but still counts toward the cooldown.
+  -- worker; finish + render in the callback.
   local end_state = compute.capture_end_state(active)
-  if not end_state then return true end
-
   in_flight = compute.compute_result_for_active_async(active, end_state, deadline_ms, function(result)
     in_flight = nil
     if not result then return end
@@ -119,12 +117,10 @@ local function fire_with_window(recall_alias, gate, kind)
     -- Pin this regression as `$` (distinct from `@`'s any-finish history).
     session_store.set_last_suggest_id(id)
 
-    local summary = session_store.summarize(id)
-    if summary then render_suggestion(summary) end
+    render_suggestion(result, active.started_mono_ns)
   end)
 
-  -- Work was started (or the input snapshot failed synchronously); refresh the cooldown so
-  -- we don't re-fire while the worker runs.
+  -- Work was started; refresh the cooldown so we don't re-fire while the worker runs.
   return true
 end
 
@@ -149,10 +145,9 @@ local function fire_cost()
   local cost = cfg.cost or cfg.default_cost
   local m, b = cost.m, cost.b
   return fire_with_window(cost.window, function(result)
-    local optimal = (result.optimal_results or {})[1]
+    local optimal = result.optimal_results[1]
     if not optimal then return false end
-    local user_cost = result.user_cost or 0
-    return user_cost > m * optimal.cost + b
+    return result.user_cost > m * optimal.cost + b
   end, "suggest_cost")
 end
 
@@ -164,7 +159,7 @@ function M.enable_configured()
   local cfg = config.auto_suggest
   if not cfg then return false end  -- master off (auto_suggest = false)
 
-  local cooldown_ms = cfg.cooldown_ms or 0
+  local cooldown_ms = cfg.cooldown_ms
 
   if cfg.idle then
     local d = end_trigger.arm_idle({
@@ -211,7 +206,7 @@ function M.enable()
   local d = end_trigger.arm_idle({
     name        = SUBSCRIBER_COST,
     idle_ms     = cfg.default_cost.ms,
-    cooldown_ms = cfg.cooldown_ms or 0,
+    cooldown_ms = cfg.cooldown_ms,
     on_fire     = fire_cost,
   })
   if d then table.insert(disarms, d) end

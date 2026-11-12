@@ -29,10 +29,10 @@ local function apply_scalars(src, dst, key_prefix, strict)
         consumed[k] = true
       elseif status == "type_error" then
         error(string.format("vimfy: invalid value for '%s%s': %s",
-          key_prefix or "", tostring(k), tostring(err)))
+          key_prefix or "", tostring(k), tostring(err)), 0)
       elseif strict and status == "unknown" then
         error(string.format("vimfy: unknown config key '%s%s'",
-          key_prefix or "", tostring(k)))
+          key_prefix or "", tostring(k)), 0)
       end
     end
   end
@@ -85,17 +85,17 @@ function M.apply_globals(user_config)
       end
 
       if class_index == nil then
-        error("Unknown count penalty class: " .. tostring(class_key))
+        error("Unknown count penalty class: " .. tostring(class_key), 0)
       end
       if class_index < 0 or class_index >= lib.VF_COUNT_CLASS_COUNT then
-        error("Count penalty class out of range: " .. tostring(class_key))
+        error("Count penalty class out of range: " .. tostring(class_key), 0)
       end
 
       for field in pairs(override) do
         if not OVERRIDE_FIELD_SET[field] then
           error(string.format(
             "vimfy: unknown count_penalty_overrides[%s] key '%s' (allowed: base, count_slope, span_slope)",
-            tostring(class_key), tostring(field)))
+            tostring(class_key), tostring(field)), 0)
         end
       end
 

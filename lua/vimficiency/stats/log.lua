@@ -28,10 +28,10 @@ end
 --- comparisons use this (not the full Top-N list) so the optimizer
 --- histogram isn't inflated by suboptimal alternatives.
 local function best_opt(optimal_results)
-  if not optimal_results or #optimal_results == 0 then return nil end
+  if #optimal_results == 0 then return nil end
   local best = optimal_results[1]
   for i = 2, #optimal_results do
-    if (optimal_results[i].cost or math.huge) < (best.cost or math.huge) then
+    if optimal_results[i].cost < best.cost then
       best = optimal_results[i]
     end
   end
@@ -41,21 +41,19 @@ end
 --- Build a log record from the finished-session result.
 ---@param kind VF.Session.Kind
 ---@param result VF.Session.Result
----@return table|nil  nil if the result is too incomplete to log
+---@return table
 function M.build_record(kind, result)
-  if not result or not result.user_seq then return nil end
   local best = best_opt(result.optimal_results)
   local best_cost = best and best.cost or nil
   local best_seq  = best and best.seq  or nil
-  local user_cost = result.user_cost or 0
-  local beats = (best_cost ~= nil) and (user_cost < best_cost)
+  local beats = (best_cost ~= nil) and (result.user_cost < best_cost)
   return {
     v = SCHEMA_VERSION,
     finish_epoch  = result.finished_wall_epoch,
     type          = require("vimficiency.session.store").session_type(kind),
     kind          = kind,
-    key_count     = result.key_count or 0,
-    user_cost     = user_cost,
+    key_count     = result.key_count,
+    user_cost     = result.user_cost,
     best_opt_cost = best_cost,
     user_seq      = result.user_seq,
     best_opt_seq  = best_seq,
@@ -68,7 +66,6 @@ end
 --- vim.notify but never raise — a session finish must not be blocked by
 --- stats plumbing.
 function M.append(record)
-  if not record then return end
   ensure_dir()
   local path = log_path()
   local fh, open_err = io.open(path, "a")

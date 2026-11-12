@@ -21,7 +21,7 @@ end
 ---@param view VF.Explore.Active
 function M.detach(view)
   if view.winclosed_autocmd then
-    pcall(v.nvim_del_autocmd, view.winclosed_autocmd)
+    v.nvim_del_autocmd(view.winclosed_autocmd)
     view.winclosed_autocmd = nil
   end
 

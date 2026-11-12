@@ -1,15 +1,15 @@
 #include "LuaExports/Api.h"
 import std.compat;
 import vf.LuaExports.Common;
+import vf.LuaExports.Payload;
 import vf.Optimizer.DiffPlanner.VimDiff;
 import vf.Optimizer.DiffPlanner.DiffAlgorithm;
 import vf.Optimizer.DiffPlanner.DiffState;
 import vf.Optimizer.DiffPlanner.MyersDiff;
+import vf.Types.Lines;
 
 using namespace std;
-namespace helpers = VF::LuaExports::helpers;
-namespace payload = VF::LuaExports::payload;
-using VF::LuaExports::g_config_internal;
+using namespace VF::LuaExports;
 
 namespace {
 
@@ -24,10 +24,10 @@ VF::LuaExports::Result<string> computeDiffsImpl(
     const char *encoded_goal_lines,
     size_t encoded_goal_lines_len,
     int diff_algorithm) {
-  auto initialText = helpers::requiredBytes(
+  auto initialText = requiredBytes(
       encoded_initial_lines, encoded_initial_lines_len, "encoded_initial_lines");
   if (!initialText) return unexpected(initialText.error());
-  auto goalText = helpers::requiredBytes(
+  auto goalText = requiredBytes(
       encoded_goal_lines, encoded_goal_lines_len, "encoded_goal_lines");
   if (!goalText) return unexpected(goalText.error());
 
@@ -60,7 +60,7 @@ VFByteSlice vf_compute_diffs(
     size_t encoded_goal_lines_len,
     int diff_algorithm) {
   static string result_storage;
-  return helpers::storeBytes(
+  return storeBytes(
       result_storage,
       computeDiffsImpl(
           encoded_initial_lines,

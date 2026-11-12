@@ -20,7 +20,7 @@ Top-level modules are the plugin entry and cross-cutting infrastructure:
 | `config.lua` | Shared configuration constants (Lua-side only). |
 | `config/validate.lua` | Validators for the structured `watch` and `auto_suggest` blocks; the shape itself stays in `config.lua`. |
 | `ffi.lua` | Compatibility surface for LuaJIT FFI bindings to `libvimficiency.so`. |
-| `util.lua` | State capture, ID generation, UI helpers. |
+| `util.lua` | State capture, ID generation, UI helpers, `entry` (the error boundary for every autocmd/timer/keymap callback). |
 
 Subdirectories hold supporting modules for each domain:
 
@@ -87,6 +87,42 @@ lua-language-server (`scripts/lint-lua.sh`) then reports `inject-field` for any
 implementation. Everything else in the file is `local`. `session/store.lua` is
 the pilot; `session/archive.lua`, `session/compute.lua`, `capture/atom_stream.lua`
 and `util.lua` follow it. Extend to others as they are touched.
+
+## Trust boundaries
+
+Data enters Lua at four ingress points, each with one constructor that fills every
+field. Past the constructor nothing re-checks shape, type, or handle validity.
+
+| Ingress | Constructor |
+|---------|-------------|
+| User-typed `:Vimfy` arguments | `subcommands.lua` + `session/alias.lua expect` |
+| Saved JSON on disk | `session/disk.lua load` (`validate` is its schema) |
+| FFI payloads | the `ffi/*.lua` decoders |
+| Neovim handles at event time | the autocmd / timer / keymap callback body |
+
+- **Validate at ingress, construct fully.** `x or default` is legal only inside a
+  constructor. A constructor is a `---@type VF.X` literal when there is one site
+  (LuaLS `missing-fields` enforces completeness); a named function only where one
+  already exists (`store.new_active_session`, `compute.build_result`, `view.create`)
+  or the record crosses an ingress (`disk.load`).
+- **Internal functions raise** with `error(msg, 0)`. The catch points are
+  `init.lua cmdline_entry` and `util.entry`, which wraps every autocmd, timer, and
+  keymap callback at registration. `nil, err` survives only where the caller has a
+  real alternative path: `compute.capture_end_state` and `build_analyze_input`
+  (finish drops the record, suggest stays silent), `archive.resolve_alias` and
+  `disk.load` (disk fallback keyed on `is_missing`), `ffi/sequence.tokenize_*`
+  (`simulate/tokenize.lua` falls back to a coarser tokenizer).
+- **Handle validity is checked once, at event entry.** Helpers take handles as
+  valid. The kept exceptions are cross-event: a user can close a window between
+  the event that created it and the one that renders into it (`explore/render/
+  list.lua`, `explore/render/panel.lua`, `simulate/precompute.lua` teardown,
+  `simulate/windows.lua` teardown, picker WinClosed paths).
+- **Tests go through the same constructors.** `h.fake_result` must pass
+  `disk.validate`; session fixtures use `util.capture_state`; config fixtures use
+  `validate.normalize_*`. A guard that exists only because a fixture skipped the
+  constructor is a fixture bug.
+
+Saved files predating `key_count` are rejected as malformed since 2026-11-12.
 
 ## Session Architecture
 
@@ -176,7 +212,8 @@ interactive Explore's frontier replay, which still consumes raw key events.
 `ffi/core.lua` loads `libvimficiency.so` via LuaJIT FFI. Domain wrappers expose:
 
 ```lua
-ffi_optimizer.analyze(lines, ...) → VF.Optimizer.Result[], user_cost, debug_str, VF.Diff.Region[]
+ffi_optimizer.analyze(request, results_calculated) → VF.Optimizer.Result[], user_cost, debug_str, VF.Diff.Region[]
+  -- request: VF.SearchRequest (types.lua), the same record explore_start_async takes
 ffi_config.apply_globals(user_config)  -- Push the C++ process globals (cost model, Vim options)
 ffi_sequence.tokenize_sequence(seq) → VF.Sequence.Token[]  -- {text, kind} tokens
 ffi_sequence.tokenize_movements(seq) → VF.Sequence.Token[]   -- all kind="motion"
@@ -220,7 +257,11 @@ Replay verification now lives in repo-native Lua tests:
 - `tests/lua/simulate/integration.lua` covers the async replay oracle and UI rendering
 
 ## Testing
-After changing some lua sections, make sure to run ./scripts/lint-lua.sh to verify that all the lua semantics are correct.
+After changing Lua, run `scripts/vimfy_tests lua` and `scripts/lint-lua.sh`. The
+lint script is the CI gate: it fails on any `assert(type(` outside an ingress
+constructor, on a file exceeding its `pcall(` ceiling, and on any
+lua-language-server problem. Export `VIMRUNTIME` first (CI does) so `vim.*` types
+resolve; without it LuaLS treats `vim` as untyped and misses real mismatches.
 
 ## Commands
 

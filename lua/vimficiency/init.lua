@@ -160,7 +160,7 @@ function M.shutdown()
   local ok = pcall(simulate.cleanup_compare)
   if ok then sim_closed = true end
 
-  pcall(auto_suggest.disable)
+  auto_suggest.disable()
 
   -- Drop active captures; finished records stay.
   local dropped_active = 0
@@ -168,9 +168,9 @@ function M.shutdown()
   if ok_drop then dropped_active = n or 0 end
 
   -- Tear down the CmdAtom capture and every subscriber last.
-  pcall(atom_stream.shutdown)
+  atom_stream.shutdown()
 
-  pcall(vim.api.nvim_create_augroup, M.AUGROUP, { clear = true })
+  vim.api.nvim_create_augroup(M.AUGROUP, { clear = true })
 
   return { dropped_active = dropped_active, sim_closed = sim_closed }
 end
@@ -199,7 +199,7 @@ function M.reload_lua(new_lib_path)
   end
 
   local fresh = require("vimficiency")
-  fresh.setup(_G.__vimficiency_last_user_config or {})
+  fresh.setup(_G.__vimficiency_last_user_config)
 
   require("vimficiency.session.store").restore_from_dump(dump)
 

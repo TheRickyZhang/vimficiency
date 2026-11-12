@@ -17,8 +17,8 @@ end
 
 local function teardown(view)
   pcall(panel.close, view)
-  pcall(vim.cmd, "silent! tabonly")
-  pcall(vim.cmd, "silent! %bwipeout!")
+  vim.cmd("silent! tabonly")
+  vim.cmd("silent! %bwipeout!")
 end
 
 local function open_panel(view, schema)

@@ -8,7 +8,6 @@ local session_store = require("vimficiency.session.store")
 local auto_suggest = require("vimficiency.capture.auto_suggest")
 local alias_mod = require("vimficiency.session.alias")
 local explore = require("vimficiency.explore")
-local explore_result = require("vimficiency.explore.result")
 local dev_reload = require("vimficiency.dev_reload")
 local util = require("vimficiency.util")
 
@@ -124,16 +123,7 @@ return {
     complete = { aliases_and_filenames },
     run = function(args)
       local alias_or_filename = args[1]
-      local result, err = archive.resolve_result(alias_or_filename)
-      if not result then
-        error("vimfy explore failed: " .. (err or "unknown error"), 0)
-      end
-      local valid, validation_err = explore_result.validate(result)
-      if not valid then
-        error("vimfy explore failed: " .. validation_err, 0)
-      end
-      ---@cast result VF.Explore.OpenResult
-      explore.open(alias_or_filename, result)
+      explore.open(alias_or_filename, archive.resolve_result(alias_or_filename))
     end,
   },
 

@@ -7,6 +7,7 @@ on:
 
 env:
   NEOVIM_VERSION: v0.11.5
+  LUALS_VERSION: 3.17.1
 
 jobs:
   dependency-lint:
@@ -19,6 +20,61 @@ jobs:
         run: ./scripts/lint-module-deps.sh
       - name: Lint module inline rule
         run: ./scripts/lint-module-inline.sh
+
+  lua-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Neovim only supplies $VIMRUNTIME so .luarc.json resolves the vim.* types.
+      # The plugin targets nightly (CmdAtom), so its types are the ones to lint
+      # against; same date-stamped cache as the test job.
+      - name: Date stamp for nightly cache
+        id: nightly-date
+        run: echo "ymd=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Neovim nightly
+        id: nvim-nightly-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/neovim/nightly
+          key: neovim-nightly-${{ runner.os }}-${{ runner.arch }}-${{ steps.nightly-date.outputs.ymd }}
+
+      - name: Install Neovim nightly
+        if: steps.nvim-nightly-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/nvim-nightly.tar.gz"
+          install_dir="${HOME}/.local/neovim/nightly"
+          curl -fsSL -o "${archive}" \
+            "https://github.com/neovim/neovim/releases/download/nightly/nvim-linux-x86_64.tar.gz"
+          mkdir -p "${install_dir}"
+          tar -xzf "${archive}" -C "${install_dir}" --strip-components=1
+
+      - name: Cache lua-language-server
+        id: luals-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/lua-language-server
+          key: luals-${{ runner.os }}-${{ runner.arch }}-${{ env.LUALS_VERSION }}
+
+      - name: Install lua-language-server
+        if: steps.luals-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/luals.tar.gz"
+          curl -fsSL -o "${archive}" "https://github.com/LuaLS/lua-language-server/releases/download/${LUALS_VERSION}/lua-language-server-${LUALS_VERSION}-linux-x64.tar.gz"
+          mkdir -p "${HOME}/.local/lua-language-server"
+          tar -xzf "${archive}" -C "${HOME}/.local/lua-language-server"
+
+      - name: Lint Lua
+        run: |
+          set -euo pipefail
+          export PATH="${HOME}/.local/lua-language-server/bin:${PATH}"
+          nvim="${HOME}/.local/neovim/nightly/bin/nvim"
+          VIMRUNTIME="$("$nvim" --clean --headless +'lua io.stdout:write(vim.env.VIMRUNTIME)' +q)"
+          export VIMRUNTIME
+          ./scripts/lint-lua.sh
 
   doc-lint:
     runs-on: ubuntu-latest

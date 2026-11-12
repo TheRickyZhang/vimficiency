@@ -10,7 +10,7 @@ local session_store = require("vimficiency.session.store")
 ---@class (exact) VF.SessionArchive
 --- Resolution
 ---@field resolve_alias    fun(alias: string): VF.Session.Result|nil, string|nil
----@field resolve_result   fun(alias_or_filename: string): VF.Session.Result|nil, string|nil
+---@field resolve_result   fun(alias_or_filename: string): VF.Session.Result
 ---@field default_filename fun(alias: string): string|nil
 --- Workspace <-> disk
 ---@field save             fun(alias: string, explicit_filename: string|nil)
@@ -18,8 +18,8 @@ local session_store = require("vimficiency.session.store")
 ---@field fetch            fun(filename: string, alias: string)
 ---@field rm               fun(filename: string)
 --- Workspace only
----@field rename_active    fun(old_alias: string, new_alias: string): boolean, string|nil
----@field duplicate_active fun(src_alias: string, dst_alias: string): boolean, string|nil
+---@field rename_active    fun(old_alias: string, new_alias: string)
+---@field duplicate_active fun(src_alias: string, dst_alias: string)
 --- Display
 ---@field view             fun(alias_or_filename: string|nil)
 local M = {}
@@ -63,6 +63,7 @@ local function missing_message(alias)
   return "No finished result for '" .. alias .. "'. Is the session still active?"
 end
 
+--- `nil, err` because `resolve_result` and `playback.simulate` fall through to disk.
 ---@param alias string
 ---@return VF.Session.Result|nil result
 ---@return string|nil err
@@ -74,21 +75,18 @@ end
 
 --- Workspace first, then disk.
 ---@param alias_or_filename string
----@return VF.Session.Result|nil result
----@return string|nil err
+---@return VF.Session.Result
 function M.resolve_result(alias_or_filename)
   local result, err = M.resolve_alias(alias_or_filename)
-  if result then return result, nil end
+  if result then return result end
 
   if alias_mod.is_valid_filename(alias_or_filename) then
     local data, load_err, is_missing = disk.load(alias_or_filename)
-    if data then return data, nil end
-    if not is_missing then
-      return nil, load_err or "unknown error"
-    end
+    if data then return data end
+    if not is_missing then error(load_err, 0) end
   end
 
-  return nil, err
+  error(err, 0)
 end
 
 --- Explicit `[<filename>]` wins; otherwise `default_filename()`.
@@ -106,16 +104,11 @@ local function resolve_filename(verb, alias, explicit)
   return filename
 end
 
----@param verb string
 ---@param filename string
 ---@param result VF.Session.Result
 ---@return string display_path
-local function write_result(verb, filename, result)
-  local path, err = disk.write_with_overwrite_warn(filename, result)
-  if not path then
-    error("vimfy " .. verb .. " failed: " .. (err or "unknown error"), 0)
-  end
-  return vim.fn.fnamemodify(path, ":~")
+local function write_result(filename, result)
+  return vim.fn.fnamemodify(disk.write_with_overwrite_warn(filename, result), ":~")
 end
 
 ---@param alias string
@@ -125,7 +118,7 @@ function M.save(alias, explicit_filename)
   local result, err = M.resolve_alias(alias)
   if not result then error(err, 0) end
 
-  local display_path = write_result("save", filename, result)
+  local display_path = write_result(filename, result)
   vim.notify("vimfy saved [" .. filename .. "] → " .. display_path, vim.log.levels.INFO)
 end
 
@@ -140,11 +133,9 @@ function M.store(alias, explicit_filename)
 
   -- Pin the id before writing: recall aliases drift.
   local id = session_store.get_id(alias)
-  if not id then error("No finished result for '" .. alias .. "'.", 0) end
-  local result = session_store.get_result_by_id(id)
-  if not result then error("No finished result for '" .. alias .. "'.", 0) end
+  if not id then error(missing_message(alias), 0) end
 
-  local display_path = write_result("store", filename, result)
+  local display_path = write_result(filename, session_store.get_result_by_id(id))
   session_store.remove(id)
   vim.notify("vimfy stored [" .. alias .. "] → [" .. filename .. "] at " ..
     display_path .. " (removed from session)", vim.log.levels.INFO)
@@ -157,52 +148,36 @@ function M.fetch(filename, alias)
   alias_mod.expect(alias, { "named" })
 
   local data, err = disk.load(filename)
-  if not data then
-    error("vimfy fetch failed: " .. (err or "unknown error"), 0)
-  end
-  local id, reg_err = session_store.register_fetched_result(alias, data)
-  if not id then
-    error("vimfy fetch failed: " .. (reg_err or "unknown error"), 0)
-  end
+  if not data then error("vimfy fetch failed: " .. err, 0) end
+  session_store.register_fetched_result(alias, data)
   vim.notify("vimfy fetched [" .. filename .. "] → [" .. alias .. "]", vim.log.levels.INFO)
 end
 
 ---@param filename string
 function M.rm(filename)
   validate_filename(filename)
-  local ok, path_or_err = disk.remove(filename)
-  if not ok then
-    error(path_or_err or "vimfy rm failed", 0)
-  end
-  vim.notify("vimfy removed [" .. filename .. "] ← " .. path_or_err, vim.log.levels.INFO)
+  local path = disk.remove(filename)
+  vim.notify("vimfy removed [" .. filename .. "] ← " .. path, vim.log.levels.INFO)
 end
 
 ---@param old_alias string
 ---@param new_alias string
----@return boolean ok
----@return string|nil err
 function M.rename_active(old_alias, new_alias)
   if not alias_mod.is_named(old_alias) then
-    return false, "source alias must be a named alias (letters only)"
+    error("source alias must be a named alias (letters only)", 0)
   end
-  return session_store.rename_alias(old_alias, new_alias)
+  session_store.rename_alias(old_alias, new_alias)
 end
 
 ---@param src_alias string
 ---@param dst_alias string
----@return boolean ok
----@return string|nil err
 function M.duplicate_active(src_alias, dst_alias)
   if not alias_mod.is_named(dst_alias) then
-    return false, "target alias must be a named alias (letters only)"
+    error("target alias must be a named alias (letters only)", 0)
   end
-  local result = session_store.get_result(src_alias)
-  if not result then
-    return false, "no finished result for '" .. tostring(src_alias) .. "'"
-  end
-  local _, reg_err = session_store.register_fetched_result(dst_alias, result)
-  if reg_err then return false, reg_err end
-  return true, nil
+  local result, err = M.resolve_alias(src_alias)
+  if not result then error(err, 0) end
+  session_store.register_fetched_result(dst_alias, result)
 end
 
 --- View a finished result full-screen; no arg lists saved files.
@@ -217,12 +192,7 @@ function M.view(alias_or_filename)
     end
     return
   end
-
-  local result, err = M.resolve_result(alias_or_filename)
-  if not result then
-    error("vimfy view failed: " .. (err or "unknown error"), 0)
-  end
-  result_window.open(alias_or_filename, result)
+  result_window.open(alias_or_filename, M.resolve_result(alias_or_filename))
 end
 
 return M

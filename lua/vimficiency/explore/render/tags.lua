@@ -52,7 +52,7 @@ local function target_cells(state, scratch_buf)
   local br, bc = state.target_range.begin_pos.row, state.target_range.begin_pos.col
   local er, ec = state.target_range.end_pos.row, state.target_range.end_pos.col
   local function line_len(row)
-    local line = v.nvim_buf_get_lines(scratch_buf, row, row + 1, false)[1] or ""
+    local line = v.nvim_buf_get_lines(scratch_buf, row, row + 1, false)[1]
     return #line
   end
   local cells = {}
@@ -89,7 +89,7 @@ local function render_target_highlight(active)
         priority = 2300,
       })
     else
-      local line = v.nvim_buf_get_lines(active.scratch.buf, cell.row, cell.row + 1, false)[1] or ""
+      local line = v.nvim_buf_get_lines(active.scratch.buf, cell.row, cell.row + 1, false)[1]
       if cell.col >= #line then
         v.nvim_buf_set_extmark(active.scratch.buf, tags_ns, cell.row, math.max(0, #line), {
           virt_text = { { " ", highlights.TARGET_HL } },
@@ -146,7 +146,7 @@ local function render_landing_highlights(active, filter)
     local col = item.landing.col
     if not is_claimed(claims, row, col) then
       claim_with_gap(claims, row, col, 1)
-      local line = v.nvim_buf_get_lines(active.scratch.buf, row, row + 1, false)[1] or ""
+      local line = v.nvim_buf_get_lines(active.scratch.buf, row, row + 1, false)[1]
       if col >= #line then
         v.nvim_buf_set_extmark(active.scratch.buf, tags_ns, row, math.max(0, #line), {
           virt_text = { { " ", rank_hl(item_rank(item)) } },

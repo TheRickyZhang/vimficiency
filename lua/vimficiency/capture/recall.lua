@@ -11,6 +11,7 @@ local function in_live_file_buffer(atom)
   return vim.api.nvim_buf_is_valid(atom.buf)
     and vim.bo[atom.buf].buftype == ""
     and vim.api.nvim_win_is_valid(atom.win)
+    and vim.api.nvim_win_get_buf(atom.win) == atom.buf
 end
 
 ---@param atom VF.Atom
@@ -37,5 +38,7 @@ function M.start_continuous_capture()
   end
   return ok
 end
+
+M._for_test = { listener = recall_listener }
 
 return M
