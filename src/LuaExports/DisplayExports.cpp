@@ -13,22 +13,22 @@ using payload::encodeStringList;
 
 namespace {
 
-Result<int> parseIntField(string_view text, string_view name) {
+Expected<int> parseIntField(string_view text, string_view name) {
   auto parsed = parseInt(text);
   if (!parsed) return unexpectedError("invalid " + string(name));
   return *parsed;
 }
 
-Result<double> parseDoubleField(string_view text, string_view name) {
+Expected<double> parseDoubleField(string_view text, string_view name) {
   auto parsed = parseDouble(text);
   if (!parsed) return unexpectedError("invalid " + string(name));
   return *parsed;
 }
 
-Result<VF::SessionView::Result> decodeSessionResult(string_view encoded) {
+Expected<VF::SessionView::Result> decodeSessionResult(string_view encoded) {
   return payload::decodeLengthPrefixedStrings(encoded)
       .and_then([](const vector<string>& fields)
-          -> Result<VF::SessionView::Result> {
+          -> Expected<VF::SessionView::Result> {
         if (fields.size() != 10) {
           return unexpectedError(
               "invalid session result display payload");
@@ -87,7 +87,7 @@ Result<VF::SessionView::Result> decodeSessionResult(string_view encoded) {
 // Shared shape of the two labelled formatters: a label string plus an encoded
 // session result, handed to `format(label, result, options)`.
 template <typename Format>
-Result<string> formatLabelled(
+Expected<string> formatLabelled(
     const char* label,
     size_t labelLen,
     string_view labelName,
@@ -187,7 +187,7 @@ VFByteSlice vf_sequence_display_typed_chunks(
           encoded_chunks_len,
           "encoded_chunks")
           .and_then(payload::decodeLengthPrefixedStrings)
-          .and_then([&](const vector<string>& fields) -> Result<string> {
+          .and_then([&](const vector<string>& fields) -> Expected<string> {
             if (fields.size() % 2 != 0) {
               return unexpectedError("invalid typed chunk payload");
             }

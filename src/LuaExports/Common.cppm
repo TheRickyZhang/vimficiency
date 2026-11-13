@@ -27,7 +27,7 @@ struct ExportError {
 };
 
 template <typename T>
-using Result = std::expected<T, ExportError>;
+using Expected = std::expected<T, ExportError>;
 
 enum DEFAULT_KEYBOARD {
   NONE,
@@ -43,7 +43,7 @@ inline std::unexpected<ExportError> unexpectedError(std::string message) {
   return std::unexpected<ExportError>{ExportError{std::move(message)}};
 }
 
-inline Result<std::string_view> requiredBytes(
+inline Expected<std::string_view> requiredBytes(
     const char* data,
     size_t len,
     std::string_view name) {
@@ -69,7 +69,7 @@ inline VFByteSlice byteSlice(const std::string& storage) {
   };
 }
 
-inline VFByteSlice storeBytes(std::string& storage, Result<std::string> result) {
+inline VFByteSlice storeBytes(std::string& storage, Expected<std::string> result) {
   if (!result) {
     storage = "ERROR: " + result.error().message;
     return byteSlice(storage);

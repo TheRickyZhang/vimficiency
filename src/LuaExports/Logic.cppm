@@ -13,7 +13,7 @@ import vf.Types.NavContext;
 
 export namespace VF::LuaExports::logic {
 
-Result<OptimizerParamOverrides> parseOverrides(std::string_view text);
+Expected<OptimizerParamOverrides> parseOverrides(std::string_view text);
 
 // Owning decode of a VFSearchRequest. Lines and the user sequence are copied so
 // the value outlives the Lua-owned FFI buffers on an async worker. `overrides`
@@ -30,9 +30,9 @@ struct SearchInputs {
   OptimizerParamOverrides overrides;
 };
 
-Result<SearchInputs> decodeSearchRequest(const VFSearchRequest* request);
+Expected<SearchInputs> decodeSearchRequest(const VFSearchRequest* request);
 
-Result<std::string> buildKeySequence(std::string_view encoded);
+Expected<std::string> buildKeySequence(std::string_view encoded);
 std::pair<int, int> computeSearchRegion(
     int startRow,
     int endRow,

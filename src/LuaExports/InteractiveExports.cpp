@@ -127,7 +127,7 @@ using ExploreJob = AsyncJob<ExploreState>;
 
 JobRegistry<ExploreJob> g_jobs;
 
-VF::LuaExports::Result<string> startAsyncImpl(const VFSearchRequest* request, int deadline_ms) {
+VF::LuaExports::Expected<string> startAsyncImpl(const VFSearchRequest* request, int deadline_ms) {
   auto inputsRes = logic::decodeSearchRequest(request);
   if (!inputsRes) return unexpected(inputsRes.error());
   CompositionOptimizerParams compositionParams =

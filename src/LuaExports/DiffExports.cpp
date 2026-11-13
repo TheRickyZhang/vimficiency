@@ -18,7 +18,7 @@ namespace {
 // from the analyze payload — the partition the search actually planned
 // against; this run uses default cost options, so it can differ from a tuned
 // optimizer config.
-VF::LuaExports::Result<string> computeDiffsImpl(
+VF::LuaExports::Expected<string> computeDiffsImpl(
     const char *encoded_initial_lines,
     size_t encoded_initial_lines_len,
     const char *encoded_goal_lines,
