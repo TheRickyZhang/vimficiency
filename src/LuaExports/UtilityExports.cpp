@@ -48,7 +48,7 @@ VFByteSlice vf_tokenize_movements(const char *seq, size_t seq_len) {
   static string result_storage;
   return storeBytes(result_storage,
       requiredBytes(seq, seq_len, "seq")
-          .and_then([](string_view seqText) -> Result<string> {
+          .and_then([](string_view seqText) -> Expected<string> {
             return parseMovements(seqText)
           .transform([](const vector<ParsedMovement>& motions) {
             // All motion-parser output is TokenKind::Movement by construction.

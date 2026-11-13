@@ -17,7 +17,7 @@ using namespace std;
 
 namespace VF::LuaExports::logic {
 
-Result<OptimizerParamOverrides> parseOverrides(string_view text) {
+Expected<OptimizerParamOverrides> parseOverrides(string_view text) {
   auto parsed = parseOptimizerParamOverrides(text);
   if (!parsed) {
     return unexpectedError(formatOptimizerParamOverrideErrors(parsed.error()));
@@ -25,7 +25,7 @@ Result<OptimizerParamOverrides> parseOverrides(string_view text) {
   return std::move(*parsed);
 }
 
-Result<SearchInputs> decodeSearchRequest(const VFSearchRequest* request) {
+Expected<SearchInputs> decodeSearchRequest(const VFSearchRequest* request) {
   if (!request) return unexpectedError("missing search request");
   const VFSearchRequest& r = *request;
 
@@ -96,7 +96,7 @@ pair<int, int> findDiffRange(const Lines& a, const Lines& b) {
 
 }  // namespace
 
-Result<string> buildKeySequence(string_view encoded) {
+Expected<string> buildKeySequence(string_view encoded) {
   return payload::decodeKeyTrackingEvents(encoded).transform([](const vector<payload::KeyTrackingEvent>& events) {
     string out;
     out.reserve(events.size() * 2);

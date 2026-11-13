@@ -50,9 +50,9 @@ struct KeyTrackingEvent {
   std::string keyTyped;
 };
 
-Result<std::vector<std::string>> decodeLengthPrefixedStrings(std::string_view encoded);
-Result<Lines> decodeLineArray(std::string_view encoded);
-Result<std::vector<KeyTrackingEvent>> decodeKeyTrackingEvents(std::string_view encoded);
+Expected<std::vector<std::string>> decodeLengthPrefixedStrings(std::string_view encoded);
+Expected<Lines> decodeLineArray(std::string_view encoded);
+Expected<std::vector<KeyTrackingEvent>> decodeKeyTrackingEvents(std::string_view encoded);
 
 // One record per diff, EVENT_FIELD_SEP between fields, '\n' after each record:
 //   init_begin_row, init_begin_col, init_end_row, init_end_col,

@@ -9,7 +9,7 @@ using namespace std;
 
 namespace VF::LuaExports::payload {
 
-Result<vector<string>> decodeLengthPrefixedStrings(string_view encoded) {
+Expected<vector<string>> decodeLengthPrefixedStrings(string_view encoded) {
   vector<string> parts;
   size_t pos = 0;
   while (pos < encoded.size()) {
@@ -33,9 +33,9 @@ Result<vector<string>> decodeLengthPrefixedStrings(string_view encoded) {
   return parts;
 }
 
-Result<Lines> decodeLineArray(string_view encoded) {
+Expected<Lines> decodeLineArray(string_view encoded) {
   return decodeLengthPrefixedStrings(encoded).and_then([](const vector<string>& parts)
-      -> Result<Lines> {
+      -> Expected<Lines> {
     if (parts.empty()) {
       return unexpectedError(
           "line array payload must contain at least one line");
@@ -58,7 +58,7 @@ Result<Lines> decodeLineArray(string_view encoded) {
   });
 }
 
-Result<vector<KeyTrackingEvent>> decodeKeyTrackingEvents(string_view encoded) {
+Expected<vector<KeyTrackingEvent>> decodeKeyTrackingEvents(string_view encoded) {
   vector<KeyTrackingEvent> events;
   size_t start = 0;
   while (start < encoded.size()) {

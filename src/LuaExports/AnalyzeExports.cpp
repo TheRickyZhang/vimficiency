@@ -20,26 +20,24 @@ using logic::SearchInputs;
 
 namespace {
 
-// The heavy half: the Nav-vs-Composition branch plus result-string formatting.
-// Runs on the calling thread for `vf_analyze` and on a worker for the async
-// trio. `control` bounds whichever search runs.
+// Syncronous run of full analyze entry point
 string runAnalyze(
     const SearchInputs& in,
     int resultsCalculated,
     const Config& config,
     const SearchControl* control) {
-  vector<::Result> results;
+  vector<Result> results;
   vector<DiffState> diffs;
 
   if (in.initialLines == in.goalLines) {
-    // NavOptimizer returns LandingResult (with goalPos); for analyze we only
-    // surface (sequence, cost), so down-convert to Result for shared output.
     NavOptimizer opt(config);
+    // Resolve nav params from default + overrides
     NavOptimizerParams navParams = NavOptimizerParams{}
         .withMaxResults(resultsCalculated)
         .withMaxResultsPerEndPos(2);
     in.overrides.applyTo(navParams);
-    auto navResults = opt.optimize(
+
+    const vector<LandingResult> navResults = opt.optimize(
         in.initialLines,
         in.initialPos,
         in.goalPos,
@@ -48,15 +46,20 @@ string runAnalyze(
         in.boundary,
         in.navContext,
         control).getResults();
+    // NavOptimizer returns LandingResult (with goalPos); for analyze we only
+    // surface (sequence, cost), so down-convert to Result for shared output.
     results.reserve(navResults.size());
-    for (const auto& r : navResults) {
+    for (const LandingResult& r : navResults) {
       results.emplace_back(r.getSequence(), r.getCost());
     }
   } else {
     CompositionOptimizer opt(config);
+
+    // Resolve composition params from default + overrides
     CompositionOptimizerParams compParams =
         CompositionOptimizerParams{}.withMaxResults(resultsCalculated);
     in.overrides.applyTo(compParams);
+
     const CompositionResult composed = opt.optimize(
         in.initialLines,
         in.initialPos,
@@ -72,32 +75,25 @@ string runAnalyze(
   }
 
   const double userCost = getEffort(in.userSeq, config);
-  vector<const ::Result*> validResults;
-  for (const ::Result& result : results) {
-    if (result.getSequence().empty()) continue;
-    validResults.push_back(&result);
-  }
 
-  sort(validResults.begin(), validResults.end(),
-            [](const ::Result* a, const ::Result* b) { return a->getCost() < b->getCost(); });
+  // Erase empty sequences so that "no action" can be recognized by lua to mean "no recommendations"
+  erase_if(results, [](const Result& r) { return r.getSequence().empty(); });
 
-  // Count-framed sections; the Lua parser reads exactly `size` result lines
-  // and `diffs` region lines, so neither body can be mistaken for a header.
-  // Layout is documented in `dev/lua/ffi-separators.md` § Convention 3.
+  // Sort results by cost
+  sort(results.begin(), results.end(),
+       [](const Result& a, const Result& b) { return a.getCost() < b.getCost(); });
+
+  // Necessary to print header counts; review dev/lua/ffi-separators.md § Convention 3.
   ostringstream oss;
-  oss << "size: " << validResults.size() << " user_cost: "
-      << fixed << setprecision(3) << userCost << "\n";
-  for (const ::Result* result : validResults) {
-    // Machine-readable export for the Lua bridge: use the raw sequence
-    // bytes, not Sequence's human formatter, so insert-mode text and
-    // <Esc> survive round-tripping through ffi.lua's line parser.
-    // Field separator is the shared `EVENT_FIELD_SEP` (0x1F Unit Sep).
-    oss << result->getSequence().view()
-        << EVENT_FIELD_SEP
-        << fixed << setprecision(3) << result->getCost() << "\n";
+  oss << fixed << setprecision(3);
+  oss << "size: " << results.size() << " user_cost: " << userCost << "\n";
+
+  // Raw bytes so Lua can parse the sequence back.
+  for (const Result& result : results) {
+    oss << result.getSequence().view() << EVENT_FIELD_SEP << result.getCost() << "\n";
   }
-  // The planner's own regions, so views highlight the partition the search
-  // actually used (empty on the pure-navigation branch).
+
+  // Partition used (for edits)
   oss << "diffs: " << diffs.size() << "\n" << payload::encodeDiffRegions(diffs);
 
   if constexpr (DEBUG_ENABLED) {
@@ -119,14 +115,7 @@ using AnalyzeJob = AsyncJob<AnalyzeState>;
 
 JobRegistry<AnalyzeJob> g_analyze_jobs;
 
-VF::LuaExports::Result<string> analyzeImpl(const VFSearchRequest* request, int results_calculated) {
-  CHECK(results_calculated >= 0, "results_calculated must be non-negative");
-  auto inputsRes = logic::decodeSearchRequest(request);
-  if (!inputsRes) return unexpected(inputsRes.error());
-  return runAnalyze(*inputsRes, results_calculated, g_config_internal, nullptr);
-}
-
-VF::LuaExports::Result<string> startAsyncImpl(
+VF::LuaExports::Expected<string> startAsyncImpl(
     const VFSearchRequest* request, int results_calculated, int deadline_ms) {
   CHECK(results_calculated >= 0, "results_calculated must be non-negative");
   auto inputsRes = logic::decodeSearchRequest(request);
@@ -148,7 +137,10 @@ extern "C" {
 
 VFByteSlice vf_analyze(const VFSearchRequest* request, int results_calculated) {
   static string storage;
-  return storeBytes(storage, analyzeImpl(request, results_calculated));
+  CHECK(results_calculated >= 0, "results_calculated must be non-negative");
+  auto inputsRes = logic::decodeSearchRequest(request);
+  if (!inputsRes) return storeBytes(storage, unexpected(inputsRes.error()));
+  return storeBytes(storage, runAnalyze(*inputsRes, results_calculated, g_config_internal, nullptr));
 }
 
 // Kicks off the analyze search on a worker thread and returns a job-id string
