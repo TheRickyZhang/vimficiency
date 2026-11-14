@@ -17,7 +17,7 @@ struct Block {
 
 // Splits the alignment at every Myers-matched run that is cheaper to move over
 // than to retype, keeping a margin inside the blocks where retyping still wins:
-//   gate:   type(core) > move(core) + entry+<Esc> + stopSlack + startSlack
+//   gate:   type(core) > move(core) + REGION_PENALTY + entry+<Esc> + stopSlack + startSlack
 //   margin: keep depth d while ins(d) <= edge slack + move saving(d)
 // Text outside the blocks is identical on both sides at the same offsets.
 std::vector<Block> sealMatchedRuns(const FlatText& initial, const FlatText& goal,

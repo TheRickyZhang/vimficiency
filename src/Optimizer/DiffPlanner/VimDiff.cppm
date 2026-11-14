@@ -41,8 +41,9 @@ Plan calculate(
 // plus the ending <Esc>, plus the entry key only for a pure insertion — a
 // deletion's change form absorbs it (0 when nothing is typed). `move` is the
 // counted-motion traversal from the previous region's initial end to this
-// region's initial begin (0 for the first). `total` equals the DP optimum
-// exactly. Diagnostic surface — `calculate` does not use it.
+// region's initial begin (0 for the first). `total` adds REGION_PENALTY per
+// region and equals the DP optimum exactly. Diagnostic surface —
+// `calculate` does not use it.
 struct RegionBreakdown {
   DiffState diff;
   double del = 0.0;
