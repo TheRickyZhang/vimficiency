@@ -29,6 +29,10 @@ jobs:
     # Linux builds in the official gcc image: hosted Ubuntu stops at GCC 14 and
     # the module build needs 16. The trixie image puts the glibc floor at 2.38.
     container: ${{ matrix.container }}
+    # Containers default to `sh` (dash); the build step uses bash arrays.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 

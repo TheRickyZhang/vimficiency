@@ -11,7 +11,7 @@ if(NOT CMAKE_GENERATOR MATCHES "Ninja")
   message(FATAL_ERROR "C++ modules need the Ninja generator: cmake -G Ninja -B build ...")
 endif()
 
-project(vimficiency VERSION 0.2.0 LANGUAGES CXX)
+project(vimficiency VERSION 0.2.1 LANGUAGES CXX)
 
 # Third-party targets inherit C++23 and would otherwise be dependency-scanned
 # for modules they don't use; only project targets opt in.
