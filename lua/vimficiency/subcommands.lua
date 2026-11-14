@@ -150,7 +150,7 @@ return {
     usage = "fetch <filename> [<alias>]",
     min_args = 1,
     complete = { disk.list },
-    run = function(args) archive.fetch(args[1], args[2] or args[1]) end,
+    run = function(args) archive.fetch(args[1], args[2]) end,
   },
 
   rm = {

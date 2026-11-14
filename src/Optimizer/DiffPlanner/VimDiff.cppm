@@ -38,8 +38,8 @@ Plan calculate(
     CostOptions options = {});
 
 // Per-region cost the planner weighed. `ins` is the insert phase: typed effort
-// plus the ending <Esc>, plus the entry key only for a pure insertion — a
-// deletion's change form absorbs it (0 when nothing is typed). `move` is the
+// plus the ending <Esc>, plus the entry key unless a deletion's change form
+// absorbs it, which one ending in a newline cannot (0 when nothing is typed). `move` is the
 // counted-motion traversal from the previous region's initial end to this
 // region's initial begin (0 for the first). `total` adds REGION_PENALTY per
 // region and equals the DP optimum exactly. Diagnostic surface —

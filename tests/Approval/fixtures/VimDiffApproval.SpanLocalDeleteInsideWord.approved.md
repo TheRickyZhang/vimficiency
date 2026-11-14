@@ -12,7 +12,7 @@ aa
 
 _Edit costs: delete / insert / move_
 
-### Plan: cost 2
+### Plan: cost 3
 
 ```
 bbbbbbb

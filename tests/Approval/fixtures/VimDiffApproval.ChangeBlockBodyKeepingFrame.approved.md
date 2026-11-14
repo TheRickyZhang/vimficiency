@@ -16,7 +16,7 @@ function f() {
 
 _Edit costs: delete / insert / move_
 
-### Plan: cost 13
+### Plan: cost 14
 
 ```
 i++;

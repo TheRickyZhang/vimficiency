@@ -16,7 +16,7 @@
 
 _Edit costs: delete / insert / move_
 
-### Plan: cost 26
+### Plan: cost 28
 
 ```
 ->

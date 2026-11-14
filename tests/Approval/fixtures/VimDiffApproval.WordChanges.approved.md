@@ -16,7 +16,7 @@ the lazy cat
 
 _Edit costs: delete / insert / move_
 
-### Plan: cost 23
+### Plan: cost 27
 
 ```
 brown

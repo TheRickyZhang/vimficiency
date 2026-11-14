@@ -99,6 +99,8 @@ function M.setup(user_config)
     error("vimfy: this Neovim lacks the CmdAtom event; session capture needs 0.13-dev / nightly", 0)
   end
   user_config = user_config or {}
+  -- A repeated setup() must not keep triggers armed by the previous config.
+  auto_suggest.disable()
   config.reset()
 
   -- Stash config so reload can re-run `setup()` with the same values.

@@ -17,7 +17,16 @@ four five
 
 _Edit costs: delete / insert / move_
 
-### Plan: cost 12
+### Plan: cost 18
+
+```
+
+two
+
+->
+ two 
+```
+`3 / 7 / 0`
 
 ```
 
@@ -25,20 +34,4 @@ _Edit costs: delete / insert / move_
 ->
  
 ```
-`1 / 2 / 0`
-
-```
-
-
-->
- 
-```
-`1 / 2 / 1`
-
-```
-
-
-->
- 
-```
-`1 / 2 / 2`
+`1 / 3 / 2`

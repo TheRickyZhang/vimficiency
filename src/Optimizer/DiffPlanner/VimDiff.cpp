@@ -93,7 +93,7 @@ struct Tables {
 
 // Exact cost ties go to the plan with fewer regions.
 bool better(double cost, int moves, const Cand& than) {
-  return cost < than.cost || (REGION_TIEBREAK && cost == than.cost && moves < than.moves);
+  return cost < than.cost || (cost == than.cost && moves < than.moves);
 }
 
 void relax(Cand& cell, double cost, int moves, Step step, int pi, int pj) {
@@ -102,7 +102,8 @@ void relax(Cand& cell, double cost, int moves, Step step, int pi, int pj) {
 
 // One multi-source sweep prices every deletion of column j within the block.
 // Each arrival lands in out[i, j] and, as a CHANGE, in in[i, j+1].
-void relaxDeletes(Tables& t, const Block& b, const BlockCosts& costs, TilingCost& del, int j) {
+void relaxDeletes(Tables& t, const Block& b, const BlockCosts& costs, TilingCost& del,
+                  const FlatText& initial, int j) {
   del.sweep(
       b.aBegin, b.aEnd, [&](int ri) { return t.out[ri - b.aBegin, j].cost; },
       [&](int ri, const Arrival& a) {
@@ -110,7 +111,9 @@ void relaxDeletes(Tables& t, const Block& b, const BlockCosts& costs, TilingCost
         const int i = ri - b.aBegin, pi = a.seed - b.aBegin;
         const int moves = t.out[pi, j].moves;
         relax(t.out[i, j], a.cost, moves, DELETE, pi, j);
-        if (j < b.m()) relax(t.in[i, j + 1], a.cost + costs.change[j], moves, CHANGE, pi, j);
+        // No change form consumes a line's trailing newline.
+        if (j < b.m() && initial.text[ri - 1] != '\n')
+          relax(t.in[i, j + 1], a.cost + costs.change[j], moves, CHANGE, pi, j);
       });
 }
 
@@ -151,7 +154,7 @@ vector<Tables> solveVimDiff(const vector<Block>& blocks, const vector<BlockCosts
         }
         relax(out, in.cost, in.moves, EXIT, i, j);
       }
-      relaxDeletes(t, b, c, del, j);
+      relaxDeletes(t, b, c, del, initial, j);
     }
     tables.push_back(std::move(t));
   }
@@ -162,6 +165,7 @@ vector<Tables> solveVimDiff(const vector<Block>& blocks, const vector<BlockCosts
 
 struct Region {  // raw spans: initial [aBegin,aEnd) -> goal [bBegin,bEnd)
   int aBegin, aEnd, bBegin, bEnd;
+  bool entry;  // the insert phase pays the entry key
 };
 
 struct RawPlan {
@@ -187,11 +191,11 @@ struct Planned {
         move(initial, o.moveDeleteScale, o.maxPrefixCount, TilingCost::Kind::Move) {}
 };
 
-// Typed effort plus <Esc>, plus the entry key only when no deletion precedes
-// the typing (a deletion's change form absorbs it).
+// Typed effort plus <Esc>, plus the entry key unless a deletion's change form
+// absorbed it.
 double insertCost(const Typing& typing, const Region& r) {
   if (r.bBegin >= r.bEnd) return 0.0;
-  return (r.aBegin < r.aEnd ? 0.0 : typing.entry) + typing.esc + typing.ins(r.bBegin, r.bEnd);
+  return (r.entry ? typing.entry : 0.0) + typing.esc + typing.ins(r.bBegin, r.bEnd);
 }
 
 bool predecessorIsIn(const Cand& c) { return c.step == TYPE || c.step == EXIT; }
@@ -209,18 +213,21 @@ vector<Region> walk(const vector<Tables>& tables, const vector<Block>& blocks, i
   const Cand* c = &tables[k].out[i, j];
   visit(k, i, j, false);
   int ca = blocks[k].aBegin + i, cb = blocks[k].bBegin + j;
+  bool entry = false;
   while (c->step != LEADING) {
     const int pk = c->step == CROSS ? k - 1 : k;
     const Cand& pred = predecessor(tables[pk], *c);
     visit(pk, c->pi, c->pj, predecessorIsIn(*c));
     const int pa = blocks[pk].aBegin + c->pi, pb = blocks[pk].bBegin + c->pj;
+    entry |= c->step == ENTER;
     if (c->step == MOVE || c->step == CROSS) {
       if (pred.open()) {
         ca = pa;
         cb = pb;
       }
     } else if ((c->step == DELETE || c->step == CHANGE || c->step == ENTER) && !pred.open()) {
-      regions.push_back({pa, ca, pb, cb});
+      regions.push_back({pa, ca, pb, cb, entry});
+      entry = false;
     }
     c = &pred;
     k = pk;
@@ -236,7 +243,8 @@ void sealedPartition(Planned& p) {
   p.sealedFallback = true;
   int prevEnd = -1;
   for (const Block& b : p.blocks) {
-    const Region r{b.aBegin, b.aEnd, b.bBegin, b.bEnd};
+    const Region r{b.aBegin, b.aEnd, b.bBegin, b.bEnd,
+                   b.n() == 0 || p.initial.text[b.aEnd - 1] == '\n'};
     p.plan.cost += p.del.query(r.aBegin, r.aEnd) + insertCost(p.typing, r) + REGION_PENALTY;
     if (prevEnd >= 0) p.plan.cost += p.move.query(prevEnd, r.aBegin);
     prevEnd = r.aEnd;
