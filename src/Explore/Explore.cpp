@@ -148,7 +148,7 @@ View::View(Lines initialLines, CursorPos initialPos, Lines goalLines,
            config, userSequence, compositionParams,
            computeTrace(initialLines, initialPos, goalLines, goalPos,
                         compositionParams, userSequence, boundary, navContext,
-                        config, nullptr)) {}
+                        config, SearchControl::NEVER_STOP)) {}
 
 View::View(Lines initialLines, CursorPos initialPos, Lines goalLines,
            CursorPos goalPos, NavBoundary boundary, NavContext navContext,
@@ -159,6 +159,7 @@ View::View(Lines initialLines, CursorPos initialPos, Lines goalLines,
       goalLines_(std::move(goalLines)), goalPos_(goalPos),
       boundary_(std::move(boundary)), navContext_(navContext),
       config_(std::move(config)),
+      bank_(config_),
       userSequence_(userSequence),
       compositionParams_(std::move(compositionParams)) {
 
@@ -239,7 +240,7 @@ CompositionTraceResult View::computeTrace(
     const CompositionOptimizerParams& compositionParams,
     string_view userSequence,
     const NavBoundary& boundary, const NavContext& navContext,
-    const Config& config, const SearchControl* control) {
+    const Config& config, const SearchControl& control) {
   // Explore opts into the traced variant because it needs plan-aligned edit
   // spans to render the Optimal-N header columns.
   CompositionOptimizer opt(config);
@@ -252,7 +253,7 @@ CompositionTraceResult View::computePlan(
     CompositionOptimizerParams compositionParams) const {
   return computeTrace(initialLines_, initialPos_, goalLines_, goalPos_,
                       compositionParams, userSequence_, boundary_, navContext_,
-                      config_, nullptr);
+                      config_, SearchControl::NEVER_STOP);
 }
 
 void View::installPlan(CompositionTraceResult traced) {
@@ -309,7 +310,7 @@ vector<Suggestion> View::recommendNavigate(
             cursorPointRange(start),
             boundary_,
             navContext_,
-        }, config_));
+        }, config_, bank_));
     }
 
     const DiffState& diff = plan_.plannedEditAt(navIndex).diff;
@@ -325,7 +326,7 @@ vector<Suggestion> View::recommendNavigate(
           target.isEmpty() ? cursorPointRange(target.begin) : target,
           boundary_,
           navContext_,
-      }, config_);
+      }, config_, bank_);
   }
 
   sortAndCapSuggestions(nav, maxCount, sortMode);
@@ -348,12 +349,12 @@ vector<Suggestion> View::recommendTransform(
   if (currentResidual && currentResidual->isPureInsertion()) {
     return rankTransformFrontier(
         TransformFrontierQuery{makeFrontierQuery(maxCount, overrides, sortMode), *currentResidual},
-        config_);
+        config_, bank_);
   }
 
   vector<Suggestion> primary = rankTransformFrontier(
       TransformFrontierQuery{makeFrontierQuery(maxCount, overrides, sortMode), plannedEdit.diff},
-      config_);
+      config_, bank_);
   if (!plannedEdit.diff.isReplacement() &&
       !(currentResidual && currentResidual->isReplacement())) {
     return primary;
@@ -368,9 +369,10 @@ vector<Suggestion> View::recommendTransform(
   DiffState deletionPrefix = deletionPrefixDiff(deletionBase);
   vector<Suggestion> alternatives = rankTransformFrontier(
       TransformFrontierQuery{makeFrontierQuery(maxCount, overrides, sortMode), deletionPrefix},
-      config_);
-  TransformOptimizerParams transformParams =
-      OptimizerParamOverrides::resolved<TransformOptimizerParams>(overrides);
+      config_, bank_);
+  const TransformOptimizerParams transformParams = overrides
+      ? overrides->resolved(TransformOptimizerParams{})
+      : TransformOptimizerParams{};
   const double residualInsertDistance =
       textDistanceEstimate(deletionBase.insertedLines());
   for (auto& alt : alternatives) {

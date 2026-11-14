@@ -23,14 +23,11 @@ search. Single-cursor is handled as a 1-cell interval.
 | `optimize(lines, initialPos, goalInterval, params, ..., bufferIndex, lineOffset)` | `CharInterval` | Same; reuses a pre-built `BufferIndex`. |
 | `optimize(lines, initialPos, goalPos, params, ...)` | `CursorPos` (single point) | Convenience wrapper that forwards to the range overload with `CharInterval(goalPos, goalPos)`. Every result lands at `goalPos`. |
 
-`NavOptimizerParams::maxResultsPerEndPos` controls result dedup in `optimize`:
-- `1` (default): at most one result per unique landing position —
-  the cheapest path wins. For single-point goals, this collapses to
-  "first goal hit wins" since there's only one landing cell.
-- `> 1`: every popped goal state is emitted until `maxResults`, with no
-  per-position cap or dedup. Use this for the single-point overload when
-  you want distinct sequences to the goal (e.g. `G` and `3j` to the same
-  line). Only `NavFrontier` treats the value as a per-cell cap.
+`NavOptimizerParams::maxResultsPerEndPos` caps results per landing position in `optimize`, keeping the cheapest; `NavFrontier` applies the same per-cell cap.
+- `1` (default): one result per landing. For single-point goals, that means a single result.
+- To get distinct sequences to one goal (e.g. `G` and `3j` to the same line), set it to `maxResults`.
+
+The search stops once `min(maxResults, rangeSize × maxResultsPerEndPos)` landings are kept. Results are returned cheapest first.
 
 `LandingResult` lives in `src/Optimizer/LandingResult.cppm`. It is the
 landing-carrying variant of `Result`.

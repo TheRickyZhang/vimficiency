@@ -131,8 +131,8 @@ struct CompositionOptimizer {
     // Niche settings
     const NavContext& navigationContext = NavContext(),
 
-    // Cooperative stop signal; null runs the search to its normal caps.
-    const SearchControl* control = nullptr,
+    // Cooperative stop signal; NEVER_STOP runs the search to its normal caps.
+    const SearchControl& control = SearchControl::NEVER_STOP,
 
     // Calibration/diagnostic seam: when non-null, search over this exact
     // partition instead of running the diff planner (see
@@ -155,7 +155,7 @@ struct CompositionOptimizer {
     std::string_view userSequence = "",
     const NavBoundary& boundary = NavBoundary(),
     const NavContext& navigationContext = NavContext(),
-    const SearchControl* control = nullptr
+    const SearchControl& control = SearchControl::NEVER_STOP
   );
 };
 

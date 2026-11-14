@@ -104,7 +104,7 @@ struct TransformTransitionDispatcher {
   const std::vector<char>& startActive;
   const EffortBank& bank;
   const TransformBoundary& transformBoundary;
-  const TransformStateFactory& states;
+  const TransformStateSpace& states;
   double distanceWeight;
   int leftColOffset;
   int rightColOffset;
@@ -116,29 +116,45 @@ struct TransformTransitionDispatcher {
         std::move(state), pq, costMap, pendingByStart, startActive);
   }
 
-  void continueWithEdit(TransformEditorState&& next, const SequenceBinding& sourceCmd, double hCost) {
+  // deleteLineRangeAndUpdatePos lands at min(curswant, lastCol) under nostartofline.
+  static constexpr EntryCurswant LINEWISE_COMMAND_CURSWANT =
+      VimOptions::startOfLine() ? EntryCurswant::Ignored : EntryCurswant::Followed;
+
+  static EntryCurswant entryCurswantOf(const VimCore::ResolvedDeleteRange& deleteEffect) {
+    if (deleteEffect.kind != VimCore::ResolvedDeleteRangeKind::Linewise) {
+      return EntryCurswant::Ignored;
+    }
+    return deleteEffect.linewiseCursorPolicy ==
+               VimCore::LinewiseDeleteCursorPolicy::LinewiseCommand
+        ? LINEWISE_COMMAND_CURSWANT : EntryCurswant::Required;
+  }
+
+  void continueWithEdit(TransformEditorState&& next, const SequenceBinding& sourceCmd,
+                        double hCost, EntryCurswant entryCurswant) {
     const DotRepeat& last = baseState.getLastEdit();
     bool isDot = !last.empty() &&
                  last.count == sourceCmd.count &&
                  last.base == sourceCmd.base.seq.view();
     if (isDot) {
       emitState(states.afterCommand(
-          baseState, std::move(next), ".", bank[KSId::Period], hCost));
+          baseState, std::move(next), ".", bank[KSId::Period], hCost, entryCurswant));
     } else {
       emitState(states.afterEditCommand(
           baseState, std::move(next), sourceCmd.count, sourceCmd.base.seq.view(),
-          sourceCmd.effort, hCost));
+          sourceCmd.effort, hCost, entryCurswant));
     }
   }
 
-  void moveByMotion(const CursorPos& newPos, const SequenceBinding& motionCmd) {
+  void moveByMotion(const CursorPos& newPos, const SequenceBinding& motionCmd,
+                    EntryCurswant entryCurswant) {
     assert(motionCmd.count == 0 && "Boundary motions should not carry counts");
     TransformEditorState next = TransformSimulator::withPos(
         baseState.getEditorState(), newPos);
     emitState(states.afterCommand(
         baseState, std::move(next), motionCmd.base.seq.view(), motionCmd.effort,
         distanceWeight * textDistanceEstimate(baseState.getLines(), leftColOffset,
-                                              rightColOffset)));
+                                              rightColOffset),
+        entryCurswant));
   }
 
   void emitChangeGoalForResolved(const TransformEditorState& afterDeletion,
@@ -174,16 +190,17 @@ struct TransformTransitionDispatcher {
         return;
       }
     }
+    const EntryCurswant entryCurswant = entryCurswantOf(deleteEffect);
     std::optional<TransformEditorState> afterDeletion;
     bool deleteReachedGoal = false;
     if (action.deleteEffectValid) {
       afterDeletion = TransformSimulator::afterResolvedDeletion(
           baseState.getEditorState(), deleteEffect, lineDeleteContext(transformBoundary));
-      deleteReachedGoal = finishTransition(*afterDeletion, sourceCmd);
+      deleteReachedGoal = finishTransition(*afterDeletion, sourceCmd, entryCurswant);
     }
     if constexpr (PureDeletion) {
       if (!deleteReachedGoal) return;
-      continueWithEdit(std::move(*afterDeletion), sourceCmd, 0.0);
+      continueWithEdit(std::move(*afterDeletion), sourceCmd, 0.0, entryCurswant);
     } else {
       const VimCore::ResolvedDeleteRange& changeEffect =
           action.effectForChange();
@@ -209,9 +226,9 @@ struct TransformTransitionDispatcher {
     TransformEditorState afterDeletion =
         TransformSimulator::afterMultiLinewiseDeletion(
             baseState.getEditorState(), range, lineDeleteContext(transformBoundary));
-    if (!finishTransition(afterDeletion, sourceCmd)) return;
+    if (!finishTransition(afterDeletion, sourceCmd, LINEWISE_COMMAND_CURSWANT)) return;
     if constexpr (PureDeletion) {
-      continueWithEdit(std::move(afterDeletion), sourceCmd, 0.0);
+      continueWithEdit(std::move(afterDeletion), sourceCmd, 0.0, LINEWISE_COMMAND_CURSWANT);
     } else {
       emitGoalStates(mode.onCountedLinewiseGoal(afterDeletion, baseState, range, sourceCmd));
     }
@@ -220,9 +237,9 @@ struct TransformTransitionDispatcher {
   void joinLines(bool addSpace, const SequenceBinding& sourceCmd) {
     TransformEditorState afterJoin =
         TransformSimulator::afterJoin(baseState.getEditorState(), addSpace);
-    if (!finishTransition(afterJoin, sourceCmd)) return;
+    if (!finishTransition(afterJoin, sourceCmd, EntryCurswant::Ignored)) return;
     if constexpr (PureDeletion) {
-      continueWithEdit(std::move(afterJoin), sourceCmd, 0.0);
+      continueWithEdit(std::move(afterJoin), sourceCmd, 0.0, EntryCurswant::Ignored);
     } else {
       emitGoalStates(mode.onJoinGoal(afterJoin, baseState, sourceCmd));
     }
@@ -232,9 +249,9 @@ struct TransformTransitionDispatcher {
     TransformEditorState afterJoin =
         TransformSimulator::afterMultiJoin(
             baseState.getEditorState(), sourceCmd.count, addSpace);
-    if (!finishTransition(afterJoin, sourceCmd)) return;
+    if (!finishTransition(afterJoin, sourceCmd, EntryCurswant::Ignored)) return;
     if constexpr (PureDeletion) {
-      continueWithEdit(std::move(afterJoin), sourceCmd, 0.0);
+      continueWithEdit(std::move(afterJoin), sourceCmd, 0.0, EntryCurswant::Ignored);
     } else {
       emitGoalStates(mode.onJoinGoal(afterJoin, baseState, sourceCmd));
     }
@@ -246,7 +263,8 @@ private:
     if (goals.dotVariant) emitState(std::move(*goals.dotVariant));
   }
 
-  bool finishTransition(TransformEditorState& next, const SequenceBinding& sourceCmd) {
+  bool finishTransition(TransformEditorState& next, const SequenceBinding& sourceCmd,
+                        EntryCurswant entryCurswant) {
     const Lines& nextLines = next.getLines();
     bool lineOutOfBounds = next.getPos().line < 0 ||
                            next.getPos().line >= static_cast<int>(nextLines.size());
@@ -258,7 +276,8 @@ private:
     continueWithEdit(
         std::move(next),
         sourceCmd,
-        distanceWeight * textDistanceEstimate(nextLines, leftColOffset, rightColOffset));
+        distanceWeight * textDistanceEstimate(nextLines, leftColOffset, rightColOffset),
+        entryCurswant);
     return false;
   }
 

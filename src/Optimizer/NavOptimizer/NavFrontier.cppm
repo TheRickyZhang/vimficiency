@@ -3,6 +3,7 @@ export module vf.Optimizer.NavOptimizer.NavFrontier;
 import std.compat;
 export import vf.Boundary.NavBoundary;
 export import vf.Keyboard.Config;
+export import vf.Effort.EffortBank;
 export import vf.Optimizer.FrontierCommon;
 export import vf.Types.CharRange;
 export import vf.Types.NavContext;
@@ -23,6 +24,7 @@ struct NavFrontierQuery : FrontierQuery {
 // already on-target or no motion makes progress.
 std::vector<Suggestion> rankNavFrontier(
     const NavFrontierQuery& query,
-    const Config& config);
+    const Config& config,
+    const EffortBank& bank);
 
 }  // export

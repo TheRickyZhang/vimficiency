@@ -8,6 +8,7 @@ export import vf.Optimizer.SearchControl;
 export import vf.Optimizer.FrontierCommon;
 export import vf.Boundary.NavBoundary;
 export import vf.Keyboard.Config;
+export import vf.Effort.EffortBank;
 export import vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
 export import vf.Optimizer.CompositionOptimizer.EditSequenceSpan;
 export import vf.Optimizer.FrontierCommon;
@@ -121,14 +122,14 @@ public:
 
   // Runs the composition search (the heavy, blocking work). Static so the async
   // FFI worker can run it off-thread, then hand the result to the precomputed-
-  // plan constructor. `control` is null for the synchronous path.
+  // plan constructor. The synchronous path passes NEVER_STOP.
   static CompositionTraceResult computeTrace(
       const Lines& initialLines, CursorPos initialPos,
       const Lines& goalLines, CursorPos goalPos,
       const CompositionOptimizerParams& compositionParams,
       std::string_view userSequence,
       const NavBoundary& boundary, const NavContext& navContext,
-      const Config& config, const SearchControl* control);
+      const Config& config, const SearchControl& control);
 
   // --- Query ---
   inline const Phase& phase() const { return state_.phase; }
@@ -191,6 +192,7 @@ private:
   NavBoundary boundary_;
   NavContext navContext_;
   Config config_;
+  EffortBank bank_;
   std::string userSequence_;
   // Single source of truth for composition params: shared between the
   // initial plan computation and any per-phase recomputation

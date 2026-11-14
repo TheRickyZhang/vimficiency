@@ -1,4 +1,5 @@
 #include "LuaExports/Api.h"
+#include "Optimizer/OptimizerParamFields.h"
 #include "Utils/CheckMacro.h"
 
 import std.compat;
@@ -144,72 +145,27 @@ int vf_manual_evict_reason(
 }
 
 // Lua settings_schema consumes these defaults without mirroring C++ values.
+// Wire format: `<scope>:<key>:<int|double|bool>=<value>` per line.
 VFByteSlice vf_get_optimizer_defaults() {
   static string cached;
   if (cached.empty()) {
-    OptimizerParamsBase shared;
-    NavOptimizerParams nav;
-    TransformOptimizerParams tx;
-    CompositionOptimizerParams comp;
-
     ostringstream out;
-    auto i = [&](string_view scope, string_view key, int v) {
-      out << scope << ':' << key << ":int=" << v << '\n';
+    auto emit = [&](string_view scope, string_view key, auto v) {
+      out << scope << ':' << key;
+      if constexpr (is_same_v<decltype(v), bool>) out << ":bool=" << (v ? '1' : '0');
+      else if constexpr (is_same_v<decltype(v), int>) out << ":int=" << v;
+      else out << ":double=" << v;
+      out << '\n';
     };
-    auto d = [&](string_view scope, string_view key, double v) {
-      out << scope << ':' << key << ":double=" << v << '\n';
-    };
-    auto b = [&](string_view scope, string_view key, bool v) {
-      out << scope << ':' << key << ":bool=" << (v ? '1' : '0') << '\n';
-    };
-
-    // Shared
-    i("shared", "maxResults",     shared.maxResults);
-    i("shared", "maxNodesPopped", shared.maxNodesPopped);
-    d("shared", "exploreFactor",  shared.exploreFactor);
-    d("shared", "effortWeight",   shared.effortWeight);
-    d("shared", "distanceWeight", shared.distanceWeight);
-    i("shared", "minPrefixCount", shared.minPrefixCount);
-    i("shared", "maxPrefixCount", shared.maxPrefixCount);
-
-    // Nav
-    i("nav", "maxResults",            nav.maxResults);
-    i("nav", "maxNodesPopped",        nav.maxNodesPopped);
-    d("nav", "exploreFactor",         nav.exploreFactor);
-    d("nav", "effortWeight",          nav.effortWeight);
-    d("nav", "distanceWeight",        nav.distanceWeight);
-    i("nav", "minPrefixCount",        nav.minPrefixCount);
-    i("nav", "maxPrefixCount",        nav.maxPrefixCount);
-    i("nav", "fMotionThreshold",      nav.fMotionThreshold);
-    b("nav", "useDirectionalPruning", nav.useDirectionalPruning);
-    i("nav", "maxResultsPerEndPos",   nav.maxResultsPerEndPos);
-
-    // Transform
-    i("transform", "maxResults",            tx.maxResults);
-    i("transform", "maxNodesPopped",        tx.maxNodesPopped);
-    d("transform", "exploreFactor",         tx.exploreFactor);
-    d("transform", "effortWeight",          tx.effortWeight);
-    d("transform", "distanceWeight",        tx.distanceWeight);
-    i("transform", "minPrefixCount",        tx.minPrefixCount);
-    i("transform", "maxPrefixCount",        tx.maxPrefixCount);
-    i("transform", "maxResultsPerStartPos", tx.maxResultsPerStartPos);
-
-    // Composition
-    i("composition", "maxResults",            comp.maxResults);
-    i("composition", "maxNodesPopped",        comp.maxNodesPopped);
-    d("composition", "exploreFactor",         comp.exploreFactor);
-    d("composition", "effortWeight",          comp.effortWeight);
-    d("composition", "distanceWeight",        comp.distanceWeight);
-    i("composition", "minPrefixCount",        comp.minPrefixCount);
-    i("composition", "maxPrefixCount",        comp.maxPrefixCount);
-    i("composition", "fMotionThreshold",      comp.fMotionThreshold);
-    b("composition", "useDirectionalPruning", comp.useDirectionalPruning);
-    d("composition", "overshootPenalty",      comp.overshootPenalty);
-    d("composition", "moveDeleteScale",       comp.moveDeleteScale);
-    i("composition", "navPaddingAbove",       comp.navPaddingAbove);
-    i("composition", "navPaddingBelow",       comp.navPaddingBelow);
-    i("composition", "diffAlgorithm",         comp.diffAlgorithm);
-
+#define VF_EMIT_FIELD(type, name, withName, def) emit(scope, #name, p.name);
+#define VF_EMIT_SCOPE(scopeName, Params, FIELDS) \
+    { const Params p; const string_view scope = scopeName; FIELDS(VF_EMIT_FIELD) }
+    VF_EMIT_SCOPE("shared", OptimizerParamsBase, OPTIMIZER_BASE_FIELDS)
+    VF_EMIT_SCOPE("nav", NavOptimizerParams, NAV_ALL_FIELDS)
+    VF_EMIT_SCOPE("transform", TransformOptimizerParams, TRANSFORM_ALL_FIELDS)
+    VF_EMIT_SCOPE("composition", CompositionOptimizerParams, COMPOSITION_ALL_FIELDS)
+#undef VF_EMIT_SCOPE
+#undef VF_EMIT_FIELD
     cached = out.str();
   }
   return byteSlice(cached);

@@ -169,17 +169,6 @@ struct QueueEntry {
   }
 };
 
-// Clamp cursor to a valid normal-mode position on concrete post-edit lines.
-// Uses targetCol when available so vertical sticky-column intent is preserved.
-CursorPos clampGoalPosToLines(const CursorPos& pos, const Lines& lines) {
-  if (lines.empty()) return CursorPos(0, 0);
-
-  int line = clamp(pos.line, 0, lines.lastLine());
-  int wantedCol = pos.targetCol >= 0 ? pos.targetCol : pos.col;
-  int col = clamp(wantedCol, 0, lines[line].lastCol());
-  return CursorPos(line, col, wantedCol);
-}
-
 std::optional<Result> buildWholeBufferRewriteFallback(
     const Config& config, const Lines& initialLines, const Lines& goalLines,
     CursorPos goalPos, const NavContext& navigationContext) {
@@ -234,7 +223,7 @@ optimizeImpl(
   using Entry = QueueEntry<Trace>;
   std::priority_queue<Entry, vector<Entry>, std::greater<Entry>> pq;
 
-  CompositionStateFactory states(
+  CompositionStateSpace states(
       config, [&](const CompositionState& state) { return ctx.heuristic(state); });
 
   CompositionState startingState = states.initial(initialPos);
@@ -336,7 +325,7 @@ optimizeImpl(
 
     auto navParams = navParamsForCompositionMotion(params)
         .withMaxResults(maxResults)
-        .withMaxResultsPerEndPos(keepMultiplePerLanding ? 2 : 1);
+        .withMaxResultsPerEndPos(keepMultiplePerLanding ? maxResults : 1);
     auto navResult = navOptimizer.optimize(
         slice.subset, slice.localPos, localInterval,
         navParams, "", slice.subsetBoundary, navigationContext,
@@ -354,7 +343,7 @@ optimizeImpl(
   debug("=== CompositionOptimizer A* search ===");
 
   while (!pq.empty() && ctx.totalPops < params.maxNodesPopped) {
-    if (ctx.control && ctx.control->stopRequested(ctx.totalPops)) break;
+    if (ctx.control.cancelledOrPastDeadline(ctx.totalPops)) break;
     Entry current = pq.top();
     pq.pop();
     const CompositionState& s = current.state;
@@ -477,34 +466,18 @@ optimizeImpl(
 
     // ========== EDIT vs MOVEMENT TRANSITIONS ==========
     const TransformResult& transformResult = ctx.edits[editsCompleted].transformResult;
-    std::span<const Result> editAlternatives =
-        transformResult.resultsAt(pos.line, pos.col);
-    bool canUseTransformAlternatives = true;
-    if (!editAlternatives.empty() && pos.targetCol != pos.col) {
-      // Transform buckets are keyed by visible pos; linewise edits also depend
-      // on curswant. Reset exactly when `0` is a no-visible-move command.
-      canUseTransformAlternatives = false;
-      if (pos.col == 0) {
-        enqueueMotionTransition(current, Sequence("0"), CursorPos(pos.line, 0));
-      }
-    }
 
-    if (canUseTransformAlternatives) {
-      for (size_t resultIndex = 0; resultIndex < editAlternatives.size(); resultIndex++) {
-        const Result& res = editAlternatives[resultIndex];
-        CursorPos editGoalPos = transformResult.goalPosAt(
-            pos.line, pos.col, resultIndex);
-        if (transformResult.hasResultGoals()) {
-          editGoalPos = clampGoalPosToLines(editGoalPos, ctx.getLinesAfter(editsCompleted + 1));
-        }
-        debug("  edit found at", pos, "seq:", "\"" + res.getSequence().str() + "\"",
-              "cost:", res.getCost(), "goalPos:", editGoalPos);
-        enqueueEditTransition(current, res.getSequence(),
-                              editGoalPos, editsCompleted + 1);
-      }
-    }
+    // Edit: every Transform result applicable from this cursor.
+    const bool canEditHere = transformResult.forEachEditFrom(
+        pos, ctx.getLinesAfter(editsCompleted + 1),
+        [&](const Result& res, const CursorPos& editGoalPos) {
+          debug("  edit found at", pos, "seq:", "\"" + res.getSequence().str() + "\"",
+                "cost:", res.getCost(), "goalPos:", editGoalPos);
+          enqueueEditTransition(current, res.getSequence(), editGoalPos, editsCompleted + 1);
+        });
 
     const BracketQuoteContext& bqContext = ctx.edits[editsCompleted].bracketQuoteContext;
+    // Edit: bracket/quote text-object strategies anchored at this cursor.
     if (bqContext.line == pos.line) {
       CompositionStrategies::enumerateBracketQuotes(
           nextEdit, currentLines, bqContext,
@@ -516,7 +489,7 @@ optimizeImpl(
           });
     }
 
-    // J plans always start with `J`, so activation is column-insensitive.
+    // Edit: J plan. It always starts with `J`, so activation is column-insensitive.
     const auto& joinPlan = ctx.edits[editsCompleted].joinPlan;
     if (joinPlan && pos.line == joinPlan->entryLine) {
       debug("  J plan at", pos, "seq:", "\"" + joinPlan->sequence.str() + "\"",
@@ -525,7 +498,9 @@ optimizeImpl(
           current, joinPlan->sequence, joinPlan->goalPos, editsCompleted + 1);
     }
 
-    if (editAlternatives.empty()) {
+    // Movement: no Transform edit applies here, so navigate toward one.
+    if (!canEditHere) {
+      // Toward the J plan's entry line.
       if (joinPlan && pos.line != joinPlan->entryLine) {
         int entryLine = joinPlan->entryLine;
         exploreMotionsToInterval(
@@ -541,10 +516,7 @@ optimizeImpl(
             + ")-[" + to_string(nextEdit.endPos.line) + "," +
             to_string(nextEdit.endPos.col) + ")");
 
-      // Motions to the next edit's diff range. Every valid Transform start lies
-      // inside that range (restrictValidStartRegion), so this one search reaches
-      // all of them; maxResults is the count of target positions rather than a
-      // cap, so no reachable start is dropped.
+      // Motions to the next edit's diff range
       exploreMotionsToInterval(
           current, pos, nextEdit.beginPos.line, nextEdit.editEndLine() - 1,
           currentLines,
@@ -636,7 +608,7 @@ CompositionResult CompositionOptimizer::optimize(
     const Lines& initialLines, const CursorPos initialPos, const Lines& goalLines,
     const CursorPos goalPos, CompositionOptimizerParams params,
     string_view userSequence, const NavBoundary& boundary,
-    const NavContext& navigationContext, const SearchControl* control,
+    const NavContext& navigationContext, const SearchControl& control,
     const std::vector<DiffState>* forcedDiffs) {
   CHECK(goalLines.contains(goalPos),
         "goalPos must be a valid normal-mode cursor position in goalLines");
@@ -688,7 +660,7 @@ CompositionTraceResult CompositionOptimizer::optimizeWithEditSpans(
     const Lines& initialLines, const CursorPos initialPos, const Lines& goalLines,
     const CursorPos goalPos, CompositionOptimizerParams params,
     string_view userSequence, const NavBoundary& boundary,
-    const NavContext& navigationContext, const SearchControl* control) {
+    const NavContext& navigationContext, const SearchControl& control) {
   CHECK(goalLines.contains(goalPos),
         "goalPos must be a valid normal-mode cursor position in goalLines");
   if(goalPos < initialPos) {

@@ -313,7 +313,7 @@ Naively, `TransformStateKey` stored a full `Lines` copy. With `getKey()` called 
 - Computed when an editor snapshot is constructed
 - Refreshed by `TransformSimulator` after buffer mutations (`afterDeletion`, `afterLinewiseDeletion`, `afterJoin`, and counted variants)
 
-`TransformState` wraps the editor snapshot with A* path/ranking data and is created through `TransformStateFactory`, so sequence, effort, cost, and dot-repeat metadata stay synchronized with the editor snapshot.
+`TransformState` wraps the editor snapshot with A* path/ranking data and is created through `TransformStateSpace`, so sequence, effort, cost, and dot-repeat metadata stay synchronized with the editor snapshot.
 
 `TransformStateKey` stores `(linesHash, lineCount, line, col, mode, startIndex)` instead of the full `Lines` object. Both the hash function and equality operator use only these scalar fields — no buffer copying or content comparison.
 

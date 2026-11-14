@@ -11,8 +11,9 @@ export {
 
 struct OptimizerParamsBase {
   OPTIMIZER_BASE_FIELDS(VF_PARAMS_DECLARE_OWN_FIELD)
+  enum class Field { OPTIMIZER_BASE_FIELDS(VF_PARAMS_FIELD_ENUM) COUNT };
 
-  // Called only from OptimizerParamOverrides::applyTo() — the trust boundary
+  // Called only from OptimizerParamOverrides::resolved() — the trust boundary
   // for external Lua-config input. Direct in-tree construction uses literals
   // and is trusted, so optimizer entry points don't validate.
   inline void validate() const {

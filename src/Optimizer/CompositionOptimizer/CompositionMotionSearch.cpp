@@ -68,7 +68,7 @@ LandingNavResult optimizeCompositionRangeMotion(
     const NavContext& navContext,
     const CompositionOptimizerParams& params,
     int maxResults,
-    const SearchControl* control) {
+    const SearchControl& control) {
   auto navParams = navParamsForCompositionMotion(params)
       .withMaxResults(maxResults);
   return navOptimizer.optimize(
