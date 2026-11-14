@@ -9,6 +9,22 @@ test("reload: setup is idempotent (two calls in a row don't crash)", function()
   assert_true(vim.fn.exists(":Vimfy") == 2, ":Vimfy still defined after second setup")
 end)
 
+test("reload: repeated setup re-arms auto-suggest from the new config", function()
+  local auto_suggest = require("vimficiency.capture.auto_suggest")
+  local atom_stream = require("vimficiency.capture.atom_stream")
+
+  vimfy.setup({ auto_suggest = { idle = { ms = 3000, window = "3s" } } })
+  assert_true(auto_suggest.is_enabled(), "idle trigger armed")
+
+  vimfy.setup({ auto_suggest = { keys = { every = 50 } } })
+  assert_true(atom_stream._has_listener("auto_suggest_keys"), "keys trigger armed by second setup")
+  assert_true(not atom_stream._has_listener("auto_suggest_idle"), "idle trigger torn down")
+
+  vimfy.setup({ auto_suggest = false })
+  assert_true(not auto_suggest.is_enabled(), "auto_suggest = false disarms everything")
+  assert_true(not atom_stream._has_listener("auto_suggest_keys"), "keys trigger torn down")
+end)
+
 test("reload: shutdown detaches atom subscribers", function()
   vimfy.setup({})
   local atom_stream = require("vimficiency.capture.atom_stream")

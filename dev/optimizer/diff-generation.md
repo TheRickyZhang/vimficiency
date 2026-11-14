@@ -111,18 +111,21 @@ goal    = K0 I1 K1 ... It Kt        (Ii inserted, Ki kept => byte-identical in b
 minimizing
 
 ```
-sum delCost(Di) + sum insCost(Ii) + sum moveCost(interior Ki)
+sum delCost(Di) + sum insCost(Ii) + sum moveCost(interior Ki) + REGION_PENALTY * regions
 ```
 
 - `insCost`: per-key effort of the typed text plus `<Esc>` whenever a region
   types anything, plus `entry` unless a deletion precedes the typing. The
   change form (`cw`, `cc`, `s`, `C`, `c0`, `cap`) swaps `d` for `c` at equal
   cost, so the `i` key is saved.
+- No change form consumes a line's trailing newline (`cc`, `C` and `cap` all
+  leave one), so a deletion ending in `\n` does not save `entry`.
 - Known optimism: `{k}dw` swallowing trailing whitespace — `cw` is `ce`, so
   that merge is really `dwi`.
 - `delCost` / `moveCost`: the same counted-tiling oracle (below) with different
   per-level bases — deletion pays the operator, movement the bare motion.
-- No per-region penalty beyond these keys.
+- `REGION_PENALTY` (1) is a mental charge per region, and exact cost ties go
+  to the plan with fewer moves.
 
 `K0` and `Kt` are free. Every optimal plan pins its first edit at the first
 differing character and its last at the last one (starting earlier deletes and
@@ -142,14 +145,15 @@ coordinates. There are three step families, each written with the
 predecessor cell it pulls from:
 
 ```
-move    out[pi][pj] -> out[i][j]   i-pi == j-pj >= 1, chars match:   moveCost(pi,i)
-        prev out[n-t][m-t] -> out[i][i]   across a seal (CROSS):      moveCost over the gap
+move    out[pi][pj] -> out[i][j]   i-pi == j-pj >= 1, chars match:   moveCost(pi,i) + REGION_PENALTY
+        prev out[n-t][m-t] -> out[i][i]   across a seal (CROSS):      moveCost over the gap + REGION_PENALTY
 delete  out[pi][j]  -> out[i][j]   delete initial [pi,i):            delCost(pi,i)
         out[pi][j-1] -> in[i][j]   same, landing in insert (CHANGE): delCost(pi,i) + <Esc> + typed(j-1)
+                                   (not when initial[i-1] is a newline)
 type    out[i][j-1] -> in[i][j]    enter insert, type char (ENTER):  entry + <Esc> + typed(j-1)
         in[i][j-1]  -> in[i][j]    type goal char j-1 (TYPE):        typed(j-1)
         in[i][j]    -> out[i][j]   leave insert (EXIT):              free
-out[i][j] = 0 on the first block's leading matched diagonal         # leading free
+out[i][j] = REGION_PENALTY on the first block's leading matched diagonal   # first region
 answer    = min over the last block's trailing matched diagonal     # trailing free
 ```
 
@@ -159,7 +163,8 @@ the goal, typing raw `[begin,end)` costs `PS(end) - PS(begin)`.
 Regions are not a DP concept:
 - a region is a maximal stretch of delete/type steps between two moves, read
   off the winning path afterwards (`reconstructPlan`)
-- nothing is charged per region, so the state needs no memory of where one
+- the per-region charge sits on the move that reaches the region (and on the
+  leading cell for the first), so the state needs no memory of where one
   began — that is why two tables suffice (charging `<Esc>` only when something
   was typed would need a third)
 - waiving `entry` after a delete needs no state either: nothing can sit between
@@ -326,10 +331,11 @@ stay in the adjacent block; the core between the margins is the seal.
 **Gate.** Seal the core iff
 
 ```
-type(core) > move(core) + entry + <Esc> + stopSlack + startSlack
+type(core) > move(core) + REGION_PENALTY + entry + <Esc> + stopSlack + startSlack
 ```
 
-The full round trip stays the worst case under the change merge: the text
+Keeping the core costs the move plus the extra region it creates. The full
+round trip stays the worst case under the change merge: the text
 right of the core may be a pure insertion, which nothing merges with.
 
 Crossing a seal is still one move. `CROSS` transitions connect the previous
@@ -405,7 +411,11 @@ Implemented, wired as the default `diffAlgorithm=0`:
   digit keystrokes plus the shared `CountPenalty` model, counts capped at
   `mxcnt`
 - per-key insert cost, `<Esc>` per typed region, `entry` only when no deletion
-  precedes it (the `CHANGE` landing), no other per-region charge
+  precedes it (the `CHANGE` landing, unavailable after a deleted newline)
+- `REGION_PENALTY` per region with a fewer-moves tie-break (2026-11-13). On
+  PlanRegret (fixed seeds, 96 cases) inversions went 13 → 5; without the
+  newline rule the same penalty gave 59, because it tipped ties toward
+  regions that delete and retype their trailing newline
 - sealing with derived per-edge margins
 
 Removed on 2026-11-02 to keep the planner simple until a measured need

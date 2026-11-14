@@ -1,0 +1,105 @@
+Vimficiency TODO, highest priority first.
+
+Items marked [arch N] have the full write-up (what, why deferred, threshold) in
+dev/architecture/todo.md. Delete items when done.
+
+
+== 1. Correctness and plan quality
+
+1. Triage the large PlanRegret regrets. Real cost is ~5x the planner estimate
+   on 7-region plans, which is too large to be partition quality; something in
+   composition breaks down or misses a case. Start from DumpCase. [arch 7]
+
+2. Hand composition the planner's tied plans instead of one arbitrary pick.
+   Needs a small tied-set surface on VimDiff again. [arch 0]
+
+3. Pure-newline deletion ("\n" -> "") cannot fire single-step structural edits.
+
+4. Linewise deletes other than dd are classified EntryCurswant::Required,
+   although Neovim's dj follows curswant like dd. Classify them Followed after
+   an oracle check, so they stay usable from a clamped column.
+
+5. J/gJ do not model comment-leader stripping ('comments', formatoptions+=j).
+   The oracle clears 'comments' to agree, so real buffers can diverge.
+
+6. Sentence text objects are ported but held back behind the backward
+   findSentenceForOperator gap.
+
+
+== 2. Search cost
+
+7. Check startWorkFactor (8) on large real regions. It was tuned on generated
+   2-4 line deletions only; a start more than 8x harder than the rest loses
+   its result. See dev/optimizer/transform-optimizer.md.
+
+8. Give later-line starts a backward route when the region's first line is
+   whitespace only after a prefix. Today those starts have no solution.
+
+9. Share Transform search states across start positions. [arch 11]
+
+10. Replace composition's up-to-8 single-point nav searches per pop with one
+    range search filtered against startPositions(). Measure before and after.
+    [arch 7]
+
+11. Tune the VimDiff planner cell cap (100M cells at ~48 B/cell is likely
+    10-20x too high for memory), and the seal gate threshold, which scales with
+    paragraph depth. Tightening the seal gate needs a dominance proof.
+
+12. Measure the diff-generation vs composition time split on realistic slices
+    and decide whether planner exactness is buying anything. [arch 7]
+
+
+== 3. Capture and Explore
+
+13. Recall records taken through Neovim's temporary autocmd window when a
+    window closes mid-burst. [arch 10]
+
+14. Surface visual-delete shortcuts in TransformFrontier. Needs a Macro phase
+    in Explore. [arch 6]
+
+15. Make the optimizer mapping-aware, so it can suggest or credit mappings the
+    user already has. [arch 8]
+
+
+== 4. Cleanup
+
+16. Decide whether MyersDiff stays selectable as a planner (diffAlgorithm = 1).
+    Sealing and applyDiffState still need it; only the setting, the FFI branch
+    and the processing-order flip are legacy. If it goes, move applyDiffState
+    into DiffState. If it stays, make the order flip a real composition choice.
+
+17. Fuzz budget: 0.5 s per FUZZ_TEST would halve the gate (~35 s -> ~18 s) at
+    about the old case count, since the oracle now restarts every 5000 calls.
+    Decide for local runs, CI, or both.
+
+18. Fix the VIMF_DEBUG and VIMF_LEGACY_VIM wiring and route both through
+    BuildConfig.h. Both are behaviour changes, so do them together. [arch 2,3,5]
+
+19. Adopt or delete DebugTracking's unused Maybe<T>. [arch 4]
+
+20. Move the bench workflow onto CMakePresets.json. [arch 1]
+
+21. Replace the optimizer-params X-macros with C++26 reflection once Clang
+    ships <meta>. [arch 9]
+
+
+== 5. Vim coverage (from the old root TODO.txt, not re-checked against the code)
+
+22. Simple symbols: *, #, %
+23. Niche commands: -/+, ~, gu, gU
+24. Search and n/N
+25. Insert-mode deletions with <C-w> and <C-u>
+26. Visual mode
+27. Macro and register use, detecting repetition
+28. Multiple buffers: gd, gr, jumps
+29. Feedback on preferred motion paradigms over time
+
+
+== 6. Ideas, unscheduled (also from the old root TODO.txt)
+
+- Anytime Repairing A* in place of fixed caps, given no admissible heuristic.
+- Separate user-relative and absolute explore factors; stop at the smaller.
+- Collapse repeated insert-mode text into a shorter reference.
+- Skip f-motions when no endpoint exists.
+- A Vim benchmark of tasks (direct instruction, A -> B buffers, general edits)
+  to measure progress.

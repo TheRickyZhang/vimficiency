@@ -59,7 +59,8 @@ Omitting the second argument means "repeat the first":
 - `:Vimfy fetch foo`   ≡ `:Vimfy fetch foo as foo`
 
 Every name and recall alias (`a`, `3s`, `5`) is also a legal filename, so the
-first argument is reusable. `@` and `$` are not filenames; for them the default
+first argument is reusable. The reverse does not hold: `fetch` needs an explicit
+alias when the filename is not letters-only (`:Vimfy fetch demo-1 demo`). `@` and `$` are not filenames; for them the default
 is the alias the session was finished under:
 
 ```vim

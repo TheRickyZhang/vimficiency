@@ -8,7 +8,7 @@
   It searches at character granularity and prices approximate keystrokes:
   inserted-text effort plus insert entry + `<Esc>` per typed region, and
   counted-tiling movement and deletion oracles (`{k}w`/`{k}dd`-shaped commands
-  with a concave count penalty). No separate per-region penalty. Details in
+  with a concave count penalty), plus a fixed penalty per region. Details in
   `dev/optimizer/diff-generation.md` § VimDiff.
 - `composition:diffAlgorithm=1` switches back to the historical character-level
   `MyersDiff` analysis (similar algorithm to git). It is kept as a fast fallback

@@ -146,6 +146,11 @@ TEST(PlanRegret, DumpCase) {
              << "]\n";
     };
     show("vimdiff", plan.cost, plan.diffs);
+    for (const VimDiff::RegionBreakdown& r :
+         VimDiff::calculateBreakdown(
+             s.initial, s.goal, config,
+             VimDiff::CostOptions{.moveDeleteScale = s.params.moveDeleteScale}).regions)
+      cout << "   move=" << r.move << " del=" << r.del << " ins=" << r.ins << "\n";
     show("myers", -1.0, MyersDiff::calculate(s.initial, s.goal));
   }
 }

@@ -16,7 +16,7 @@ return tot;
 
 _Edit costs: delete / insert / move_
 
-### Plan: cost 24
+### Plan: cost 27
 
 ```
 cn

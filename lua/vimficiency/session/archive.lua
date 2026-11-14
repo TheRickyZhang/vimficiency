@@ -15,7 +15,7 @@ local session_store = require("vimficiency.session.store")
 --- Workspace <-> disk
 ---@field save             fun(alias: string, explicit_filename: string|nil)
 ---@field store            fun(alias: string, explicit_filename: string|nil)
----@field fetch            fun(filename: string, alias: string)
+---@field fetch            fun(filename: string, alias: string|nil)
 ---@field rm               fun(filename: string)
 --- Workspace only
 ---@field rename_active    fun(old_alias: string, new_alias: string)
@@ -142,9 +142,16 @@ function M.store(alias, explicit_filename)
 end
 
 ---@param filename string
----@param alias string
+---@param alias string|nil  defaults to `filename` when that is itself a named alias
 function M.fetch(filename, alias)
   validate_filename(filename)
+  if not alias then
+    if not alias_mod.is_named(filename) then
+      error("vimfy fetch: '" .. filename .. "' is not a letters-only alias; give one with " ..
+        "`:Vimfy fetch " .. filename .. " <alias>`", 0)
+    end
+    alias = filename
+  end
   alias_mod.expect(alias, { "named" })
 
   local data, err = disk.load(filename)

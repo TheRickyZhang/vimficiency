@@ -39,6 +39,59 @@ namespace {
 
 }
 
+TEST(DebugTest, DISABLED_JoinPartition) {
+  const Config config = Config::uniform();
+  const Lines initial({"one", "two", "three", "four", "five"});
+  const Lines goal({"one two three", "four five"});
+  const CompositionOptimizerParams params = CompositionOptimizerParams{}.withMaxResults(5);
+  auto newlineToSpace = [&](int line, int col) {
+    return DiffState(CursorPos{line, col}, CursorPos{line + 1, 0}, "\n", " ",
+                     TransformBoundary(initial, CursorPos{line, col}, CursorPos{line + 1, 0}));
+  };
+  const vector<DiffState> perNewline = {newlineToSpace(0, 3), newlineToSpace(1, 3),
+                                        newlineToSpace(3, 4)};
+  auto show = [&](const char* label, const vector<DiffState>* diffs) {
+    CompositionOptimizer opt(config);
+    auto res = opt.optimize(initial, {0, 0}, goal, {0, 0}, params, "", NavBoundary(), NavContext(),
+                            SearchControl::NEVER_STOP, diffs);
+    cout << "== " << label << "\n";
+    for (const DiffState& d : res.getDiffs())
+      cout << "   (" << d.beginPos.line << "," << d.beginPos.col << ") del=["
+           << VF::prettify(d.deletedText) << "] ins=[" << VF::prettify(d.insertedText) << "]\n";
+    vector<Result> results = res.getResults();
+    sort(results.begin(), results.end(),
+         [](const Result& a, const Result& b) { return a.getCost() < b.getCost(); });
+    for (const Result& r : results)
+      cout << "   " << r.getCost() << "  " << VF::prettify(r.getSequence().str()) << "\n";
+  };
+  show("planner", nullptr);
+  show("one region per newline", &perNewline);
+}
+
+TEST(DebugTest, DISABLED_MoveFromLineEnd) {
+  const Lines initial({". b .cfcda.;", "  e.daba bf  b;", "bb,df", "", ", a e,daeccfa, {", "}"});
+  const VimDiff::FlatText flat(initial);
+  VimDiff::TilingCost moveCost(flat, 1.0, CountPrefixLimits::DEFAULT_MAX_PREFIX_COUNT,
+                               VimDiff::TilingCost::Kind::Move);
+  auto at = [&](int line, int col) {
+    return DiffText::positionToFlatIndex(CursorPos{line, col}, initial);
+  };
+  auto show = [&](const char* label, int begin, int end) {
+    cout << label << " cost=" << moveCost.query(begin, end) << ":";
+    for (const VimDiff::TilingChunk& c : moveCost.cover(begin, end))
+      cout << "  kind=" << (int)c.kind << " k=" << c.count << " [" << c.begin << "," << c.end
+           << ") cost=" << c.cost;
+    cout << "\n";
+  };
+  show("line 0 newline -> (3,0)", at(1, 0) - 1, at(3, 0));
+  show("(1,0) -> (3,0)", at(1, 0), at(3, 0));
+  show("line 0 newline -> (2,0)", at(1, 0) - 1, at(2, 0));
+  show("(1,0) -> (2,0)", at(1, 0), at(2, 0));
+  show("line 0 newline -> (1,0)", at(1, 0) - 1, at(1, 0));
+  show("line 0 newline -> (1,2)", at(1, 0) - 1, at(1, 2));
+  show("(1,0) -> (1,2)", at(1, 0), at(1, 2));
+}
+
 TEST(DebugTest, DISABLED_SessionAPartition) {
   const Config config = Config::uniform();
   const Lines initial({"", "#include <bits/stdc++.h>", "using namespace std;", "", "int main() {",

@@ -81,6 +81,31 @@ test("workspace/storage: fetch copies from disk to memory, disk preserved", func
   end)
 end)
 
+test("workspace/storage: fetch without an alias needs a letters-only filename", function()
+  h.use_temp_data_home()
+  h.silence_notify(function()
+    local id = session_store.register_fetched_result("fff", fake_result("seq"))
+    assert_true(id, "seed failed")
+    archive.save("fff", "fff")
+    archive.save("fff", "demo-1")
+    remove_alias("fff")
+
+    archive.fetch("fff")
+    assert_true(session_store.has_result("fff"), "letters-only filename doubles as the alias")
+
+    local ok, err = pcall(archive.fetch, "demo-1")
+    assert_true(not ok, "non-named filename without an alias must refuse")
+    assert_true(tostring(err):find("fetch demo-1 <alias>", 1, true) ~= nil,
+      "error names the explicit form; got " .. tostring(err))
+
+    archive.fetch("demo-1", "demo")
+    assert_true(session_store.has_result("demo"), "explicit alias works for any filename")
+
+    remove_alias("fff")
+    remove_alias("demo")
+  end)
+end)
+
 test("workspace/storage: diffs survive a disk round-trip", function()
   h.use_temp_data_home()
   h.silence_notify(function()

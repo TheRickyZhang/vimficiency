@@ -68,7 +68,8 @@ namespaces are separate; the same text can name both. Move results
 between them with `save` / `store` / `fetch`; see
 [7a. Session storage](07a-session-storage.md) for the full model and
 collision rules. Omitting the second argument on `save` / `store` /
-`fetch` repeats the first argument verbatim.
+`fetch` repeats the first argument verbatim; `fetch` requires the alias when
+the filename is not letters-only.
 
 ## Session picker (`:Vimfy list`)
 
