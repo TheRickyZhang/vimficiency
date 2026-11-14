@@ -33,7 +33,12 @@ status=0
 summary="$(mktemp)"
 : > "$summary"
 export VF_TEST_SUMMARY_FILE="$summary"
-trap 'rm -f "$summary"' EXIT
+
+# Tests persist play/explore settings and saved results; keep them out of the
+# developer's real stdpath("data").
+data_home="$(mktemp -d)"
+export XDG_DATA_HOME="$data_home"
+trap 'rm -f "$summary"; rm -rf "$data_home"' EXIT
 
 run_phase() {
   local label="$1"

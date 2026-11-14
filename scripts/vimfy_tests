@@ -214,8 +214,12 @@ run_lua() {
   fi
 
   if [[ -n "$file" ]]; then
-    VIMFICIENCY_LIB_PATH="$lib" VF_TEST_FILE="$file" \
-      nvim --headless -u NONE -U NONE -l "$repo_root/tests/lua/runner.lua"
+    local data_home status=0
+    data_home="$(mktemp -d)"
+    VIMFICIENCY_LIB_PATH="$lib" VF_TEST_FILE="$file" XDG_DATA_HOME="$data_home" \
+      nvim --headless -u NONE -U NONE -l "$repo_root/tests/lua/runner.lua" || status=$?
+    rm -rf "$data_home"
+    return $status
   else
     VIMFICIENCY_LIB_PATH="$lib" bash "$repo_root/tests/lua/run.sh"
   fi
