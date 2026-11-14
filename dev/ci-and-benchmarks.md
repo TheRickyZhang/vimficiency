@@ -28,11 +28,10 @@ Shared dependency setup is centralized in `.github/actions/setup-ci-deps/action.
 ### `test` job (every push and PR)
 
 1. Runs `setup-ci-deps` with Neovim enabled
-2. Restores compiler cache via `hendrikmuhs/ccache-action@v1` (`key: test`)
-3. Restores CMake dependency cache (`build/_deps`, `deps-v3-*`)
-4. Builds the test binaries and `vimficiency` in Release mode
+2. Restores the cached `build/` tree and marks changed sources (see cache notes)
+3. Builds the test binaries and `vimficiency` in Release mode
    (`-DVIMF_DEBUG=OFF`, `-DVIMF_TRACK_STATES=OFF`)
-5. Runs the fast correctness gate via `scripts/vimfy_tests`: unit, approval,
+4. Runs the fast correctness gate via `scripts/vimfy_tests`: unit, approval,
    property and safety exploration with the fixed CI FuzzTest runner seed, and
    Lua/FFI smoke tests
 
@@ -42,7 +41,7 @@ Builds every target in Debug with `-DVIMF_TRACK_STATES=ON`, so benchmark,
 debug, and tracking-enabled `vimfy_explore` binaries still get compiled on PRs,
 then runs unit and approval tests. Tracking is on here (unlike a default local
 configure) so that `vimfy_explore` does not need its own tree: the flag goes
-through `BuildConfig.h`, so a separate tree is a full recompile with no ccache
+through `BuildConfig.h`, so a separate tree is a full recompile with no build-cache
 reuse. It only records popped states, so unit and approval results are
 unaffected. `vimfy_explore` is not run in CI; the local bench pipeline executes
 it and ingests results.
@@ -66,10 +65,15 @@ token with repository Administration read access.
 
 ### CI cache and performance notes
 
-- `ccache` cache is restored before build, reducing repeated compile work.
-- `build/_deps` cache stores CMake-fetched third-party source/build artifacts
-  (for this repo, GoogleTest, FuzzTest, benchmark, msgpack, json, and their
-  related CMake external content).
+- ccache can't cache C++20 module compiles, so each build job caches its whole
+  `build/` tree (including `_deps`) and Ninja rebuilds incrementally. The key is
+  job + GCC version + ref + SHA; a miss falls back to the latest tree on the
+  same ref, then on `main`.
+- `scripts/ci-build-cache.sh mark` ages every tracked file and re-touches only
+  those whose blob differs from the index recorded with the cached tree. Commit
+  times would miss commits authored before the cached build but pushed after.
+- The tree is saved right after a successful build, before tests. A failed
+  build is never saved, since its stale outputs would look up to date.
 - Neovim install is cached by OS + version. On cache hit, CI skips the GitHub release download and untar.
 - `apt-get update` and apt package installation are intentionally not cached in this workflow. These commands still run on every fresh GitHub-hosted runner, so `Setup CI deps` can remain one of the slower steps even when all project-level caches hit.
 

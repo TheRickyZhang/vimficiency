@@ -50,9 +50,9 @@ local function update_setting(key, value)
   settings_profile.save("play", PLAY_SCHEMA_VERSION, store)
 end
 
----Public accessor — session.lua's `simulate()` reads these on
----every invocation to decide whether to include the user sequence and
----how many optimal results to surface.
+---Public accessor — `simulate/pool.lua` reads these on every replay to
+---decide whether to include the user sequence and how many optimal
+---results to surface.
 ---@return table  copy of the current settings
 function M.get_settings()
   return vim.deepcopy(settings_store())

@@ -19,7 +19,7 @@ reimplementation to drift.
 | shared styles + palette | `web/docs/src/styles/how-it-works.css` |
 | concept diagrams | `web/docs/src/assets/how-it-works/*.svg` |
 | C ABI | `src/Wasm/PlannerExports.cpp` |
-| read-only planner surfaces | `src/Optimizer/DiffPlanner/VimDiffTrace.h`, `TilingCost::cover` |
+| read-only planner surfaces | `VimDiff::trace` in `src/Optimizer/DiffPlanner/VimDiff.cppm`, `TilingCost::cover` |
 | built module (CI only, ignored) | `web/docs/public/wasm/vimfy_planner.{js,wasm}` |
 
 Chapters sit under `doc-src/` so the content collection stays one glob

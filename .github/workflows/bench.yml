@@ -92,7 +92,7 @@ jobs:
   # `assert(x)` is a macro that discards `x` before compilation — any broken
   # expression inside an assertion body (missing method, typo, wrong type)
   # is invisible. A dedicated Debug build catches that class of bug on every
-  # push. One matrix entry, ~2 min extra with ccache; cheap insurance.
+  # push. One matrix entry; cheap insurance with the cached build tree.
   # Hosted Ubuntu images stop at GCC 14; the module build needs GCC 16, so
   # both build jobs run in the official gcc image.
   debug-build:
@@ -108,16 +108,23 @@ jobs:
           install-neovim: "true"
           neovim-version: ${{ env.NEOVIM_VERSION }}
 
-      - uses: hendrikmuhs/ccache-action@v1
-        with:
-          key: debug-build
+      # ccache can't cache module compiles, so the whole tree is cached and
+      # Ninja rebuilds incrementally (see scripts/ci-build-cache.sh).
+      - name: Compiler version
+        id: cc
+        run: echo "version=$(g++ -dumpfullversion)" >> "$GITHUB_OUTPUT"
 
-      - name: Cache build deps
-        uses: actions/cache@v4
+      - name: Restore build tree
+        uses: actions/cache/restore@v4
         with:
-          path: build/_deps
-          key: deps-v4-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt') }}
-          restore-keys: deps-v4-
+          path: build
+          key: build-${{ github.job }}-${{ steps.cc.outputs.version }}-${{ github.ref }}-${{ github.sha }}
+          restore-keys: |
+            build-${{ github.job }}-${{ steps.cc.outputs.version }}-${{ github.ref }}-
+            build-${{ github.job }}-${{ steps.cc.outputs.version }}-refs/heads/main-
+
+      - name: Mark changed sources
+        run: scripts/ci-build-cache.sh mark
 
       # Tracking is on so vimfy_explore compiles here instead of in a third
       # tree (BuildConfig.h would invalidate every TU). It only records popped
@@ -125,9 +132,18 @@ jobs:
       - name: Build (Debug)
         run: |
           cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Debug -DVIMF_BUILD_TESTS=ON \
-            -DVIMF_TRACK_STATES=ON \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            -DVIMF_TRACK_STATES=ON
           cmake --build build -j$(nproc)
+
+      # Saved before tests so a test failure still keeps the build; a failed
+      # build is never saved, since its stale outputs would look up to date.
+      - name: Record source index
+        run: scripts/ci-build-cache.sh record
+
+      - uses: actions/cache/save@v4
+        with:
+          path: build
+          key: build-${{ github.job }}-${{ steps.cc.outputs.version }}-${{ github.ref }}-${{ github.sha }}
 
       - name: Unit tests (Debug)
         run: |
@@ -147,25 +163,37 @@ jobs:
           install-neovim: "true"
           neovim-version: ${{ env.NEOVIM_VERSION }}
 
-      - uses: hendrikmuhs/ccache-action@v1
-        with:
-          key: test
+      - name: Compiler version
+        id: cc
+        run: echo "version=$(g++ -dumpfullversion)" >> "$GITHUB_OUTPUT"
 
-      - name: Cache build deps
-        uses: actions/cache@v4
+      - name: Restore build tree
+        uses: actions/cache/restore@v4
         with:
-          path: build/_deps
-          key: deps-v4-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt') }}
-          restore-keys: deps-v4-
+          path: build
+          key: build-${{ github.job }}-${{ steps.cc.outputs.version }}-${{ github.ref }}-${{ github.sha }}
+          restore-keys: |
+            build-${{ github.job }}-${{ steps.cc.outputs.version }}-${{ github.ref }}-
+            build-${{ github.job }}-${{ steps.cc.outputs.version }}-refs/heads/main-
+
+      - name: Mark changed sources
+        run: scripts/ci-build-cache.sh mark
 
       - name: Build
         run: |
           cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_BUILD_TESTS=ON \
-            -DVIMF_TRACK_STATES=OFF \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            -DVIMF_TRACK_STATES=OFF
           # Only what the gate runs; debug-build compiles every target.
           cmake --build build -j$(nproc) --target \
             vimfy_unit_tests vimfy_approval_tests vimfy_property_tests vimfy_safety_tests vimficiency
+
+      - name: Record source index
+        run: scripts/ci-build-cache.sh record
+
+      - uses: actions/cache/save@v4
+        with:
+          path: build
+          key: build-${{ github.job }}-${{ steps.cc.outputs.version }}-${{ github.ref }}-${{ github.sha }}
 
       # The Lua/FFI suite captures through the CmdAtom event (Neovim 0.13-dev+),
       # which the pinned v0.11.5 lacks. Install a nightly alongside and point
