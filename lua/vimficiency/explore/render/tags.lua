@@ -8,10 +8,9 @@
 --   above      landing cells highlighted + command labels on a virt_line above.
 --   below      same but below.
 --
--- The module owns `tags_ns` (shared with the recommendation list view — the
--- extmarks sit on different buffers, so a single namespace keeps clearing
--- symmetrical). Every call to `render` starts by clearing the scratch
--- buffer's tags_ns extmarks.
+-- `tags_ns` is the `vimfy_explore_tags` namespace, which render/list.lua also
+-- creates by name; the extmarks sit on different buffers. Every call to `render`
+-- starts by clearing the scratch buffer's tags_ns extmarks.
 local v = vim.api
 local highlights = require("vimficiency.explore.highlights")
 local sequence_display = require("vimficiency.sequence_display")
@@ -19,7 +18,6 @@ local sequence_display = require("vimficiency.sequence_display")
 local M = {}
 
 local tags_ns = v.nvim_create_namespace("vimfy_explore_tags")
-M.tags_ns = tags_ns
 M.TARGET_HL = highlights.TARGET_HL
 
 local rank_hl = highlights.rank_hl
@@ -54,7 +52,7 @@ local function target_cells(state, scratch_buf)
   local br, bc = state.target_range.begin_pos.row, state.target_range.begin_pos.col
   local er, ec = state.target_range.end_pos.row, state.target_range.end_pos.col
   local function line_len(row)
-    local line = v.nvim_buf_get_lines(scratch_buf, row, row + 1, false)[1] or ""
+    local line = v.nvim_buf_get_lines(scratch_buf, row, row + 1, false)[1]
     return #line
   end
   local cells = {}
@@ -77,7 +75,6 @@ local function target_cells(state, scratch_buf)
   end
   return cells
 end
-M.target_cells = target_cells
 
 ---Paint the current-edit target in full-opacity blue. Priority 2300 so it
 ---sits above rank-colored landing cells; target cells subsume any coincident
@@ -92,7 +89,7 @@ local function render_target_highlight(active)
         priority = 2300,
       })
     else
-      local line = v.nvim_buf_get_lines(active.scratch.buf, cell.row, cell.row + 1, false)[1] or ""
+      local line = v.nvim_buf_get_lines(active.scratch.buf, cell.row, cell.row + 1, false)[1]
       if cell.col >= #line then
         v.nvim_buf_set_extmark(active.scratch.buf, tags_ns, cell.row, math.max(0, #line), {
           virt_text = { { " ", highlights.TARGET_HL } },
@@ -149,7 +146,7 @@ local function render_landing_highlights(active, filter)
     local col = item.landing.col
     if not is_claimed(claims, row, col) then
       claim_with_gap(claims, row, col, 1)
-      local line = v.nvim_buf_get_lines(active.scratch.buf, row, row + 1, false)[1] or ""
+      local line = v.nvim_buf_get_lines(active.scratch.buf, row, row + 1, false)[1]
       if col >= #line then
         v.nvim_buf_set_extmark(active.scratch.buf, tags_ns, row, math.max(0, #line), {
           virt_text = { { " ", rank_hl(item_rank(item)) } },

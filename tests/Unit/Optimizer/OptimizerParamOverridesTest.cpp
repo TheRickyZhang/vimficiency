@@ -9,7 +9,7 @@ import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
 namespace {
 
 OptimizerParamOverrides parseGood(std::string_view encoded) {
-  auto parsed = parseOptimizerParamOverrides(encoded);
+  auto parsed = OptimizerParamOverrides::parse(encoded);
   EXPECT_TRUE(parsed.has_value())
       << (parsed ? "" : formatOptimizerParamOverrideErrors(parsed.error()));
   if (!parsed) return {};
@@ -22,7 +22,7 @@ TEST(OptimizerParamOverrides, EmptyInputLeavesParamsUntouched) {
 
   NavOptimizerParams nav;
   const auto navBefore = nav;
-  overrides.applyTo(nav);
+  nav = overrides.resolved(nav);
   EXPECT_EQ(nav.maxResults, navBefore.maxResults);
   EXPECT_EQ(nav.effortWeight, navBefore.effortWeight);
   EXPECT_EQ(nav.fMotionThreshold, navBefore.fMotionThreshold);
@@ -35,19 +35,19 @@ TEST(OptimizerParamOverrides, SharedKeysApplyToAllOptimizers) {
       "shared:maxResults=42");
 
   NavOptimizerParams nav;
-  overrides.applyTo(nav);
+  nav = overrides.resolved(nav);
   EXPECT_DOUBLE_EQ(nav.effortWeight, 1.5);
   EXPECT_DOUBLE_EQ(nav.distanceWeight, 0.5);
   EXPECT_EQ(nav.maxResults, 42);
 
   TransformOptimizerParams tx;
-  overrides.applyTo(tx);
+  tx = overrides.resolved(tx);
   EXPECT_DOUBLE_EQ(tx.effortWeight, 1.5);
   EXPECT_DOUBLE_EQ(tx.distanceWeight, 0.5);
   EXPECT_EQ(tx.maxResults, 42);
 
   CompositionOptimizerParams comp;
-  overrides.applyTo(comp);
+  comp = overrides.resolved(comp);
   EXPECT_DOUBLE_EQ(comp.effortWeight, 1.5);
   EXPECT_DOUBLE_EQ(comp.distanceWeight, 0.5);
   EXPECT_EQ(comp.maxResults, 42);
@@ -60,21 +60,21 @@ TEST(OptimizerParamOverrides, PerOptimizerScopeWinsOverShared) {
       "transform:maxResults=99");
 
   NavOptimizerParams nav;
-  overrides.applyTo(nav);
+  nav = overrides.resolved(nav);
   EXPECT_EQ(nav.maxResults, 5);
 
   TransformOptimizerParams tx;
-  overrides.applyTo(tx);
+  tx = overrides.resolved(tx);
   EXPECT_EQ(tx.maxResults, 99);
 
   // Composition only sees `shared:` since no `composition:maxResults` line.
   CompositionOptimizerParams comp;
-  overrides.applyTo(comp);
+  comp = overrides.resolved(comp);
   EXPECT_EQ(comp.maxResults, 20);
 }
 
 TEST(OptimizerParamOverrides, SharedScopeRejectsConcreteKeys) {
-  const auto parsed = parseOptimizerParamOverrides(
+  const auto parsed = OptimizerParamOverrides::parse(
       "shared:fMotionThreshold=7\n"
       "shared:maxResultsPerEndPos=3\n"
       "shared:minPrefixCount=5\n"
@@ -97,17 +97,17 @@ TEST(OptimizerParamOverrides, ConcreteScopesApplyBaseAndConcreteKeys) {
       "transform:maxResultsPerStartPos=4");
 
   NavOptimizerParams nav;
-  overrides.applyTo(nav);
+  nav = overrides.resolved(nav);
   EXPECT_EQ(nav.minPrefixCount, 3);
   EXPECT_EQ(nav.fMotionThreshold, 7);
   EXPECT_EQ(nav.maxResultsPerEndPos, 3);
 
   CompositionOptimizerParams comp;
-  overrides.applyTo(comp);
+  comp = overrides.resolved(comp);
   EXPECT_EQ(comp.fMotionThreshold, 9);
 
   TransformOptimizerParams tx;
-  overrides.applyTo(tx);
+  tx = overrides.resolved(tx);
   EXPECT_EQ(tx.maxResultsPerStartPos, 4);
 }
 
@@ -119,20 +119,20 @@ TEST(OptimizerParamOverrides, BoolParsedAsZeroOneOrTrueFalse) {
                        "nav:useDirectionalPruning=false"}) {
     const auto overrides = parseGood(encoded);
     NavOptimizerParams nav;
-    overrides.applyTo(nav);
+    nav = overrides.resolved(nav);
     EXPECT_FALSE(nav.useDirectionalPruning) << "encoded: " << encoded;
   }
   for (auto encoded : {"nav:useDirectionalPruning=1",
                        "nav:useDirectionalPruning=true"}) {
     NavOptimizerParams nav;
     nav.useDirectionalPruning = false;  // start from non-default
-    parseGood(encoded).applyTo(nav);
+    nav = parseGood(encoded).resolved(nav);
     EXPECT_TRUE(nav.useDirectionalPruning) << "encoded: " << encoded;
   }
 }
 
 TEST(OptimizerParamOverrides, InvalidLinesRejectPayload) {
-  const auto parsed = parseOptimizerParamOverrides(
+  const auto parsed = OptimizerParamOverrides::parse(
       "shared:effortWeight=2.5\n"
       "this line has no colon\n"
       "shared:noEqualSign\n"
@@ -154,13 +154,13 @@ TEST(OptimizerParamOverrides, CompositionSpecificKeyAppliesOnlyToComposition) {
       "composition:diffAlgorithm=1");
 
   CompositionOptimizerParams comp;
-  overrides.applyTo(comp);
+  comp = overrides.resolved(comp);
   EXPECT_DOUBLE_EQ(comp.overshootPenalty, 10.0);
   EXPECT_EQ(comp.diffAlgorithm, 1);
 
   // Nav and Transform never read the composition scope.
   NavOptimizerParams nav;
-  overrides.applyTo(nav);
+  nav = overrides.resolved(nav);
   // Nothing to assert on Nav directly; this is a "doesn't crash, doesn't
   // mis-set" sanity check.
   EXPECT_EQ(nav.maxResults, NavOptimizerParams{}.maxResults);
@@ -168,13 +168,13 @@ TEST(OptimizerParamOverrides, CompositionSpecificKeyAppliesOnlyToComposition) {
 
 TEST(OptimizerParamOverrides, CountPrefixSettersHonorBaseValidation) {
   // OptimizerParamsBase::validate() asserts the prefix-count fields are in
-  // bounds. The override applier calls validate() at the end of applyTo()
+  // bounds. resolved() calls validate() after applying
   // so callers can't slip through bad values.
   const auto overrides = parseGood(
       "shared:minPrefixCount=5\n"
       "shared:maxPrefixCount=12");
   NavOptimizerParams nav;
-  overrides.applyTo(nav);
+  nav = overrides.resolved(nav);
   EXPECT_EQ(nav.minPrefixCount, 5);
   EXPECT_EQ(nav.maxPrefixCount, 12);
   EXPECT_TRUE(nav.countPrefixesEnabled());

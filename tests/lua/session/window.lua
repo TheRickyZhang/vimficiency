@@ -1,9 +1,9 @@
 -- tests/lua/session_window.lua
--- Covers compute_result_for_active's window-fallback (#1): when the
--- original session window is closed but the buffer is still current via
--- a different window, we should proceed instead of hard-rejecting.
+-- Covers capture_end_state's window-fallback (#1): when the original session
+-- window is closed but the buffer is still current via a different window, we
+-- should proceed instead of hard-rejecting.
 
-local session = require("vimficiency.session")
+local compute = require("vimficiency.session.compute")
 local ffi_lib = require("vimficiency.ffi")
 local util    = require("vimficiency.util")
 local h       = require("_helpers")
@@ -11,20 +11,16 @@ local h       = require("_helpers")
 local function fake_active(buf, win)
   return {
     id = "test-" .. tostring(vim.uv.hrtime()),
-    capture_sub = nil,
+    stream_sub = nil,
     win = win,
     buf = buf,
     start_state = util.capture_state(buf, win),
-    time_started = vim.uv.hrtime(),
-    status = "active",
+    started_mono_ns = vim.uv.hrtime(),
     atoms = {},
-    key_count = 0,
-    had_mouse = false,
-    result = nil,
   }
 end
 
-test("compute_result_for_active: window-closed fallback to current window", function()
+test("capture_end_state: window-closed fallback to current window", function()
   local buf = h.new_buf({ "hello world", "second line" })
 
   -- Two windows, both showing buf. We'll treat the current one as
@@ -45,40 +41,30 @@ test("compute_result_for_active: window-closed fallback to current window", func
   assert_true(not vim.api.nvim_win_is_valid(win_original),
     "sanity: original window is gone")
 
-  local result, err = session.compute_result_for_active(active)
-  -- The optimizer may still reject for unrelated reasons (empty keyseq,
-  -- trivial slice). The assertion is narrower: the failure must NOT be
-  -- window-related.
-  if result == nil then
-    local msg = tostring(err or "")
-    assert_true(not msg:find("window", 1, true),
-      "failure must not be window-related, got: " .. msg)
-    assert_true(not msg:find("original window", 1, true),
-      "failure must not mention original window, got: " .. msg)
-  end
+  local end_state = compute.capture_end_state(active)
+  assert_eq(end_state.lines[1], "hello world", "must capture via the surviving window")
 
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
 end)
 
-test("compute_result_for_active: buffer-gone still hard-rejects", function()
+test("capture_end_state: buffer-gone still hard-rejects", function()
   local buf = h.new_buf({ "x" })
   local active = fake_active(buf, vim.api.nvim_get_current_win())
 
   vim.cmd("enew")
   vim.api.nvim_buf_delete(buf, { force = true })
 
-  local result, err = session.compute_result_for_active(active)
-  assert_eq(result, nil, "should fail when buffer gone")
-  assert_match(err, "buffer", "error must mention buffer")
+  assert_error(function() compute.capture_end_state(active) end,
+    "buffer", "should fail when buffer gone, naming the buffer")
 end)
 
-test("compute_result_for_active: different-buffer still hard-rejects", function()
+test("capture_end_state: different-buffer still hard-rejects", function()
   local buf_a = h.new_buf({ "a" })
   local active = fake_active(buf_a, vim.api.nvim_get_current_win())
   local buf_b = h.new_buf({ "b" })
 
-  local result, err = session.compute_result_for_active(active)
-  assert_eq(result, nil, "should fail when current buf differs")
+  local ok, err = pcall(compute.capture_end_state, active)
+  assert_eq(ok, false, "should fail when current buf differs")
   assert_match(err, "buf " .. buf_a, "error must name captured buffer")
   assert_match(err, "buf " .. buf_b, "error must name current buffer")
 
@@ -94,10 +80,9 @@ test("compute_result_for_active: includes capture key debug", function()
   -- One atom per command: CmdAtom has already resolved operator-pending, so the
   -- replayable `keys` are just concatenated (no reduction, no mode tracking).
   active.atoms = {
-    { t = 1000, type = "insert",   keys = "cwW2<Esc>", lhs = "cwW2<Esc>", win = win, buf = buf },
-    { t = 2000, type = "operator", keys = "dl",        lhs = "x",         win = win, buf = buf },
+    { keys = "cwW2<Esc>", win = win, buf = buf },
+    { keys = "dl",        win = win, buf = buf },
   }
-  active.key_count = #active.atoms
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "cout << W2 << endl;" })
 
   local result
@@ -106,16 +91,12 @@ test("compute_result_for_active: includes capture key debug", function()
       return {}, 9.0, ""
     end },
   }, function()
-    result = assert(session.compute_result_for_active(active))
+    local end_state = assert(compute.capture_end_state(active))
+    result = assert(compute.compute_result_for_active(active, end_state))
   end)
 
   assert_eq(result.user_seq, "cwW2<Esc>dl")
-  assert_eq(result.capture_debug.raw_joined, "cwW2<Esc>dl")
-  assert_eq(result.capture_debug.reduced_sequence, "cwW2<Esc>dl")
-  assert_eq(result.capture_debug.normalized_sequence, "cwW2<Esc>dl")
-  assert_eq(result.capture_debug.event_count, 2)
-  assert_eq(result.capture_debug.events[1].type, "insert")
-  assert_eq(result.capture_debug.events[2].keys, "dl")
+  assert_eq(vim.inspect(result.capture_debug.atom_keys), vim.inspect({ "cwW2<Esc>", "dl" }))
 
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
 end)

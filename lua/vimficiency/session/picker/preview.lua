@@ -9,8 +9,8 @@ local function lines_for_active(item)
       "Recall ring (auto-generated key/time windows)",
       "",
       string.format("Entries:    %d", item.ring_count),
-      string.format("Newest:     %s", model.format_age_ns(item.ring_newest_ns)),
-      string.format("Oldest:     %s", model.format_age_ns(item.ring_oldest_ns)),
+      string.format("Newest:     %s", model.format_age_ns(item.started_mono_ns)),
+      string.format("Oldest:     %s", model.format_age_ns(item.ring_oldest_mono_ns)),
       string.format("Total keys: %d", item.ring_total_keys),
       "",
       "The ring is populated on every keystroke; entries are not directly",
@@ -22,12 +22,12 @@ local function lines_for_active(item)
 
   local lines = {
     string.format("Alias:    %s", item.name),
-    string.format("Type:     %s", item.category or "?"),
+    string.format("Type:     %s", item.category),
     string.format("Status:   %s", item.status),
-    string.format("Started:  %s", model.format_age_ns(item.start_time_ns)),
+    string.format("Started:  %s", model.format_age_ns(item.started_mono_ns)),
   }
-  if item.end_time_ns then
-    table.insert(lines, string.format("Finished: %s", model.format_age_ns(item.end_time_ns)))
+  if item.finished_mono_ns then
+    table.insert(lines, string.format("Finished: %s", model.format_age_ns(item.finished_mono_ns)))
   end
   table.insert(lines, string.format("Keys:     %d", item.key_count or 0))
   if item.preview_seq and item.preview_seq ~= "" then
@@ -38,16 +38,16 @@ local function lines_for_active(item)
   local result = item.result
   if result then
     table.insert(lines, "")
-    local user_cost = result.user_cost and string.format(" (cost: %.2f)", result.user_cost) or ""
     vim.list_extend(lines,
-      sequence_display.prefixed_lines("User full: ", result.user_seq or "", nil, user_cost))
+      sequence_display.prefixed_lines("User full: ", result.user_seq, nil,
+        string.format(" (cost: %.2f)", result.user_cost)))
     table.insert(lines, "")
     table.insert(lines, "Optimal:")
-    for i, r in ipairs(result.optimal_results or {}) do
+    for i, r in ipairs(result.optimal_results) do
       if i > 5 then break end
       vim.list_extend(lines,
-        sequence_display.prefixed_lines(string.format("  %d. ", i), r.seq or "", nil,
-          string.format("  (cost: %.2f)", r.cost or 0)))
+        sequence_display.prefixed_lines(string.format("  %d. ", i), r.seq, nil,
+          string.format("  (cost: %.2f)", r.cost)))
     end
   end
   return lines
@@ -57,7 +57,7 @@ local function lines_for_saved(item)
   local lines = {
     string.format("Name:  %s", item.name),
     string.format("Path:  %s", vim.fn.fnamemodify(item.path, ":~")),
-    string.format("Saved: %s", model.format_epoch(item.mtime_sec)),
+    string.format("Saved: %s", model.format_epoch(item.wall_epoch)),
     "",
   }
   local raw = vim.fn.readfile(item.path)

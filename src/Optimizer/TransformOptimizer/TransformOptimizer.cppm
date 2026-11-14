@@ -2,6 +2,7 @@ export module vf.Optimizer.TransformOptimizer.TransformOptimizer;
 
 import std.compat;
 export import vf.Keyboard.Config;
+export import vf.Effort.EffortBank;
 export import vf.Boundary.TransformBoundary;
 export import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
 export import vf.Optimizer.TransformOptimizer.TransformResult;
@@ -11,7 +12,9 @@ export {
 struct TransformOptimizer {
   Config config;
 
-  inline TransformOptimizer(const Config& config) : config(config) {}
+  EffortBank bank;
+
+  inline TransformOptimizer(const Config& config) : config(config), bank(config) {}
 
   // Historical name retained: this is the transform-layer optimizer.
   // Finds optimal sequences to transform initialLines to goalLines.

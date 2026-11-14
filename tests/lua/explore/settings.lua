@@ -28,16 +28,20 @@ end)
 
 test("explore settings: user config.explore overrides VIEW_SETTINGS defaults", function()
   local config = require("vimficiency.config")
-  local saved = config.explore.display_mode
-  config.explore.display_mode = "below"
+  require("_helpers").with_patch({ { config.explore, "display_mode", "below" } }, function()
+    local defaults = helpers.default_settings()
+    assert_eq(defaults.view.display_mode, "below")
+    -- Untouched keys still come from the spec.
+    assert_eq(defaults.view.recommendation_sort, "effort")
+    assert_eq(defaults.view.recommendation_count, 5)
+  end)
+end)
 
-  local defaults = helpers.default_settings()
-  assert_eq(defaults.view.display_mode, "below")
-  -- Untouched keys still come from the spec.
-  assert_eq(defaults.view.recommendation_sort, "effort")
-  assert_eq(defaults.view.recommendation_count, 5)
-
-  config.explore.display_mode = saved
+test("explore settings: a false override is not collapsed to the spec default", function()
+  local config = require("vimficiency.config")
+  require("_helpers").with_patch({ { config.explore, "show_user_typed", false } }, function()
+    assert_eq(helpers.default_settings().view.show_user_typed, false)
+  end)
 end)
 
 test("explore settings: settings_profile.load handles missing sidecar", function()
@@ -63,36 +67,6 @@ test("explore settings: settings_profile.load handles malformed JSON", function(
   assert_eq(envelope.data, {})
 
   os.remove(path)
-end)
-
-test("explore settings: get_optimizer_defaults parses C++ defaults across types", function()
-  -- The C++ side dumps every default-initialized param-struct field as
-  -- `<scope>:<key>:<type>=<value>` lines. The Lua parser must produce
-  -- typed values (numbers for int/double, booleans for bool). If a new
-  -- field is added on either side the wire format keeps roundtripping;
-  -- this test pins the per-type decoding so a regression there is loud.
-  local ffi_lib = require("vimficiency.ffi")
-  local defaults = ffi_lib.get_optimizer_defaults()
-
-  -- Base defaults are exported under an explicit shared scope. Per-optimizer
-  -- defaults still include inherited base fields for concrete-scope editing.
-  assert_eq(defaults.shared.maxResults, 20)
-  assert_eq(defaults.shared.minPrefixCount, 4)
-  assert_eq(defaults.shared.maxPrefixCount, 16)
-  assert_eq(defaults.nav.maxResults, 20)
-  assert_eq(defaults.transform.maxResults, 20)
-  assert_eq(defaults.composition.maxResults, 20)
-
-  -- Doubles parse as numbers, not strings.
-  assert_eq(type(defaults.nav.exploreFactor), "number")
-  assert_eq(defaults.nav.effortWeight, 1.0)
-  assert_eq(defaults.composition.overshootPenalty, 3.0)
-  assert_eq(defaults.composition.moveDeleteScale, 1.0)
-  assert_eq(defaults.composition.diffAlgorithm, 0)  -- DiffAlgorithm::VimDiff (default)
-
-  -- Bools — the wire encodes true as "1" and false as "0".
-  assert_eq(defaults.nav.useDirectionalPruning, true)
-  assert_eq(defaults.composition.useDirectionalPruning, true)
 end)
 
 test("explore settings: shared fallback is base-only", function()

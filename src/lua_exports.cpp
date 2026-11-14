@@ -6,6 +6,8 @@ module;
 module vf.LuaExports.Common;
 
 import std.compat;
+import vf.Keyboard.Config;
+import vf.Optimizer.CountPenalty;
 import vf.Optimizer.GlobalRuntimeOptions;
 import vf.Utils.Debug;
 import vf.VimCore.VimOptions;
@@ -157,13 +159,13 @@ const char *vf_count_class_name(int index) {
 VFByteSlice vf_get_debug() {
   static std::string debug_storage;
   debug_storage = consume_debug_output();
-  return helpers::byteSlice(debug_storage);
+  return byteSlice(debug_storage);
 }
 
 VFByteSlice vf_get_warnings() {
   static std::string warning_storage;
   warning_storage = consume_warning_output();
-  return helpers::byteSlice(warning_storage);
+  return byteSlice(warning_storage);
 }
 
 const char *vf_version_string() { return VIMF_VERSION; }
@@ -200,7 +202,7 @@ VFByteSlice vf_debug_config() {
   show_key(Key::Key_K, "K");
 
   debug_storage = oss.str();
-  return helpers::byteSlice(debug_storage);
+  return byteSlice(debug_storage);
 }
 
 }

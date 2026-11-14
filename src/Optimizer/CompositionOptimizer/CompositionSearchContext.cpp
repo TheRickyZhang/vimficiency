@@ -25,7 +25,7 @@ CompositionSearchContext::CompositionSearchContext(
     const CompositionOptimizerParams& params,
     const Config& config,
     const std::vector<DiffState>* forcedDiffs,
-    const SearchControl* control)
+    const SearchControl& control)
     : config(config),
       params(params),
       navContext(navContext),
@@ -81,7 +81,7 @@ CompositionSearchContext::CompositionSearchContext(
   }
   phaseMark("diff generation");
   debug("diff algorithm:", DiffAlgorithm::name(params.diffAlgorithm));
-  if (control && control->cancelRequested()) {
+  if (control.cancelRequested()) {
     aborted = true;
     return;
   }
@@ -152,7 +152,7 @@ CompositionSearchContext::CompositionSearchContext(
   // Compute J (join lines) plans
   computeJoinPlans();
   phaseMark("computeJoinPlans");
-  if (control && control->cancelRequested()) {
+  if (control.cancelRequested()) {
     aborted = true;
     return;
   }
@@ -294,7 +294,7 @@ vector<double> CompositionSearchContext::computeSuffixEditCosts() const {
 void CompositionSearchContext::calculateTransformResults() {
   const bool timePhases = std::getenv("VIMFY_TIME_PHASES") != nullptr;
   for (size_t i = 0; i < edits.size(); i++) {
-    if (control && control->cancelRequested()) {
+    if (control.cancelRequested()) {
       aborted = true;
       return;
     }

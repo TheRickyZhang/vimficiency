@@ -15,7 +15,6 @@
 import std.compat;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
-import vf.tests.Utils.InterpreterModelReplay;
 import vf.tests.Utils.NeovimOracle;
 import vf.tests.Utils.OracleReplay;
 
@@ -64,11 +63,7 @@ class VerifyDotRepeat {
     // edit, move two cells left (always legal on a dense line), `.`.
     string seq = dotEditCommand(spec.commandKind) + "hh.";
 
-    InterpreterReplayResult result = applyUserSequence(lines, cursor, seq);
-    OracleReplay::expectMatchesOracle(
-        oracle_, lines, cursor, seq,
-        result.lines, result.cursor, result.mode,
-        "dot repeat primitive");
+    OracleReplay::expectModelMatchesOracle(oracle_, lines, cursor, seq, "dot repeat primitive");
   }
 
  private:

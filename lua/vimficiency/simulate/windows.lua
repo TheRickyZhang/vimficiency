@@ -32,7 +32,7 @@ function M.create_buffer(ctx, lines, label)
 
   v.nvim_create_autocmd("WinEnter", {
     buffer = buf,
-    callback = function() ctx.update_cursor_highlights() end,
+    callback = util.entry(ctx.update_cursor_highlights),
     desc = "vimfy: refresh focus indicator on window enter",
   })
 
@@ -49,7 +49,7 @@ function M.setup_window(win, buf, lines, row, col)
 
   local line_count = #lines
   local safe_row = max(1, min(row + 1, line_count))
-  local line_len = #(lines[safe_row] or "")
+  local line_len = #lines[safe_row]
   local safe_col = max(0, min(col, max(0, line_len - 1)))
   v.nvim_win_set_cursor(win, { safe_row, safe_col })
 

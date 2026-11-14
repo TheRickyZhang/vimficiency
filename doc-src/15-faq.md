@@ -42,10 +42,10 @@ directly.
 ## How do I remove a saved result?
 
 ```vim
-:Vimfy rm <name>
+:Vimfy rm <filename>
 ```
 
-Tab-completes over saved names. Or delete the file directly from
+Tab-completes over saved filenames. Or delete the file directly from
 `stdpath('data')/vimficiency/saved/`.
 
 ## Planned additions to this FAQ

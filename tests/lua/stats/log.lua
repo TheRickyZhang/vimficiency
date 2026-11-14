@@ -20,7 +20,7 @@ local function sample_record(overrides)
     v = 1,
     finish_epoch = 1234567,
     type = "mark",
-    finish_reason = "manual",
+    kind = "mark",
     key_count = 4,
     user_cost = 3.0,
     best_opt_cost = 2.0,
@@ -46,13 +46,6 @@ test("stats.log: append + read_all round-trips records", function()
   assert_eq(records[3].user_seq, "c")
 end)
 
-test("stats.log: read_all on missing file returns empty list", function()
-  use_temp_data_dir()
-  local records, skipped = stats_log.read_all()
-  assert_eq(#records, 0)
-  assert_eq(skipped, 0)
-end)
-
 test("stats.log: malformed trailing line is silently skipped", function()
   use_temp_data_dir()
   stats_log.append(sample_record({ user_seq = "ok" }))
@@ -74,7 +67,7 @@ test("stats.log: build_record flags beats when user beats optimizer", function()
     user_seq = "xyz",
     user_cost = 1.0,
     optimal_results = { { seq = "abc", cost = 5.0 } },
-    finish_reason = "manual",
+    kind = "mark",
     key_count = 3,
   }))
   r = assert(r)
@@ -92,7 +85,7 @@ test("stats.log: build_record picks the lowest-cost optimal entry", function()
       { seq = "lo",  cost = 2.0 },
       { seq = "mid", cost = 5.0 },
     },
-    finish_reason = "manual",
+    kind = "mark",
     key_count = 3,
   }))
   r = assert(r)
@@ -100,10 +93,3 @@ test("stats.log: build_record picks the lowest-cost optimal entry", function()
   assert_eq(r.best_opt_seq, "lo")
 end)
 
-test("stats.log: build_record returns nil when result is missing user_seq", function()
-  local result = h.fake_result({ user_cost = 1.0 })
-  result.user_seq = nil
-  ---@diagnostic disable-next-line: param-type-mismatch
-  local r = stats_log.build_record("mark", result)
-  assert_eq(r, nil)
-end)

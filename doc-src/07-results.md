@@ -94,7 +94,7 @@ Shows currently active sessions and saved-to-disk results.
 Every finished session starts in **session memory** (workspace) and
 stays there until it rotates out. Copy it to disk with
 `:Vimfy save`, move it with `:Vimfy store`, bring it back later with
-`:Vimfy fetch`. `:Vimfy play <name>` works against both — it replays
+`:Vimfy fetch`. `:Vimfy play <alias>|<filename>` works against both — it replays
 from memory first, falling back to disk.
 
 See [7a. Session storage](07a-session-storage.md) for the full model,

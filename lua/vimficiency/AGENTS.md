@@ -8,19 +8,19 @@ Top-level modules are the plugin entry and cross-cutting infrastructure:
 
 | File | Purpose |
 |------|---------|
-| `init.lua` | Plugin entry point. Registers `:Vimfy` command with subcommands. |
-| `session.lua` | Session lifecycle: start, finish, simulate, view. Required as `vimficiency.session`. |
+| `init.lua` | Plugin entry point: `setup()`, the `:Vimfy` dispatcher and its tab completion, teardown and reload. |
+| `session.lua` | Live capture lifecycle: start, watch, finish, recall, close. Argument errors raise to the `:Vimfy` boundary. |
+| `session/archive.lua` | Finished results by handle: alias resolution through the store, filename resolution on disk, save/store/fetch/rm, view. |
 | `simulate.lua` | Side-by-side animation of motion sequences. Required as `vimficiency.simulate`. |
 | `explore.lua` | Interactive result exploration view. Required as `vimficiency.explore`. |
 | `play.lua` | Play-screen settings and modal wiring. Required as `vimficiency.play`. |
 | `stats.lua` | Stats aggregation and display. Required as `vimficiency.stats`. |
-| `commands.lua` | `:Vimfy` generic dispatch, usage checks, and tab completion over the subcommand table. |
-| `commands/defs.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, fn) per `:Vimfy` verb. |
+| `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, run) per `:Vimfy` verb. Depends on the domain modules; only `init.lua` depends on it. |
 | `dev_reload.lua` | `:Vimfy reload`: cmake rebuild, then hot-reload the `.so` and every Lua module. |
 | `config.lua` | Shared configuration constants (Lua-side only). |
-| `config_detail.lua` | Config introspection / validation helpers. |
+| `config/validate.lua` | Validators for the structured `watch` and `auto_suggest` blocks; the shape itself stays in `config.lua`. |
 | `ffi.lua` | Compatibility surface for LuaJIT FFI bindings to `libvimficiency.so`. |
-| `util.lua` | State capture, ID generation, UI helpers. |
+| `util.lua` | State capture, ID generation, UI helpers, `entry` (the error boundary for every autocmd/timer/keymap callback). |
 
 Subdirectories hold supporting modules for each domain:
 
@@ -28,7 +28,7 @@ Subdirectories hold supporting modules for each domain:
 
 | File | Purpose |
 |------|---------|
-| `session/alias.lua` | Alias grammar validation for Mark / Watch / Recall handles. |
+| `session/alias.lua` | The alias grammar (name, recall window, `@`, `$`) and the filename grammar; every handle is one or the other. |
 | `session/compute.lua` | Active-session capture normalization and optimizer invocation. |
 | `session/disk.lua` | Saved-result JSON encoding, validation, and disk operations. |
 | `session/playback.lua` | Converts stored results into replay sequence pools. |
@@ -72,55 +72,125 @@ Subdirectories hold supporting modules for each domain:
 
 | File | Purpose |
 |------|---------|
-| `capture/atoms.lua` | CmdAtom-driven capture: one atom per atomic user action, normalized and fanned out to named subscribers (manual/recall/triggers). See `dev/lua/atom-capture.md`. |
+| `capture/atom_stream.lua` | CmdAtom-driven capture: one atom per atomic user action, normalized and fanned out to named subscribers (manual/recall/triggers). See `dev/lua/atom-stream.md`. |
 | `capture/key_tracking.lua` | Legacy `vim.on_key()` capture, now used only by interactive Explore's frontier replay. |
 | `capture/recall.lua` | Rolling recall-ring capture driven by atom events. |
 | `capture/end_trigger.lua` | Idle/command-count auto-end triggers (Watch / Suggest). |
 | `capture/auto_suggest.lua` | Idle-trigger auto-suggest (runs optimizer on a recall window). |
 
+## Module headers
+
+A module's public surface is declared up front as an `(exact)` class on its
+`M` table, one `---@field name fun(...)` per export, grouped by responsibility.
+lua-language-server (`scripts/lint-lua.sh`) then reports `inject-field` for any
+`function M.x` not in that block, so the header cannot drift from the
+implementation. Everything else in the file is `local`. `session/store.lua` is
+the pilot; `session/archive.lua`, `session/compute.lua`, `capture/atom_stream.lua`
+and `util.lua` follow it. Extend to others as they are touched.
+
+## Trust boundaries
+
+Data enters Lua at four ingress points, each with one constructor that fills every
+field. Past the constructor nothing re-checks shape, type, or handle validity.
+
+| Ingress | Constructor |
+|---------|-------------|
+| User-typed `:Vimfy` arguments | `subcommands.lua` + `session/alias.lua expect` |
+| Saved JSON on disk | `session/disk.lua load` (`validate` is its schema) |
+| FFI payloads | the `ffi/*.lua` decoders |
+| Neovim handles at event time | the autocmd / timer / keymap callback body |
+
+- **Validate at ingress, construct fully.** `x or default` is legal only inside a
+  constructor. A constructor is a `---@type VF.X` literal when there is one site
+  (LuaLS `missing-fields` enforces completeness); a named function only where one
+  already exists (`store.new_active_session`, `compute.build_result`, `view.create`)
+  or the record crosses an ingress (`disk.load`).
+- **Internal functions raise** with `error(msg, 0)`. The catch points are
+  `init.lua cmdline_entry` and `util.entry`, which wraps every autocmd, timer, and
+  keymap callback at registration. `nil, err` survives only where the caller has a
+  real alternative path: `compute.capture_end_state` and `build_analyze_input`
+  (finish drops the record, suggest stays silent), `archive.resolve_alias` and
+  `disk.load` (disk fallback keyed on `is_missing`), `ffi/sequence.tokenize_*`
+  (`simulate/tokenize.lua` falls back to a coarser tokenizer).
+- **Handle validity is checked once, at event entry.** Helpers take handles as
+  valid. The kept exceptions are cross-event: a user can close a window between
+  the event that created it and the one that renders into it (`explore/render/
+  list.lua`, `explore/render/panel.lua`, `simulate/precompute.lua` teardown,
+  `simulate/windows.lua` teardown, picker WinClosed paths).
+- **Tests go through the same constructors.** `h.fake_result` must pass
+  `disk.validate`; session fixtures use `util.capture_state`; config fixtures use
+  `validate.normalize_*`. A guard that exists only because a fixture skipped the
+  constructor is a fixture bug.
+
+Saved files predating `key_count` are rejected as malformed since 2026-11-12.
+
 ## Session Architecture
 
-### Session Types (session_store.lua)
+### Handles: alias or filename
 
-1. **Manual** (aliases: arbitrary alphabetic strings — e.g. `a`, `refactor`, `bugfix`;
-   capacity: 5 concurrent active sessions)
-   User-controlled: `:Vimfy start <name>` / `:Vimfy finish <name>`. Grammar is
-   strictly alphabetic (`^%a+$`); recall forms are rejected at the `finish`
-   entry point with a redirect to `:Vimfy recall`.
+Every user-typed handle is one of two things (`session/alias.lua`):
 
-2. **Recall** (rolling ring; queried via `:Vimfy recall N` or `:Vimfy recall Ns`)
-   Creates a retained session on every captured atom (one atomic user action).
-   Both indexing modes share one ring — `N` means "N commands ago", `Ns` means
-   "as far back as N seconds ago". Because each atom is already a complete
-   command boundary, no mode-based backward snapping is needed. Permanently on
-   (installed by `recall_capture.install()` at setup). Retention is bounded
-   under **union** semantics: evict the oldest session only when BOTH
-   `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS` say drop.
+- **alias** — anything the store resolves to a session id: a `name` (`^%a+$`,
+  e.g. `a`, `refactor`), a recall window (`N` commands ago or `Ns` seconds
+  ago), `@` (last finished) or `$` (last suggest regression).
+  `store.convert_alias_to_id` is the one resolver. Commands declare the kinds
+  they accept with `alias.expect(alias, kinds)`.
+- **filename** — a saved result on disk (`alias.is_valid_filename`,
+  `^[%w_][%w._-]*$`), resolved by `session/disk.lua`.
+
+`play`/`view`/`explore` take an `alias_or_filename` and try the store first
+(`archive.resolve_result`). Parameters are named after the grammar they accept.
+
+### Session kind (session/store.lua)
+
+One enum, `VF.Session.Kind`, set at creation and changed only by auto-suggest's
+promotion at finish:
+
+| Kind        | Created by                         | Finished by                       |
+|-------------|------------------------------------|-----------------------------------|
+| `mark`      | `:Vimfy start <alias>`             | `:Vimfy finish <alias>`           |
+| `watch`     | `:Vimfy watch <alias>`             | idle trigger (`config.watch`)     |
+| `recall`    | every captured atom (rolling ring) | `:Vimfy recall <N\|Ns>`           |
+| `suggest_*` | a `recall` record, promoted        | the `auto_suggest` trigger that fired |
+
+Name sessions cap at 5 concurrent active (finished records keep their slot).
+The recall ring retains under **union** semantics: evict the oldest only when
+BOTH `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS` say drop. See
+`dev/lua/session-invocation.md`.
 
 ### Data Structures
 
-- **SessionRecord**: Canonical per-session entry with `status` ("active" | "finished"),
-  `capture_sub` (the atom-subscriber name, while active), the captured `atoms` list
-  (while active), and `result` (after finish).
-- **ResultSession**: Optimizer output + position + captured `start_time`/`key_count`,
-  attached to the record at finish.
-- **SessionSummary**: Normalized view-model for `:Vimfy list` / auto-suggest output.
+- **VF.Session.Active**: A capturing session: `win`/`buf`/`start_state`, the
+  growing `atoms` list, and the capture it owns (`stream_sub` listener name,
+  `watch_disarm`).
+- **VF.Session.Finished**: `result`, `finish_alias`, `finished_mono_ns`. Both
+  shapes extend `VF.Session.Core` (`id`, `kind`, `started_mono_ns`).
+- **VF.Session.Result**: Optimizer output + position + `key_count` +
+  `finished_wall_epoch`, built at finish; `convert_to_finished` stamps `kind`.
 
-One `session_records[id]` table holds everything; `manual_alias_to_id` and
-`recall_id_order` are the two indexes into it. Finish flips `status` in place
-and drops `atoms` — it does NOT unindex. This removes tombstones from
-`recall_id_order` entirely: a finished session stays reachable via its recall
-alias (for `:Vimfy play Ns`) until the ring slot rotates out.
+Clocks: anything that stays in the process (`*_mono_ns`) is `vim.uv.hrtime()`,
+immune to system-time jumps and used for ring lookup, eviction, cooldowns and
+"N ago". Anything persisted (`*_wall_epoch`) is `os.time()`, since monotonic
+values do not survive a reboot. Never compare across the two.
+- **VF.Session.Summary**: Normalized view-model for `:Vimfy list` / auto-suggest
+  output; `status`, `type` (= `session_type(kind)`) and `key_count` are derived
+  here, not stored.
 
-## Capture (capture/atoms.lua)
+Two tables keyed by id, `active_sessions` and `finished_sessions`;
+`named_to_id` and `recall_id_order` index across both. Finish moves the
+record from one table to the other — it does NOT unindex. This removes
+tombstones from `recall_id_order` entirely: a finished session stays reachable
+via its recall alias (for `:Vimfy play Ns`) until the ring slot rotates out.
+
+## Atom stream (capture/atom_stream.lua)
 
 Capture (manual sessions, recall, Watch/Suggest triggers) runs off Neovim's
 `CmdAtom` autocmd (0.13-dev / nightly). The event fires once per atomic user
 action, AFTER it runs, carrying the resolved post-mapping `keys`, the `lhs`
 that produced it, the count, and whether the buffer changed or the cursor
-moved. `atoms.lua` normalizes each event into a `VF.Atom`, classifies it
-(record / mouse / skip / abort), and fans it out to named subscribers; buffer
-and window scoping is each subscriber's job. See `dev/lua/atom-capture.md` for
+moved. `atom_stream.lua` normalizes each event into a `VF.Atom`, classifies it
+(record / skip / abort), and fans it out to named subscribers; buffer
+and window scoping is each subscriber's job. See `dev/lua/atom-stream.md` for
 the full design (admission policy, synthetic-count stripping, recall
 snapshot-shift, the deferred-burst limitation).
 
@@ -142,8 +212,9 @@ interactive Explore's frontier replay, which still consumes raw key events.
 `ffi/core.lua` loads `libvimficiency.so` via LuaJIT FFI. Domain wrappers expose:
 
 ```lua
-ffi_optimizer.analyze(lines, ...) → VF.Optimizer.Result[], user_cost, debug_str, VF.Diff.Region[]
-ffi_config.configure(user_config)  -- Push config to C++
+ffi_optimizer.analyze(request, results_calculated) → VF.Optimizer.Result[], user_cost, debug_str, VF.Diff.Region[]
+  -- request: VF.SearchRequest (types.lua), the same record explore_start_async takes
+ffi_config.apply_globals(user_config)  -- Push the C++ process globals (cost model, Vim options)
 ffi_sequence.tokenize_sequence(seq) → VF.Sequence.Token[]  -- {text, kind} tokens
 ffi_sequence.tokenize_movements(seq) → VF.Sequence.Token[]   -- all kind="motion"
 ```
@@ -152,7 +223,7 @@ ffi_sequence.tokenize_movements(seq) → VF.Sequence.Token[]   -- all kind="moti
 
 ## Configuration (config.lua)
 
-Lua-side constants (not pushed to C++):
+Config keys are owned by exactly one side. C++ owns process globals (`VFConfig`: keyboard cost model, shiftwidth), pushed once by `ffi_config.apply_globals`. Lua owns everything read at call time, including per-search optimizer parameters passed as FFI arguments:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -186,7 +257,11 @@ Replay verification now lives in repo-native Lua tests:
 - `tests/lua/simulate/integration.lua` covers the async replay oracle and UI rendering
 
 ## Testing
-After changing some lua sections, make sure to run ./scripts/lint-lua.sh to verify that all the lua semantics are correct.
+After changing Lua, run `scripts/vimfy_tests lua` and `scripts/lint-lua.sh`. The
+lint script is the CI gate: it fails on any `assert(type(` outside an ingress
+constructor, on a file exceeding its `pcall(` ceiling, and on any
+lua-language-server problem. Export `VIMRUNTIME` first (CI does) so `vim.*` types
+resolve; without it LuaLS treats `vim` as untyped and misses real mismatches.
 
 ## Commands
 

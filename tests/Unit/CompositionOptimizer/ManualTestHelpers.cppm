@@ -12,6 +12,7 @@ export import vf.Types.Lines;
 export import vf.Types.Mode;
 export import vf.tests.Utils.NeovimOracle;
 export import vf.tests.Utils.OracleReplay;
+export import vf.tests.Utils.TestUtils;
 
 export {
 
@@ -53,6 +54,18 @@ protected:
           testContext.empty() ? "result " + std::to_string(i)
                               : testContext + " result " + std::to_string(i)));
     }
+  }
+
+  // True when some result contains `needle` and replays to `goal` in Neovim.
+  bool hasReplayingResultContaining(
+      const std::vector<Result>& results, std::string_view needle,
+      const Lines& initial, CursorPos initialPos, const Lines& goal) {
+    return std::any_of(results.begin(), results.end(), [&](const Result& r) {
+      const auto& seq = r.getSequence();
+      if (seq.view().find(needle) == std::string_view::npos) return false;
+      return oracle->simulate(initial, initialPos.line, initialPos.col, seq.str())
+                 .lines == goal;
+    });
   }
 };
 

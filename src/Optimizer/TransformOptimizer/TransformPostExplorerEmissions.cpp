@@ -142,7 +142,9 @@ std::optional<VisualDeleteResult> tryVisualDelete(
   VimCore::deleteRangeAndUpdatePos(replayLines, range, replayPos);
 
   return VisualDeleteResult{
-      .result = Result(std::move(visualSeq), totalEffort),
+      // `j`/`k` inside the selection land by the entry curswant.
+      .result = Result(std::move(visualSeq), totalEffort,
+                       lineDelta != 0 ? EntryCurswant::Required : EntryCurswant::Ignored),
       .goalPos = replayPos,
   };
 }

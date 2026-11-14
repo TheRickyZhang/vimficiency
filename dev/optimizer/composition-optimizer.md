@@ -8,7 +8,7 @@
   It searches at character granularity and prices approximate keystrokes:
   inserted-text effort plus insert entry + `<Esc>` per typed region, and
   counted-tiling movement and deletion oracles (`{k}w`/`{k}dd`-shaped commands
-  with a concave count penalty). No separate per-region penalty. Details in
+  with a concave count penalty), plus a fixed penalty per region. Details in
   `dev/optimizer/diff-generation.md` § VimDiff.
 - `composition:diffAlgorithm=1` switches back to the historical character-level
   `MyersDiff` analysis (similar algorithm to git). It is kept as a fast fallback
@@ -26,6 +26,11 @@
 - By abstracting away direct edit commands into planned edit transitions over diffs, our search alternates between call types:
   - Intra-transform: refer to TransformResult to apply the current planned edit
   - Inter-transform: move from one transform end to the next transform start (`NavOptimizer::optimize` with a `CharInterval` goal)
+- Nav can land with `col < targetCol`, while Transform results are computed with `targetCol == col`. Each `Result` carries an `EntryCurswant` class, set when its first command is explored:
+  - `Ignored`: the first command does not read curswant (charwise edits, joins, changes).
+  - `Followed`: a lone `dd`-style delete; it lands at `min(entry curswant, lastCol)` and resets curswant there.
+  - `Required`: such a delete followed by more commands; usable only when `targetCol == col`.
+- `TransformResult::forEachEditFrom(cursor, linesAfter, visit)` is the one place that applies this. Movement is explored only when it visits nothing.
 - By storing the previous edit command, we can also quickly check if . will work. (TODO)
 
 ### Explore boundary

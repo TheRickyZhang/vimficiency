@@ -40,32 +40,7 @@ protected:
     for (KeyAdjustment ka : adjustments) {
       config.keyInfo[static_cast<size_t>(ka.k)].base_cost = ka.cost;
     }
-
-    NavOptimizer opt(config);
-    NavBoundary boundary;
-    return opt.optimize(lines, start, end,
-                        NavOptimizerParams{}
-                            .withMaxResults(30)
-                            .withMaxNodesPopped(20000)
-                            .withMaxResultsPerEndPos(2),
-                        userSeq, boundary, navContext).getResults();
-  }
-
-  static std::vector<LandingResult>
-  runOptimizerToRange(const Lines& lines, CursorPos start,
-                      CursorPos rangeBegin, CursorPos rangeEnd,
-                      const std::string& userSeq,
-                      int maxResults = 10,
-                      Config config = Config::uniform()) {
-    NavOptimizer opt(config);
-    NavBoundary boundary;
-    return opt.optimize(lines, start,
-                        CharInterval(CharRange(rangeBegin, rangeEnd), lines),
-                        NavOptimizerParams{}
-                            .withMaxResults(maxResults)
-                            .withMaxNodesPopped(20000)
-                            .withMaxResultsPerEndPos(2),
-                        userSeq, boundary, navContext).getResults();
+    return runNavOptimizer(lines, start, end, userSeq, config, NavBoundary{}, navContext);
   }
 };
 
@@ -91,19 +66,7 @@ protected:
   runWithBoundary(const Lines& lines, CursorPos start, CursorPos end,
                   const std::string& userSeq, const NavBoundary& boundary,
                   Config config = Config::uniform()) {
-    NavOptimizer opt(config);
-    return opt.optimize(lines, start, end,
-                        NavOptimizerParams{}
-                            .withMaxResults(30)
-                            .withMaxNodesPopped(20000)
-                            .withMaxResultsPerEndPos(2),
-                        userSeq, boundary, navContext).getResults();
-  }
-
-  static bool hasSequence(const std::vector<LandingResult>& results,
-                          const std::string& seq) {
-    return std::any_of(results.begin(), results.end(),
-        [&seq](const Result& r) { return r.getSequence() == seq; });
+    return runNavOptimizer(lines, start, end, userSeq, config, boundary, navContext);
   }
 
   static std::vector<CountedCandidate> collectCountedCandidates(
@@ -120,7 +83,7 @@ protected:
     NavExplorer explorer(lines, navContext, boundary, params, goalRange, index, 0);
 
     auto score = [](CursorPos, double effort) { return effort; };
-    NavStateFactory states(config, score);
+    NavStateSpace states(config, score);
     NavState base = states.initial(start);
 
     std::vector<CountedCandidate> candidates;
@@ -146,7 +109,7 @@ protected:
     NavExplorer explorer(lines, navContext, boundary, params, goalRange, index, 0);
 
     auto score = [](CursorPos, double effort) { return effort; };
-    NavStateFactory states(config, score);
+    NavStateSpace states(config, score);
     NavState base = states.initial(start);
 
     std::vector<StaticCandidate> candidates;

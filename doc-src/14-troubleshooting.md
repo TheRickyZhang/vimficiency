@@ -47,6 +47,15 @@ errored — see the two sections above.
   aborts, `:Vimfy close`, and the 5-minute idle / 500-line drift
   guards all tear down Watch sessions silently.
 
+## "recorded Lua mapping `…` as typed keys" or "dropped — Lua mapping `…`"
+
+A key you pressed is mapped to a Lua function (flash.nvim's `f`/`t`/`;`,
+a `vim.keymap.set` callback) and Neovim cannot report replayable keys for
+it. The notice names the mapping. `lossy_mappings` decides what happens:
+`"warn"` (default) records the keys you typed with a once-per-session
+notice, `"allow"` records them silently, `"drop"` ends the session. See
+[13. Limitations](13-limitations.md) for why replay may then diverge.
+
 ## Suggestions look wrong or worse than what I did
 
 - Some motions we can't model (screen-line motions `gj`/`gk`, and
@@ -55,12 +64,11 @@ errored — see the two sections above.
   setting can skew the cost.
 - See [13. Limitations](13-limitations.md) for the full list.
 
-## Session capture isn't recording anything
+## `setup()` fails with "lacks the CmdAtom event"
 
 Capture runs off the `CmdAtom` event, which only Neovim nightly
-(0.13-dev) exposes. On stable Neovim the commands and views work, but
-mark/watch/recall/suggest are disabled — `setup()` warns once at
-startup. Upgrade to a recent nightly to enable capture.
+(0.13-dev) exposes. The plugin refuses to load without it. Upgrade to a
+recent nightly.
 
 ## "unknown config keys ignored" warning
 

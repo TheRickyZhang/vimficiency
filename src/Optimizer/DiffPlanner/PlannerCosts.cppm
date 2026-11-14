@@ -31,6 +31,8 @@ constexpr double MOVE_KEYS[LEVEL_COUNT] = {1, 1, 2, 1, 2};    // l, w, W, j, }
 constexpr double DELETE_KEYS[LEVEL_COUNT] = {1, 2, 3, 2, 3};  // x, dw, dW, dd, dap
 constexpr double TO_LINE_END_KEYS = 2.0;                      // D, $
 constexpr double TO_LINE_START_KEYS = 2.0;                    // d0
+// Mental cost of each region.
+constexpr double REGION_PENALTY = 1.0;
 
 template<CountClass C>
 double countPrefixCost(int k, double scale) {

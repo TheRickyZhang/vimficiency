@@ -10,7 +10,6 @@ package.path = tests_root .. "?.lua;" .. package.path
 local helpers = require("_helpers")
 local sim = require("vimficiency.simulate")
 local highlights = require("vimficiency.highlights")
-local session = require("vimficiency.session")
 local session_store = require("vimficiency.session.store")
 
 -- Quiet the environment — mirrors `runner.lua`'s treatment so this test
@@ -87,6 +86,7 @@ local function header_lines(buf)
   local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
   for _, mark in ipairs(marks) do
     local details = mark[4]
+    ---@cast details -nil
     if details.virt_lines then
       ---@type string[]
       local lines = {}
@@ -109,6 +109,7 @@ local function header_virt_lines(buf)
   local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
   for _, mark in ipairs(marks) do
     local details = mark[4]
+    ---@cast details -nil
     if details.virt_lines then
       return details.virt_lines
     end
@@ -207,7 +208,6 @@ local case_context = {
   helpers = helpers,
   sim = sim,
   highlights = highlights,
-  session = session,
   session_store = session_store,
   with_replay = with_replay,
   get_window = get_window,

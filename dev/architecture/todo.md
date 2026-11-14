@@ -226,8 +226,82 @@ behavior is the right default in the meantime.
 **Threshold to revisit.** A concrete request to have suggestions respect or
 propose user mappings, or activity-log evidence that resolved-keys suggestions
 are routinely worse for users who lean on custom mappings. Pointer:
-`lua/vimficiency/capture/atoms.lua` (`VF.Atom.lhs`/`count`) and wherever
+`lua/vimficiency/capture/atom_stream.lua` (`VF.Atom.lhs`/`count`) and wherever
 `user_seq`/`keyseq` is costed in `AnalyzeExports.cpp`.
+
+---
+
+## 9. Replace the optimizer-params X-macros with C++26 reflection (key priority)
+
+**What.** `src/Optimizer/OptimizerParamFields.h` is the single source of truth
+for every optimizer param field, expanded five ways: struct members, `with*`
+setters, the per-struct `Field` enum, the override patch ops in
+`OptimizerParamOverrides.cpp`, and the defaults wire format in
+`vf_get_optimizer_defaults`. With P2996 static reflection all five collapse
+onto the plain struct definitions: iterate
+`nonstatic_data_members_of(^^Params)`, match `identifier_of(m)` against the
+override key, assign through `p.[:m:]`, and pick the parser/type tag from the
+member type. The `Field` enum and presence bitset become a bitset sized by the
+member count, and the `with*` setters can go too if designated init reaches
+base-class fields by then. This is the highest-value reflection site in the
+repo: it is pure boilerplate keyed on member names, and every new param today
+means touching a macro row plus trusting the lint to catch missed consumers.
+
+**Why deferred (2026-11-13).** Local GCC 16.2 compiles P2996 with
+`-std=c++26 -freflection`, but the project is C++23 and the flag has to apply
+to the whole module graph. The documented from-source floor (`dev/decisions.md`:
+GCC 16+ / Clang 19+libc++) and the Clang-only fuzzing tree
+(`dev/tests/fuzzing.md`) have no `<meta>`; Clang 23 locally ships none. A
+`#if __cpp_reflection` fallback would mean keeping both implementations.
+
+**Threshold.** Clang ships `<meta>` in a release and the macOS/Emscripten
+toolchains the CI matrix uses pick it up, so the project can move to
+`-std=c++26` everywhere. Then do this item first; it is the proof case for
+retiring X-macros elsewhere.
+
+---
+
+## 10. Recall records taken through the temporary autocmd window
+
+**What.** `atom.win` is `nvim_get_current_win()` inside the deferred `CmdAtom`
+callback, and Neovim makes a window showing `ev.buf` current for that call. When
+the buffer is no longer displayed at delivery (burst `wx<C-w>cx`), that is a
+temporary window (`win_gettype == "autocmd"`, cursor `(1,0)`). The check in
+`capture/recall.lua` passes, so the record gets a window id that dies right
+after and a wrong cursor.
+
+The fix is in the recall listener: on an autocmd-type window, remove the
+buffer's recall records and clear `recall_prev_state[buf]`. Do not reuse
+`store.abort_recall`, which re-captures state through the same window. It needs
+a live burst case in `tests/lua/capture/atom_stream.lua`.
+
+**Why deferred (2026-11-13).** Hardening, not a bug fix. It needs a window
+change inside one deferred burst, and every snapshot in a burst is already the
+final text. `compute.lua` falls back to the current window when a session's
+window is invalid. What the user sees from such a record was not traced.
+
+Not fixable the same way: one buffer shown in two windows reports the final
+window for every atom in the burst, so the cursor comes from the wrong one.
+
+**Threshold.** A wrong recall traced to a window closed or switched mid-burst,
+or the next change to recall's window scoping.
+
+---
+
+## 11. Share Transform search states across start positions
+
+**What.** `TransformStateKey` includes `startIndex`, so every start searches its
+own copy of the state space. Ten starts with no solution explore the same dead
+end ten times. Keying states without the start, with per-start paths joined onto
+shared completions, would remove that duplication.
+
+**Why deferred (2026-11-13).** `startWorkFactor` bounds the waste: a start goes
+inactive after 8x the nodes the hardest solved start needed (see
+`dev/optimizer/transform-optimizer.md`). Sharing is a redesign of the search,
+not a stop rule.
+
+**Threshold.** A real region loses a start's result to `startWorkFactor`, or
+Transform time dominates a profiled session.
 
 ---
 

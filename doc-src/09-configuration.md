@@ -28,7 +28,6 @@ ever feels laggy. All are optional and default as shown.
 |-------|---------|---------|
 | `MAX_SEARCH_LINES` | `500` | Hard ceiling on the analyzed slice height. A region taller than this is skipped entirely instead of analyzed — the strongest guard against a runaway search. Lower it to cap worst-case latency. |
 | `SLICE_PADDING` | `5` | Context lines included above and below the detected edit region before searching. More padding means a larger search. |
-| `SLICE_EXPAND_TO_PARAGRAPH` | `false` | When `true`, grows the analyzed slice out to the surrounding paragraph boundaries. Off keeps slices tight. |
 | `RESULTS_CALCULATED` | `20` | How many candidate sequences the search computes per run. |
 | `RESULTS_SAVED` | `5` | How many of those candidates are kept and shown. |
 
@@ -63,6 +62,7 @@ the lifetime of in-progress sessions.
 | `KEY_SESSION_CAPACITY` | `200` | Maximum commands retained in the recall ring. |
 | `MAX_RETENTION_SECONDS` | `120` | Maximum age of recall history. The oldest entries are evicted once **both** the capacity and the age limit are exceeded. |
 | `MANUAL_IDLE_TIMEOUT_SECONDS` | `300` | A manual (`start`/`finish`) session left idle this long is auto-ended with a warning. |
+| `lossy_mappings` | `"warn"` | A key mapped to a Lua function (flash.nvim's `f`, a `vim.keymap.set` callback) that moves the cursor or edits text cannot be captured as replayable keys. `"drop"`: a session spanning it ends, and the warning names the mapping. `"warn"`: the keys you typed are recorded instead, with a once-per-session notice. `"allow"`: recorded silently. Replay is faithful only when the function did what those keys do in plain Vim. |
 
 ## Idle end-detection
 
@@ -79,7 +79,7 @@ its own timer and cooldown, configured under its own key.
 | `watch.cooldown_ms` / `auto_suggest.cooldown_ms` | Minimum time between consecutive fires. Safety rail for low `idle.ms`. |
 
 "Real command" excludes cmdline input and Vimfy admin actions, so
-`:Vimfy` commands and `<Cmd>Vimfy`/`<Plug>`-routed bindings don't reset
+`:Vimfy` commands and `<Cmd>Vimfy`-routed bindings don't reset
 the idle timer.
 
 A bare `ms` inside any trigger object universally means "idle

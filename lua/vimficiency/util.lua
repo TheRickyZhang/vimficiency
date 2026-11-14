@@ -1,10 +1,31 @@
+---@class (exact) VF.Util
+--- Windows and popups
+---@field DEFAULT_SIDE_PANE_WIDTH    integer
+---@field configure_scratch_window   fun(win: integer, overrides?: table<string, any>)
+---@field configure_side_pane        fun(win: integer, overrides?: table<string, any>)
+---@field centered_popup_geometry    fun(content_width: integer, content_height: integer, opts?: { min_width?: integer, min_height?: integer }): integer, integer, integer, integer
+---@field show_output                fun(title: string, text?: string, opts?: { ui_keys?: VF.StandardUiKeyOpts, help_tag?: string, help_title?: string }): integer, integer
+--- Keymaps and help
+---@field DEFAULT_HELP_TAG           string
+---@field open_help                  fun(tag: string)
+---@field set_buffer_keymaps         fun(buf: integer, keymaps: VF.Keymap[])
+---@field entry                      fun(fn: function): function
+---@field show_keymap_help           fun(title: string, keymaps: VF.Keymap[])
+---@field with_standard_ui_keymaps   fun(keymaps: VF.Keymap[], opts: VF.StandardUiKeyOpts): VF.Keymap[]
+--- Filesystem
+---@field basename                   fun(path: string): string
+---@field find_plugin_root           fun(): string
+--- Session ids and buffer state
+---@field new_id                     fun(buf: integer): string
+---@field capture_state              fun(buf: integer, win: integer): VF.BufferState
+---@field check_state_inconsistencies fun(start_state: VF.BufferState, end_state: VF.BufferState)
+---@field compute_search_region      fun(start_row: integer, end_row: integer, start_lines: string[], end_lines: string[], padding: integer): integer, integer
 local M = {}
 
 local v  = vim.api
 local uv = vim.uv
 local fs = vim.fs
 
-local config = require("vimficiency.config")
 local ffi_session = require("vimficiency.ffi.session")
 
 --------------------------------------------------------------------------------
@@ -56,7 +77,7 @@ function M.configure_side_pane(win, overrides)
   local width = overrides.width or M.DEFAULT_SIDE_PANE_WIDTH
   overrides.width = nil
   if overrides.winfixwidth == nil then overrides.winfixwidth = true end
-  v.nvim_win_set_width(win, width)
+  v.nvim_win_resize(win, width, -1)
   M.configure_scratch_window(win, overrides)
 end
 
@@ -75,35 +96,6 @@ end
 ---@field scroll_amount integer # Ctrl-D, U distance (may differ from window_height/2)
 ---@field lines string[]       # buffer lines at capture time
 
----@param bufname string
----@param filetype string
----@param row integer
----@param col integer
----@param top_row integer
----@param bottom_row integer
----@param window_height integer
----@param scroll_amount integer
----@param lines string[]
----@return VF.BufferState
-local function new_state(bufname, filetype, row, col, top_row, bottom_row, window_height, scroll_amount, lines)
-  assert(type(bufname) == "string", "state.bufname must be string")
-  assert(type(filetype) == "string", "state.filetype must be string")
-  assert(type(row) == "number" and type(col) == "number", "row and col must be numbers")
-  assert(type(lines) == "table", "state.lines must be an array of strings")
-
-  return {
-    bufname = bufname,
-    filetype = filetype,
-    row = row,
-    col = col,
-    top_row = top_row,
-    bottom_row = bottom_row,
-    window_height = window_height,
-    scroll_amount = scroll_amount,
-    lines = lines,
-  }
-end
-
 ---@class VF.Keymap
 ---@field lhs string
 ---@field handler string|function
@@ -116,11 +108,6 @@ end
 ---@field expr boolean?
 ---@field remap boolean?
 
----@class VF.HelpKeymapOpts
----@field title string
----@field docs boolean?
----@field settings { lhs?: string, handler: string|function, desc: string }?
-
 ---@class VF.StandardUiKeyOpts
 ---@field title string
 ---@field summary { lhs?: string, desc?: string }|boolean|nil
@@ -132,10 +119,6 @@ M.basename = fs.basename or function(p)
 end
 
 M.DEFAULT_HELP_TAG = "vimficiency"
-
-function M.ensure_dir(p)
-  vim.fn.mkdir(p, "p")
-end
 
 local function sanitize_name(s)
   return (s:gsub("[^%w%._%-]", "_"))
@@ -156,23 +139,36 @@ function M.open_help(tag)
   pcall(vim.cmd.helptags, plugin_root .. "/doc")
 
   local target = tag or M.DEFAULT_HELP_TAG
-  local ok = pcall(vim.cmd, "help " .. target)
+  local ok = pcall(vim.cmd.help, target)
   if ok then return end
 
   if target ~= M.DEFAULT_HELP_TAG then
     vim.cmd("help " .. M.DEFAULT_HELP_TAG)
     return
   end
-  error("vimfy: failed to open help tag '" .. tostring(target) .. "'")
+  error("vimfy: failed to open help tag '" .. tostring(target) .. "'", 0)
+end
+
+--- The error boundary for every callback Neovim invokes on our behalf (autocmd,
+--- timer, keymap, `vim.ui.input`): the counterpart of `init.cmdline_entry` for
+--- `:Vimfy`. Returns nothing, since an autocmd callback returning true would
+--- delete the autocmd.
+---@param fn function
+---@return function
+function M.entry(fn)
+  return function(...)
+    local ok, err = pcall(fn, ...)
+    if not ok then vim.notify(tostring(err), vim.log.levels.ERROR) end
+  end
 end
 
 ---@param buf integer
 ---@param keymaps VF.Keymap[]
 function M.set_buffer_keymaps(buf, keymaps)
   for _, m in ipairs(keymaps) do
-    assert(type(m.desc) == "string" and m.desc ~= "",
-      "vimfy buffer keymaps require a desc")
-    vim.keymap.set(m.mode or "n", m.lhs, m.handler, {
+    local rhs = m.handler
+    if type(rhs) == "function" then rhs = M.entry(rhs) end
+    vim.keymap.set(m.mode or "n", m.lhs, rhs, {
       buffer = buf,
       desc = m.desc,
       nowait = m.nowait ~= false,
@@ -329,27 +325,6 @@ function M.with_standard_ui_keymaps(keymaps, opts)
   return merged
 end
 
--- Legacy compatibility wrapper around `with_standard_ui_keymaps`.
----@param keymaps VF.Keymap[]
----@param opts VF.HelpKeymapOpts|string
----@param help_tag string?
----@return VF.Keymap[]
-function M.with_help_keymaps(keymaps, opts, help_tag)
-  ---@type VF.StandardUiKeyOpts
-  local standard
-  if type(opts) ~= "table" then
-    standard = { title = opts --[[@as string]], docs = help_tag ~= nil }
-  else
-    standard = {
-      title = opts.title,
-      summary = true,
-      docs = opts.docs == true,
-      settings = opts.settings,
-    }
-  end
-  return M.with_standard_ui_keymaps(keymaps, standard)
-end
-
 ---@param title string
 ---@param text? string
 ---@param opts? { ui_keys?: VF.StandardUiKeyOpts, help_tag?: string, help_title?: string }
@@ -419,9 +394,6 @@ local function wait_next_ms(prev_ms)
 end
 
 function M.new_id(buf)
-  assert(type(buf) == "number", "buf must be a number")
-  assert(v.nvim_buf_is_valid(buf), "invalid buffer")
-
   local name = v.nvim_buf_get_name(buf)
   local base = sanitize_name(
     (name ~= "" and M.basename(name)) or "NoName"
@@ -454,67 +426,21 @@ function M.new_id(buf)
   return string.format("%s__%s__%d__%04d__b%d", base, wall, ms, seq, buf)
 end
 
---- Return true if `s` looks like a session id produced by `new_id`.
----@param s any
----@return boolean
-function M.is_session_id(s)
-  return type(s) == "string" and s:find("__", 1, true) ~= nil
-end
 ---@return VF.BufferState
 function M.capture_state(buf, win)
-  assert(buf and win, "capture_state: buf and win required")
-  assert(v.nvim_buf_is_valid(buf), "capture state: invalid buffer")
-  assert(v.nvim_win_is_valid(win), "capture state: invalid window")
-  assert(v.nvim_win_get_buf(win) == buf, "capture state: buffer not in window")
-
-  local lines = v.nvim_buf_get_lines(buf, 0, -1, false)
   local cursor = v.nvim_win_get_cursor(win)
-  local top_row = vim.fn.line('w0')
-  local bottom_row = vim.fn.line('w$')
-  local window_height = vim.api.nvim_win_get_height(win)
-  local scroll_amount = vim.api.nvim_get_option_value('scroll', {win=win})
-
-  return new_state(
-    v.nvim_buf_get_name(buf),
-    vim.bo[buf].filetype,
-    cursor[1] - 1,
-    cursor[2],
-    top_row,
-    bottom_row,
-    window_height,
-    scroll_amount,
-    lines
-  )
-end
-
-function M.get_search_boundaries(begin_row, end_row)
-  assert(config, "config module not loaded")
-  local padding = config.SLICE_PADDING
-
-  if begin_row > end_row then
-    begin_row, end_row = end_row, begin_row
-  end
-
-  local buf = 0
-  local nlines = vim.api.nvim_buf_line_count(buf) -- count, not last index
-
-  local start_search = math.max(0, begin_row - padding)
-  local end_search = math.min(nlines-1, end_row + padding)
-
-  if config.SLICE_EXPAND_TO_PARAGRAPH then
-    local function is_blank_line(r)
-      local l = vim.api.nvim_buf_get_lines(buf, r, r + 1, false)[1] or ""
-      return l:match("^%s*$") ~= nil
-    end
-    while start_search > 0 and not is_blank_line(start_search - 1) do
-      start_search = start_search - 1
-    end
-    while end_search < nlines and not is_blank_line(end_search) do
-      end_search = end_search + 1
-    end
-  end
-
-  return start_search, end_search, nlines
+  ---@type VF.BufferState
+  return {
+    bufname = v.nvim_buf_get_name(buf),
+    filetype = vim.bo[buf].filetype,
+    row = cursor[1] - 1,
+    col = cursor[2],
+    top_row = vim.fn.line("w0"),
+    bottom_row = vim.fn.line("w$"),
+    window_height = v.nvim_win_get_height(win),
+    scroll_amount = v.nvim_get_option_value("scroll", { win = win }),
+    lines = v.nvim_buf_get_lines(buf, 0, -1, false),
+  }
 end
 
 function M.check_state_inconsistencies(start_state, end_state)

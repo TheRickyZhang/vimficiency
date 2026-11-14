@@ -1,4 +1,4 @@
-*vimficiency.txt*  *vimficiency*       For Neovim >= 0.11       Last change: 2026 November 10
+*vimficiency.txt*  *vimficiency*       For Neovim >= 0.11       Last change: 2026 November 13
 
 ==============================================================================
 Table of Contents                              *vimficiency-table-of-contents*
@@ -44,8 +44,7 @@ as the canonical sample.
 
 You can pass config overrides to `setup{}` — see 9. Configuration.
 
-Bind keys with a `<Cmd>Vimfy ...<CR>` map or a `<Plug>Vimfy*` map; see the full
-writeup in 8. Keymaps.
+Bind keys with a `<Cmd>Vimfy ...<CR>` map; see the full writeup in 8. Keymaps.
 
 
 VERIFYING INSTALLATION
@@ -138,8 +137,8 @@ SEE ALSO
 
 - 7. Inspecting results — how to read the output and replay
     the suggestions.
-- 8. Binding keys — use `<Plug>VimfyStartA` /
-    `<Plug>VimfyFinishA` so your session markers don’t need typing `:Vimfy ...`.
+- 8. Binding keys — bind `<Cmd>Vimfy start a<CR>` /
+    `<Cmd>Vimfy finish a<CR>` so your session markers don’t need typing `:Vimfy ...`.
 
 
 ==============================================================================
@@ -178,7 +177,7 @@ Suggest’s auto-start side does. Ask if you’d use them and we can extend.
 
 SEE ALSO
 
-- 8. Binding keys — `<Plug>VimfyWatchA` / `<Plug>VimfyWatchB`.
+- 8. Binding keys — bind `<Cmd>Vimfy watch a<CR>`.
 - 9. Configuration — full shape of the `watch` key in `setup{}`.
 
 
@@ -310,13 +309,17 @@ window = "3s" }`): after a brief idle pause it analyzes the last ~3s of editing
 and surfaces a result only when your typed effort exceeds `1.5 * optimal + 2`.
 The toast is compact — `<your keys> (<your cost>) → <suggested keys> (<best
 cost>)` — and the result is already saved as a session, reachable with the
-`@` selector (the most recently finished session):
+`$` alias (the most recent suggestion):
 
 >vim
-    :Vimfy play @           " side-by-side: before/after buffer + your vs suggested sequences
-    :Vimfy explore @        " step through interactively
-    :Vimfy save @ <name>    " persist to disk
+    :Vimfy play $           " side-by-side: before/after buffer + your vs suggested sequences
+    :Vimfy explore $        " step through interactively
+    :Vimfy save $           " persist to disk as suggest-<timestamp>.json
 <
+
+`$` is a slot, not a history: the next suggestion replaces it. Older
+suggestions stay listed in `:Vimfy list` until the recall ring rotates them
+out, so save the ones you want to keep.
 
 To tune this gate, set `auto_suggest = { default_cost = { ... } }` (any subset
 merges over the defaults) — this alone does not auto-enable at startup. To
@@ -404,10 +407,10 @@ Suggest.
 
 `notif_cooldown_ms` is a separate, finer guard at the notification layer: a
 suggestion landing within that window of the previous _shown_ toast is not
-displayed. It is still finished and stored, so it stays reachable via the `@`
-selector and `:Vimfy list` — only the toast is dropped. This lets you lower
-`cooldown_ms` (so the optimizer keeps re-analyzing as you work) without the
-toasts becoming spammy.
+displayed. It is still finished and stored, so it stays reachable via `$` and
+`:Vimfy list` — only the toast is dropped. This lets you lower `cooldown_ms`
+(so the optimizer keeps re-analyzing as you work) without the toasts becoming
+spammy.
 
 For `cooldown_ms` and the `idle.ms` threshold itself, see Idle end-detection
 <09-configuration.md#idle-end-detection> — Watch and Suggest share that
@@ -525,8 +528,9 @@ SAVING, STORING, FETCHING
 
 Every finished session starts in **session memory** (workspace) and stays there
 until it rotates out. Copy it to disk with `:Vimfy save`, move it with `:Vimfy
-store`, bring it back later with `:Vimfy fetch`. `:Vimfy play <name>` works
-against both — it replays from memory first, falling back to disk.
+store`, bring it back later with `:Vimfy fetch`. `:Vimfy play
+<alias>|<filename>` works against both — it replays from memory first,
+falling back to disk.
 
 See 7a. Session storage for the full model, collision rules, and worked
 examples.
@@ -563,7 +567,7 @@ automatically.
 So there is no special binding API — use whatever Vim already gives you.
 
 
-1. VIM.KEYMAP.SET WITH A <CMD> MAP (RECOMMENDED)
+VIM.KEYMAP.SET WITH A <CMD> MAP (RECOMMENDED)
 
 Bind the LHS to the `:Vimfy` command directly:
 
@@ -594,49 +598,6 @@ Use a function RHS when you need to branch or compose:
 
 As long as the callback doesn’t edit the buffer, pressing `Z` is not recorded
 as motion.
-
-
-2. <PLUG> MAPS
-
-For users who prefer the Vim convention, each common action has a `<Plug>` name
-that `setup()` registers for you. Bind with `remap = true` (or `nmap` in
-vimscript):
-
->vim
-    nmap <leader>vs <Plug>VimfyStartA
-    nmap <leader>vf <Plug>VimfyFinishA
-<
-
->lua
-    vim.keymap.set('n', '<leader>vs', '<Plug>VimfyStartA', { remap = true })
-<
-
-**Available <Plug> names:**
-
-  -----------------------------------------------------------------------
-  Name                                Action
-  ----------------------------------- -----------------------------------
-  <Plug>VimfyStart{A,B,C,D,E}         :Vimfy start <alias>
-
-  <Plug>VimfyWatch{A,B,C,D,E}         :Vimfy watch <alias>
-
-  <Plug>VimfyFinish{A,B,C,D,E}        :Vimfy finish <alias>
-
-  <Plug>VimfyClose{A,B,C,D,E}         :Vimfy close <alias>
-
-  <Plug>VimfyPlay{A,B,C,D,E}          :Vimfy play <alias>
-
-  <Plug>VimfySuggest{On,Off,Toggle}   :Vimfy suggest <on\|off\|toggle>
-
-  <Plug>VimfyList                     :Vimfy list
-
-  <Plug>VimfyConfig                   :Vimfy config
-
-  <Plug>VimfyHelp                     :Vimfy help
-  -----------------------------------------------------------------------
-`<Plug>` covers the common actions; a direct `<Cmd>Vimfy ...<CR>` map covers
-everything else (including arbitrary args, e.g. `save @ quick`, which no
-`<Plug>` name exposes).
 
 
 DIRECT :VIMFY ... TYPING AND EX-COMMAND MAPS
@@ -676,40 +637,34 @@ blocks the editor until it returns. These knobs bound how much work a run does
 — reach for them first if Suggest or interactive Explore ever feels laggy.
 All are optional and default as shown.
 
-  -------------------------------------------------------------------------------
-  Field                       Default                   Meaning
-  --------------------------- ------------------------- -------------------------
-  MAX_SEARCH_LINES            500                       Hard ceiling on the
-                                                        analyzed slice height. A
-                                                        region taller than this
-                                                        is skipped entirely
-                                                        instead of analyzed — the
-                                                        strongest guard against a
-                                                        runaway search. Lower it
-                                                        to cap worst-case
-                                                        latency.
+  ------------------------------------------------------------------------
+  Field                Default                   Meaning
+  -------------------- ------------------------- -------------------------
+  MAX_SEARCH_LINES     500                       Hard ceiling on the
+                                                 analyzed slice height. A
+                                                 region taller than this
+                                                 is skipped entirely
+                                                 instead of analyzed — the
+                                                 strongest guard against a
+                                                 runaway search. Lower it
+                                                 to cap worst-case
+                                                 latency.
 
-  SLICE_PADDING               5                         Context lines included
-                                                        above and below the
-                                                        detected edit region
-                                                        before searching. More
-                                                        padding means a larger
-                                                        search.
+  SLICE_PADDING        5                         Context lines included
+                                                 above and below the
+                                                 detected edit region
+                                                 before searching. More
+                                                 padding means a larger
+                                                 search.
 
-  SLICE_EXPAND_TO_PARAGRAPH   false                     When true, grows the
-                                                        analyzed slice out to the
-                                                        surrounding paragraph
-                                                        boundaries. Off keeps
-                                                        slices tight.
+  RESULTS_CALCULATED   20                        How many candidate
+                                                 sequences the search
+                                                 computes per run.
 
-  RESULTS_CALCULATED          20                        How many candidate
-                                                        sequences the search
-                                                        computes per run.
-
-  RESULTS_SAVED               5                         How many of those
-                                                        candidates are kept and
-                                                        shown.
-  -------------------------------------------------------------------------------
+  RESULTS_SAVED        5                         How many of those
+                                                 candidates are kept and
+                                                 shown.
+  ------------------------------------------------------------------------
 
 OPTIMIZER OVERRIDES
 
@@ -781,6 +736,26 @@ in-progress sessions.
                                                           session left idle this
                                                           long is auto-ended with a
                                                           warning.
+
+  lossy_mappings                "warn"                    A key mapped to a Lua
+                                                          function (flash.nvim’s f,
+                                                          a vim.keymap.set
+                                                          callback) that moves the
+                                                          cursor or edits text
+                                                          cannot be captured as
+                                                          replayable keys. "drop":
+                                                          a session spanning it
+                                                          ends, and the warning
+                                                          names the mapping.
+                                                          "warn": the keys you
+                                                          typed are recorded
+                                                          instead, with a
+                                                          once-per-session notice.
+                                                          "allow": recorded
+                                                          silently. Replay is
+                                                          faithful only when the
+                                                          function did what those
+                                                          keys do in plain Vim.
   ---------------------------------------------------------------------------------
 
 IDLE END-DETECTION
@@ -803,8 +778,7 @@ each owns its own timer and cooldown, configured under its own key.
   auto_suggest.cooldown_ms      Safety rail for low idle.ms.
   -----------------------------------------------------------------------
 "Real command" excludes cmdline input and Vimfy admin actions, so `:Vimfy`
-commands and `<Cmd>Vimfy`/`<Plug>`-routed bindings don’t reset the idle
-timer.
+commands and `<Cmd>Vimfy`-routed bindings don’t reset the idle timer.
 
 A bare `ms` inside any trigger object universally means "idle threshold" —
 fire only after N ms of no activity. `keys.every` is the one exception: it
@@ -906,97 +880,101 @@ C++ source (`cpp/effort_model.*`) is the spec.
 ==============================================================================
 11. Commands reference                        *vimficiency-commands-reference*
 
-  -----------------------------------------------------------------------------
-  Command                               Purpose
-  ------------------------------------- ---------------------------------------
-  :Vimfy start <name>                   Mark a session start (alphabetic alias,
-                                        e.g. a).
+  ---------------------------------------------------------------------------------
+  Command                                   Purpose
+  ----------------------------------------- ---------------------------------------
+  :Vimfy start <alias>                      Mark a session start (a named alias:
+                                            letters only, e.g. a).
 
-  :Vimfy watch <name>                   Start a Watch session (auto-end on
-                                        idle).
+  :Vimfy watch <alias>                      Start a Watch session (auto-end on
+                                            idle).
 
-  :Vimfy finish <alias>                 Finish a manual session (Mark or Watch)
-                                        and optimize.
+  :Vimfy finish <alias>                     Finish a Mark or Watch session and
+                                            optimize.
 
-  :Vimfy recall <N\|Ns>                 Finish a retrospective recall window.
+  :Vimfy recall <N\|Ns>                     Finish a retrospective recall window.
 
-  :Vimfy close <alias>                  Discard a session without optimizing.
+  :Vimfy close <alias>                      Discard a session without optimizing.
 
-  :Vimfy save <selector>\|@ [<name>]    Copy a finished result to disk (keeps
-                                        the workspace copy). Name defaults to
-                                        selector. @ = last finished.
+  :Vimfy save <alias> [<filename>]          Copy a finished result to disk (keeps
+                                            the workspace copy). Filename defaults
+                                            to the alias.
 
-  :Vimfy store <selector>\|@ [<name>]   Move a finished result to disk (removes
-                                        from workspace).
+  :Vimfy store <alias> [<filename>]         Move a finished result to disk (removes
+                                            from workspace).
 
-  :Vimfy fetch <name> [<alias>]         Copy a saved result from disk into the
-                                        current workspace.
+  :Vimfy fetch <filename> [<alias>]         Copy a saved result from disk into the
+                                            current workspace.
 
-  :Vimfy play <alias> [count]           Animate results side-by-side (memory
-                                        first, disk fallback).
+  :Vimfy play <alias>\|<filename> [count]   Animate results side-by-side (memory
+                                            first, disk fallback).
 
-  :Vimfy focus <N>                      Focus the active replay on the Nth
-                                        buffer (full-screen).
+  :Vimfy focus <N>                          Focus the active replay on the Nth
+                                            buffer (full-screen).
 
-  :Vimfy escape                         Restore the side-by-side replay layout.
+  :Vimfy escape                             Restore the side-by-side replay layout.
 
-  :Vimfy view [name]                    View a saved result (or list saved
-                                        names).
+  :Vimfy view [<alias>\|<filename>]         View a finished result full-screen (no
+                                            arg lists saved files).
 
-  :Vimfy rm <name>                      Delete a saved result from disk.
+  :Vimfy rm <filename>                      Delete a saved result from disk.
 
-  :Vimfy list                           Open the interactive session picker
-                                        (see below).
+  :Vimfy list                               Open the interactive session picker
+                                            (see below).
 
-  :Vimfy stats                          Show lifetime session stats (see
-                                        below).
+  :Vimfy stats                              Show lifetime session stats (see
+                                            below).
 
-  :Vimfy suggest <on\|off\|toggle>      Runtime toggle for auto-suggest (works
-                                        with zero config).
+  :Vimfy suggest <on\|off\|toggle>          Runtime toggle for auto-suggest (works
+                                            with zero config).
 
-  :Vimfy config                         Show the current configuration.
+  :Vimfy config                             Show the current configuration.
 
-  :Vimfy reload                         Rebuild the C++ library (needs
-                                        restart).
+  :Vimfy reload                             Rebuild the C++ library (needs
+                                            restart).
 
-  :Vimfy version                        Show the plugin version.
+  :Vimfy version                            Show the plugin version.
 
-  :Vimfy help                           Show the command list.
-  -----------------------------------------------------------------------------
+  :Vimfy help                               Show the command list.
+  ---------------------------------------------------------------------------------
 
-ALIAS GRAMMAR
+ALIASES AND FILENAMES
 
-The `<alias>` argument splits by subcommand:
+Every handle you type is either an **alias** (a session in memory) or a
+**filename** (a saved result on disk).
 
   -----------------------------------------------------------------------
-  Subcommand            Accepts
-  --------------------- -------------------------------------------------
-  start / watch         Alphabetic only (a, refactor).
-
-  finish                Alphabetic only — manual handles.
-
-  recall                N (digits) or Ns (digits + s).
-
-  close / play          Any of the three: alphabetic, N, or Ns. play also
-                        accepts a saved name.
-
-  save / store          Any of the three, plus @ for last finished. Same
-                        grammar.
-
-  fetch                 Saved name → new workspace alias (alphabetic).
-  -----------------------------------------------------------------------
-  -----------------------------------------------------------------------
-  Form       Means
+  Alias      Means
   ---------- ------------------------------------------------------------
-  a, foo     Alphabetic → a manual session name.
+  a, foo     Letters only → a named alias, like a named register.
 
   6          Digits → recall N commands ago.
 
   3s         Digits + s → recall N seconds ago (see 5. Recall).
+
+  @          The most recently finished session.
+
+  $          The most recent auto-suggest regression.
   -----------------------------------------------------------------------
-`save` accepts the full grammar plus `@`, which resolves to the most recently
-finished session — handy when the session you want to keep is a recall window
-whose alias (`3s`) is moving out from under you:
+Which aliases a subcommand accepts:
+
+  -----------------------------------------------------------------------
+  Subcommand                Accepts
+  ------------------------- ---------------------------------------------
+  start / watch / finish    A named alias.
+
+  recall                    N or Ns.
+
+  close / save / store      Any alias.
+
+  play / view / explore     Any alias or a filename (memory first, then
+                            disk).
+
+  fetch / rm                A filename (fetch also takes the new named
+                            alias).
+  -----------------------------------------------------------------------
+`@` is handy when the session you want to keep is a recall window whose alias
+(`3s`) is moving out from under you:
 
 >
     :Vimfy recall 3s
@@ -1056,9 +1034,9 @@ list cursor without leaving insert mode; `<CR>` opens the current entry;
 - `d` — on Active, discards the session (equivalent to `:Vimfy close`);
     on Saved, deletes the file on disk.
 - `r` / `y` — on Saved, renames/duplicates the file. On Active, renames
-    the manual alias / registers a duplicate finished record under a new
-    alias. Only entries with a stable manual alias are renameable this
-    way; for recall and auto-suggest results, save to disk first (`:Vimfy save <alias> <name>`) and then rename from the Saved pane.
+    the named alias / registers a duplicate finished record under a new
+    alias. Only entries with a stable name alias are renameable this
+    way; for recall and auto-suggest results, save to disk first (`:Vimfy save <alias> <filename>`) and then rename from the Saved pane.
 
 **Blocked on in-progress sessions:** `<CR>`, `r`, `y` all refuse to run on a
 still-accumulating session. Finish it with `:Vimfy finish` (or let Watch’s
@@ -1103,10 +1081,11 @@ v1, so changing the efficiency formula or adding new buckets only requires
 re-reducing, not a migration. A trailing malformed line (e.g. a crash
 mid-write) is silently skipped on read.
 
-Per-record schema (version `v: 1`): `finish_epoch`, `type`, `finish_reason`,
-`key_count`, `user_cost`, `best_opt_cost`, `user_seq`, `best_opt_seq`, `beats`.
-Only the single lowest-cost optimal result is stored; Top-N alternatives are
-not retained at log-write time.
+Per-record schema (version `v: 1`): `finish_epoch` (the same `os.time()` stamp
+as the saved result’s `finished_wall_epoch`), `type`, `kind`, `key_count`,
+`user_cost`, `best_opt_cost`, `user_seq`, `best_opt_seq`, `beats`. Only the
+single lowest-cost optimal result is stored; Top-N alternatives are not
+retained at log-write time.
 
 
 TAB COMPLETION
@@ -1114,21 +1093,13 @@ TAB COMPLETION
 Works on:
 
 - Subcommands (`:Vimfy s<Tab>` → `save`, `start`, `stats`, `store`, `suggest`).
-- Manual (alphabetic) handles for `start`, `watch`, and `finish`.
+- Named aliases for `start`, `watch`, and `finish`.
 - `3s`/`5s`/`10s`/`30s` hints for `recall`.
-- All active/recall aliases plus time hints for `close`.
-- Active/recall aliases, time hints, and saved names for `play` (matches its disk fallback).
-- Selectors (plus `@`) for `save` and `store`.
-- Saved names for `view`, `rm`, and `fetch`.
+- Live aliases plus time hints for `close`.
+- Every alias (including `@` and `$`) for `save` and `store`.
+- Every alias plus saved filenames for `play`, `view`, and `explore`.
+- Saved filenames for `rm` and `fetch`.
 - `on` / `off` / `toggle` for `suggest`.
-
-
-<PLUG> MAPPINGS
-
-For each subcommand above, a `<Plug>VimfyX...` map is also registered so you
-can bind keys without having to type `:Vimfy ...` (cmdline input is never
-counted as motion either way). See 8. Keymaps for the full list and the binding
-contract.
 
 
 SCRATCH OUTPUT BUFFER KEYS
@@ -1163,7 +1134,7 @@ animated.
 Pair with 8. Keymaps:
 
 >vim
-    nmap <leader>vv <Plug>VimfyPlayA  " or ...bind to PlayA / PlayB / etc.
+    nnoremap <leader>vv <Cmd>Vimfy play a<CR>  " or ...bind to play b / play c / etc.
 <
 
 …so replaying a suggestion is a single keystroke.
@@ -1227,9 +1198,8 @@ want to show a colleague.
 ==============================================================================
 13. Known limitations                          *vimficiency-known-limitations*
 
-- **Session capture needs Neovim nightly (0.13-dev).** Capture runs off the
-    `CmdAtom` event. On stable Neovim the commands and replay views still work, but
-    mark/watch/recall/suggest are disabled with a one-time warning.
+- **Needs Neovim nightly (0.13-dev).** Capture runs off the `CmdAtom` event;
+    `setup()` raises on older Neovim.
 - **Screen-line motions** `gj`/`gk` are approximated as `j`/`k`. Exact on
     unwrapped lines; off by a little when wrapping is in play.
 - **Multi-buffer edits** aren’t supported within a single session. If you
@@ -1241,10 +1211,14 @@ want to show a colleague.
 - **Long sessions** may hit the optimizer’s search budget; expect diminishing
     suggestion quality beyond roughly a dozen lines of edits.
 - **Mappings to Lua callbacks can’t be audited as motion.** A key mapped to a
-    Lua function that edits the buffer produces an unreplayable capture event; a
-    session spanning it is dropped as untrustworthy. Mappings whose RHS is a key
-    sequence are fine — they are captured as the resolved post-mapping keys. Type
-    the underlying keys directly when you want a specific motion audited.
+    Lua function that edits the buffer or moves the cursor produces an unreplayable
+    capture event. By default (`lossy_mappings = "warn"`) the keys you typed are
+    recorded in its place with a once-per-session notice; replay is faithful only
+    when the function did what those keys do in plain Vim. `"allow"` records
+    silently, and `"drop"` ends the session with a warning that names the mapping
+    (see Configuration). Mappings whose RHS is a key sequence are fine — they are
+    captured as the resolved post-mapping keys. Type the underlying keys directly
+    when you want a specific motion audited.
 - **Recall only records actions in normal file buffers** (`&buftype == ""`).
     Actions in help, quickfix, terminal, prompt, or scratch buffers are skipped —
     they aren’t meaningful for nav or transform optimization, and recording them
@@ -1304,6 +1278,16 @@ WATCH NEVER FIRES
     guards all tear down Watch sessions silently.
 
 
+“RECORDED LUA MAPPING … AS TYPED KEYS” OR “DROPPED — LUA MAPPING …”
+
+A key you pressed is mapped to a Lua function (flash.nvim’s `f`/`t`/`;`, a
+`vim.keymap.set` callback) and Neovim cannot report replayable keys for it. The
+notice names the mapping. `lossy_mappings` decides what happens: `"warn"`
+(default) records the keys you typed with a once-per-session notice, `"allow"`
+records them silently, `"drop"` ends the session. See 13. Limitations for why
+replay may then diverge.
+
+
 SUGGESTIONS LOOK WRONG OR WORSE THAN WHAT I DID
 
 - Some motions we can’t model (screen-line motions `gj`/`gk`, and
@@ -1313,12 +1297,10 @@ SUGGESTIONS LOOK WRONG OR WORSE THAN WHAT I DID
 - See 13. Limitations for the full list.
 
 
-SESSION CAPTURE ISN’T RECORDING ANYTHING
+SETUP() FAILS WITH “LACKS THE CMDATOM EVENT”
 
 Capture runs off the `CmdAtom` event, which only Neovim nightly (0.13-dev)
-exposes. On stable Neovim the commands and views work, but
-mark/watch/recall/suggest are disabled — `setup()` warns once at startup.
-Upgrade to a recent nightly to enable capture.
+exposes. The plugin refuses to load without it. Upgrade to a recent nightly.
 
 
 “UNKNOWN CONFIG KEYS IGNORED” WARNING
@@ -1385,10 +1367,10 @@ directly.
 HOW DO I REMOVE A SAVED RESULT?
 
 >vim
-    :Vimfy rm <name>
+    :Vimfy rm <filename>
 <
 
-Tab-completes over saved names. Or delete the file directly from
+Tab-completes over saved filenames. Or delete the file directly from
 `stdpath('data')/vimficiency/saved/`.
 
 

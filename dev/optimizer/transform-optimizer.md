@@ -24,11 +24,15 @@ But here, we pop state -> explore deletions -> check if goal, so that we can con
 - Note we handle a pure deletion case in separate call, as we no longer need to worry about going into insert mode.
 
 ## Multi-source Handling
-- We consider states unique by their position and mode, independent of starting index. Thus, it is possible to "exhaust" good states from searching from a specific starting index.
-- This is much better for efficiency, and we are only concerned with the best sequences, so this is not a major issue.
+Every start position searches independently: `startIndex` is part of the state key, so one start never consumes another's states.
 
 ### Early Stopping
-`optimizeTransform` use early stopping: once a result is found for a startIndex, further states from that index are skipped (`if (results[s.getStartIndex()].isValid()) continue`). Ignoring small differences in running effort patterns, this is optimal.
+A start goes inactive once it holds `maxResultsPerStartPos` results, and its remaining queued states are skipped. Ignoring small differences in running effort patterns, this is optimal.
+
+### Per-start Work Bound
+A start with no solution would otherwise search its whole space; a 13-position region reached 33k nodes this way. Once any start is solved, a start goes inactive after exploring more than `startWorkFactor` times the nodes the hardest solved start needed before its first result.
+
+The default is 8. On generated multi-line deletions, 4 lost no results and 3 did, and 8 costs about 5% more nodes than 4.
 
 ## State Hashing (CostMap Keys)
 
@@ -39,13 +43,40 @@ The A* search tracks visited states in an `unordered_map<TransformStateKey, doub
 - Computed when an editor snapshot is constructed
 - Refreshed by `TransformSimulator` after buffer mutations (`afterDeletion`, `afterLinewiseDeletion`, `afterJoin`, and counted variants)
 
-`TransformState` wraps that editor snapshot with A* path/ranking data: sequence, running effort, cached effort, cost, dot-repeat context, and `startIndex`. Queue-ready states are created through `TransformStateFactory`, which records the editor snapshot, command effort, and heuristic cost together. This keeps pure editor simulation separate from ranked search states and avoids half-valid states with stale cost or repeat metadata.
+`TransformState` wraps that editor snapshot with A* path/ranking data: sequence, running effort, cached effort, cost, dot-repeat context, and `startIndex`. Queue-ready states are created through `TransformStateSpace`, which records the editor snapshot, command effort, and heuristic cost together. This keeps pure editor simulation separate from ranked search states and avoids half-valid states with stale cost or repeat metadata.
 
 `TransformStateKey` stores `(linesHash, lineCount, line, col, mode, startIndex)` instead of the full `Lines` object. Both the hash function and equality operator use only these scalar fields — no buffer copying or content comparison.
 
 The same pattern applies to `SuffixKey` in the suffix cache (see below).
 
 **Collision risk**: 64-bit FNV-1a over ~10^4 states gives collision probability ~5×10^-12 per search. A hash collision would cause a state to be incorrectly pruned as "already visited," potentially missing a better path for one starting position — a minor quality degradation, not a correctness violation.
+
+## Entry Curswant
+
+Every start state has `targetCol == col`, but callers may enter a result from a clamped cursor (`col < targetCol`). Each `Result` therefore records an `EntryCurswant` class.
+
+Every edit writes curswant, so only a path's first command can read the caller's value. `TransformStateSpace` applies one rule as commands are appended:
+
+- First command: take that command's class.
+- Any command after a `Followed` state: the path becomes `Required`.
+- Otherwise the class is unchanged.
+
+| First command | Class |
+|---|---|
+| Charwise delete, join, any change-mode goal emission (`dd` is emitted as `cc`/`0C`) | `Ignored` |
+| Linewise delete placed by `deleteLineRangeAndUpdatePos` (`dd`, `{n}dd`) | `Followed` |
+| Any other linewise delete, boundary-escape `j`/`k` | `Required` |
+| Visual delete spanning lines (`vj…d`) | `Required` |
+
+Conservative choices, all safe but possibly skipping usable edits at clamped columns:
+
+- Non-`dd` linewise deletes are `Required`, although Neovim's `dj` follows curswant like `dd`.
+- A change-mode result that ends right after a `Followed` delete is stored as `Required`, because the fixed `goalPos` cannot follow curswant.
+- A suffix-cache hit is `Required` unless its prefix is `Ignored`.
+
+Under `startofline` nothing reads curswant, so `Followed` becomes `Ignored`.
+
+Consumers apply the class through `TransformResult::forEachEditFrom`; see Composition Logic in `composition-optimizer.md`.
 
 ## Suffix Cache
 

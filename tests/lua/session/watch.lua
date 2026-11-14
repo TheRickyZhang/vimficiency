@@ -11,10 +11,10 @@ local config        = require("vimficiency.config")
 local session       = require("vimficiency.session")
 local session_store = require("vimficiency.session.store")
 local end_trigger   = require("vimficiency.capture.end_trigger")
-local atoms         = require("vimficiency.capture.atoms")
+local atom_stream         = require("vimficiency.capture.atom_stream")
 local h             = require("_helpers")
 
-local WATCH_CFG = { idle = { ms = 60000 }, cooldown_ms = 0 }
+local WATCH_CFG = h.watch_config({ idle = { ms = 60000 }, cooldown_ms = 0 })
 
 local function with_watch_cfg(cfg, fn)
   h.with_patch({ { config, "watch", cfg } }, fn)
@@ -22,21 +22,20 @@ end
 
 test("watch: refuses to start when config.watch is falsy", function()
   with_watch_cfg(false, function()
-    h.silence_notify(function() session.watch("wnone") end)
+    assert_error(function() session.watch("wnone") end, "not configured")
     assert_eq(session_store.get_active("wnone"), nil,
       "no record should be created when watch is disabled")
   end)
 end)
 
-test("watch: creates (manual, auto) record with disarm handle", function()
+test("watch: creates a watch record with disarm handle", function()
   h.with_buf({ "hello", "world" }, function()
     with_watch_cfg(WATCH_CFG, function()
       session.watch("wrec")
       local rec = session_store.get_active("wrec")
       assert_true(rec ~= nil, "watch record should be active")
       rec = assert(rec)
-      assert_eq(rec.start_kind, "manual")
-      assert_eq(rec.end_kind,   "auto")
+      assert_eq(rec.kind, "watch")
       assert_true(type(rec.watch_disarm) == "function",
         "watch_disarm must be installed on the record")
       session.close("wrec")
@@ -51,11 +50,11 @@ test("watch: close disarms the idle trigger", function()
       local rec = session_store.get_active("wclose")
       assert_true(rec ~= nil)
       rec = assert(rec)
-      assert_eq(atoms.is_subscribed("watch_" .. rec.id), true,
+      assert_eq(atom_stream._has_listener("watch_" .. rec.id), true,
         "global subscriber must be live while watching")
 
       session.close("wclose")
-      assert_eq(atoms.is_subscribed("watch_" .. rec.id), false,
+      assert_eq(atom_stream._has_listener("watch_" .. rec.id), false,
         "close must detach the global subscriber")
     end)
   end)
@@ -77,9 +76,9 @@ test("watch: overwrite disarms the prior trigger", function()
       assert_true(rec_a.id ~= rec_b.id,
         "overwrite must allocate a new id")
 
-      assert_eq(atoms.is_subscribed(name_a), false,
+      assert_eq(atom_stream._has_listener(name_a), false,
         "previous watch's global subscriber must be detached on overwrite")
-      assert_eq(atoms.is_subscribed("watch_" .. rec_b.id), true,
+      assert_eq(atom_stream._has_listener("watch_" .. rec_b.id), true,
         "new watch's global subscriber must be live")
       session.close("wover")
     end)
@@ -99,13 +98,13 @@ test("watch: finish (manual :Vimfy finish) disarms the trigger", function()
 
       local fake_result = h.fake_result({ user_seq = "" })
       assert_eq(
-        session_store.finish_session(rec.id, fake_result, "wfinish", nil, "watch_idle"),
+        session_store.convert_to_finished(rec.id, fake_result, "wfinish"),
         true)
 
-      assert_eq(atoms.is_subscribed(name), false,
-        "finish_session must disarm the watch trigger")
-      assert_eq(fake_result.finish_reason, "watch_idle",
-        "finish_session must stamp the reason onto the result")
+      assert_eq(atom_stream._has_listener(name), false,
+        "convert_to_finished must disarm the watch trigger")
+      assert_eq(fake_result.kind, "watch",
+        "convert_to_finished must stamp the kind onto the result")
     end)
   end)
 end)

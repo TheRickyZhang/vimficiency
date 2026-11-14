@@ -39,7 +39,7 @@ function M.current_snap(ctx, entry)
   if not pool_entry or not pool_entry.states or #pool_entry.states == 0 then
     return nil
   end
-  local states = assert(pool_entry.states)
+  local states = pool_entry.states
   return states[min(ctx.state.global_step + 1, #states)]
 end
 
@@ -174,7 +174,7 @@ function M.update_cursor_highlights(ctx)
       local row = cursor[1] - 1
       local col = cursor[2]
 
-      local line = v.nvim_buf_get_lines(entry.buf, row, row + 1, false)[1] or ""
+      local line = v.nvim_buf_get_lines(entry.buf, row, row + 1, false)[1]
       if col < #line then
         v.nvim_buf_set_extmark(entry.buf, cursor_ns, row, col, {
           end_col = col + 1,
@@ -266,7 +266,7 @@ function M.apply_state(entry, snap)
   v.nvim_buf_set_lines(entry.buf, 0, -1, true, snap.lines)
   local line_count = v.nvim_buf_line_count(entry.buf)
   local row = max(1, min(snap.cursor[1], line_count))
-  local line = v.nvim_buf_get_lines(entry.buf, row - 1, row, false)[1] or ""
+  local line = v.nvim_buf_get_lines(entry.buf, row - 1, row, false)[1]
   local col = max(0, min(snap.cursor[2], #line))
   v.nvim_win_set_cursor(entry.win, { row, col })
 end

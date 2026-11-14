@@ -48,9 +48,9 @@ local function blend_hex(fg, bg, alpha)
 end
 
 local function normal_colors()
-  local ok, hl = pcall(v.nvim_get_hl, 0, { name = "Normal", link = false })
-  local bg = (ok and hl and hl.bg) and int_to_hex(hl.bg) or "#1e1e1e"
-  local fg = (ok and hl and hl.fg) and int_to_hex(hl.fg) or "#e0e0e0"
+  local hl = v.nvim_get_hl(0, { name = "Normal", link = false })
+  local bg = hl.bg and int_to_hex(hl.bg) or "#1e1e1e"
+  local fg = hl.fg and int_to_hex(hl.fg) or "#e0e0e0"
   return bg, fg
 end
 

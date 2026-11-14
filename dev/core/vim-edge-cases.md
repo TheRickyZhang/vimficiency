@@ -59,9 +59,13 @@ After deletion, cursor column is clamped differently:
 
 ## 3. `dd` vs `cc` / `S` (Linewise Operations)
 
-**`dd`:** Erases the entire line(s) from the buffer. If the buffer becomes empty, inserts one empty line. Cursor goes to first non-blank of the next line (or previous if at EOF).
+**`dd`:** Erases the entire line(s) from the buffer. If the buffer becomes empty, inserts one empty line. The cursor moves to the next line (or previous if at EOF).
 
-**`cc`/`S`:** Clears the line content but **keeps the line**. Enters Insert mode at col 0. With `autoindent` enabled, Neovim automatically inserts indentation matching the cleared line.
+- With `nostartofline` (Neovim default) it lands at `min(curswant, lastCol)`, then curswant resets to that column. `dj` behaves the same.
+- So `dd` is the one edit whose landing depends on the curswant it is entered with: after `j` clamps the cursor from col 10 to col 2, `dd` onto a longer line lands at col 10.
+- With `startofline` it lands on the first non-blank instead.
+
+**`cc`/`S`:** Clears the line content but **keeps the line**. Enters Insert mode at col 0. With `autoindent` enabled, Neovim automatically inserts indentation matching the cleared line. Curswant on entry has no effect.
 
 ### Autoindent Implications for the Optimizer
 

@@ -7,10 +7,7 @@ local EXPLORE_SCHEMA_VERSION = 1
 M.EXPLORE_SCHEMA_VERSION = EXPLORE_SCHEMA_VERSION
 
 local DISPLAY_MODES = { "off", "highlight", "inplace", "above", "below" }
-M.DISPLAY_MODES = DISPLAY_MODES
-
 local RECOMMENDATION_SORT_MODES = { "effort", "distance", "score" }
-M.RECOMMENDATION_SORT_MODES = RECOMMENDATION_SORT_MODES
 
 local SHARED_OPTIMIZER_KEYS = {
   maxResults = true,
@@ -21,7 +18,6 @@ local SHARED_OPTIMIZER_KEYS = {
   minPrefixCount = true,
   maxPrefixCount = true,
 }
-M.SHARED_OPTIMIZER_KEYS = SHARED_OPTIMIZER_KEYS
 
 ---@class VF.Explore.ViewSettingSpec
 ---@field key string
@@ -57,7 +53,6 @@ M.VIEW_SETTINGS = VIEW_SETTINGS
 
 local VIEW_SETTING_BY_KEY = {}
 for _, spec in ipairs(VIEW_SETTINGS) do VIEW_SETTING_BY_KEY[spec.key] = spec end
-M.VIEW_SETTING_BY_KEY = VIEW_SETTING_BY_KEY
 
 -- LSP-only mirror of VIEW_SETTINGS; the runtime table isn't introspectable.
 ---@class VF.Explore.ViewSettings
@@ -80,7 +75,11 @@ function M.default_settings()
   local view = {}
   for _, spec in ipairs(VIEW_SETTINGS) do
     local user_override = config.explore[spec.key]
-    view[spec.key] = user_override ~= nil and user_override or spec.default
+    if user_override == nil then
+      view[spec.key] = spec.default
+    else
+      view[spec.key] = user_override
+    end
   end
   return { shared = {}, nav = {}, transform = {}, composition = {}, view = view }
 end
@@ -131,7 +130,7 @@ end
 ---@return any|nil
 function M.resolve_param(key, scope)
   local store = M.settings_store()
-  local scoped = store[scope] and store[scope][key]
+  local scoped = store[scope][key]
   if scoped ~= nil then return scoped end
   if not SHARED_OPTIMIZER_KEYS[key] then return nil end
   return store.shared[key]

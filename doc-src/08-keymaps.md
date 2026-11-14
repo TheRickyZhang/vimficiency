@@ -12,7 +12,7 @@ inert event and is excluded automatically.
 
 So there is no special binding API — use whatever Vim already gives you.
 
-## 1. `vim.keymap.set` with a `<Cmd>` map (recommended)
+## `vim.keymap.set` with a `<Cmd>` map (recommended)
 
 Bind the LHS to the `:Vimfy` command directly:
 
@@ -42,39 +42,6 @@ end)
 
 As long as the callback doesn't edit the buffer, pressing `Z` is not
 recorded as motion.
-
-## 2. `<Plug>` maps
-
-For users who prefer the Vim convention, each common action has a
-`<Plug>` name that `setup()` registers for you. Bind with `remap = true`
-(or `nmap` in vimscript):
-
-```vim
-nmap <leader>vs <Plug>VimfyStartA
-nmap <leader>vf <Plug>VimfyFinishA
-```
-
-```lua
-vim.keymap.set('n', '<leader>vs', '<Plug>VimfyStartA', { remap = true })
-```
-
-**Available `<Plug>` names:**
-
-| Name                                 | Action                               |
-|--------------------------------------|--------------------------------------|
-| `<Plug>VimfyStart{A,B,C,D,E}`        | `:Vimfy start <alias>`               |
-| `<Plug>VimfyWatch{A,B,C,D,E}`        | `:Vimfy watch <alias>`               |
-| `<Plug>VimfyFinish{A,B,C,D,E}`       | `:Vimfy finish <alias>`              |
-| `<Plug>VimfyClose{A,B,C,D,E}`        | `:Vimfy close <alias>`               |
-| `<Plug>VimfyPlay{A,B,C,D,E}`         | `:Vimfy play <alias>`                |
-| `<Plug>VimfySuggest{On,Off,Toggle}`  | `:Vimfy suggest <on\|off\|toggle>`   |
-| `<Plug>VimfyList`                    | `:Vimfy list`                        |
-| `<Plug>VimfyConfig`                  | `:Vimfy config`                      |
-| `<Plug>VimfyHelp`                    | `:Vimfy help`                        |
-
-`<Plug>` covers the common actions; a direct `<Cmd>Vimfy ...<CR>` map
-covers everything else (including arbitrary args, e.g. `save @ quick`,
-which no `<Plug>` name exposes).
 
 ## Direct `:Vimfy ...` typing and Ex-command maps
 

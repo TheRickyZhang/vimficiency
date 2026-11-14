@@ -1,12 +1,12 @@
 -- Full-screen viewer: header + side-by-side initial/final panes. Changed
--- columns come from the optimizer's own diff (result.diffs); see session.view.
+-- columns come from the optimizer's own diff (result.diffs); see archive.view.
 
 local v            = vim.api
 local buf_window   = require("vimficiency.explore.buf_window")
 local util         = require("vimficiency.util")
 local highlights   = require("vimficiency.highlights")
 local result_view  = require("vimficiency.session.result_view")
-local ffi_display  = require("vimficiency.ffi.display")
+local sequence_display = require("vimficiency.sequence_display")
 local ffi_optimizer = require("vimficiency.ffi.optimizer")
 
 local M = {}
@@ -15,25 +15,16 @@ local ns = v.nvim_create_namespace("vimfy_result_view")
 
 local MAX_HEADER_RECS = 3
 
----@param c number|nil
----@return string
-local function fmt_cost(c)
-  return c and string.format("%.0f", c) or "?"
-end
-
 ---@param result VF.Session.Result
 ---@return string[]
 local function build_header_lines(result)
-  local lines = { result_view.format_position(result) .. result_view.format_reason_suffix(result) }
-  lines[#lines + 1] = string.format("you   %s   (%s)",
-    ffi_display.sequence_display_inline(result.user_seq or ""), fmt_cost(result.user_cost))
-  local recs = result.optimal_results or {}
+  local lines = { result_view.format_position(result) .. result_view.format_kind_suffix(result) }
+  lines[#lines + 1] = string.format("you   %s   (%.0f)",
+    sequence_display.inline(result.user_seq), result.user_cost)
+  local recs = result.optimal_results
   for i = 1, math.min(MAX_HEADER_RECS, #recs) do
-    lines[#lines + 1] = string.format("%d.    %s   (%s)",
-      i, ffi_display.sequence_display_inline(recs[i].seq or ""), fmt_cost(recs[i].cost))
-  end
-  if result.had_mouse then
-    lines[#lines + 1] = result_view.MOUSE_WARNING
+    lines[#lines + 1] = string.format("%d.    %s   (%.0f)",
+      i, sequence_display.inline(recs[i].seq), recs[i].cost)
   end
   return lines
 end
@@ -182,7 +173,7 @@ function M.open(label, result)
   util.configure_scratch_window(header_win, { winfixheight = true })
   util.configure_scratch_window(left_win, { cursorline = true })
   util.configure_scratch_window(right_win, { cursorline = true })
-  v.nvim_win_set_height(header_win, math.max(1, #header_lines))
+  v.nvim_win_resize(header_win, -1, math.max(1, #header_lines))
 
   highlight_diffs(left_buf, initial_lines, diffs, "init", highlights.VIEW_DIFF_DELETE)
   highlight_diffs(right_buf, goal_lines, diffs, "goal", highlights.VIEW_DIFF_ADD)
@@ -200,7 +191,7 @@ function M.open(label, result)
       if v.nvim_tabpage_is_valid(saved_tab) then
         v.nvim_set_current_tabpage(saved_tab)
       end
-      pcall(vim.cmd, "tabclose " .. v.nvim_tabpage_get_number(view_tab))
+      pcall(vim.cmd.tabclose, v.nvim_tabpage_get_number(view_tab))
     end
     if v.nvim_win_is_valid(saved_win) then
       v.nvim_set_current_win(saved_win)

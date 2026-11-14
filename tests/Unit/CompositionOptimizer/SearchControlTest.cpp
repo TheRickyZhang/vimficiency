@@ -50,7 +50,7 @@ TEST_F(CompositionSearchControlTest, NonTriggeringControlMatchesFullSearch) {
   SearchControl control;  // no deadline, not cancelled: never stops.
   CompositionResult guarded = opt.optimize(
       initial, initialPos, goal, goalPos, CompositionOptimizerParams{}, "",
-      boundary, NavContext(), &control);
+      boundary, NavContext(), control);
 
   EXPECT_EQ(sequenceStrings(full), sequenceStrings(guarded));
   EXPECT_EQ(full.getStats().totalPops(), guarded.getStats().totalPops());
@@ -60,10 +60,10 @@ TEST_F(CompositionSearchControlTest, NonTriggeringControlMatchesFullSearch) {
 
 TEST_F(CompositionSearchControlTest, CancelledControlAbortsSetup) {
   SearchControl control;
-  control.cancelled.store(true);
+  control.cancel();
   CompositionResult res = opt.optimize(
       initial, initialPos, goal, goalPos, CompositionOptimizerParams{}, "",
-      boundary, NavContext(), &control);
+      boundary, NavContext(), control);
 
   EXPECT_EQ(res.totalEdits(), 0)
       << "cancel must abort before per-edit precompute completes";
@@ -72,12 +72,10 @@ TEST_F(CompositionSearchControlTest, CancelledControlAbortsSetup) {
 }
 
 TEST_F(CompositionSearchControlTest, PastDeadlineFinishesSetupThenStopsBeforeFirstPop) {
-  SearchControl control;
-  control.hasDeadline = true;
-  control.deadline = chrono::steady_clock::now() - chrono::seconds(1);
+  SearchControl control(chrono::steady_clock::now() - chrono::seconds(1));
   CompositionResult res = opt.optimize(
       initial, initialPos, goal, goalPos, CompositionOptimizerParams{}, "",
-      boundary, NavContext(), &control);
+      boundary, NavContext(), control);
 
   EXPECT_GT(res.totalEdits(), 0)
       << "a deadline must not abort setup; the plan is still produced";

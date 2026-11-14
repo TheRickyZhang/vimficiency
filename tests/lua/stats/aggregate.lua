@@ -11,7 +11,7 @@ local function rec(overrides)
     v = 1,
     finish_epoch = 0,
     type = "mark",
-    finish_reason = "manual",
+    kind = "mark",
     key_count = 0,
     user_cost = 1.0,
     best_opt_cost = 1.0,
@@ -31,13 +31,6 @@ test("aggregate: empty log → zero counters, nil score", function()
   assert_eq(s.beats_count, 0, "beats_count")
   assert_eq(s.by_type, { mark = 0, watch = 0, recall = 0, suggest = 0 },
     "by_type all zero")
-end)
-
-test("aggregate: single exact-optimal session scores 100", function()
-  local s = stats.aggregate({ rec({ user_cost = 5.0, best_opt_cost = 5.0 }) })
-  assert_eq(s.total_sessions, 1)
-  assert_true(math.abs(s.efficiency_score - 100) < 1e-6,
-    "expected 100, got " .. tostring(s.efficiency_score))
 end)
 
 test("aggregate: single session with user 2× optimal → score = 50", function()

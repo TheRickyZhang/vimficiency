@@ -26,12 +26,7 @@ TEST_F(CompositionOptimizer_ManualTest, JoinLinesExact) {
   CompositionResult res = opt.optimize(initial, initialPos, goal, goalPos);
   expectHasValidResults(res.getResults(), initial, initialPos, goal, "J exact");
 
-  // Check that a result contains "J"
-  bool foundJ = false;
-  for (const Result& r : res.getResults()) {
-    if (r.getSequence().view().find("J") != string::npos) { foundJ = true; break; }
-  }
-  EXPECT_TRUE(foundJ) << "Expected a result containing J";
+  EXPECT_TRUE(hasSequenceContaining(res.getResults(), "J")) << "Expected a result containing J";
 }
 
 TEST_F(CompositionOptimizer_ManualTest, JoinLinesWithIndent) {
@@ -62,12 +57,7 @@ TEST_F(CompositionOptimizer_ManualTest, JoinLinesWithResidual) {
   // Verify top result produces correct output
   verifySingleResult(res.getResults()[0], initial, initialPos, goal, "J with residual");
 
-  // Check that at least one result uses J
-  bool hasJ = false;
-  for (const auto& r : res.getResults()) {
-    if (r.getSequence().view().find("J") != string::npos) { hasJ = true; break; }
-  }
-  EXPECT_TRUE(hasJ) << "Expected at least one result with J";
+  EXPECT_TRUE(hasSequenceContaining(res.getResults(), "J")) << "Expected at least one result with J";
 }
 
 TEST_F(CompositionOptimizer_ManualTest, WhitespaceJoinInsertionTransitionsReplay) {
@@ -138,13 +128,9 @@ TEST_F(CompositionOptimizer_ManualTest, JoinPlanEntryLineIsColumnInsensitive) {
       res.getResults(), initial, initialPos, goal,
       "join residual from nonzero column");
 
-  bool hasLeadingJ = false;
-  for (const auto& r : res.getResults()) {
-    if (r.getSequence().view().starts_with("J")) {
-      hasLeadingJ = true;
-      break;
-    }
-  }
+  bool hasLeadingJ = any_of(
+      res.getResults().begin(), res.getResults().end(),
+      [](const Result& r) { return r.getSequence().view().starts_with("J"); });
   EXPECT_TRUE(hasLeadingJ) << "Expected a result starting with J";
 }
 
@@ -160,11 +146,7 @@ TEST_F(CompositionOptimizer_ManualTest, JoinLinesPartialJoin) {
       params, "", boundary);
   expectHasValidResults(res.getResults(), initial, initialPos, goal, "J partial join");
 
-  bool foundJ = false;
-  for (const Result& r : res.getResults()) {
-    if (r.getSequence().view().find("J") != string::npos) { foundJ = true; break; }
-  }
-  EXPECT_TRUE(foundJ) << "Expected a result containing J";
+  EXPECT_TRUE(hasSequenceContaining(res.getResults(), "J")) << "Expected a result containing J";
 }
 
 TEST_F(CompositionOptimizer_ManualTest, GJEmittedForPureNewlineDeletion) {
@@ -182,14 +164,7 @@ TEST_F(CompositionOptimizer_ManualTest, GJEmittedForPureNewlineDeletion) {
   expectHasValidResults(res.getResults(), initial, initialPos, goal,
                         "pure newline deletion via gJ");
 
-  bool foundGJ = false;
-  for (const Result& r : res.getResults()) {
-    if (r.getSequence().view().find("gJ") != string::npos) {
-      foundGJ = true;
-      break;
-    }
-  }
-  EXPECT_TRUE(foundGJ) << "Expected a result containing gJ";
+  EXPECT_TRUE(hasSequenceContaining(res.getResults(), "gJ")) << "Expected a result containing gJ";
 }
 
 TEST_F(CompositionOptimizer_ManualTest, PureDeletionDoesNotKeepHiddenContextPlaceholder) {

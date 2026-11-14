@@ -1,31 +1,31 @@
-module;
-#include "LuaExports/Api.h"
-
-module vf.LuaExports.Common;
+module vf.LuaExports.Payload;
 
 import std.compat;
+import vf.LuaExports.Common;
+import vf.Optimizer.DiffPlanner.DiffState;
+import vf.Types.Lines;
 
 using namespace std;
 
 namespace VF::LuaExports::payload {
 
-Result<vector<string>> decodeLengthPrefixedStrings(string_view encoded) {
+Expected<vector<string>> decodeLengthPrefixedStrings(string_view encoded) {
   vector<string> parts;
   size_t pos = 0;
   while (pos < encoded.size()) {
     const size_t colon = encoded.find(':', pos);
     if (colon == string_view::npos) {
-      return helpers::unexpectedError("invalid length-prefixed payload");
+      return unexpectedError("invalid length-prefixed payload");
     }
     size_t len = 0;
     const char* lenEnd = encoded.data() + colon;
     const auto [ptr, ec] = from_chars(encoded.data() + pos, lenEnd, len);
     if (ec != errc{} || ptr != lenEnd) {
-      return helpers::unexpectedError("invalid length-prefixed payload");
+      return unexpectedError("invalid length-prefixed payload");
     }
     pos = colon + 1;
     if (len > encoded.size() - pos) {
-      return helpers::unexpectedError("truncated length-prefixed payload");
+      return unexpectedError("truncated length-prefixed payload");
     }
     parts.emplace_back(encoded.substr(pos, len));
     pos += len;
@@ -33,11 +33,11 @@ Result<vector<string>> decodeLengthPrefixedStrings(string_view encoded) {
   return parts;
 }
 
-Result<Lines> decodeLineArray(string_view encoded) {
+Expected<Lines> decodeLineArray(string_view encoded) {
   return decodeLengthPrefixedStrings(encoded).and_then([](const vector<string>& parts)
-      -> Result<Lines> {
+      -> Expected<Lines> {
     if (parts.empty()) {
-      return helpers::unexpectedError(
+      return unexpectedError(
           "line array payload must contain at least one line");
     }
     Lines lines;
@@ -45,11 +45,11 @@ Result<Lines> decodeLineArray(string_view encoded) {
     for (size_t i = 0; i < parts.size(); ++i) {
       const auto& part = parts[i];
       if (part.find('\n') != string::npos) {
-        return helpers::unexpectedError(
+        return unexpectedError(
             "line array payload contains newline byte at line " + to_string(i));
       }
       if (part.find('\0') != string::npos) {
-        return helpers::unexpectedError(
+        return unexpectedError(
             "line array payload contains NUL byte at line " + to_string(i));
       }
       lines.push_back(part);
@@ -58,7 +58,7 @@ Result<Lines> decodeLineArray(string_view encoded) {
   });
 }
 
-Result<vector<KeyTrackingEvent>> decodeKeyTrackingEvents(string_view encoded) {
+Expected<vector<KeyTrackingEvent>> decodeKeyTrackingEvents(string_view encoded) {
   vector<KeyTrackingEvent> events;
   size_t start = 0;
   while (start < encoded.size()) {
@@ -70,7 +70,7 @@ Result<vector<KeyTrackingEvent>> decodeKeyTrackingEvents(string_view encoded) {
     if (!record.empty()) {
       const size_t sep = record.find(EVENT_FIELD_SEP);
       if (sep == string_view::npos) {
-        return helpers::unexpectedError("invalid key event payload");
+        return unexpectedError("invalid key event payload");
       }
       events.push_back({
           string(record.substr(0, sep)),

@@ -61,10 +61,8 @@ end
 --------------------------------------------------------------------------------
 
 local function safe_tokenize(seq)
-  if not seq or seq == "" then return {} end
-  local ok, tokens = pcall(ffi_sequence.tokenize_sequence, seq)
-  if not ok or not tokens then return {} end
-  return tokens
+  if seq == "" then return {} end
+  return ffi_sequence.tokenize_sequence(seq) or {}
 end
 
 --- Nearest-rank percentile of a pre-sorted ascending list.

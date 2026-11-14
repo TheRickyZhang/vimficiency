@@ -1,7 +1,7 @@
 -- Pure key-sequence helpers for interactive Explore's frontier replay.
 --
 -- Capture (manual/recall/triggers) moved to the `CmdAtom` event; see
--- `capture/atoms.lua` and `dev/lua/atom-capture.md`. Explore still runs its own
+-- `capture/atom_stream.lua` and `dev/lua/atom-stream.md`. Explore still runs its own
 -- `vim.on_key` namespace (`explore/key_capture.lua`) and accumulates raw
 -- `VF.KeyEvent`s on the view, then reduces them with the helpers below.
 local M = {}
@@ -31,12 +31,11 @@ end
 ---@param typed_raw string
 ---@return integer popped
 function M.strip_matching_tail(key_seq, typed_raw)
-	if #typed_raw == 0 or #key_seq == 0 then return 0 end
 	local acc = ""
 	local i = #key_seq
 	while i > 0 and #acc < #typed_raw do
 		local ev = key_seq[i]
-		acc = (ev.key_typed_raw or "") .. acc
+		acc = ev.key_typed_raw .. acc
 		i = i - 1
 	end
 	if acc ~= typed_raw then return 0 end

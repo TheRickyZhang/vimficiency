@@ -34,6 +34,15 @@ void expectMatchesOracle(
     Mode expectedMode = Mode::Normal,
     std::string_view context = {});
 
+// Replays `sequence` through our interpreter model (`applyUserSequence`) and
+// checks the modelled lines/cursor/mode against Neovim.
+void expectModelMatchesOracle(
+    NeovimOracle& oracle,
+    const Lines& initial,
+    CursorPos initialPos,
+    std::string_view sequence,
+    std::string_view context = {});
+
 }  // namespace OracleReplay
 
 }  // export

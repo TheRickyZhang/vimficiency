@@ -4,7 +4,6 @@ module;
 module vf.Optimizer.NavOptimizer.NavOptimizer;
 
 import std.compat;
-import vf.Effort.EffortBank;
 import vf.Optimizer.NavOptimizer.NavHeuristic;
 import vf.Optimizer.NavOptimizer.NavExplorer;
 import vf.Optimizer.SearchFrontier;
@@ -27,7 +26,7 @@ LandingNavResult NavOptimizer::optimize(
     string_view userSequence,
     const NavBoundary& boundary,
     const NavContext& navContext,
-    const SearchControl* control) {
+    const SearchControl& control) {
   return optimize(lines, initialPos, CharInterval(goalPos, goalPos),
                   params, userSequence, boundary, navContext, control);
 }
@@ -40,7 +39,7 @@ LandingNavResult NavOptimizer::optimize(
     string_view userSequence,
     const NavBoundary& boundary,
     const NavContext& navContext,
-    const SearchControl* control) {
+    const SearchControl& control) {
   BufferIndex localIndex(lines);
   return optimize(lines, startPos, range, params, userSequence,
                   boundary, navContext, localIndex, 0, control);
@@ -56,24 +55,23 @@ LandingNavResult NavOptimizer::optimize(
     const NavContext& navContext,
     const BufferIndex& bufferIndex,
     int lineOffset,
-    const SearchControl* control) {
+    const SearchControl& control) {
   assert(range.isValid() && "target interval must be non-empty");
 
-  // startPos already in the goal interval — nothing to do, the empty motion
-  // sequence is the answer.
+  // startPos already in the goal interval — nothing to do
   if (range.containsPos(startPos)) {
     NavSearchStats stats;
     std::vector<LandingResult> results;
     results.emplace_back(Sequence{}, 0.0, startPos);
     stats.finalizeRangeGoal(
         static_cast<int>(results.size()),
-        /*uniquePositions=*/1,
-        /*queueRemaining=*/0,
+        1,
+        0,
         lines.spanSize(range),
         params.maxResults,
         params.maxNodesPopped,
-        /*totalPops=*/0,
-        /*pqEmpty=*/true);
+        0,
+        true);
     return LandingNavResult(std::move(results), stats);
   }
 
@@ -81,32 +79,37 @@ LandingNavResult NavOptimizer::optimize(
       ? numeric_limits<double>::max()
       : getEffort(userSequence, config);
 
-  int rangeSize = lines.spanSize(range);
-  int maxResults = min(params.maxResults, rangeSize);
-
   NavExplorer explorer(lines, navContext, boundary, params, range, bufferIndex, lineOffset);
-  EffortBank bank(config);
 
-  NavPriorityQueue pq;
-  unordered_map<Pos, double> costMap;
-  NavSearchStats stats;
-  int totalPops = 0;
+  // Admission rules for enqueueRangeState: prune over-budget states, recognize goals.
   const double maxEffort = userEffort * params.exploreFactor;
-
   auto isInGoalRange = [&](const NavState& s) { return range.containsPos(s.getPos()); };
 
-  NavStateFactory states(
+  // Handles what a new NewState is after a specified motion type, based on the cost function
+  NavStateSpace states(
       config, NavHeuristic::StateScorer{range, params.effortWeight, params.distanceWeight});
+
+  // Frontier and best-known cost per position, seeded with the start state.
+  NavPriorityQueue pq;
+  unordered_map<Pos, double> costMap;
   NavState initialState = states.initial(startPos);
   pq.push(initialState);
   costMap[initialState.getKey()] = initialState.getCost();
 
-  unordered_map<Pos, LandingResult> bestResultByPos;
-  vector<LandingResult> allResults;
-  [[maybe_unused]] set<Pos> uniquePositionsSeen;
+  // Goal landings, recorded at pop time: the cheapest maxResultsPerEndPos per
+  // position. The search stops once maxResults are kept or every slot is full.
+  int rangeSize = lines.spanSize(range);
+  const int64_t landingLimit =
+      min<int64_t>(params.maxResults, int64_t{rangeSize} * params.maxResultsPerEndPos);
+  map<Pos, vector<LandingResult>> landingsByPos;
+  int landingCount = 0;
+
+  // Search accounting, reported via stats.finalizeRangeGoal.
+  NavSearchStats stats;
+  int totalPops = 0;
 
   while (!pq.empty() && totalPops < params.maxNodesPopped) {
-    if (control && control->stopRequested(totalPops)) break;
+    if (control.cancelledOrPastDeadline(totalPops)) break;
     NavState s = pq.top(); pq.pop();
     totalPops++;
 
@@ -116,26 +119,20 @@ LandingNavResult NavOptimizer::optimize(
 
     if (isGoal) {
       stats.incrementNodesExplored();
-      double effort = s.getRunningEffort().getEffort();
+      LandingResult landing(s.getSequence(), s.getRunningEffort().getEffort(), pos);
+      vector<LandingResult>& bucket = landingsByPos[stateKey];
 
-      if (params.maxResultsPerEndPos > 1) {
-        allResults.emplace_back(s.getSequence(), effort, pos);
-        uniquePositionsSeen.insert(stateKey);
-        if (allResults.size() >= static_cast<size_t>(params.maxResults)) {
-          debug("optimize: max results reached");
+      if (ssize(bucket) < params.maxResultsPerEndPos) {
+        bucket.push_back(std::move(landing));
+        if (++landingCount >= landingLimit) {
+          debug("optimize: landing limit reached (", landingCount, " landings, ",
+                landingsByPos.size(), "/", rangeSize, " positions)");
           break;
         }
       } else {
-        auto it = bestResultByPos.find(stateKey);
-        if (it == bestResultByPos.end()) {
-          bestResultByPos.emplace(stateKey, LandingResult(s.getSequence(), effort, pos));
-          if (static_cast<int>(bestResultByPos.size()) >= maxResults) {
-            debug("optimize: max unique positions reached (", bestResultByPos.size(), "/", rangeSize, ")");
-            break;
-          }
-        } else if (effort < it->second.getCost()) {
-          it->second = LandingResult(s.getSequence(), effort, pos);
-        }
+        // The heuristic overestimates, so a later pop can be cheaper.
+        auto worst = ranges::max_element(bucket, {}, &LandingResult::getCost);
+        if (landing.getCost() < worst->getCost()) *worst = std::move(landing);
       }
       continue;
     }
@@ -166,6 +163,7 @@ LandingNavResult NavOptimizer::optimize(
           stats.incrementMotionsEmitted();
           Search::enqueueRangeState(std::move(next), pq, costMap, maxEffort, isInGoalRange);
         };
+
     if (params.useDirectionalPruning) {
       explorer.exploreDirectionalStandardMotions(s, onStatic);
     } else {
@@ -184,21 +182,15 @@ LandingNavResult NavOptimizer::optimize(
   }
 
   vector<LandingResult> results;
-  int uniqueCount;
-  if (params.maxResultsPerEndPos > 1) {
-    results = std::move(allResults);
-    uniqueCount = static_cast<int>(uniquePositionsSeen.size());
-  } else {
-    results.reserve(bestResultByPos.size());
-    for (auto& [posKey, result] : bestResultByPos) {
-      results.push_back(std::move(result));
-    }
-    uniqueCount = static_cast<int>(bestResultByPos.size());
+  results.reserve(landingCount);
+  for (auto& [pos, bucket] : landingsByPos) {
+    ranges::move(bucket, back_inserter(results));
   }
+  ranges::stable_sort(results, {}, &LandingResult::getCost);
 
   stats.finalizeRangeGoal(
-      static_cast<int>(results.size()),
-      uniqueCount,
+      landingCount,
+      static_cast<int>(landingsByPos.size()),
       static_cast<int>(pq.size()),
       rangeSize,
       params.maxResults,

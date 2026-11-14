@@ -1,16 +1,19 @@
--- lua/vimficiency/config.lua
 -- Central config surface. Add or change accepted top-level config keys here.
+
+local validate = require("vimficiency.config.validate")
+
+--- Marks a key that C++ owns; see the bottom of `fields` and `ffi_config.apply_globals`.
+local CPP = {}
 
 local fields = {
   -- Optimizer/search knobs
   RESULTS_CALCULATED = 20,
   RESULTS_SAVED = 5,
   SLICE_PADDING = 5,
-  SLICE_EXPAND_TO_PARAGRAPH = false,
   MAX_SEARCH_LINES = 500,
 
   -- User overrides for shared base optimizer parameters. Empty by
-  -- default — C++ owns the canonical defaults (`OptimizerParamsBase.h`).
+  -- default — C++ owns the canonical defaults (`OptimizerParamFields.h`).
   -- Anything the user sets here flows to every canonical optimizer call
   -- (marks/watches/recall/auto/explore-defaults) as `shared:` overrides.
   -- Explore-session sidecar overrides (set live via the explore panel)
@@ -18,13 +21,19 @@ local fields = {
   --
   -- Recognized keys: maxResults, maxNodesPopped, exploreFactor,
   -- effortWeight, distanceWeight, minPrefixCount, maxPrefixCount. See
-  -- `OptimizerParamsBase.h` for semantics and defaults.
+  -- `OptimizerParamFields.h` for semantics and defaults.
   optimizer = {},
 
   -- Recall ring / session safety
   KEY_SESSION_CAPACITY = 200,
   MAX_RETENTION_SECONDS = 120,
   MANUAL_IDLE_TIMEOUT_SECONDS = 300,
+  -- A Lua-callback mapping that moves the cursor or changes text is lossy: Neovim
+  -- cannot report replayable keys for it. "drop" ends the session; "warn" and
+  -- "allow" record the typed keys (`lhs`) instead, "warn" with a once-per-session
+  -- notice. Replay is faithful only when the callback did what those keys do in
+  -- plain Vim.
+  lossy_mappings = "warn",
 
   -- Session features
   auto_suggest = {
@@ -65,18 +74,31 @@ local fields = {
     window_count = 2,                              -- total panes shown side-by-side; 1..4 (user pane consumes one slot if included)
   },
 
-  -- C++-owned config surface
-  default_keyboard = require("vimficiency.config_detail").cpp(),
-  weights = require("vimficiency.config_detail").cpp(),
-  keys = require("vimficiency.config_detail").cpp(),
-  slice_buffer_amount = require("vimficiency.config_detail").cpp(),
-  shiftwidth = require("vimficiency.config_detail").cpp(),
-  use_count_penalty_overrides = require("vimficiency.config_detail").cpp(),
-  count_penalty_overrides = require("vimficiency.config_detail").cpp(),
+  -- C++ process globals (`VFConfig` in src/LuaExports/Api.def): the keyboard cost
+  -- model and Vim options, pushed once by `ffi_config.apply_globals`. Everything
+  -- above is Lua-owned and read from this table at call time.
+  default_keyboard = CPP,
+  weights = CPP,
+  keys = CPP,
+  slice_buffer_amount = CPP,
+  shiftwidth = CPP,
+  use_count_penalty_overrides = CPP,
+  count_penalty_overrides = CPP,
 }
 
 function fields.is_lua_key(name)
   return fields._defaults[name] ~= nil
+end
+
+--- Snapshot the Lua-owned defaults: plain data fields, excluding `CPP` markers.
+local function capture_defaults()
+  local out = {}
+  for name, value in pairs(fields) do
+    if type(value) ~= "function" and name:sub(1, 1) ~= "_" and value ~= CPP then
+      out[name] = type(value) == "table" and vim.deepcopy(value) or value
+    end
+  end
+  return out
 end
 
 function fields.reset()
@@ -85,15 +107,17 @@ function fields.reset()
   end
 end
 
+--- Install the Lua-owned settings: defaults deep-merged with `user_config`, then
+--- assigned onto this module so readers see live values. Returns the keys taken.
+---@param user_config table
+---@return table<string, true> consumed
 function fields.apply(user_config)
-  local detail = require("vimficiency.config_detail")
-
-  user_config = user_config or {}
   fields.reset()
 
   local merged = vim.tbl_deep_extend("force", vim.deepcopy(fields._defaults), user_config)
-  merged.watch = detail.normalize_watch(user_config.watch)
-  merged.auto_suggest = detail.normalize_auto_suggest(user_config.auto_suggest, fields._defaults.auto_suggest)
+  merged.watch = validate.normalize_watch(user_config.watch)
+  merged.auto_suggest = validate.normalize_auto_suggest(user_config.auto_suggest, fields._defaults.auto_suggest)
+  merged.lossy_mappings = validate.normalize_lossy_mappings(merged.lossy_mappings)
 
   for name, value in pairs(merged) do
     if fields._defaults[name] ~= nil then
@@ -110,7 +134,7 @@ function fields.apply(user_config)
   return consumed
 end
 
-fields._defaults = require("vimficiency.config_detail").capture_defaults(fields)
+fields._defaults = capture_defaults()
 fields._for_test = fields._for_test or {}
 fields._for_test.fields = fields
 

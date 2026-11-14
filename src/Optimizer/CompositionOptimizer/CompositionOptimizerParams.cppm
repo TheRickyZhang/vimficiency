@@ -10,10 +10,10 @@ export {
 
 struct CompositionOptimizerParams : OptimizerParamsBase {
   COMPOSITION_FIELDS(VF_PARAMS_DECLARE_OWN_FIELD)
+  enum class Field { COMPOSITION_ALL_FIELDS(VF_PARAMS_FIELD_ENUM) COUNT };
 
 #define VF_PARAMS_SELF CompositionOptimizerParams
-  OPTIMIZER_BASE_FIELDS(VF_PARAMS_WITH_SETTER)
-  COMPOSITION_FIELDS(VF_PARAMS_WITH_SETTER)
+  COMPOSITION_ALL_FIELDS(VF_PARAMS_WITH_SETTER)
 #undef VF_PARAMS_SELF
 
   inline static CompositionOptimizerParams dijkstra(int maxResults = 20, int maxNodesPopped = 50000) {

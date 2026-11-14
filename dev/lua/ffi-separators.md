@@ -1,177 +1,55 @@
-# FFI payload framing: separators and length-prefixing
+# FFI payload framing
 
-Every FFI call that passes structured data between C++ and Lua has to
-pick a wire format. This doc is the single source of truth for the
-framing conventions the project uses, and explains which one to reach
-for when you add a new payload.
+Code of record: `src/LuaExports/Common.cppm` (constants), `src/LuaExports/Payload.cppm`
+(`payload::` encoders/decoders), `lua/vimficiency/ffi/core.lua` (Lua
+mirrors, `encode_string_list`).
 
-Code of record:
-- C++ constants and decoders: `src/LuaExports/Shared.h` and
-  `src/LuaExports/UtilityExports.cpp`.
-- Lua mirrors: `lua/vimficiency/ffi.lua` (top of file).
+**Rule.** A field that can contain arbitrary bytes is length-prefixed. A field
+that is guaranteed printable uses the shared control-character separators.
+Never invent a per-site delimiter: captured sequences contain spaces, tabs,
+newlines, `<Esc>`, and raw control bytes, and every "safe-looking" delimiter has
+bitten us.
 
-## Why this matters
+## Length-prefixed strings
 
-Captured sequence bytes can contain anything: literal spaces from
-insert-mode text, tabs, newlines, `<Esc>` (0x1b), or control bytes from
-remapped `<C-x>` keys. Any ad-hoc delimiter that looks "safe" at a
-glance — space, pipe, comma — has already bitten us. The rule below
-exists because we have been here more than once.
+`N:<N bytes>N:<N bytes>...` to EOF. For buffer lines and any user-provided text.
+Lua `core.encode_string_list`; C++ `payload::decodeLengthPrefixedStrings`.
 
-**Rule.** When a field *could* contain arbitrary bytes, use
-length-prefixing. When fields *are guaranteed* to be printable with no
-ASCII control bytes, use the shared control-character separators. Never
-invent a per-site delimiter.
+## Control-character separators
 
-## Convention 1: Length-prefixed strings
+`\x1e` (record) and `\x1f` (field): `EVENT_RECORD_SEP` / `EVENT_FIELD_SEP` in
+both `Common.cppm` and `ffi/core.lua`. Only for content that cannot contain
+those bytes: `keytrans` output, mode strings, numbers. The encoder asserts the
+invariant (`ffi/session.lua` `build_sequence`) because a violation desyncs the
+C++ decoder silently.
 
-Format: `N:<N bytes><next length>:<...>...` concatenated until EOF.
+## Analyze results
 
-Best when: the field content is user-provided or otherwise unbounded
-(buffer line arrays, raw captured event payloads, anything that could
-carry UTF-8 or control bytes).
+`AnalyzeExports.cpp` emits newline-terminated records so the optional
+`----------------DEBUG----------------` trailer can be found by substring:
 
-- Lua encoder: `encode_string_list` in `lua/vimficiency/ffi.lua`.
-- C++ decoder: `payload::decodeLengthPrefixedStrings` in
-  `src/LuaExports/UtilityExports.cpp`, with the typed wrapper
-  `decodeLineArray`.
-
-Pros: collision-free by construction. The length tells the decoder
-exactly how many bytes to consume, so no content byte is ever
-interpreted as a delimiter.
-
-Cons: two passes to emit (length then body); slightly more verbose on
-the wire.
-
-## Convention 2: Control-character separators
-
-Format: records separated by `\x1e` (ASCII Record Separator); fields
-within a record separated by `\x1f` (ASCII Unit Separator).
-
-- Shared constants:
-  - C++: `vimficiency::lua_exports::kEventFieldSep` (0x1f),
-    `kEventRecordSep` (0x1e), in `src/LuaExports/Shared.h`.
-  - Lua: `EVENT_FIELD_SEP`, `EVENT_RECORD_SEP`, at the top of
-    `lua/vimficiency/ffi.lua`.
-- Example encoder: `M.build_sequence` in `ffi.lua` joins
-  `{mode, 0x1f, keytrans(key), 0x1e}` per event.
-- Example decoder: `payload::decodeKeyTrackingEvents` in
-  `UtilityExports.cpp`.
-- Helper: `export_helpers::packInts(a, b)` in `Shared.h` for the
-  trivial two-field case.
-
-Best when: every field is guaranteed to be "printable in a narrow
-sense" — keytrans-formatted text (`<C-_>` rather than raw 0x1f),
-mode strings (`"n"`, `"i"`, `"no"`, `"v"`), numeric strings, or
-optimizer-synthesized sequences whose byte vocabulary is bounded.
-
-Pros: cheap to emit, single linear scan to decode.
-
-Cons: **it only works if the content can't contain 0x1e or 0x1f**.
-This invariant is load-bearing. When it can be ensured statically
-(e.g., output of `keytrans` is always printable), enforce it with an
-explicit assert at the encoder boundary, as `M.build_sequence` does:
-
-```lua
-assert(not ev.key_typed:find("[\x1e\x1f]"),
-  "build_sequence: key_typed contains a record/field separator; " ..
-  "callers must pass keytrans'd strings")
+```
+size: <N> user_cost: <X>
+<seq bytes>\x1f<cost>        × N
+diffs: <M>
+<8 \x1f-separated ints>      × M
 ```
 
-The assert is not overflow paranoia — it is a contract statement that
-protects the framing. An invariant violation would silently desync the
-decoder on the C++ side, so surfacing it at the encoder is correct.
+Both sections are count-framed, so a body line is never mistaken for a header.
+The seq/cost separator was once a literal space, which corrupted any sequence
+with insert-mode text; that is the canonical failure this rule exists for.
 
-## Convention 3: Newline-separated text output
+## Numbers
 
-Format: one record per line, `\n`-terminated.
+No numeric field crosses as text today; int64 args are direct cdef parameters.
+If one ever does, `tostring(n)` emits scientific notation above ~1e14 (hrtime
+scale) and `from_chars<int64_t>` rejects it. Use `string.format("%.0f", n)`.
 
-Used only for the analyze-results payload:
-`src/LuaExports/AnalyzeExports.cpp` and its Lua consumer in
-`ffi/optimizer.lua` (`parse_analyze_results`).
+## Adding a payload
 
-Per-line structure:
-```
-size: <N> user_cost: <X.XXX>\n                            (header)
-<raw_seq_bytes>\x1f<cost>\n                               (N result lines)
-diffs: <M>\n                                              (section header)
-<8 x \x1f-separated ints>\n                               (M region lines)
-[ ----------------DEBUG----------------  ... ]            (optional trailer)
-```
-
-Both sections are count-framed: the parser reads exactly `N` result
-lines and `M` region lines, so a body line can never be mistaken for a
-section header, and the DEBUG trailer is only looked for between
-sections. Region lines are `payload::encodeDiffRegions`
-(`LuaExports/Common.cppm`) — the planner's own regions, so views highlight
-the partition the search actually ran against. `vf_compute_diffs`
-emits the same region lines with no headers.
-
-The headers are label-prefix parsed (`user_cost:%s*(%S+)`), which is
-robust even against trailing whitespace. The body line uses
-`kEventFieldSep` (0x1f) between the raw sequence bytes and the numeric
-cost — **this used to be a literal space**, which silently corrupted
-any sequence containing insert-mode text with a space (`ihello world`).
-The space worked 95% of the time and broke in exactly the cases that
-matter, which is the canonical "never use a delimiter that can appear
-in your content" failure mode.
-
-Why newlines still separate records here (instead of `\x1e`): the
-payload needs a printable DEBUG trailer that is grepped for by a
-literal substring match (`----------------DEBUG----------------`), and
-keeping records newline-terminated makes that trailer naturally fit at
-the end of the stream. The body-line framing inside each record
-(`<seq>\x1f<cost>`) still follows Convention 2.
-
-## Checklist when adding a new FFI payload
-
-1. **Can a field contain arbitrary bytes?** If yes, use Convention 1
-   (length-prefixed). Do not try to invent an "unlikely" delimiter.
-2. **If all fields are guaranteed printable-narrow**, use Convention 2
-   (`kEventFieldSep` / `kEventRecordSep`). **Assert the invariant at
-   the encoder.** Do not rely on convention alone.
-3. **Reuse the shared constants.** Never hardcode `'\x1f'` or `'\x1e'`
-   at a call site — import the constant so a future format tweak is a
-   one-line change.
-4. **Mirror the Lua and C++ decoders as a pair in the same change.**
-   A bug here is invisible until an edge case hits production; keep
-   the two sides trivially cross-referenceable.
-5. **Add a direct unit test for the parser** with synthetic input
-   containing the worst-case characters you think couldn't appear,
-   plus the ones that actually can (whitespace, control bytes, UTF-8
-   multibyte). See `tests/lua/ffi_analyze.lua` for the pattern.
-
-## Numeric field encoding across the FFI
-
-No numeric field currently crosses the FFI as text — the int64 values that
-cross (e.g. `last_key_time_ns`/`now_ns` in `vimficiency_manual_evict_reason`)
-are direct cdef `int64_t` args, which LuaJIT coerces from a Lua number
-correctly. If you ever serialize an int64 *into a text payload*, do not use
-`tostring(n)`: for hrtime-scale values (~1e14) it emits scientific notation
-(`"1.07e+14"`), which C++'s `from_chars<int64_t>` rejects — the decode fails
-silently and the query "returns nothing". Format with `string.format("%.0f", n)`
-instead, and note that Lua doubles can't losslessly hold int64 above 2^53
-(~104 days of ns uptime), so an identity-preserving payload would need
-`ffi.new("int64_t", n)` + a binary wire format.
-
-## Anti-patterns and why they keep appearing
-
-- **Space-as-delimiter "because cost can't contain whitespace".** True
-  for the cost, false for the sequence. This exact bug lived in
-  `AnalyzeExports.cpp` until the 0x1f switchover. The temptation
-  reappears every time someone reads the parse regex in isolation
-  without tracing where the sequence bytes come from.
-- **"Split on the last space".** A local fix that relies on an
-  invariant about one specific field. Safer than "split on first
-  space", still fragile: any future addition of a second post-seq
-  field breaks it silently. We rejected this in favor of 0x1f.
-- **Per-site ad-hoc delimiters (`|`, `~`, `::`).** Each new delimiter
-  is a new invariant to remember and a new decoder-desync vector.
-  Reuse the shared constants.
-- **Silent content escaping** (`\\n` → `\n`, etc.). Works, but adds an
-  escape-sequence grammar no one documents. Length-prefixing is
-  strictly simpler.
-- **`tostring(n)` on large Lua numbers before FFI encode.** See the
-  numeric-field section above. `tostring` produces scientific notation
-  at ~1e14 and above; `from_chars<int64_t>` rejects it; the payload
-  silently fails to decode. Use `string.format("%.0f", n)`.
+1. Arbitrary bytes possible → length-prefix. Otherwise → shared separators plus
+   an encoder assert.
+2. Import the constants; never hardcode `\x1e`/`\x1f`.
+3. Change the Lua and C++ sides in the same commit.
+4. Unit-test the parser with whitespace, control bytes, and multibyte UTF-8
+   (`tests/lua/ffi_analyze.lua` is the pattern).

@@ -21,6 +21,7 @@
 --     older ones fall back to the row-selection extmark for state.
 --   - The buffer is non-modifiable, so there's no edit path either.
 local highlights = require("vimficiency.highlights")
+local util = require("vimficiency.util")
 
 local M = {}
 local v = vim.api
@@ -293,7 +294,7 @@ local function hide_cursor_while_active(win, buf)
     if closed then return end
     closed = true
     deactivate()
-    pcall(v.nvim_del_augroup_by_id, group)
+    v.nvim_del_augroup_by_id(group)
   end
 
   v.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
@@ -342,7 +343,7 @@ local function render_selection(state)
   if not row then return end
 
   local line_idx = state.layout.line_for_row[state.selection] - 1
-  local line_text = state.layout.lines[line_idx + 1] or ""
+  local line_text = state.layout.lines[line_idx + 1]
   v.nvim_buf_set_extmark(state.buf, selection_ns, line_idx, 0, {
     end_row = line_idx,
     end_col = #line_text,
@@ -451,9 +452,7 @@ end
 ---@param state VF.SettingsWidget
 local function pin_cursor_to_selection(state)
   if not state.selection then return end
-  if not v.nvim_win_is_valid(state.win) then return end
-  local sel_line = state.layout.line_for_row[state.selection]
-  if sel_line then pcall(v.nvim_win_set_cursor, state.win, { sel_line, 0 }) end
+  v.nvim_win_set_cursor(state.win, { state.layout.line_for_row[state.selection], 0 })
 end
 
 ---@param state VF.SettingsWidget
@@ -572,7 +571,7 @@ function M.attach(buf, win, opts)
   end
 
   local function map(lhs, fn)
-    vim.keymap.set("n", lhs, fn, { buffer = state.buf, nowait = true, silent = true })
+    vim.keymap.set("n", lhs, util.entry(fn), { buffer = state.buf, nowait = true, silent = true })
   end
   -- Vertical navigation: j / k / arrows are aliases.
   map("j",       function() move(1) end)

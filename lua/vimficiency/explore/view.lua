@@ -18,7 +18,7 @@ local v = vim.api
 ---View-settings fields are mirrored from the settings store.
 ---@class VF.Explore.Active : VF.Explore.ViewSettings
 ---@field label string
----@field result VF.Explore.OpenResult
+---@field result VF.Session.Result
 ---@field view_id integer|nil
 ---@field scratch VF.Explore.Scratch
 ---@field list_buf integer
@@ -37,7 +37,7 @@ local v = vim.api
 ---@field last_recommend_ms number|nil
 
 ---@param label string
----@param result VF.Explore.OpenResult
+---@param result VF.Session.Result
 ---@param view_id integer|nil
 ---@param layout VF.Explore.Layout
 ---@param header_handlers table<string, function>
@@ -75,15 +75,25 @@ function M.create(label, result, view_id, layout, header_handlers)
     recommendation_count = view_settings.recommendation_count,
     show_user_typed = view_settings.show_user_typed,
     show_result_count = view_settings.show_result_count,
+    compute_deadline_ms = view_settings.compute_deadline_ms,
   }
   return view
 end
 
+---@class VF.Explore.Status : VF.Explore.State
+---@field scratch_cursor { row: integer, col: integer }
+---@field pending VF.Explore.Pending|nil
+---@field warning { title: string, lines: string[] }|nil
+---@field session_lines string[]
+---@field scratch_lines string[]
+---@field recommendations VF.Explore.Recommendation[]
+
 ---@param view VF.Explore.Active
----@return table
+---@return VF.Explore.Status
 function M.status(view)
   local live_cursor = v.nvim_win_get_cursor(view.scratch.win)
   local out = vim.deepcopy(view.state)
+  ---@cast out VF.Explore.Status
   out.scratch_cursor = { row = live_cursor[1] - 1, col = live_cursor[2] }
   out.pending = vim.deepcopy(view.pending)
   out.warning = vim.deepcopy(view.warning)

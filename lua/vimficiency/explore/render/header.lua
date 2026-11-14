@@ -10,7 +10,6 @@ local sequence_display = require("vimficiency.sequence_display")
 local M = {}
 
 local header_ns = v.nvim_create_namespace("vimfy_explore_header")
-M.header_ns = header_ns
 
 local MIN_COLUMN_WIDTH = 12
 local MAX_COLUMN_WIDTH = 32
@@ -65,7 +64,7 @@ local function gather_columns(active)
   local live_seq = ""
   local live_typed = ""
   if active.state.phase.kind == "Insert" then
-    live_seq = active.on_key_buffer or ""
+    live_seq = active.on_key_buffer
     if live_seq == "" then
       live_typed = insert_helpers.current_typed(active)
     end
@@ -257,7 +256,6 @@ end
 ---@param active VF.Explore.Active
 ---@return integer
 local function topline_row(active)
-  if not v.nvim_win_is_valid(active.scratch.win) then return 0 end
   local row = math.max(0, vim.fn.line("w0", active.scratch.win) - 1)
   local line_count = math.max(1, v.nvim_buf_line_count(active.scratch.buf))
   if row >= line_count then row = line_count - 1 end
@@ -284,11 +282,6 @@ end
 ---@param active VF.Explore.Active
 ---@param continuation VF.Explore.InsertContinuation
 function M.render(active, continuation)
-  if not (v.nvim_buf_is_valid(active.scratch.buf)
-      and v.nvim_win_is_valid(active.scratch.win)) then
-    return
-  end
-
   local columns = gather_columns(active)
   local column_rows = {}
   for i, column in ipairs(columns) do
@@ -320,20 +313,6 @@ end
 ---@param active VF.Explore.Active
 function M.reattach(active)
   M.render(active, insert_helpers.current_continuation(active))
-end
-
----For tests: returns the per-column chunk-rows that `render` would draw
----this turn, without touching extmarks.
----@param active VF.Explore.Active
----@param continuation VF.Explore.InsertContinuation
----@return { title: string, rows: table[][] }[]
-function M.column_rows_for_test(active, continuation)
-  local _ = continuation
-  local out = {}
-  for _, column in ipairs(gather_columns(active)) do
-    out[#out + 1] = { title = column.title, rows = build_column_rows(column) }
-  end
-  return out
 end
 
 return M

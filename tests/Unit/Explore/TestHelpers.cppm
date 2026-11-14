@@ -29,7 +29,7 @@ protected:
 
   Explore::View makeView(Lines initial, CursorPos initialPos, Lines goal,
                          CursorPos goalPos) {
-    NavBoundary boundary = VF::LuaExports::helpers::sliceBoundary(
+    NavBoundary boundary = VF::LuaExports::sliceBoundary(
         initial, 0, initial.back().size(),
         /*hasLinesAbove=*/false,
         /*hasLinesBelow=*/false);

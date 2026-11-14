@@ -12,7 +12,6 @@
 import std.compat;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
-import vf.tests.Utils.InterpreterModelReplay;
 import vf.tests.Utils.NeovimOracle;
 import vf.tests.Utils.OracleReplay;
 
@@ -64,11 +63,7 @@ class VerifyWordOperator {
     CursorPos cursor = lines.cursorFromFlatIndexClamped(spec.cursorIndex);
     string seq = wordOpCommand(spec.commandKind);
 
-    InterpreterReplayResult result = applyUserSequence(lines, cursor, seq);
-    OracleReplay::expectMatchesOracle(
-        oracle_, lines, cursor, seq,
-        result.lines, result.cursor, result.mode,
-        "word operator primitive");
+    OracleReplay::expectModelMatchesOracle(oracle_, lines, cursor, seq, "word operator primitive");
   }
 
  private:

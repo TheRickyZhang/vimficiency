@@ -1,41 +1,44 @@
-local atoms = require("vimficiency.capture.atoms")
+local atom_stream = require("vimficiency.capture.atom_stream")
 local session_store = require("vimficiency.session.store")
 
 local M = {}
 
-local SUBSCRIBER = "recall_capture"
+local LISTENER_NAME = "recall_capture"
 
---- Install the global recall-capture subscriber. Idempotent: a redundant
---- call (e.g. a second `setup()` invocation) returns false and emits a
---- warning so the double-setup bug surfaces instead of silently leaving
---- recall disabled.
----@return boolean installed  true if the subscriber was newly attached
-function M.install()
-  if not atoms.available() then
-    return false
-  end
+---@param atom VF.Atom
+---@return boolean
+local function in_live_file_buffer(atom)
+  return vim.api.nvim_buf_is_valid(atom.buf)
+    and vim.bo[atom.buf].buftype == ""
+    and vim.api.nvim_win_is_valid(atom.win)
+    and vim.api.nvim_win_get_buf(atom.win) == atom.buf
+end
 
-  local ok = atoms.subscribe(SUBSCRIBER, function(atom, verdict)
-    if verdict == "mouse" then
-      session_store.mark_recall_mouse(atom.buf)
-      return
-    end
-    if verdict ~= "record" then return end
-    if not vim.api.nvim_buf_is_valid(atom.buf) then return end
-    if vim.bo[atom.buf].buftype ~= "" then return end
-    if not vim.api.nvim_win_is_valid(atom.win) then return end
+---@param atom VF.Atom
+---@param decision VF.Atom.Decision
+local function recall_listener(atom, decision)
+  if not in_live_file_buffer(atom) then return end
+  if decision == "record" then
     session_store.ingest_recall_atom(atom)
-  end)
+  elseif decision == "abort" then
+    session_store.abort_recall(atom.buf, atom.win)
+  end
+end
 
+---@return boolean started  true if the listener was newly attached
+function M.start_continuous_capture()
+  local ok = atom_stream.add_listener(LISTENER_NAME, recall_listener)
   if not ok then
     vim.notify(
-      "vimfy: recall capture already installed (subscriber name " ..
+      "vimfy: recall capture already installed (listener name " ..
       "'recall_capture' in use). If you called setup() twice, this is " ..
       "harmless — recall is still active from the first call. Otherwise " ..
-      "another plugin is colliding on the subscriber name.",
+      "another plugin is colliding on the listener name.",
       vim.log.levels.WARN)
   end
   return ok
 end
+
+M._for_test = { listener = recall_listener }
 
 return M

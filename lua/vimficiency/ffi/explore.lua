@@ -28,7 +28,7 @@ local function build_phase(kind, edit_index_str)
   if kind == "Navigate" or kind == "Transform" or kind == "Insert" then
     return { kind = kind, edit_index = edit_index }
   end
-  error("unknown phase kind from FFI: " .. tostring(kind))
+  error("unknown phase kind from FFI: " .. tostring(kind), 0)
 end
 
 ---@param payload string
@@ -64,7 +64,7 @@ local function parse_explore_apply_result(payload)
   elseif status == "Rejected" then
     return { status = "Rejected", reason = parts[2] }
   end
-  error("unknown apply-result status from FFI: " .. tostring(status))
+  error("unknown apply-result status from FFI: " .. tostring(status), 0)
 end
 
 ---@param payload string
@@ -97,40 +97,21 @@ end
 
 --- Kicks off the composition search on a C++ worker thread and returns a job id
 --- immediately. Poll with `explore_poll` until it returns a view id.
-function M.explore_start_async(initial_lines, start_row, start_col,
-                               goal_lines, end_row, end_col,
-                               boundary_first_col, boundary_last_col,
-                               has_lines_above, has_lines_below,
-                               window_height, scroll_amount,
-                               user_seq, optimizer_overrides, deadline_ms)
-  local initial_payload = core.encode_line_array(initial_lines, "initial_lines")
-  local goal_payload = core.encode_line_array(goal_lines, "goal_lines")
-  local user_payload = user_seq or ""
-  local override_payload = optimizer_overrides or ""
-  local payload = require_non_error(core.slice_to_string(lib.vf_explore_start_async(
-    initial_payload,
-    #initial_payload,
-    start_row, start_col,
-    goal_payload,
-    #goal_payload,
-    end_row, end_col,
-    boundary_first_col, boundary_last_col,
-    has_lines_above, has_lines_below,
-    window_height, scroll_amount,
-    user_payload,
-    #user_payload,
-    override_payload,
-    #override_payload,
-    deadline_ms or 0
-  )))
-  return tonumber(payload) or error("explore_start_async returned non-numeric job_id: " .. payload)
+---@param req VF.SearchRequest
+---@param deadline_ms integer
+---@return integer job_id
+function M.explore_start_async(req, deadline_ms)
+  local payload = require_non_error(core.with_search_request(req, function(request)
+    return core.slice_to_string(lib.vf_explore_start_async(request, deadline_ms))
+  end))
+  return tonumber(payload) or error("explore_start_async returned non-numeric job_id: " .. payload, 0)
 end
 
 --- Returns the view_id once the worker finishes, or nil while still computing.
 function M.explore_poll(job_id)
   local payload = require_non_error(core.slice_to_string(lib.vf_explore_poll(job_id)))
   if payload == "pending" then return nil end
-  return tonumber(payload) or error("explore_poll returned non-numeric view_id: " .. payload)
+  return tonumber(payload) or error("explore_poll returned non-numeric view_id: " .. payload, 0)
 end
 
 function M.explore_cancel(job_id)
@@ -147,8 +128,8 @@ function M.explore_state(view_id)
 end
 
 function M.explore_recommendations(view_id, max_count, optimizer_overrides, sort_mode)
-  local override_payload = optimizer_overrides or ""
-  local sort_payload = sort_mode or "effort"
+  local override_payload = optimizer_overrides
+  local sort_payload = sort_mode
   local payload = require_non_error(core.slice_to_string(
     lib.vf_explore_recommendations(
       view_id, max_count,
@@ -158,7 +139,7 @@ function M.explore_recommendations(view_id, max_count, optimizer_overrides, sort
 end
 
 function M.explore_reconfigure_plan(view_id, optimizer_overrides)
-  local override_payload = optimizer_overrides or ""
+  local override_payload = optimizer_overrides
   local payload = require_non_error(core.slice_to_string(
     lib.vf_explore_reconfigure_plan(view_id, override_payload, #override_payload)))
   return { reset = payload == "1" }
@@ -171,7 +152,7 @@ end
 
 function M.explore_accept_snapshot(view_id, lines, new_row, new_col, raw_keys, insert_mode)
   local lines_payload = core.encode_line_array(lines, "lines")
-  local key_payload = raw_keys or ""
+  local key_payload = raw_keys
   local payload = require_non_error(core.slice_to_string(lib.vf_explore_accept_snapshot(
     view_id, lines_payload, #lines_payload, new_row, new_col,
     key_payload, #key_payload, insert_mode)))

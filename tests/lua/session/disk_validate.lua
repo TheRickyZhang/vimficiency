@@ -1,63 +1,49 @@
--- disk.validate must reject saved results missing cursor fields, including the
--- end_row/end_col that the display path (ffi/display.lua) asserts on.
+-- disk.validate is the schema for the disk ingress: every field VF.Session.Result
+-- declares non-nil is required here, so nothing downstream re-checks shape.
 
 local disk = require("vimficiency.session.disk")
+local h = require("_helpers")
 
-local function base()
-  return {
-    lines = { "x" },
-    start_row = 0,
-    start_col = 0,
-    end_row = 0,
-    end_col = 0,
-    optimal_results = {},
-  }
-end
+local REQUIRED = {
+  "lines", "goal_lines", "start_row", "start_col", "end_row", "end_col",
+  "has_lines_above", "has_lines_below", "window_height", "scroll_amount",
+  "user_seq", "user_cost", "optimal_results", "key_count", "finished_wall_epoch",
+}
 
 test("disk.validate accepts a complete result", function()
-  assert_eq(disk.validate(base()), nil, "complete data must validate")
+  assert_eq(disk.validate(h.fake_result()), nil)
 end)
 
-test("disk.validate rejects missing end_row", function()
-  local data = base()
-  data.end_row = nil
-  assert_true(disk.validate(data) ~= nil, "missing end_row must be rejected")
+test("disk.validate rejects each missing required field", function()
+  for _, key in ipairs(REQUIRED) do
+    local data = h.fake_result()
+    data[key] = nil
+    assert_match(disk.validate(data) or "", key, key .. " must be required")
+  end
 end)
 
-test("disk.validate rejects missing end_col", function()
-  local data = base()
-  data.end_col = nil
-  assert_true(disk.validate(data) ~= nil, "missing end_col must be rejected")
+test("disk.validate rejects wrong-typed fields", function()
+  for _, bad in ipairs({ { "end_row", "nope" }, { "prefix", 5 }, { "diffs", "nope" }, { "user_seq", 1 } }) do
+    local data = h.fake_result()
+    data[bad[1]] = bad[2]
+    assert_match(disk.validate(data) or "", bad[1], bad[1] .. " = " .. tostring(bad[2]) .. " must be rejected")
+  end
 end)
 
-test("disk.validate rejects non-numeric end_row", function()
-  local data = base()
-  data.end_row = "nope"
-  assert_true(disk.validate(data) ~= nil, "non-numeric end_row must be rejected")
+test("disk.validate tolerates absent prefix/suffix/diffs (pre-diff saves)", function()
+  local data = h.fake_result()
+  data.prefix, data.suffix, data.diffs = nil, nil, nil
+  assert_eq(disk.validate(data), nil)
 end)
 
-test("disk.validate accepts diffs/prefix/suffix when present", function()
-  local data = base()
-  data.prefix = ""
-  data.suffix = ""
-  data.diffs = {
-    { init = { begin_row = 0, begin_col = 0, end_row = 0, end_col = 1 },
-      goal = { begin_row = 0, begin_col = 0, end_row = 0, end_col = 2 } },
-  }
-  assert_eq(disk.validate(data), nil, "well-formed new fields must validate")
-end)
-
-test("disk.validate tolerates absent diffs/prefix/suffix (pre-diff saves)", function()
-  local data = base()  -- none of the new fields set
-  assert_eq(disk.validate(data), nil, "older saves without the new fields must still load")
-end)
-
-test("disk.validate rejects wrong-typed new fields", function()
-  local data = base()
-  data.prefix = 5
-  assert_true(disk.validate(data) ~= nil, "non-string prefix must be rejected")
-
-  data = base()
-  data.diffs = "nope"
-  assert_true(disk.validate(data) ~= nil, "non-table diffs must be rejected")
+test("disk.validate rejects empty lines and malformed optimal_results", function()
+  for _, bad in ipairs({
+    { "lines", {} },
+    { "optimal_results", { { seq = 1, cost = 1 } } },
+    { "optimal_results", { { seq = "x" } } },
+  }) do
+    local data = h.fake_result()
+    data[bad[1]] = bad[2]
+    assert_true(disk.validate(data) ~= nil, bad[1] .. " must be rejected")
+  end
 end)

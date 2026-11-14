@@ -266,6 +266,15 @@ if (pos >= nextEdit.beginPos && pos < nextEdit.endPos) {
 }
 ```
 
+## CompositionOptimizer discarded Transform results at clamped columns
+
+Transform results are keyed by visible position and computed with `targetCol == col`. Composition used to drop every result when the cursor's curswant differed, enqueueing `0` to re-sync only at col 0. Natural plans like `jdd` or `jx` from a clamped column were lost, and a clamped state with `col > 0` had no transitions at all.
+
+**Fix:** each `Result` carries an `EntryCurswant` class set during Transform exploration, and `TransformResult::forEachEditFrom` applies it (see `transform-optimizer.md`). Two related bugs surfaced with it:
+
+- The goal clamp kept the pre-edit curswant; Neovim leaves curswant at the landing column after any edit.
+- The visual-delete shortcut (`vj…d`) reads curswant through its `j`, so it must be `Required`.
+
 ## CompositionOptimizer move-before-use in return statement
 
 In `CompositionOptimizer.cpp`, the `optimize()` return statement used braced-init-list construction:
@@ -313,7 +322,7 @@ Naively, `TransformStateKey` stored a full `Lines` copy. With `getKey()` called 
 - Computed when an editor snapshot is constructed
 - Refreshed by `TransformSimulator` after buffer mutations (`afterDeletion`, `afterLinewiseDeletion`, `afterJoin`, and counted variants)
 
-`TransformState` wraps the editor snapshot with A* path/ranking data and is created through `TransformStateFactory`, so sequence, effort, cost, and dot-repeat metadata stay synchronized with the editor snapshot.
+`TransformState` wraps the editor snapshot with A* path/ranking data and is created through `TransformStateSpace`, so sequence, effort, cost, and dot-repeat metadata stay synchronized with the editor snapshot.
 
 `TransformStateKey` stores `(linesHash, lineCount, line, col, mode, startIndex)` instead of the full `Lines` object. Both the hash function and equality operator use only these scalar fields — no buffer copying or content comparison.
 

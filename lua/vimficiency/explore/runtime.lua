@@ -9,6 +9,7 @@ local settings   = require("vimficiency.explore.settings")
 local state_mod  = require("vimficiency.explore.state")
 local timing     = require("vimficiency.explore.timing")
 local view_model = require("vimficiency.explore.view")
+local util       = require("vimficiency.util")
 
 local M = {}
 local v = vim.api
@@ -26,18 +27,18 @@ end
 local function install_pending_teardown(view, layout)
   return v.nvim_create_autocmd("WinClosed", {
     pattern = "*",
-    callback = function(args)
+    callback = util.entry(function(args)
       local win = tonumber(args.match)
       if win == layout.scratch_win or win == layout.list_win then
         lifecycle.destroy(view)
       end
-    end,
+    end),
     desc = "vimfy explore: tear down pending view if closed before ready",
   })
 end
 
 ---@param label string
----@param result VF.Explore.OpenResult
+---@param result VF.Session.Result
 ---@param header_handlers table<string, function>
 ---@return VF.Explore.Active
 function M.start(label, result, header_handlers)
@@ -63,7 +64,7 @@ function M.start(label, result, header_handlers)
       timing.note("composition search", (vim.uv.hrtime() - t0) / 1e6)
       view.view_id = view_id
       if view.winclosed_autocmd then
-        pcall(v.nvim_del_autocmd, view.winclosed_autocmd)
+        v.nvim_del_autocmd(view.winclosed_autocmd)
         view.winclosed_autocmd = nil
       end
       activation.attach(view, layout, handlers.capture_key, handlers.install)

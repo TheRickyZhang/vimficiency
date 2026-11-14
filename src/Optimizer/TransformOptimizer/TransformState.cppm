@@ -5,6 +5,7 @@ import vf.Utils.HashCombine;
 export import vf.Keyboard.Config;
 export import vf.Effort.RunningEffort;
 export import vf.Interpreter.EditInterpreter;
+export import vf.Optimizer.Result;
 export import vf.Optimizer.SequenceBinding;
 export import vf.Types.CharLineRange;
 export import vf.Types.LineCharRange;
@@ -23,8 +24,9 @@ export {
 // =============================================================================
 //
 // `targetCol` (Vim's curswant — the column the user wanted before vertical
-// motion) is *deliberately omitted* from this key. See CompositionStateKey
-// and SuffixKey for parallel omissions; the invariant below is shared.
+// motion) is *deliberately omitted* from this key. See SuffixKey for the
+// parallel omission; the invariant below is shared. A caller's curswant at
+// entry is handled separately, by EntryCurswant on each Result.
 //
 // The invariant. No two reachable states share the same
 // (linesHash, lineCount, line, col, mode, startIndex) tuple while differing
@@ -57,8 +59,7 @@ export {
 //      column on a hit.
 //
 //   3. CompositionOptimizer planned edits that walk vertically across
-//      width-varying lines. Today no planned-edit kind does this; if one
-//      is added, CompositionStateKey needs targetCol too.
+//      width-varying lines. Today no planned-edit kind does this.
 //
 //   4. Allowing the cursor to sit at a clamped column (col < targetCol)
 //      mid-search without an operator re-anchor. This is the general form
@@ -243,15 +244,16 @@ public:
 
 // Queue-ready search state. It wraps a TransformEditorState with sequence,
 // effort, cost, and dot-repeat metadata; callers advance it through
-// TransformStateFactory so those fields stay synchronized.
+// TransformStateSpace so those fields stay synchronized.
 class TransformState {
-  friend class TransformStateFactory;
+  friend class TransformStateSpace;
 
   TransformEditorState editor;
   int startIndex;                 // Which starting position this search is for
 
   std::string seq_{};             // Sequence of operations taken
   DotRepeat lastEdit_;            // Last edit for dot repeat (not in TransformStateKey)
+  EntryCurswant entryCurswant_ = EntryCurswant::Ignored;
   std::shared_ptr<const TransformPathStep> pathTail_;
   RunningEffort runningEffort{};  // Typing effort tracker (internal)
   double effort_ = 0.0;           // Cached effort value
@@ -285,6 +287,7 @@ public:
   inline const std::string& getSeq() const { return seq_; }
   inline const DotRepeat& getLastEdit() const { return lastEdit_; }
   inline bool hasLastEdit() const { return !lastEdit_.empty(); }
+  inline EntryCurswant getEntryCurswant() const { return entryCurswant_; }
   inline const RunningEffort& getRunningEffort() const { return runningEffort; }
   inline std::shared_ptr<const TransformPathStep> getPathTail() const { return pathTail_; }
 
@@ -296,7 +299,7 @@ public:
 
 // Couples an editor snapshot with command effort and heuristic cost to create
 // queue-ready TransformState values.
-class TransformStateFactory {
+class TransformStateSpace {
   const Config& config;
   double effortWeight;
 
@@ -308,6 +311,14 @@ class TransformStateFactory {
     state.pathTail_ = std::make_shared<TransformPathStep>(
         base.pathTail_, state.editor, state.lastEdit_,
         std::move(command), isDotRepeat, updatesDotRepeat);
+  }
+
+  // A command after a curswant-following delete acts on the column it produced.
+  inline static EntryCurswant extendEntryCurswant(const TransformState& base,
+                                                  EntryCurswant command) {
+    if (!base.pathTail_) return command;
+    return base.entryCurswant_ == EntryCurswant::Followed
+        ? EntryCurswant::Required : base.entryCurswant_;
   }
 
   inline void appendCommand(TransformState& state, std::string_view cmd,
@@ -329,7 +340,7 @@ class TransformStateFactory {
   }
 
 public:
-  inline TransformStateFactory(const Config& config, double effortWeight)
+  inline TransformStateSpace(const Config& config, double effortWeight)
       : config(config), effortWeight(effortWeight) {}
 
   [[nodiscard]] inline TransformState initial(
@@ -347,9 +358,11 @@ public:
       TransformEditorState editor,
       std::string_view cmd,
       const RunningEffort& precomputed,
-      double heuristicCost) const {
+      double heuristicCost,
+      EntryCurswant entryCurswant) const {
     TransformState state = base;
     state.editor = std::move(editor);
+    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant);
     appendCommand(state, cmd, precomputed, heuristicCost);
     recordPathStep(state, base, std::string(cmd), false);
     return state;
@@ -361,9 +374,11 @@ public:
       int count,
       std::string_view baseCmd,
       const RunningEffort& precomputed,
-      double heuristicCost) const {
+      double heuristicCost,
+      EntryCurswant entryCurswant) const {
     TransformState state = base;
     state.editor = std::move(editor);
+    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant);
     appendCountedCommand(state, count, baseCmd, precomputed, heuristicCost);
     state.lastEdit_ = DotRepeat{std::string(baseCmd), count};
     recordPathStep(state, base, countedCommandString(count, baseCmd), true);
@@ -376,9 +391,11 @@ public:
       std::string_view cmd,
       const RunningEffort& precomputed,
       double heuristicCost,
-      DotRepeat lastEdit) const {
+      DotRepeat lastEdit,
+      EntryCurswant entryCurswant) const {
     TransformState state = base;
     state.editor = std::move(editor);
+    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant);
     appendCommand(state, cmd, precomputed, heuristicCost);
     bool hasEdit = !lastEdit.empty();
     state.lastEdit_ = std::move(lastEdit);

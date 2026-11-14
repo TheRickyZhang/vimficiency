@@ -21,8 +21,7 @@ For a complete setup with configuration and keymaps, use
 You can pass config overrides to `setup{}` — see
 [9. Configuration](09-configuration.md).
 
-Bind keys with a `<Cmd>Vimfy ...<CR>` map or a `<Plug>Vimfy*` map; see
-the full writeup in [8. Keymaps](08-keymaps.md).
+Bind keys with a `<Cmd>Vimfy ...<CR>` map; see the full writeup in [8. Keymaps](08-keymaps.md).
 
 ## Verifying installation
 
