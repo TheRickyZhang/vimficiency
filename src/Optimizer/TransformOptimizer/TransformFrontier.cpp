@@ -1,7 +1,6 @@
 module vf.Optimizer.TransformOptimizer.TransformFrontier;
 
 import std.compat;
-import vf.Effort.EffortBank;
 import vf.Optimizer.CompositionOptimizer.CompositionStrategies;
 import vf.Optimizer.CompositionOptimizer.PlannedEditArtifacts;
 import vf.Optimizer.TransformOptimizer.ChangeGoalHandler;
@@ -120,6 +119,7 @@ void emitReplaceCharAction(
 void enumerateDepth1DeletionStructurals(
     const TransformFrontierQuery& query,
     const Config& config,
+    const EffortBank& bank,
     const TransformOptimizerParams& params,
     SuggestionEmitter& emitter) {
   const DiffState& diff = query.diff;
@@ -144,7 +144,6 @@ void enumerateDepth1DeletionStructurals(
   const int lineSize = static_cast<int>(effective[localCursor.line].size());
   if (localCursor.col < 0 || localCursor.col > lineSize) return;
 
-  EffortBank bank(config);
   TransformExplorer explorer(boundary, params, config, bank,
                               boundary.leftColOffset(),
                               boundary.rightColOffset());
@@ -268,11 +267,13 @@ void enumerateDepth1DeletionStructurals(
 
 vector<Suggestion> rankTransformFrontier(
     const TransformFrontierQuery& query,
-    const Config& config) {
+    const Config& config,
+    const EffortBank& bank) {
   if (query.maxCount <= 0) return {};
 
-  TransformOptimizerParams transformParams =
-      OptimizerParamOverrides::resolved<TransformOptimizerParams>(query.overrides);
+  const TransformOptimizerParams transformParams = query.overrides
+      ? query.overrides->resolved(TransformOptimizerParams{})
+      : TransformOptimizerParams{};
   BracketQuoteContext bqContext = computeTextObjectContextForDiff(query.diff, query.lines);
 
   vector<Suggestion> items;
@@ -295,7 +296,7 @@ vector<Suggestion> rankTransformFrontier(
   // full A* over multi-token sequences. Pure insertion is still handled by
   // the inline branches further down.
   const size_t itemsBeforeDeletionEnum = items.size();
-  enumerateDepth1DeletionStructurals(query, config, transformParams, emitter);
+  enumerateDepth1DeletionStructurals(query, config, bank, transformParams, emitter);
   const bool gotDeletionStructurals = items.size() > itemsBeforeDeletionEnum;
 
   // Post-edit cursor target for inline emission paths (pure insertion +

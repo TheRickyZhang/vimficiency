@@ -246,7 +246,7 @@ TEST_F(ConfigurationTest, CountPenaltyOverrideAffectsMotionRanking) {
       .withMaxResults(150)
       .withMaxNodesPopped(20000)
       .withMinCountRepeat(4)
-      .withMaxResultsPerEndPos(2);
+      .withMaxResultsPerEndPos(150);
 
   auto baseResults = opt.optimize(lines, start, end, params, "",
                                   boundary, navContext).getResults();

@@ -122,7 +122,7 @@ struct DispatchExploreCase {
       double distance = NavHeuristic::distanceToRange(goalRange, pos);
       return params.effortWeight * effort + params.distanceWeight * distance;
     };
-    return NavStateFactory(benchConfig, scoreState).initial(initialPos);
+    return NavStateSpace(benchConfig, scoreState).initial(initialPos);
   }
 
   Lines lines;
@@ -305,7 +305,7 @@ static void BM_MotionExploreDispatch(benchmark::State& state,
       double distance = NavHeuristic::distanceToRange(c.goalRange, pos);
       return c.params.effortWeight * effort + c.params.distanceWeight * distance;
     };
-    NavStateFactory states(benchConfig, scoreState);
+    NavStateSpace states(benchConfig, scoreState);
 
     size_t emitted = 0;
     if constexpr (!UseFixedBuffer) {

@@ -48,6 +48,6 @@ LandingNavResult optimizeCompositionRangeMotion(
     const NavContext& navContext,
     const CompositionOptimizerParams& params,
     int maxResults,
-    const SearchControl* control = nullptr);
+    const SearchControl& control = SearchControl::NEVER_STOP);
 
 }  // export

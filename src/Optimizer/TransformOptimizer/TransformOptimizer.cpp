@@ -15,7 +15,6 @@ import vf.Optimizer.TransformOptimizer.TransformExplorer;
 import vf.Optimizer.TransformOptimizer.TransformPostExplorerEmissions;
 import vf.Optimizer.TransformOptimizer.TransformTransitionDispatcher;
 import vf.Optimizer.FrontierCommon;
-import vf.Effort.EffortBank;
 import vf.Keyboard.KeyedSequence;
 
 using namespace std;
@@ -131,7 +130,6 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
   const auto& pre = transformBoundary.prefix();
   const auto& suf = transformBoundary.suffix();
 
-  EffortBank bank(config);
   TransformExplorer explorer(transformBoundary, params, config, bank, leftColOffset, rightColOffset);
 
   TransformPriorityQueue pq;
@@ -148,7 +146,7 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
 
   const double startPriority =
       distanceWeight * textDistanceEstimate(effectiveLines, leftColOffset, rightColOffset);
-  TransformStateFactory states(config, effortWeight);
+  TransformStateSpace states(config, effortWeight);
   int startIndex = 0;
   for (int line = 0; line <= initialLines.lastLine(); line++) {
     for (int col = 0; col < initialLines[line].effectiveSize(); col++) {
@@ -188,8 +186,14 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
     auto& bucket = resultsByStart[idx];
     if (static_cast<int>(bucket.size()) >= params.maxResultsPerStartPos) return;
 
+    // Without a captured goal the landing is the fixed goalPos, which cannot follow curswant.
+    EntryCurswant entryCurswant = state.getEntryCurswant();
+    if (!captureGoalPos && entryCurswant == EntryCurswant::Followed) {
+      entryCurswant = EntryCurswant::Required;
+    }
+
     bool firstForStart = bucket.empty();
-    bucket.push_back(result);
+    bucket.emplace_back(result.getSequence(), result.getCost(), entryCurswant);
     resultsFound++;
     if (captureGoalPos) goalCapture.onResult(idx, state.getPos());
     if (firstForStart) {
@@ -291,24 +295,28 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
       }
       if (pos.col > 0) {
         dispatch.moveByMotion(CursorPos(pos.line, pos.col - 1),
-                              SequenceBinding(KeyedSequence::h, bank[KSId::h]));
+                              SequenceBinding(KeyedSequence::h, bank[KSId::h]),
+                              EntryCurswant::Ignored);
       }
       if (pos.line > 0) {
         int newCol = VimCore::clampCol(lines, pos.targetCol, pos.line - 1);
         dispatch.moveByMotion(CursorPos(pos.line - 1, newCol, pos.targetCol),
-                              SequenceBinding(KeyedSequence::k, bank[KSId::k]));
+                              SequenceBinding(KeyedSequence::k, bank[KSId::k]),
+                              EntryCurswant::Required);
       }
       continue;
     }
     if (pos.line == 0 && pos.col < leftColOffset) {
       if (pos.col < lines[0].lastCol()) {
         dispatch.moveByMotion(CursorPos(0, pos.col + 1),
-                              SequenceBinding(KeyedSequence::l, bank[KSId::l]));
+                              SequenceBinding(KeyedSequence::l, bank[KSId::l]),
+                              EntryCurswant::Ignored);
       }
       if (lines.lastLine() > 0) {
         int newCol = VimCore::clampCol(lines, pos.targetCol, 1);
         dispatch.moveByMotion(CursorPos(1, newCol, pos.targetCol),
-                              SequenceBinding(KeyedSequence::j, bank[KSId::j]));
+                              SequenceBinding(KeyedSequence::j, bank[KSId::j]),
+                              EntryCurswant::Required);
       }
       continue;
     }

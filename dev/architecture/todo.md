@@ -231,6 +231,36 @@ are routinely worse for users who lean on custom mappings. Pointer:
 
 ---
 
+## 9. Replace the optimizer-params X-macros with C++26 reflection (key priority)
+
+**What.** `src/Optimizer/OptimizerParamFields.h` is the single source of truth
+for every optimizer param field, expanded five ways: struct members, `with*`
+setters, the per-struct `Field` enum, the override patch ops in
+`OptimizerParamOverrides.cpp`, and the defaults wire format in
+`vf_get_optimizer_defaults`. With P2996 static reflection all five collapse
+onto the plain struct definitions: iterate
+`nonstatic_data_members_of(^^Params)`, match `identifier_of(m)` against the
+override key, assign through `p.[:m:]`, and pick the parser/type tag from the
+member type. The `Field` enum and presence bitset become a bitset sized by the
+member count, and the `with*` setters can go too if designated init reaches
+base-class fields by then. This is the highest-value reflection site in the
+repo: it is pure boilerplate keyed on member names, and every new param today
+means touching a macro row plus trusting the lint to catch missed consumers.
+
+**Why deferred (2026-11-13).** Local GCC 16.2 compiles P2996 with
+`-std=c++26 -freflection`, but the project is C++23 and the flag has to apply
+to the whole module graph. The documented from-source floor (`dev/decisions.md`:
+GCC 16+ / Clang 19+libc++) and the Clang-only fuzzing tree
+(`dev/tests/fuzzing.md`) have no `<meta>`; Clang 23 locally ships none. A
+`#if __cpp_reflection` fallback would mean keeping both implementations.
+
+**Threshold.** Clang ships `<meta>` in a release and the macOS/Emscripten
+toolchains the CI matrix uses pick it up, so the project can move to
+`-std=c++26` everywhere. Then do this item first; it is the proof case for
+retiring X-macros elsewhere.
+
+---
+
 ## Noted alternative: item 1 vs. the current approach
 
 The defense layers chosen for the track-states fix (`BuildConfig.h` + `static_assert` + workflow `jq` check + differentiated dashboard message) are cheaper and more localized than `CMakePresets.json`. Item 1 becomes the better path only when configuration count or CI complexity makes per-flag discipline hard to maintain — otherwise the current three-layer defense subsumes what presets would give us.

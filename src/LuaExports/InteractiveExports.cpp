@@ -131,12 +131,12 @@ VF::LuaExports::Expected<string> startAsyncImpl(const VFSearchRequest* request, 
   auto inputsRes = logic::decodeSearchRequest(request);
   if (!inputsRes) return unexpected(inputsRes.error());
   CompositionOptimizerParams compositionParams =
-      OptimizerParamOverrides::resolved<CompositionOptimizerParams>(&inputsRes->overrides);
+      inputsRes->overrides.resolved(CompositionOptimizerParams{});
 
   auto job = std::make_unique<ExploreJob>(
       ExploreState{std::move(*inputsRes), std::move(compositionParams), g_config_internal, {}},
       deadline_ms,
-      [](ExploreState& s, const SearchControl* control) {
+      [](ExploreState& s, const SearchControl& control) {
         s.trace = View::computeTrace(
             s.inputs.initialLines, s.inputs.initialPos,
             s.inputs.goalLines, s.inputs.goalPos,
@@ -249,8 +249,7 @@ VFByteSlice vf_explore_reconfigure_plan(
     return storeBytes(storage, unexpected(overridesResult.error()));
   }
   const OptimizerParamOverrides overrides = std::move(*overridesResult);
-  CompositionOptimizerParams compositionParams =
-      OptimizerParamOverrides::resolved<CompositionOptimizerParams>(&overrides);
+  CompositionOptimizerParams compositionParams = overrides.resolved(CompositionOptimizerParams{});
   storage = v.reconfigurePlan(std::move(compositionParams)) ? "1" : "0";
   return byteSlice(storage);
 }

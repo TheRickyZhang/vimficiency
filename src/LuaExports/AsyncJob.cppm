@@ -26,14 +26,13 @@ class AsyncJob {
   // Starts the worker immediately. Construct in place (make_unique): the run
   // body captures `this`.
   template <typename Fn>
-  AsyncJob(State state, int deadlineMs, Fn run) : state_(std::move(state)) {
-    if (deadlineMs > 0) {
-      control_.hasDeadline = true;
-      control_.deadline = std::chrono::steady_clock::now() +
-                          std::chrono::milliseconds(deadlineMs);
-    }
+  AsyncJob(State state, int deadlineMs, Fn run)
+      : control_(deadlineMs > 0
+                     ? SearchControl::Clock::now() + std::chrono::milliseconds(deadlineMs)
+                     : SearchControl::Clock::time_point::max()),
+        state_(std::move(state)) {
     worker_ = std::thread([this, run = std::move(run)]() mutable {
-      run(state_, &control_);
+      run(state_, control_);
       done_.store(true, std::memory_order_release);
     });
   }
@@ -48,7 +47,7 @@ class AsyncJob {
   // True once `run` has returned; the release/acquire pair means an observer
   // of true also sees the fully written state.
   inline bool ready() const { return done_.load(std::memory_order_acquire); }
-  inline void cancel() { control_.cancelled.store(true, std::memory_order_relaxed); }
+  inline void cancel() { control_.cancel(); }
   // Only meaningful after `ready()`.
   inline State& state() { return state_; }
 

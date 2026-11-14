@@ -41,8 +41,9 @@ vector<Suggestion> rankCompositionFrontier(
   vector<Suggestion> items;
   RunningEffort acceptedEffort(globalSequenceToKeys().tokenize(query.seq), config);
   const double acceptedCost = acceptedEffort.getEffort();
-  CompositionOptimizerParams params =
-      OptimizerParamOverrides::resolved<CompositionOptimizerParams>(query.overrides);
+  const CompositionOptimizerParams params = query.overrides
+      ? query.overrides->resolved(CompositionOptimizerParams{})
+      : CompositionOptimizerParams{};
   SuggestionEmitter emitter{
       items, {}, acceptedEffort, acceptedCost,
       params.effortWeight, params.distanceWeight, config};

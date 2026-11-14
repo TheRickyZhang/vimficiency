@@ -4,7 +4,6 @@ module;
 module vf.Optimizer.NavOptimizer.NavFrontier;
 
 import std.compat;
-import vf.Effort.EffortBank;
 import vf.Effort.RunningEffort;
 import vf.Keyboard.KeyedSequence;
 import vf.Keyboard.ToKeys.MovementToKeys;
@@ -20,22 +19,23 @@ using namespace std;
 
 vector<Suggestion> rankNavFrontier(
     const NavFrontierQuery& query,
-    const Config& config) {
+    const Config& config,
+    const EffortBank& bank) {
   // Convert from range -> interval
   const CharInterval motionRange(query.targetRange, query.lines);
 
-  NavOptimizerParams params = OptimizerParamOverrides::resolved<NavOptimizerParams>(query.overrides);
+  const NavOptimizerParams params = query.overrides
+      ? query.overrides->resolved(NavOptimizerParams{})
+      : NavOptimizerParams{};
 
   BufferIndex bufferIndex(query.lines);
   NavExplorer explorer(query.lines, query.navContext, query.boundary,
                           params, motionRange, bufferIndex, 0);
 
-  // Would it be faster to include all of these in the query, assuming that config will be stable per explore invocation?
-  EffortBank bank(config);
   RunningEffort acceptedEffort(globalSequenceToKeys().tokenize(query.seq), config);
   const double acceptedCost = acceptedEffort.getEffort();
 
-  NavStateFactory states(
+  NavStateSpace states(
       config, NavHeuristic::StateScorer{motionRange, params.effortWeight, params.distanceWeight});
   NavState base = states.initial(query.cursor, acceptedEffort);
 

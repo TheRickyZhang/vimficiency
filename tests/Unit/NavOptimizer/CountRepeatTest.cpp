@@ -31,7 +31,7 @@ TEST_F(NavOptimizer_ManualTest, CountedGeIsDiscoveredBelowCheaperFinds) {
                               NavOptimizerParams{}
                                   .withMaxResults(150)
                                   .withMaxNodesPopped(20000)
-                                  .withMaxResultsPerEndPos(2),
+                                  .withMaxResultsPerEndPos(150),
                               "gegegege", boundary, navContext).getResults();
 
   EXPECT_TRUE(contains_all(results, {"4ge"}));
@@ -59,7 +59,7 @@ TEST_F(NavOptimizer_ManualTest, MinCountRepeat_LowThresholdAllowsSmallCounts) {
   auto results = opt.optimize(lines, {0, 0}, {0, 14},
       NavOptimizerParams{}.withMaxResults(30).withMaxNodesPopped(20000)
           .withMinCountRepeat(2)
-          .withMaxResultsPerEndPos(2),
+          .withMaxResultsPerEndPos(30),
       "", boundary, navContext).getResults();
 
   EXPECT_TRUE(hasSequence(results, "3w")) << "3w should be allowed with minCountRepeat=2";

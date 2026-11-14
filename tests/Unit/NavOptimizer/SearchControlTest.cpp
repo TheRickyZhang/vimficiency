@@ -43,7 +43,7 @@ TEST_F(NavSearchControlTest, NonTriggeringControlMatchesFullSearch) {
   SearchControl control;  // no deadline, not cancelled: never stops.
   LandingNavResult guarded = opt.optimize(
       lines, initialPos, goalPos, NavOptimizerParams{}, "", NavBoundary(),
-      NavContext(), &control);
+      NavContext(), control);
 
   EXPECT_EQ(sequenceStrings(full), sequenceStrings(guarded));
   EXPECT_EQ(full.getStats().totalPops(), guarded.getStats().totalPops());
@@ -53,22 +53,20 @@ TEST_F(NavSearchControlTest, NonTriggeringControlMatchesFullSearch) {
 
 TEST_F(NavSearchControlTest, CancelledControlStopsBeforeFirstPop) {
   SearchControl control;
-  control.cancelled.store(true);
+  control.cancel();
   LandingNavResult res = opt.optimize(
       lines, initialPos, goalPos, NavOptimizerParams{}, "", NavBoundary(),
-      NavContext(), &control);
+      NavContext(), control);
 
   EXPECT_EQ(res.getStats().totalPops(), 0);
   EXPECT_TRUE(res.getResults().empty());
 }
 
 TEST_F(NavSearchControlTest, PastDeadlineStopsBeforeFirstPop) {
-  SearchControl control;
-  control.hasDeadline = true;
-  control.deadline = chrono::steady_clock::now() - chrono::seconds(1);
+  SearchControl control(chrono::steady_clock::now() - chrono::seconds(1));
   LandingNavResult res = opt.optimize(
       lines, initialPos, goalPos, NavOptimizerParams{}, "", NavBoundary(),
-      NavContext(), &control);
+      NavContext(), control);
 
   EXPECT_EQ(res.getStats().totalPops(), 0);
 }

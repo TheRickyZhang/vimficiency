@@ -18,7 +18,7 @@ using namespace std;
 namespace VF::LuaExports::logic {
 
 Expected<OptimizerParamOverrides> parseOverrides(string_view text) {
-  auto parsed = parseOptimizerParamOverrides(text);
+  auto parsed = OptimizerParamOverrides::parse(text);
   if (!parsed) {
     return unexpectedError(formatOptimizerParamOverrideErrors(parsed.error()));
   }

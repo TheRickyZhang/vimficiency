@@ -5,49 +5,50 @@ export import vf.Optimizer.NavOptimizer.NavOptimizerParams;
 export import vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
 export import vf.Optimizer.CompositionOptimizer.CompositionOptimizerParams;
 
+// Sparse override set for one params type: `set` marks which `values` the
+// user supplied. Values are parsed once, at parse time.
+template <class Params>
+struct ParamPatch {
+  Params values;
+  std::bitset<size_t(Params::Field::COUNT)> set;
+};
+
 export {
 
-class OptimizerParamOverridesParser;
+using OptimizerParamOverrideErrors = std::vector<std::string>;
 
-// Parses and applies optimizer parameter overrides from Lua.
+// Lua-authored optimizer tweaks, `<scope>:<key>=<value>` per line. `shared:`
+// is restricted to OptimizerParamsBase fields; concrete optimizer fields must
+// use their concrete scope.
 class OptimizerParamOverrides {
 public:
-  OptimizerParamOverrides() = default;
+  static std::expected<OptimizerParamOverrides, OptimizerParamOverrideErrors>
+  parse(std::string_view encoded);
 
+  // `base` carries the call site's defaults; `shared:` applies on top, then
+  // the scope matching Params.
+  template <class Params>
+  Params resolved(Params base) const {
+    applyTo(base);
+    return base;
+  }
+
+  inline bool empty() const {
+    return shared_.set.none() && nav_.set.none() &&
+           transform_.set.none() && composition_.set.none();
+  }
+
+private:
   void applyTo(NavOptimizerParams& params) const;
   void applyTo(TransformOptimizerParams& params) const;
   void applyTo(CompositionOptimizerParams& params) const;
 
-  inline bool empty() const {
-    return shared_.empty() && nav_.empty() && transform_.empty() && composition_.empty();
-  }
-
-  // TODO review if this is the best design pattern
-  template <class Params>
-  static Params resolved(const OptimizerParamOverrides* overrides) {
-    Params params;
-    if (overrides) overrides->applyTo(params);
-    return params;
-  }
-
-private:
-  friend class OptimizerParamOverridesParser;
-
-  using ScopeMap = std::map<std::string, std::string, std::less<>>;
-  ScopeMap shared_;
-  ScopeMap nav_;
-  ScopeMap transform_;
-  ScopeMap composition_;
+  ParamPatch<OptimizerParamsBase> shared_;
+  ParamPatch<NavOptimizerParams> nav_;
+  ParamPatch<TransformOptimizerParams> transform_;
+  ParamPatch<CompositionOptimizerParams> composition_;
 };
 
-using OptimizerParamOverrideErrors = std::vector<std::string>;
-using OptimizerParamOverridesParseResult =
-    std::expected<OptimizerParamOverrides, OptimizerParamOverrideErrors>;
-
-// `shared:` is restricted to OptimizerParamsBase fields; concrete optimizer
-// fields must use their concrete scope.
-OptimizerParamOverridesParseResult parseOptimizerParamOverrides(
-    std::string_view encoded);
 std::string formatOptimizerParamOverrideErrors(
     const OptimizerParamOverrideErrors& errors);
 

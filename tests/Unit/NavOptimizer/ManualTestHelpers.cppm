@@ -83,7 +83,7 @@ protected:
     NavExplorer explorer(lines, navContext, boundary, params, goalRange, index, 0);
 
     auto score = [](CursorPos, double effort) { return effort; };
-    NavStateFactory states(config, score);
+    NavStateSpace states(config, score);
     NavState base = states.initial(start);
 
     std::vector<CountedCandidate> candidates;
@@ -109,7 +109,7 @@ protected:
     NavExplorer explorer(lines, navContext, boundary, params, goalRange, index, 0);
 
     auto score = [](CursorPos, double effort) { return effort; };
-    NavStateFactory states(config, score);
+    NavStateSpace states(config, score);
     NavState base = states.initial(start);
 
     std::vector<StaticCandidate> candidates;

@@ -52,7 +52,7 @@ double realCost(const Config& config, const CompositionSetup& s,
                 const vector<DiffState>& diffs) {
   CompositionOptimizer opt(config);
   auto res = opt.optimize(s.initial, {0, 0}, s.goal, {0, 0}, s.params, "",
-                          NavBoundary(), NavContext(), nullptr, &diffs);
+                          NavBoundary(), NavContext(), SearchControl::NEVER_STOP, &diffs);
   const Result* best = bestResult(res);
   return best ? best->getCost() : NO_RESULT;
 }
@@ -136,7 +136,7 @@ TEST(PlanRegret, DumpCase) {
     auto show = [&](const char* label, double est, const vector<DiffState>& diffs) {
       CompositionOptimizer opt(config);
       auto res = opt.optimize(s.initial, {0, 0}, s.goal, {0, 0}, s.params, "",
-                              NavBoundary(), NavContext(), nullptr, &diffs);
+                              NavBoundary(), NavContext(), SearchControl::NEVER_STOP, &diffs);
       const Result* best = bestResult(res);
       cout << label << " est=" << est << " real=" << (best ? best->getCost() : -1.0)
            << " seq=" << (best ? best->getSequence().str() : "<none>") << "\n";

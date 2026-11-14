@@ -164,7 +164,7 @@ TEST(CompositionTraceExport, ExportExample) {
   auto scoreState = [&](const CompositionState& state) {
     return ctx.heuristic(state);
   };
-  CompositionStateFactory states(config, scoreState);
+  CompositionStateSpace states(config, scoreState);
 
   vector<NodeRec> nodes;
   vector<NavCallRec> navCalls;
@@ -210,10 +210,10 @@ TEST(CompositionTraceExport, ExportExample) {
 
     auto navParams = navParamsForCompositionMotion(params)
         .withMaxResults(maxResults)
-        .withMaxResultsPerEndPos(keepMultiplePerLanding ? 2 : 1);
+        .withMaxResultsPerEndPos(keepMultiplePerLanding ? maxResults : 1);
     auto navResult = navOptimizer.optimize(
         subset, localPos, localInterval, navParams, "", subsetBoundary,
-        navContext, window.index, window.lineOffset, nullptr);
+        navContext, window.index, window.lineOffset, SearchControl::NEVER_STOP);
 
     NavCallRec rec{node.id, purpose, beginLine, subset, localPos,
                    localInterval.first, localInterval.last,
@@ -277,13 +277,14 @@ TEST(CompositionTraceExport, ExportExample) {
             boundary, params);
         if (!search) return;
         auto navResult = optimizeCompositionRangeMotion(
-            navOptimizer, *search, navContext, params, 1, nullptr);
+            navOptimizer, *search, navContext, params, 1, SearchControl::NEVER_STOP);
 
         NavCallRec rec{node.id, "insert:" + ins.structural, search->beginLine,
                        search->subset, search->localCursor,
                        search->motionRange.first, search->motionRange.last,
                        navResult.getStats().exploredStates()};
         rec.nodesExplored = navResult.getStats().nodesExplored();
+
         for (const LandingResult& mr : navResult.getResults()) {
           rec.results.push_back({{"seq", seqToJson(mr.getSequence().view())},
                                  {"cost", mr.getCost()},

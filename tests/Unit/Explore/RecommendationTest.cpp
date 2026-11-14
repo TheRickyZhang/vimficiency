@@ -20,7 +20,7 @@ TEST_F(ExploreViewTest, RecommendationsHonorPerCellDedupOverride) {
   auto deduped = view.recommendations(20);
 
   // Override — disable the cap.
-  const auto unCapped = *parseOptimizerParamOverrides(
+  const auto unCapped = *OptimizerParamOverrides::parse(
       "nav:maxResultsPerEndPos=2147483647");
   auto wide = view.recommendations(20, &unCapped);
 
@@ -163,7 +163,7 @@ TEST_F(ExploreViewTest, TransformDeletionHonorsTransformCountPrefixOverrides) {
   auto defaultRecs = view.recommendations(100);
   EXPECT_TRUE(hasCountedDelete(defaultRecs)) << tokens(defaultRecs);
 
-  const auto disableTransformCounts = *parseOptimizerParamOverrides(
+  const auto disableTransformCounts = *OptimizerParamOverrides::parse(
       "transform:maxPrefixCount=0");
   auto withoutCounts = view.recommendations(
       100, &disableTransformCounts, SuggestionSortMode::Effort);
@@ -231,6 +231,8 @@ TEST_F(ExploreViewTest, TransformFrontierExcludesVisualDeleteMacros) {
   DiffState diff(
       CursorPos(0, 0), CursorPos(2, 5), lines.flatten(), "",
       TransformBoundary{});
+  const Config uniform = Config::uniform();
+  const EffortBank bank(uniform);
   auto recs = rankTransformFrontier(
       TransformFrontierQuery{
           FrontierQuery{
@@ -240,7 +242,7 @@ TEST_F(ExploreViewTest, TransformFrontierExcludesVisualDeleteMacros) {
           },
           diff,
       },
-      Config::uniform());
+      uniform, bank);
   ASSERT_FALSE(recs.empty());
   for (const auto& rec : recs) {
     ASSERT_FALSE(string_view(rec.token).empty());
@@ -274,7 +276,7 @@ TEST_F(ExploreViewTest, RecommendationSortModesUseDifferentMetrics) {
   auto view = makeView(initial, {0, 1}, goal, {0, 1});
 
   ASSERT_TRUE(std::holds_alternative<Explore::Transform>(view.phase()));
-  const auto overrides = *parseOptimizerParamOverrides(
+  const auto overrides = *OptimizerParamOverrides::parse(
       "transform:distanceWeight=2.0");
 
   auto indexOf = [](const vector<Suggestion>& recs, string_view token) {
@@ -323,6 +325,8 @@ TEST(TransformFrontier, PreservesDistinctResultsFromSameStart) {
   // reaching the same diff goal are preserved by the frontier.
   // TransformExplorer enumerates per-shape lanes inherently, so no
   // override is needed to surface multiple tokens.
+  const Config uniform = Config::uniform();
+  const EffortBank bank(uniform);
   auto recs = rankTransformFrontier(
       TransformFrontierQuery{
           FrontierQuery{
@@ -332,7 +336,7 @@ TEST(TransformFrontier, PreservesDistinctResultsFromSameStart) {
           },
           diff,
       },
-      Config::uniform());
+      uniform, bank);
   ASSERT_GE(recs.size(), 2u);
   // Distinct structural tokens — the test's intent: multiple strategies for
   // the same diff produce different command shapes, all preserved.
@@ -345,6 +349,8 @@ TEST(TransformFrontier, PreservesDistinctResultsFromSameStart) {
 // char-change conversion asserts; the frontier must emit raw "J".
 TEST(TransformFrontier, JoinReachingClearedShellInReplacementEmitsRawJoin) {
   DiffState diff(CursorPos(0, 0), CursorPos(1, 0), "\n", "x", TransformBoundary{});
+  const Config uniform = Config::uniform();
+  const EffortBank bank(uniform);
   auto recs = rankTransformFrontier(
       TransformFrontierQuery{
           FrontierQuery{
@@ -354,7 +360,7 @@ TEST(TransformFrontier, JoinReachingClearedShellInReplacementEmitsRawJoin) {
           },
           diff,
       },
-      Config::uniform());
+      uniform, bank);
   bool hasJoin = std::any_of(recs.begin(), recs.end(),
       [](const Suggestion& s) { return s.token == "J"; });
   EXPECT_TRUE(hasJoin);
@@ -366,7 +372,7 @@ TEST_F(ExploreViewTest, NavigateMotionRecommendationsLandOnEditStarts) {
   auto view = makeView(initial, {0, 0}, goal, {0, 22});
 
   ASSERT_TRUE(std::holds_alternative<Explore::Navigate>(view.phase()));
-  const auto overrides = *parseOptimizerParamOverrides(
+  const auto overrides = *OptimizerParamOverrides::parse(
       "nav:maxResultsPerEndPos=2147483647");
   auto recs = view.recommendations(10, &overrides, SuggestionSortMode::Score);
   ASSERT_FALSE(recs.empty());

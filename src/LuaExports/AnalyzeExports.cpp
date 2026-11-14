@@ -25,17 +25,14 @@ string runAnalyze(
     const SearchInputs& in,
     int resultsCalculated,
     const Config& config,
-    const SearchControl* control) {
+    const SearchControl& control) {
   vector<Result> results;
   vector<DiffState> diffs;
 
   if (in.initialLines == in.goalLines) {
     NavOptimizer opt(config);
-    // Resolve nav params from default + overrides
-    NavOptimizerParams navParams = NavOptimizerParams{}
-        .withMaxResults(resultsCalculated)
-        .withMaxResultsPerEndPos(2);
-    in.overrides.applyTo(navParams);
+    const NavOptimizerParams navParams = in.overrides.resolved(
+        NavOptimizerParams{}.withMaxResults(resultsCalculated).withMaxResultsPerEndPos(resultsCalculated));
 
     const vector<LandingResult> navResults = opt.optimize(
         in.initialLines,
@@ -55,10 +52,8 @@ string runAnalyze(
   } else {
     CompositionOptimizer opt(config);
 
-    // Resolve composition params from default + overrides
-    CompositionOptimizerParams compParams =
-        CompositionOptimizerParams{}.withMaxResults(resultsCalculated);
-    in.overrides.applyTo(compParams);
+    const CompositionOptimizerParams compParams = in.overrides.resolved(
+        CompositionOptimizerParams{}.withMaxResults(resultsCalculated));
 
     const CompositionResult composed = opt.optimize(
         in.initialLines,
@@ -124,7 +119,7 @@ VF::LuaExports::Expected<string> startAsyncImpl(
   auto job = std::make_unique<AnalyzeJob>(
       AnalyzeState{std::move(*inputsRes), results_calculated, g_config_internal, {}},
       deadline_ms,
-      [](AnalyzeState& s, const SearchControl* control) {
+      [](AnalyzeState& s, const SearchControl& control) {
         s.result = runAnalyze(s.inputs, s.resultsCalculated, s.config, control);
       });
   const int job_id = g_analyze_jobs.create(std::move(job));
@@ -140,7 +135,7 @@ VFByteSlice vf_analyze(const VFSearchRequest* request, int results_calculated) {
   CHECK(results_calculated >= 0, "results_calculated must be non-negative");
   auto inputsRes = logic::decodeSearchRequest(request);
   if (!inputsRes) return storeBytes(storage, unexpected(inputsRes.error()));
-  return storeBytes(storage, runAnalyze(*inputsRes, results_calculated, g_config_internal, nullptr));
+  return storeBytes(storage, runAnalyze(*inputsRes, results_calculated, g_config_internal, SearchControl::NEVER_STOP));
 }
 
 // Kicks off the analyze search on a worker thread and returns a job-id string

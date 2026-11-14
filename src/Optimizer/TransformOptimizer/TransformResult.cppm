@@ -61,6 +61,25 @@ struct TransformResult : BaseOptimizerResult<std::vector<Result>> {
   }
 
   inline bool hasResultGoals() const { return !resultGoalPositions_.empty(); }
+
+  // Visits every result applicable from `cursor` (curswant included) with its
+  // post-edit cursor on `linesAfter`. Returns whether any applied.
+  template<class Visit>
+  bool forEachEditFrom(const CursorPos& cursor, const Lines& linesAfter, Visit&& visit) const {
+    std::span<const Result> bucket = resultsAt(cursor.line, cursor.col);
+    bool anyApplied = false;
+    for (std::size_t i = 0; i < bucket.size(); i++) {
+      const EntryCurswant entryCurswant = bucket[i].getEntryCurswant();
+      if (entryCurswant == EntryCurswant::Required && cursor.targetCol != cursor.col) continue;
+
+      CursorPos goal = goalPosAt(cursor.line, cursor.col, i);
+      if (entryCurswant == EntryCurswant::Followed) goal.targetCol = cursor.targetCol;
+      if (hasResultGoals()) goal = clampGoalPosToLines(goal, linesAfter);
+      visit(bucket[i], goal);
+      anyApplied = true;
+    }
+    return anyApplied;
+  }
   inline bool isValidStartPosition(int bufferLine, int bufferCol) const {
     int idx = resultIndexAt(bufferLine, bufferCol);
     return idx >= 0 && isValidStartIndex(idx);
@@ -91,6 +110,16 @@ private:
 
   inline bool isValidStartIndex(int idx) const {
     return validStartByIndex_[idx];
+  }
+
+  // Clamp cursor to a valid normal-mode position on concrete post-edit lines.
+  // The column comes from targetCol; an edit leaves curswant at its landing column.
+  inline static CursorPos clampGoalPosToLines(const CursorPos& pos, const Lines& lines) {
+    if (lines.empty()) return CursorPos(0, 0);
+
+    int line = std::clamp(pos.line, 0, lines.lastLine());
+    int wantedCol = pos.targetCol >= 0 ? pos.targetCol : pos.col;
+    return CursorPos(line, std::clamp(wantedCol, 0, lines[line].lastCol()));
   }
   void rebuildStartPositions();
 

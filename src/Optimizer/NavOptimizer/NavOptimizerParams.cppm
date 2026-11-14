@@ -10,10 +10,10 @@ export {
 
 struct NavOptimizerParams : OptimizerParamsBase {
   NAV_FIELDS(VF_PARAMS_DECLARE_OWN_FIELD)
+  enum class Field { NAV_ALL_FIELDS(VF_PARAMS_FIELD_ENUM) COUNT };
 
 #define VF_PARAMS_SELF NavOptimizerParams
-  OPTIMIZER_BASE_FIELDS(VF_PARAMS_WITH_SETTER)
-  NAV_FIELDS(VF_PARAMS_WITH_SETTER)
+  NAV_ALL_FIELDS(VF_PARAMS_WITH_SETTER)
 #undef VF_PARAMS_SELF
 
   // C++20 designated init can't reach base-class fields, so chained setters.

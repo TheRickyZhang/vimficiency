@@ -10,7 +10,7 @@ namespace {
 
 TEST(AsyncJobTest, ReadyPublishesTheState) {
   auto job = std::make_unique<AsyncJob<int>>(
-      0, 0, [](int& value, const SearchControl*) { value = 42; });
+      0, 0, [](int& value, const SearchControl&) { value = 42; });
   while (!job->ready()) std::this_thread::yield();
   EXPECT_EQ(job->state(), 42);
 }
@@ -30,8 +30,8 @@ TEST(AsyncJobTest, DroppingACancelledJobJoinsBeforeItsStateDies) {
   {
     auto job = std::make_unique<AsyncJob<SpinState>>(
         SpinState{&finishedAtDestruction}, 0,
-        [](SpinState& s, const SearchControl* control) {
-          while (!control->cancelRequested()) std::this_thread::yield();
+        [](SpinState& s, const SearchControl& control) {
+          while (!control.cancelRequested()) std::this_thread::yield();
           s.finished = true;
         });
     job->cancel();

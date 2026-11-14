@@ -401,10 +401,11 @@ GoalStates ChangeGoalHandler::emitEditGoal(
                        typedVariants.normalTyped.sequence,
                        typedVariants.normalTyped.effort);
 
-  TransformStateFactory states(config, effortWeight);
+  TransformStateSpace states(config, effortWeight);
   TransformState normalState = states.afterCommandWithLastEdit(
       base, postCompletionState, normalSeq.seq.view(), normalEffort, 0.0,
-      DotRepeat{string(sourceCmd.base.seq.view()), sourceCmd.count});
+      DotRepeat{string(sourceCmd.base.seq.view()), sourceCmd.count},
+      EntryCurswant::Ignored);
 
   GoalStates result{std::move(normalState), nullopt};
 
@@ -420,7 +421,8 @@ GoalStates ChangeGoalHandler::emitEditGoal(
     dotSeq += typedVariants.dotTyped.sequence;
 
     result.dotVariant = states.afterCommand(
-        base, postCompletionState, dotSeq.seq.view(), dotEffort, 0.0);
+        base, postCompletionState, dotSeq.seq.view(), dotEffort, 0.0,
+        EntryCurswant::Ignored);
   }
 
   return result;
@@ -560,8 +562,13 @@ SuffixCacheResult ChangeGoalHandler::tryUseSuffixCache(
   RunningEffort mergedEffort = RunningEffort::merge(s.getRunningEffort(), suffixEffort, config);
   double totalEffort = mergedEffort.getEffort();
 
+  // The cached suffix was simulated from the column this prefix produced.
+  const bool prefixIgnoresCurswant =
+      s.getPathTail() && s.getEntryCurswant() == EntryCurswant::Ignored;
   bool firstForStart = bucket.empty();
-  bucket.emplace_back(Sequence(seqStr), totalEffort);
+  bucket.emplace_back(
+      Sequence(seqStr), totalEffort,
+      prefixIgnoresCurswant ? EntryCurswant::Ignored : EntryCurswant::Required);
   resultsFound++;
   if (firstForStart) uniquePositionsCovered++;
   bool capped = (static_cast<int>(bucket.size()) == maxResultsPerStart);

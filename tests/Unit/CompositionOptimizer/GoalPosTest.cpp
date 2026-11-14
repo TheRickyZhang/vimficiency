@@ -170,6 +170,91 @@ TEST_F(CompositionOptimizerGoalPosTest, SearchKeySeparatesStickyColumnBeforeEdit
   }
 }
 
+// =============================================================================
+// Edits entered at a clamped column (col < curswant)
+// =============================================================================
+
+namespace {
+
+string joinSequences(const vector<Result>& results) {
+  string out;
+  for (const Result& r : results) out += "\"" + r.getSequence().str() + "\" ";
+  return out;
+}
+
+}  // namespace
+
+TEST_F(CompositionOptimizerGoalPosTest, ClampedColumn_LinewiseDeleteLandsAtCurswant) {
+  Lines initial = {"0123456789ab", "abc", "0123456789abcdef"};
+  Lines goal = {"0123456789ab", "0123456789abcdef"};
+  CursorPos initialPos(0, 10);
+  CursorPos goalPos(1, 10);
+
+  CompositionResult res = opt.optimize(
+      initial, initialPos, goal, goalPos, CompositionOptimizerParams{}.withMaxResults(5));
+  const auto& results = res.getResults();
+  ASSERT_FALSE(results.empty());
+  EXPECT_EQ(results[0].getSequence().size(), 3u) << joinSequences(results);
+
+  for (size_t i = 0; i < results.size(); i++) {
+    verifyGoalReached(results[i], initial, initialPos, goal, goalPos,
+                      "ClampedLinewiseDelete result " + to_string(i));
+  }
+}
+
+TEST_F(CompositionOptimizerGoalPosTest, ClampedColumn_LinewiseDeleteResetsCurswant) {
+  Lines initial = {"0123456789ab", "abc", "012345", "0123456789abcdef"};
+  Lines goal = {"0123456789ab", "012345", "0123456789abcdef"};
+  CursorPos initialPos(0, 10);
+  CursorPos goalPos(2, 5);
+
+  CompositionResult res = opt.optimize(
+      initial, initialPos, goal, goalPos, CompositionOptimizerParams{}.withMaxResults(5));
+  const auto& results = res.getResults();
+  ASSERT_FALSE(results.empty());
+  EXPECT_TRUE(results[0].getSequence().view().starts_with("jdd")) << joinSequences(results);
+
+  for (size_t i = 0; i < results.size(); i++) {
+    verifyGoalReached(results[i], initial, initialPos, goal, goalPos,
+                      "ClampedLinewiseDeleteResets result " + to_string(i));
+  }
+}
+
+TEST_F(CompositionOptimizerGoalPosTest, ClampedColumn_CharwiseEditNeedsNoResync) {
+  Lines initial = {"0123456789ab", "abc"};
+  Lines goal = {"0123456789ab", "ab"};
+  CursorPos initialPos(0, 10);
+  CursorPos goalPos(1, 1);
+
+  CompositionResult res = opt.optimize(
+      initial, initialPos, goal, goalPos, CompositionOptimizerParams{}.withMaxResults(5));
+  const auto& results = res.getResults();
+  ASSERT_FALSE(results.empty());
+  EXPECT_EQ(results[0].getSequence().size(), 2u) << joinSequences(results);
+
+  for (size_t i = 0; i < results.size(); i++) {
+    verifyGoalReached(results[i], initial, initialPos, goal, goalPos,
+                      "ClampedCharwiseEdit result " + to_string(i));
+  }
+}
+
+TEST_F(CompositionOptimizerGoalPosTest, ClampedColumn_LinewiseDeleteThenMoreStillReplays) {
+  Lines initial = {"0123456789ab", "abc", "0123456789abcdef", "tail"};
+  Lines goal = {"0123456789ab", "6789abcdef", "tail"};
+  CursorPos initialPos(0, 10);
+  CursorPos goalPos(1, 0);
+
+  CompositionResult res = opt.optimize(
+      initial, initialPos, goal, goalPos, CompositionOptimizerParams{}.withMaxResults(5));
+  const auto& results = res.getResults();
+  ASSERT_FALSE(results.empty());
+
+  for (size_t i = 0; i < results.size(); i++) {
+    verifyGoalReached(results[i], initial, initialPos, goal, goalPos,
+                      "ClampedLinewiseDeleteThenMore result " + to_string(i));
+  }
+}
+
 TEST_F(CompositionOptimizerGoalPosTest, WholeBufferRewriteClearsVisualChangeIndent) {
   Lines initial = {" db"};
   Lines goal = {" ", "db"};

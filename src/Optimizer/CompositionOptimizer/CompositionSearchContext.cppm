@@ -45,9 +45,9 @@ struct CompositionSearchContext {
   const NavContext& navContext;
   const NavBoundary& boundary;
 
-  // Cooperative stop signal (null when the search runs to its normal caps).
+  // Cooperative stop signal; NEVER_STOP runs the search to its normal caps.
   // Set by the async FFI worker so the main A* loop can bail to best-so-far.
-  const SearchControl* control = nullptr;
+  const SearchControl& control;
 
   // Set when `control` was cancelled mid-construction. The remaining setup
   // phases are skipped, so per-edit data is incomplete; callers must not
@@ -121,7 +121,7 @@ struct CompositionSearchContext {
       const CompositionOptimizerParams& params,
       const Config& config,
       const std::vector<DiffState>* forcedDiffs = nullptr,
-      const SearchControl* control = nullptr);
+      const SearchControl& control = SearchControl::NEVER_STOP);
 
   // ==========================================================================
   // Heuristic and distance computation
