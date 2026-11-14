@@ -38,9 +38,9 @@ local function close_view_tab()
   end
 end
 
-test("result_window: recomputes diffs when the result lacks them", function()
-  -- nil diffs (e.g. a pre-diff saved file) must not error; the view recomputes.
-  open_fixture({ diffs = nil })
-  assert_true(#v.nvim_tabpage_list_wins(0) == 3, "view still opens with recomputed diffs")
+
+test("result_window: opens header and both panes from stored diffs", function()
+  open_fixture()
+  assert_true(#v.nvim_tabpage_list_wins(0) == 3, "view opens three windows")
   close_view_tab()
 end)

@@ -11,7 +11,8 @@ A finished session has two places it can live:
   auto trigger finishes it. Cheap, immediate, ephemeral.
 - **Disk** (the "archive") — a file under
   `stdpath('data')/vimficiency/saved/<filename>.json`. Durable across
-  restarts. Indexed by filename.
+  restarts, but not across file-format versions: a file saved by an older
+  format is refused on load. Indexed by filename.
 
 The two are separate namespaces. The same text can name both an alias
 and a saved file.

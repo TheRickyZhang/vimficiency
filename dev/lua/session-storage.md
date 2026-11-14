@@ -35,26 +35,28 @@ filename, and `play`/`explore`/`view` accept either via
 
 ## JSON schema
 
-`vim.json.encode(result, { indent = true })` of the result table: `lines`,
-`goal_lines`, `start_row/col`, `end_row/col`, `has_lines_above/below`,
-`prefix`, `suffix`, `diffs`, `user_seq`, `user_cost`, `optimal_results`,
-`key_count`, `finished_wall_epoch` (`os.time()` at finish; the file's only
-clock), `kind` ∈ `{mark, watch, recall, suggest_idle, suggest_keys, suggest_cost}`.
+The result table plus `version` (`disk.FORMAT_VERSION`), pretty-printed with
+sorted keys: `lines`, `goal_lines`, `start_row/col`, `end_row/col`,
+`has_lines_above/below`, `prefix`, `suffix`, `diffs`, `user_seq`, `user_cost`,
+`optimal_results`, `key_count`, `finished_wall_epoch` (`os.time()` at finish;
+the file's only clock), and
+`kind` ∈ `{mark, watch, recall, suggest_idle, suggest_keys, suggest_cost}`.
 
-`finished_wall_epoch` replaced the monotonic `start_time`/`timestamp` pair
-(2026-11-11): `hrtime` values from another boot are not comparable, so the
-workspace keeps its own `*_mono_ns` stamps on the record instead. The stats log
-(`stats/log.lua`) copies this value into its `finish_epoch` rather than reading
-the clock again, so a saved file and its log row always agree.
+`disk.decode` rejects any `version` other than the current one, including
+unversioned files, and strips it before validating; there is no migration.
+Bump `FORMAT_VERSION` on any schema change. All fields except the debug-only
+`capture_debug` and `analyze_ms` are required.
 
-`kind` replaced `finish_reason` (2026-11-11); files written before that carry
-neither, and `fetch` registers them as `mark`.
+The persisted clock is wall time because `hrtime` values from another boot are
+not comparable; the workspace keeps its own `*_mono_ns` stamps on the record
+instead. The stats log (`stats/log.lua`) copies this value into its
+`finish_epoch` rather than reading the clock again, so a saved file and its log
+row always agree.
 
 `diffs` is the planner's own partition (half-open, 0-indexed spans per side), so
-the viewer highlights exactly the regions the search ran against. It is
-recomputable from `lines`/`goal_lines`, so `disk.validate` only type-checks it
-and the viewer recomputes when an older file lacks it. `prefix`/`suffix` are
-always empty at whole-buffer scope (see `../core/boundary-logic.md`).
+the viewer highlights exactly the regions the search ran against; `disk.validate`
+only type-checks it. `prefix`/`suffix` are always empty at whole-buffer scope
+(see `../core/boundary-logic.md`).
 
 A fetched file goes straight into `finished_sessions` with the file's `kind`
 and `finish_alias` set to the target alias.

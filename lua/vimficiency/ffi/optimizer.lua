@@ -7,7 +7,7 @@ local lib = core.lib
 local DEBUG_MARKER = "----------------DEBUG----------------"
 local SEP = core.EVENT_FIELD_SEP
 
--- Decoder for `payload::encodeDiffRegions` (LuaExports/Common.h).
+-- Decoder for `payload::encodeDiffRegions` (LuaExports/Payload.cppm).
 ---@param line string
 ---@return VF.Diff.Region
 local function parse_diff_region(line)
@@ -20,18 +20,6 @@ local function parse_diff_region(line)
              end_row = tonumber(f[7]), end_col = tonumber(f[8]) },
   }
 end
-
----@param result_str string
----@return VF.Diff.Region[]
-local function parse_diff_regions(result_str)
-  local regions = {}
-  for line in result_str:gmatch("[^\n]+") do
-    regions[#regions + 1] = parse_diff_region(line)
-  end
-  return regions
-end
-
-M._parse_diff_regions = parse_diff_regions
 
 -- Count-framed: `size: N user_cost: X`, N result lines, `diffs: M`, M region
 -- lines, then an optional DEBUG trailer that is only looked for between
@@ -191,28 +179,6 @@ end
 ---@return boolean
 function M.analyze_cancel(job_id)
   return lib.vf_analyze_cancel(job_id) == 1
-end
-
---- Standalone planner run for a result that lacks stored diffs (files saved
---- before the analyze payload carried them). Live sessions get their regions
---- from `analyze`/`analyze_poll` instead — those are the partition the search
---- actually ran against, whereas this uses default planner cost options.
----@param initial_lines string[]
----@param goal_lines string[]
----@param diff_algorithm integer|nil
----@return VF.Diff.Region[]
-function M.compute_diffs(initial_lines, goal_lines, diff_algorithm)
-  if diff_algorithm == nil then
-    diff_algorithm = M.get_optimizer_defaults().composition.diffAlgorithm or 0
-  end
-  local initial_payload = core.encode_line_array(initial_lines, "initial_lines")
-  local goal_payload = core.encode_line_array(goal_lines, "goal_lines")
-  local result_str = core.slice_to_string(lib.vf_compute_diffs(
-    initial_payload, #initial_payload, goal_payload, #goal_payload, diff_algorithm))
-  if result_str:sub(1, 6) == "ERROR:" then
-    error(result_str, 0)
-  end
-  return parse_diff_regions(result_str)
 end
 
 return M

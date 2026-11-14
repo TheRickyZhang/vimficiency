@@ -6,8 +6,9 @@ local h = require("_helpers")
 
 local REQUIRED = {
   "lines", "goal_lines", "start_row", "start_col", "end_row", "end_col",
-  "has_lines_above", "has_lines_below", "window_height", "scroll_amount",
-  "user_seq", "user_cost", "optimal_results", "key_count", "finished_wall_epoch",
+  "has_lines_above", "has_lines_below", "prefix", "suffix", "diffs",
+  "window_height", "scroll_amount", "user_seq", "user_cost", "optimal_results",
+  "key_count", "finished_wall_epoch", "kind",
 }
 
 test("disk.validate accepts a complete result", function()
@@ -30,12 +31,6 @@ test("disk.validate rejects wrong-typed fields", function()
   end
 end)
 
-test("disk.validate tolerates absent prefix/suffix/diffs (pre-diff saves)", function()
-  local data = h.fake_result()
-  data.prefix, data.suffix, data.diffs = nil, nil, nil
-  assert_eq(disk.validate(data), nil)
-end)
-
 test("disk.validate rejects empty lines and malformed optimal_results", function()
   for _, bad in ipairs({
     { "lines", {} },
@@ -46,4 +41,22 @@ test("disk.validate rejects empty lines and malformed optimal_results", function
     data[bad[1]] = bad[2]
     assert_true(disk.validate(data) ~= nil, bad[1] .. " must be rejected")
   end
+end)
+
+test("disk.decode round-trips the current version and rejects any other", function()
+  local result = h.fake_result()
+  local function encode(version)
+    return vim.json.encode(vim.tbl_extend("force", result, { version = version }))
+  end
+
+  local data, err = disk.decode(encode(disk.FORMAT_VERSION))
+  assert_eq(err, nil)
+  data = assert(data)
+  assert_eq(data.user_seq, result.user_seq)
+  assert_eq(rawget(data, "version"), nil, "version is stripped on load")
+
+  local _, newer_err = disk.decode(encode(disk.FORMAT_VERSION + 1))
+  assert_match(newer_err or "", "format version", "a different version must be rejected")
+  local _, missing_err = disk.decode(vim.json.encode(result))
+  assert_match(missing_err or "", "format version <none>", "an unversioned file must be rejected")
 end)

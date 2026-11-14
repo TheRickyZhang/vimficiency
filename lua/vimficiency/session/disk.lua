@@ -51,14 +51,18 @@ local function encode_pretty(value, level)
   return "{\n" .. table.concat(parts, ",\n") .. "\n" .. pad .. "}"
 end
 
+-- Bump on any schema change; `decode` rejects every other version.
+M.FORMAT_VERSION = 1
+
 ---@param filename string
----@param data table
+---@param result VF.Session.Result
 ---@return string path
-function M.save(filename, data)
+function M.save(filename, result)
   local save_dir = M.save_dir()
   vim.fn.mkdir(save_dir, "p")
   local path = save_dir .. "/" .. filename .. ".json"
-  local lines = vim.split(encode_pretty(data), "\n")
+  local versioned = vim.tbl_extend("error", result, { version = M.FORMAT_VERSION })
+  local lines = vim.split(encode_pretty(versioned), "\n")
   local ok, err = pcall(vim.fn.writefile, lines, path)
   if not ok then error(tostring(err), 0) end
   return path
@@ -73,6 +77,9 @@ local REQUIRED_FIELDS = {
   { key = "end_col",             kind = "number" },
   { key = "has_lines_above",     kind = "boolean" },
   { key = "has_lines_below",     kind = "boolean" },
+  { key = "prefix",              kind = "string" },
+  { key = "suffix",              kind = "string" },
+  { key = "diffs",               kind = "table" },
   { key = "window_height",       kind = "number" },
   { key = "scroll_amount",       kind = "number" },
   { key = "user_seq",            kind = "string" },
@@ -80,16 +87,12 @@ local REQUIRED_FIELDS = {
   { key = "optimal_results",     kind = "table" },
   { key = "key_count",           kind = "number" },
   { key = "finished_wall_epoch", kind = "number" },
+  { key = "kind",                kind = "string" },
 }
 
--- Recomputable or debug-only; `load` fills the first three when absent.
 local OPTIONAL_FIELDS = {
-  { key = "prefix",        kind = "string" },
-  { key = "suffix",        kind = "string" },
-  { key = "diffs",         kind = "table" },
   { key = "capture_debug", kind = "table" },
   { key = "analyze_ms",    kind = "number" },
-  { key = "kind",          kind = "string" },
 }
 
 ---@param data any
@@ -125,8 +128,32 @@ function M.validate(data)
   return nil
 end
 
+---@param json_str string
+---@return VF.Session.Result|nil data
+---@return string|nil error
+function M.decode(json_str)
+  local ok, data = pcall(vim.json.decode, json_str)
+  if not ok then
+    return nil, "Failed to parse JSON: " .. tostring(data)
+  end
+  if type(data) ~= "table" then
+    return nil, "Malformed result file: top-level must be a JSON object"
+  end
+  if data.version ~= M.FORMAT_VERSION then
+    return nil, string.format(
+      "Unsupported result file format version %s (expected %d); re-record the session",
+      data.version == nil and "<none>" or tostring(data.version), M.FORMAT_VERSION)
+  end
+  data.version = nil
+  local schema_err = M.validate(data)
+  if schema_err then
+    return nil, "Malformed result file: " .. schema_err
+  end
+  return data, nil
+end
+
 ---@param filename string
----@return table|nil data
+---@return VF.Session.Result|nil data
 ---@return string|nil error
 ---@return boolean is_missing
 function M.load(filename)
@@ -134,20 +161,8 @@ function M.load(filename)
   if vim.fn.filereadable(path) == 0 then
     return nil, "File not found: " .. path, true
   end
-  local lines = vim.fn.readfile(path)
-  local json_str = table.concat(lines, "\n")
-  local ok, data = pcall(vim.json.decode, json_str)
-  if not ok then
-    return nil, "Failed to parse JSON: " .. tostring(data), false
-  end
-  local schema_err = M.validate(data)
-  if schema_err then
-    return nil, "Malformed result file: " .. schema_err, false
-  end
-  if data.prefix == nil then data.prefix = "" end
-  if data.suffix == nil then data.suffix = "" end
-  if data.diffs == nil then data.diffs = M.empty_array() end
-  return data, nil, false
+  local data, err = M.decode(table.concat(vim.fn.readfile(path), "\n"))
+  return data, err, false
 end
 
 ---@param filename string

@@ -7,7 +7,6 @@ local util         = require("vimficiency.util")
 local highlights   = require("vimficiency.highlights")
 local result_view  = require("vimficiency.session.result_view")
 local sequence_display = require("vimficiency.sequence_display")
-local ffi_optimizer = require("vimficiency.ffi.optimizer")
 
 local M = {}
 
@@ -136,11 +135,8 @@ function M.open(label, result)
   highlights.refresh()
 
   local initial_lines = result.lines
-  local goal_lines = result.goal_lines or result.lines
+  local goal_lines = result.goal_lines
   local diffs = result.diffs
-  if diffs == nil then
-    diffs = ffi_optimizer.compute_diffs(initial_lines, goal_lines)
-  end
 
   local header_lines = build_header_lines(result)
 

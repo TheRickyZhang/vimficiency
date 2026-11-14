@@ -201,6 +201,7 @@ jobs:
           tar -xzf "${archive}" -C "${install_dir}" --strip-components=1
 
       - name: Fast correctness gate
+        timeout-minutes: 5
         # Exercises deterministic C++ unit and approval tests, seeded property and
         # safety tests, and the Lua/FFI boundary through Neovim headless. VF_NVIM
         # routes only the Lua phase at the nightly installed above.
