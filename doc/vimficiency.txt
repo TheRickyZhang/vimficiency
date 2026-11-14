@@ -1,4 +1,4 @@
-*vimficiency.txt*  *vimficiency*       For Neovim >= 0.11       Last change: 2026 November 11
+*vimficiency.txt*  *vimficiency*       For Neovim >= 0.11       Last change: 2026 November 13
 
 ==============================================================================
 Table of Contents                              *vimficiency-table-of-contents*
@@ -736,6 +736,26 @@ in-progress sessions.
                                                           session left idle this
                                                           long is auto-ended with a
                                                           warning.
+
+  lossy_mappings                "warn"                    A key mapped to a Lua
+                                                          function (flash.nvim’s f,
+                                                          a vim.keymap.set
+                                                          callback) that moves the
+                                                          cursor or edits text
+                                                          cannot be captured as
+                                                          replayable keys. "drop":
+                                                          a session spanning it
+                                                          ends, and the warning
+                                                          names the mapping.
+                                                          "warn": the keys you
+                                                          typed are recorded
+                                                          instead, with a
+                                                          once-per-session notice.
+                                                          "allow": recorded
+                                                          silently. Replay is
+                                                          faithful only when the
+                                                          function did what those
+                                                          keys do in plain Vim.
   ---------------------------------------------------------------------------------
 
 IDLE END-DETECTION
@@ -1191,10 +1211,14 @@ want to show a colleague.
 - **Long sessions** may hit the optimizer’s search budget; expect diminishing
     suggestion quality beyond roughly a dozen lines of edits.
 - **Mappings to Lua callbacks can’t be audited as motion.** A key mapped to a
-    Lua function that edits the buffer produces an unreplayable capture event; a
-    session spanning it is dropped as untrustworthy. Mappings whose RHS is a key
-    sequence are fine — they are captured as the resolved post-mapping keys. Type
-    the underlying keys directly when you want a specific motion audited.
+    Lua function that edits the buffer or moves the cursor produces an unreplayable
+    capture event. By default (`lossy_mappings = "warn"`) the keys you typed are
+    recorded in its place with a once-per-session notice; replay is faithful only
+    when the function did what those keys do in plain Vim. `"allow"` records
+    silently, and `"drop"` ends the session with a warning that names the mapping
+    (see Configuration). Mappings whose RHS is a key sequence are fine — they are
+    captured as the resolved post-mapping keys. Type the underlying keys directly
+    when you want a specific motion audited.
 - **Recall only records actions in normal file buffers** (`&buftype == ""`).
     Actions in help, quickfix, terminal, prompt, or scratch buffers are skipped —
     they aren’t meaningful for nav or transform optimization, and recording them
@@ -1252,6 +1276,16 @@ WATCH NEVER FIRES
 - Does the session still exist? Check `:Vimfy list`. Window-change
     aborts, `:Vimfy close`, and the 5-minute idle / 500-line drift
     guards all tear down Watch sessions silently.
+
+
+“RECORDED LUA MAPPING … AS TYPED KEYS” OR “DROPPED — LUA MAPPING …”
+
+A key you pressed is mapped to a Lua function (flash.nvim’s `f`/`t`/`;`, a
+`vim.keymap.set` callback) and Neovim cannot report replayable keys for it. The
+notice names the mapping. `lossy_mappings` decides what happens: `"warn"`
+(default) records the keys you typed with a once-per-session notice, `"allow"`
+records them silently, `"drop"` ends the session. See 13. Limitations for why
+replay may then diverge.
 
 
 SUGGESTIONS LOOK WRONG OR WORSE THAN WHAT I DID

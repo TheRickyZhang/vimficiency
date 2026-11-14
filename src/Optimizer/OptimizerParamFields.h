@@ -29,6 +29,7 @@
 
 #define TRANSFORM_FIELDS(F)                                                             \
     F(int, maxResultsPerStartPos, withMaxResultsPerStartPos, 1)                         \
+    F(double, startWorkFactor, withStartWorkFactor, 8.0)                                \
     F(bool, allowLinewisePureDeletion, withLinewisePureDeletion, true)
 
 #define COMPOSITION_OWN_FIELDS(F)                                                          \

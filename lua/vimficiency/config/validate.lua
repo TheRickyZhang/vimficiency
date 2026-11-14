@@ -152,4 +152,15 @@ function M.normalize_auto_suggest(raw, defaults)
   return merged
 end
 
+local LOSSY_MAPPINGS_MODES = { drop = true, warn = true, allow = true }
+
+---@param raw any
+---@return "drop"|"warn"|"allow"
+function M.normalize_lossy_mappings(raw)
+  if not LOSSY_MAPPINGS_MODES[raw] then
+    error("lossy_mappings must be \"drop\", \"warn\", or \"allow\", got " .. vim.inspect(raw), 0)
+  end
+  return raw
+end
+
 return M

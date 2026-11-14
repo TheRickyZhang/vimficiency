@@ -81,7 +81,7 @@ private:
   std::unique_ptr<Impl> impl_;
 
   // Auto-restart after this many simulate() calls to prevent buffer exhaustion
-  static constexpr int AUTO_RESTART_INTERVAL = 200;
+  static constexpr int AUTO_RESTART_INTERVAL = 5000;
   int callsSinceRestart_ = 0;
 
   // scrollAmount < 0 leaves 'scroll' untouched (the default for every caller

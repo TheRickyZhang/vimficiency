@@ -18,8 +18,11 @@
 --- Test-only: exercise the decision table without driving real input, and
 --- assert that sessions and shutdown detach their listeners.
 ---@field _classify       fun(atom_type: string, keys_raw: string|nil, keys_norm: string, changed: boolean, moved: boolean): VF.Atom.Decision
+---@field _describe_abort fun(atom_type: string, keys_raw: string|nil, keys_norm: string, lhs_norm: string, changed: boolean, moved: boolean): string
+---@field _lossy_passthrough fun(keys_raw: string|nil, lhs_norm: string, changed: boolean, moved: boolean, permissive: boolean): boolean
 ---@field _has_listener   fun(name: string): boolean
 local M = {}
+local config = require("vimficiency.config")
 local keynorm = require("vimficiency.capture.keynorm")
 local util = require("vimficiency.util")
 
@@ -29,11 +32,13 @@ local util = require("vimficiency.util")
 
 --- One completed user action: the replayable keys plus the scope they fired in.
 --- The event's other fields (`type`, `lhs`, `count`, `changed`, `moved`) are
---- consumed by `classify` and `strip_synthetic_count` and not forwarded.
+--- consumed by `classify`, `describe_abort` and `strip_synthetic_count` and not forwarded.
 ---@class VF.Atom
----@field keys     string        # Replayable post-mapping sequence (notation); "" when unavailable. Feed this to the simulator/optimizer.
----@field buf      integer       # Buffer the atom fired for (`ev.buf`).
----@field win      integer       # Focused window at atom time.
+---@field keys         string        # Replayable post-mapping sequence (notation); "" when unavailable. Feed this to the simulator/optimizer.
+---@field buf          integer       # Buffer the atom fired for (`ev.buf`).
+---@field win          integer       # Focused window at atom time.
+---@field lossy        boolean       # `keys` is the typed lhs of a Lua-callback mapping (lossy_mappings ~= "drop"); replay may diverge.
+---@field abort_reason string|nil    # Only for "abort": what made the atom unreplayable and what it did, for the user-facing drop notice.
 
 -- What we tag this atom as, informing our decision
 ---@alias VF.Atom.Decision
@@ -52,6 +57,44 @@ local function classify(atom_type, keys_raw, keys_norm, changed, moved)
     and atom_type ~= "excmd" and not keynorm.is_mouse(keys_norm)
   if replayable then return "record" end
   return (changed or moved) and "abort" or "skip"
+end
+
+--- Names the unreplayable action and its effect, e.g. "ex command `:m .+1` changed
+--- the buffer and moved the cursor" or "Lua mapping `<leader>V` moved the cursor".
+---@param atom_type string
+---@param keys_raw string|nil
+---@param keys_norm string
+---@param lhs_norm string
+---@param changed boolean
+---@param moved boolean
+---@return string
+local function describe_abort(atom_type, keys_raw, keys_norm, lhs_norm, changed, moved)
+  local what
+  if atom_type == "excmd" then
+    what = "ex command `" .. keys_norm:gsub("<[NC][LR]>$", "") .. "`"
+  elseif keynorm.is_mouse(keys_norm) then
+    what = "mouse input `" .. keys_norm .. "`"
+  elseif keys_raw == nil then
+    what = "Lua mapping `" .. lhs_norm .. "` (lossy_mappings = \"warn\" or \"allow\" records its typed keys instead)"
+  else
+    what = "mapping `" .. lhs_norm .. "` with no replayable key expansion"
+  end
+  local effect = changed and moved and "changed the buffer and moved the cursor"
+    or changed and "changed the buffer"
+    or "moved the cursor"
+  return what .. " " .. effect
+end
+
+--- Whether a Lua-callback atom (`keys == nil`) is recorded under its typed lhs.
+--- A no-effect callback stays a skip regardless, so its keys never pollute a recording.
+---@param keys_raw string|nil
+---@param lhs_norm string
+---@param changed boolean
+---@param moved boolean
+---@param permissive boolean
+---@return boolean
+local function lossy_passthrough(keys_raw, lhs_norm, changed, moved, permissive)
+  return permissive and keys_raw == nil and lhs_norm ~= "" and (changed or moved)
 end
 
 --------------------------------------------------------------------------------
@@ -83,14 +126,26 @@ local function dispatch(ev)
   local d = ev.data
   local keys_raw = d.keys
   local keys_norm = strip_synthetic_count(keynorm.normalize(keys_raw), d.count)
-  local decision = classify(d.type, keys_raw, keys_norm, d.changed == true, d.moved == true)
+  local changed, moved = d.changed == true, d.moved == true
+  local lhs_norm = keynorm.normalize(d.lhs)
+  local lossy = lossy_passthrough(keys_raw, lhs_norm, changed, moved, config.lossy_mappings ~= "drop")
+  if lossy then
+    -- `lhs` arrives without the count that `keys` would have carried.
+    keys_raw = d.lhs
+    keys_norm = (d.count and d.count > 1 and tostring(d.count) or "") .. lhs_norm
+  end
+  local decision = classify(d.type, keys_raw, keys_norm, changed, moved)
 
   ---@type VF.Atom
   local atom = {
-    keys = keys_norm,
-    buf  = ev.buf,
-    win  = vim.api.nvim_get_current_win(),
+    keys  = keys_norm,
+    buf   = ev.buf,
+    win   = vim.api.nvim_get_current_win(),
+    lossy = lossy,
   }
+  if decision == "abort" then
+    atom.abort_reason = describe_abort(d.type, keys_raw, keys_norm, lhs_norm, changed, moved)
+  end
 
   for _, notify_listener in pairs(listener_by_name) do
     notify_listener(atom, decision)
@@ -146,6 +201,8 @@ function M.shutdown()
 end
 
 M._classify = classify
+M._describe_abort = describe_abort
+M._lossy_passthrough = lossy_passthrough
 function M._has_listener(name) return listener_by_name[name] ~= nil end
 
 return M

@@ -47,6 +47,15 @@ errored — see the two sections above.
   aborts, `:Vimfy close`, and the 5-minute idle / 500-line drift
   guards all tear down Watch sessions silently.
 
+## "recorded Lua mapping `…` as typed keys" or "dropped — Lua mapping `…`"
+
+A key you pressed is mapped to a Lua function (flash.nvim's `f`/`t`/`;`,
+a `vim.keymap.set` callback) and Neovim cannot report replayable keys for
+it. The notice names the mapping. `lossy_mappings` decides what happens:
+`"warn"` (default) records the keys you typed with a once-per-session
+notice, `"allow"` records them silently, `"drop"` ends the session. See
+[13. Limitations](13-limitations.md) for why replay may then diverge.
+
 ## Suggestions look wrong or worse than what I did
 
 - Some motions we can't model (screen-line motions `gj`/`gk`, and

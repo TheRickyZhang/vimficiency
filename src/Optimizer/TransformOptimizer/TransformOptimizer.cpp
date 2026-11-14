@@ -180,6 +180,11 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
                 config, transformBoundary, initialLines, goalLines,
                 pre, suf, preSuf);
 
+  // A start with no solution would otherwise search its whole space, so each
+  // start is cut off at a multiple of the work the hardest solved start took.
+  vector<int> nodesByStart(totalPositions, 0);
+  int hardestSolvedNodes = 0;
+
   auto recordResult = [&](const TransformState& state, const Result& result, bool captureGoalPos) {
     int idx = state.getStartIndex();
     if (!startActive[idx]) return;
@@ -198,6 +203,7 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
     if (captureGoalPos) goalCapture.onResult(idx, state.getPos());
     if (firstForStart) {
       uniquePositionsCovered++;
+      hardestSolvedNodes = max(hardestSolvedNodes, nodesByStart[idx]);
     }
     if (static_cast<int>(bucket.size()) == params.maxResultsPerStartPos) {
       if (startActive[idx]) {
@@ -225,6 +231,14 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
     if (costIt != costMap.end() && costIt->second < s.getCost() - 1e-9) {
       stats.incrementStatesSkipped();
       ::maybeMarkStartExhausted(pendingByStart, startActive, terminalStarts, activeStart);
+      continue;
+    }
+
+    nodesByStart[activeStart]++;
+    if (uniquePositionsCovered > 0 &&
+        nodesByStart[activeStart] > params.startWorkFactor * hardestSolvedNodes) {
+      startActive[activeStart] = false;
+      terminalStarts++;
       continue;
     }
 
@@ -259,12 +273,16 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
     assert(pos.line >= 0 && pos.line <= lines.lastLine() &&
            "non-goal edit state must have in-bounds cursor line");
 
+    const bool unsolvedBeforeCache = resultsByStart[activeStart].empty();
     auto cacheResult = mode.tryUseSuffixCache(s, resultsByStart,
                                               params.maxResultsPerStartPos,
                                               startActive,
                                               resultsFound,
                                               uniquePositionsCovered);
     if (cacheResult.hit) {
+      if (unsolvedBeforeCache) {
+        hardestSolvedNodes = max(hardestSolvedNodes, nodesByStart[activeStart]);
+      }
       if (cacheResult.startCapped && startActive[activeStart]) {
         startActive[activeStart] = false;
         terminalStarts++;

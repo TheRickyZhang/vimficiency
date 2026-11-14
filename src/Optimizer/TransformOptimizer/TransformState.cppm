@@ -59,8 +59,7 @@ export {
 //      column on a hit.
 //
 //   3. CompositionOptimizer planned edits that walk vertically across
-//      width-varying lines. Today no planned-edit kind does this; if one
-//      is added, CompositionStateKey needs targetCol too.
+//      width-varying lines. Today no planned-edit kind does this.
 //
 //   4. Allowing the cursor to sit at a clamped column (col < targetCol)
 //      mid-search without an operator re-anchor. This is the general form
