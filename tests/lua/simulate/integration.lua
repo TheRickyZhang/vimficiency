@@ -201,7 +201,8 @@ local function load_vimficiency_file(name)
   local fh = assert(io.open(path, "r"))
   local text = fh:read("*a")
   fh:close()
-  return vim.json.decode(text)
+  local data, err = require("vimficiency.session.disk").decode(text)
+  return assert(data, err)
 end
 
 local case_context = {

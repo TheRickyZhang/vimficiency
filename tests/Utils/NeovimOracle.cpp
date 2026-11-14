@@ -161,12 +161,12 @@ struct NeovimOracle::Impl {
     int stdout_pipe[2]; // Child writes to [1], parent reads from [0]
 
     if (pipe(stdin_pipe) < 0 || pipe(stdout_pipe) < 0) {
-      assert(false && "Failed to create pipes for Neovim");
+      throw std::runtime_error("Failed to create pipes for Neovim");
     }
 
     nvim_pid = fork();
     if (nvim_pid < 0) {
-      assert(false && "Failed to fork for Neovim");
+      throw std::runtime_error("Failed to fork for Neovim");
     }
 
     if (nvim_pid == 0) {
@@ -209,7 +209,7 @@ struct NeovimOracle::Impl {
 
     ssize_t written = write(stdin_fd, send_buf.data(), send_buf.size());
     if (written != static_cast<ssize_t>(send_buf.size())) {
-      assert(false && "Failed to write request to Neovim");
+      throw std::runtime_error("Failed to write request to Neovim");
     }
   }
 
@@ -219,17 +219,17 @@ struct NeovimOracle::Impl {
       if (recv_unpacker.next(oh)) {
         auto &obj = oh.get();
         if (obj.type != msgpack::type::ARRAY || obj.via.array.size < 3) {
-          assert(false && "Invalid RPC response format");
+          throw std::runtime_error("Invalid Neovim RPC response format");
         }
         int type = obj.via.array.ptr[0].as<int>();
         if (type == RPC_RESPONSE) {
           // [type=1, msgid, error, result]
           if (obj.via.array.size < 4) {
-            assert(false && "Invalid response array size");
+            throw std::runtime_error("Invalid Neovim RPC response array size");
           }
           auto &error = obj.via.array.ptr[2];
           if (error.type != msgpack::type::NIL) {
-            assert(false && "Neovim error");
+            throw std::runtime_error("Neovim RPC error");
           }
           return oh;
         }
@@ -241,13 +241,14 @@ struct NeovimOracle::Impl {
       struct pollfd pfd = {stdout_fd, POLLIN, 0};
       int ret = poll(&pfd, 1, 5000); // 5 second timeout
       if (ret <= 0) {
-        assert(false && "Timeout waiting for Neovim response");
+        throw std::runtime_error("Timeout waiting for Neovim response");
       }
 
+      recv_unpacker.reserve_buffer(65536);
       ssize_t n = read(stdout_fd, recv_unpacker.buffer(),
                        recv_unpacker.buffer_capacity());
       if (n <= 0) {
-        assert(false && "Failed to read from Neovim");
+        throw std::runtime_error("Failed to read from Neovim");
       }
       recv_unpacker.buffer_consumed(static_cast<size_t>(n));
     }

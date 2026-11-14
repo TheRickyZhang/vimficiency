@@ -122,7 +122,8 @@ field. Past the constructor nothing re-checks shape, type, or handle validity.
   `validate.normalize_*`. A guard that exists only because a fixture skipped the
   constructor is a fixture bug.
 
-Saved files predating `key_count` are rejected as malformed since 2026-11-12.
+Saved files carry `disk.FORMAT_VERSION`; any other version is rejected, with no
+migration. Bump it on any schema change.
 
 ## Session Architecture
 

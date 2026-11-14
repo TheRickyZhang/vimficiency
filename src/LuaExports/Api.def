@@ -85,12 +85,6 @@ VFByteSlice vf_analyze_start_async(
   int deadline_ms);
 VFByteSlice vf_analyze_poll(int job_id);
 int vf_analyze_cancel(int job_id);
-VFByteSlice vf_compute_diffs(
-  const char* encoded_initial_lines,
-  size_t encoded_initial_lines_len,
-  const char* encoded_goal_lines,
-  size_t encoded_goal_lines_len,
-  int diff_algorithm);
 VFByteSlice vf_get_debug();
 VFByteSlice vf_get_warnings();
 VFByteSlice vf_get_optimizer_defaults();

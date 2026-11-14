@@ -126,7 +126,7 @@ end
 ---@field has_lines_below boolean      # Whether the optimization slice omitted lines below
 ---@field prefix string                # Reserved boundary prefix; empty at the whole-buffer level (see compute.lua)
 ---@field suffix string                # Reserved boundary suffix; empty at the whole-buffer level
----@field diffs VF.Diff.Region[]       # Optimizer character-level diff regions for column highlighting; `disk.load` fills `{}` for pre-diff saved files
+---@field diffs VF.Diff.Region[]       # Optimizer character-level diff regions for column highlighting
 ---@field window_height integer        # Captured window height for page/scroll semantics
 ---@field scroll_amount integer        # Captured 'scroll' option for Ctrl-D/U semantics
 ---@field user_seq string              # What the user typed (keytrans string), mouse events stripped
@@ -136,7 +136,7 @@ end
 ---@field key_count integer            # Captured key events at finish (authoritative; user_seq is bytes, not keys)
 ---@field finished_wall_epoch integer  # os.time() at finish. Wall clock because it is saved to disk; monotonic values do not survive a reboot
 ---@field analyze_ms number|nil        # Wall-time of the optimizer analyze() FFI call only (ms); running-model telemetry
----@field kind? VF.Session.Kind        # Set by convert_to_finished; absent on saved files that predate it (fetch treats them as mark)
+---@field kind? VF.Session.Kind        # Set by convert_to_finished; always present on saved files
 
 --- Normalized view-model for list/suggest UIs.
 --- `display_alias` is presentation-only; use `id` for follow-up actions.
@@ -514,7 +514,7 @@ function M.register_fetched_result(alias, result)
   local now_mono_ns = vim.uv.hrtime()
   finished_sessions[id] = {
     id               = id,
-    kind             = result.kind or "mark",
+    kind             = result.kind,
     started_mono_ns  = now_mono_ns,
     finished_mono_ns = now_mono_ns,
     finish_alias     = alias,
