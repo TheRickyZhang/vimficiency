@@ -99,6 +99,32 @@ check("_classify verdict table", function()
   eq(c("mouse", "<ScrollWheelDown>", "<ScrollWheelDown>", false, false), "skip", "mouse no-op")
 end)
 
+check("_describe_abort names the culprit and its effect", function()
+  local d = atom_stream._describe_abort
+  eq(d("excmd", ":m .+1<NL>", ":m .+1<NL>", ":m .+1<NL>", true, true),
+    "ex command `:m .+1` changed the buffer and moved the cursor", "ex edit")
+  eq(d("excmd", ":5<NL>", ":5<NL>", ":5<NL>", false, true),
+    "ex command `:5` moved the cursor", "ex jump")
+  eq(d("mapping", nil, "", "<Space>V", false, true),
+    "Lua mapping `<Space>V` (lossy_mappings = \"warn\" or \"allow\" records its typed keys instead) moved the cursor",
+    "lua cb")
+  eq(d("operator", "", "", "g/", true, false),
+    "mapping `g/` with no replayable key expansion changed the buffer", "lossy mapping")
+  eq(d("mouse", "<LeftMouse>", "<LeftMouse>", "<LeftMouse>", false, true),
+    "mouse input `<LeftMouse>` moved the cursor", "mouse")
+end)
+
+check("_lossy_passthrough records effectful Lua callbacks only when permissive", function()
+  local p = atom_stream._lossy_passthrough
+  eq(p(nil, "f;", false, true, true), true, "lua cb moved, permissive")
+  eq(p(nil, "f;", true, false, true), true, "lua cb changed, permissive")
+  eq(p(nil, "f;", false, true, false), false, "lua cb moved, strict")
+  eq(p(nil, "<Space>yp", false, false, true), false, "lua cb no-op stays skip")
+  eq(p(nil, "", false, true, true), false, "no lhs to record")
+  eq(p("", "g/", true, false, true), false, "unexpressible keys are not a lua cb")
+  eq(p("dd", "dd", true, false, true), false, "replayable keys untouched")
+end)
+
 check("add_listener refuses duplicate name; remove_listener tears down", function()
   truthy(atom_stream.add_listener("lifecycle", function() end), "first listener")
   eq(atom_stream.add_listener("lifecycle", function() end), false, "duplicate refused")

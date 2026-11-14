@@ -104,6 +104,7 @@ end
 ---@field atoms        VF.Atom[]
 ---@field last_atom_mono_ns integer|nil # vim.uv.hrtime() of the last appended atom; nil until the first. Drives idle eviction
 ---@field stream_sub   string|nil        # Atom listener name this record owns (mark/watch); nil for recall (shared listener)
+---@field lossy_warned boolean|nil       # Mark/watch only: the once-per-session lossy_mappings = "warn" notice has been shown
 ---@field watch_disarm fun()|nil         # Watch only: disarm for the idle end-trigger armed at :Vimfy watch. Called on finish/destroy so the timer and listener are released.
 
 --- Finished or disk-loaded. `result` carries key_count, kind, and the only

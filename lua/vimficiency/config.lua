@@ -28,6 +28,12 @@ local fields = {
   KEY_SESSION_CAPACITY = 200,
   MAX_RETENTION_SECONDS = 120,
   MANUAL_IDLE_TIMEOUT_SECONDS = 300,
+  -- A Lua-callback mapping that moves the cursor or changes text is lossy: Neovim
+  -- cannot report replayable keys for it. "drop" ends the session; "warn" and
+  -- "allow" record the typed keys (`lhs`) instead, "warn" with a once-per-session
+  -- notice. Replay is faithful only when the callback did what those keys do in
+  -- plain Vim.
+  lossy_mappings = "warn",
 
   -- Session features
   auto_suggest = {
@@ -111,6 +117,7 @@ function fields.apply(user_config)
   local merged = vim.tbl_deep_extend("force", vim.deepcopy(fields._defaults), user_config)
   merged.watch = validate.normalize_watch(user_config.watch)
   merged.auto_suggest = validate.normalize_auto_suggest(user_config.auto_suggest, fields._defaults.auto_suggest)
+  merged.lossy_mappings = validate.normalize_lossy_mappings(merged.lossy_mappings)
 
   for name, value in pairs(merged) do
     if fields._defaults[name] ~= nil then

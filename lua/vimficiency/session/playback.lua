@@ -57,7 +57,7 @@ function M.simulate(alias_or_filename, count)
     local data, err, is_missing = disk.load(alias_or_filename)
     if data then
       on_disk = data
-    elseif not is_missing then
+    elseif not is_missing and not in_memory then
       vim.notify("simulate: " .. err, vim.log.levels.ERROR)
       return
     end

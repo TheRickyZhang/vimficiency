@@ -238,3 +238,13 @@ test("validate_auto_suggest: all three triggers coexist", function()
       "cooldown_ms is feature-level, applies to all triggers")
   end)
 end)
+
+test("validate lossy_mappings: three modes, anything else errors", function()
+  for _, mode in ipairs({ "drop", "warn", "allow" }) do
+    assert_eq(validate.normalize_lossy_mappings(mode), mode)
+  end
+  assert_error(function() validate.normalize_lossy_mappings(true) end,
+    "lossy_mappings", "the old boolean form must error")
+  assert_error(function() validate.normalize_lossy_mappings("permissive") end,
+    "lossy_mappings", "unknown mode must error")
+end)

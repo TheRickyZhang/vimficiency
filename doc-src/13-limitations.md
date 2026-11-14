@@ -23,10 +23,15 @@ title: "Known limitations"
   suggestion quality beyond roughly a dozen lines of edits.
 
 - **Mappings to Lua callbacks can't be audited as motion.** A key mapped to a
-  Lua function that edits the buffer produces an unreplayable capture event; a
-  session spanning it is dropped as untrustworthy. Mappings whose RHS is a key
-  sequence are fine — they are captured as the resolved post-mapping keys. Type
-  the underlying keys directly when you want a specific motion audited.
+  Lua function that edits the buffer or moves the cursor produces an
+  unreplayable capture event. By default (`lossy_mappings = "warn"`) the keys
+  you typed are recorded in its place with a once-per-session notice; replay
+  is faithful only when the function did what those keys do in plain Vim.
+  `"allow"` records silently, and `"drop"` ends the session with a warning that
+  names the mapping (see [Configuration](09-configuration.md)). Mappings whose
+  RHS is a key sequence are fine — they are captured as the resolved
+  post-mapping keys. Type the underlying keys directly when you want a specific
+  motion audited.
 
 - **Recall only records actions in normal file buffers** (`&buftype == ""`).
   Actions in help, quickfix, terminal, prompt, or scratch buffers are skipped —

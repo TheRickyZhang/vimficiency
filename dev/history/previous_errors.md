@@ -266,6 +266,15 @@ if (pos >= nextEdit.beginPos && pos < nextEdit.endPos) {
 }
 ```
 
+## CompositionOptimizer discarded Transform results at clamped columns
+
+Transform results are keyed by visible position and computed with `targetCol == col`. Composition used to drop every result when the cursor's curswant differed, enqueueing `0` to re-sync only at col 0. Natural plans like `jdd` or `jx` from a clamped column were lost, and a clamped state with `col > 0` had no transitions at all.
+
+**Fix:** each `Result` carries an `EntryCurswant` class set during Transform exploration, and `TransformResult::forEachEditFrom` applies it (see `transform-optimizer.md`). Two related bugs surfaced with it:
+
+- The goal clamp kept the pre-edit curswant; Neovim leaves curswant at the landing column after any edit.
+- The visual-delete shortcut (`vj…d`) reads curswant through its `j`, so it must be `Required`.
+
 ## CompositionOptimizer move-before-use in return statement
 
 In `CompositionOptimizer.cpp`, the `optimize()` return statement used braced-init-list construction:

@@ -177,8 +177,8 @@ TEST(CompositionResultPlannedEditView, OverEditCapKeepsPlanWithoutResults) {
 
   vector<string> initialText, goalText;
   for (int i = 0; i < 17; i++) {
-    initialText.push_back("unchanged prefix text " + to_string(i) + " old");
-    goalText.push_back("unchanged prefix text " + to_string(i) + " new");
+    initialText.push_back("keep " + to_string(i) + " old");
+    goalText.push_back("keep " + to_string(i) + " new");
   }
   Lines initial(initialText);
   Lines goal(goalText);

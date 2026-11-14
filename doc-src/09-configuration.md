@@ -62,6 +62,7 @@ the lifetime of in-progress sessions.
 | `KEY_SESSION_CAPACITY` | `200` | Maximum commands retained in the recall ring. |
 | `MAX_RETENTION_SECONDS` | `120` | Maximum age of recall history. The oldest entries are evicted once **both** the capacity and the age limit are exceeded. |
 | `MANUAL_IDLE_TIMEOUT_SECONDS` | `300` | A manual (`start`/`finish`) session left idle this long is auto-ended with a warning. |
+| `lossy_mappings` | `"warn"` | A key mapped to a Lua function (flash.nvim's `f`, a `vim.keymap.set` callback) that moves the cursor or edits text cannot be captured as replayable keys. `"drop"`: a session spanning it ends, and the warning names the mapping. `"warn"`: the keys you typed are recorded instead, with a once-per-session notice. `"allow"`: recorded silently. Replay is faithful only when the function did what those keys do in plain Vim. |
 
 ## Idle end-detection
 

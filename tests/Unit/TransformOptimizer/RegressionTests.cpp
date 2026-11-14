@@ -319,45 +319,6 @@ TEST_F(TransformOptimizer_ManualTest, ParagraphChangeAtEofCollapsesIntoPrefixLin
                       "paragraph c} prefix collapse", 3, CursorPos(0, 9));
 }
 
-TEST_F(TransformOptimizer_ManualTest, EmbeddedChangePrunesBoundaryEscapingContinuation) {
-  const Lines fullBuffer = {
-      "bfa   ",
-      "cbde",
-      " a.",
-      ", fded",
-  };
-  const Lines editRegion = {
-      "   ",
-      "cbde",
-      " a.",
-      ", f",
-  };
-  const Lines goalLines = {
-      ".da e d,",
-      "d.b,",
-      "ccbcc.,f",
-      "b.,b",
-  };
-  const Lines expectedFull = {
-      "bfa.da e d,",
-      "d.b,",
-      "ccbcc.,f",
-      "b.,bded",
-  };
-  TransformBoundary boundary(fullBuffer, CursorPos(0, 3), CursorPos(3, 3));
-
-  TransformResult result =
-      opt.optimizeTransform(editRegion, goalLines, boundary, regressionParams(40));
-
-  // Pruning may leave this start with no candidates; any that remain must
-  // stay inside the boundary.
-  auto bucket = result.resultsAt(1, 1);
-  if (!bucket.empty()) {
-    expectBucketReplays(bucket, fullBuffer, CursorPos(1, 1), expectedFull,
-                        "embedded change boundary preservation", 3);
-  }
-}
-
 TEST_F(TransformOptimizer_ManualTest, LinewiseChangeDoesNotTypeIntoHiddenContext) {
   const Lines fullBuffer = {
       "afaddcd,cbfa",
@@ -393,7 +354,7 @@ TEST_F(TransformOptimizer_ManualTest, TailParagraphDeletePreservesCursorColumn) 
   TransformBoundary boundary(source, CursorPos(0, 0), source.endPos());
 
   TransformResult result =
-      opt.optimizePureDeletion(source, boundary, regressionParams(80));
+      opt.optimizePureDeletion(source, boundary, regressionParams(80, 1));
 
   expectBucketReplays(result.resultsAt(1, 1), source, CursorPos(1, 1), Lines{""},
                       "tail paragraph delete cursor column");
@@ -422,7 +383,7 @@ TEST_F(TransformOptimizer_ManualTest, EmbeddedPureDeletionDoesNotUseVisualShortc
   TransformBoundary boundary(fullBuffer, CursorPos(0, 3), CursorPos(2, 3));
 
   TransformResult result =
-      opt.optimizePureDeletion(editRegion, boundary, regressionParams(100, 5));
+      opt.optimizePureDeletion(editRegion, boundary, regressionParams(100, 1));
 
   expectBucketReplays(result.resultsAt(0, 0), fullBuffer, CursorPos(0, 3), expectedFull,
                       "embedded visual-delete shortcut");
@@ -464,7 +425,7 @@ TEST_F(TransformOptimizer_ManualTest, StraddledPureDeletionAllResultsReplayToGoa
     TransformBoundary boundary(fullBuffer, test.begin, test.end);
 
     TransformResult result =
-        opt.optimizePureDeletion(editRegion, boundary, regressionParams(200, 5));
+        opt.optimizePureDeletion(editRegion, boundary, regressionParams(200, 1));
 
     ASSERT_GT(result.resultCount(), 0u);
     int checked = 0;

@@ -54,11 +54,18 @@ local function make_session_listener(alias, id)
     if decision == "abort" then
       session_store.remove(id)
       vim.schedule(function()
-        vim.notify("Vimfy: session [" .. alias .. "] dropped — an unreplayable " ..
-          "command (ex command, mouse, or lossy mapping) changed the buffer or moved the cursor",
-          vim.log.levels.WARN)
+        vim.notify("Vimfy: session [" .. alias .. "] dropped — " .. atom.abort_reason ..
+          ", so the recording can no longer be replayed", vim.log.levels.WARN)
       end)
     elseif decision == "record" then
+      if atom.lossy and config.lossy_mappings == "warn" and not session.lossy_warned then
+        session.lossy_warned = true
+        vim.schedule(function()
+          vim.notify("Vimfy: session [" .. alias .. "] recorded Lua mapping `" .. atom.keys ..
+            "` as typed keys; replay is faithful only if it behaved like plain Vim " ..
+            "(lossy_mappings = \"allow\" silences this)", vim.log.levels.WARN)
+        end)
+      end
       session_store.append_atom(session, atom)
     end
   end
