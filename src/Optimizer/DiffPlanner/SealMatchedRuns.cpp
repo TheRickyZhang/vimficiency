@@ -52,7 +52,7 @@ vector<Block> sealMatchedRuns(const FlatText& initial, const FlatText& goal, con
       // merge: the text right of the core may be a pure insertion, which
       // nothing merges with.
       sealed = typing.ins(coreBegin + off, coreEnd + off) >
-               move.query(coreBegin, coreEnd) + typing.entry + typing.esc +
+               move.query(coreBegin, coreEnd) + REGION_PENALTY + typing.entry + typing.esc +
                    del.stopSlack(coreBegin) + del.startSlack(coreEnd);
     }
     if (sealed) {

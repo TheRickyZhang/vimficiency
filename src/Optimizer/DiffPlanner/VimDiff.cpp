@@ -79,6 +79,7 @@ vector<BlockCosts> calculateTransitionCosts(const FlatText& initial, const FlatT
 struct Cand {
   double cost = INF;
   uint16_t pi = 0, pj = 0;  // predecessor cell; in the previous block for CROSS
+  uint16_t moves = 0;       // MOVE/CROSS steps on the path
   Step step = LEADING;
 
   bool open() const { return step == DELETE || step == EXIT; }  // region in progress
@@ -90,8 +91,13 @@ struct Tables {
   Tables(int n, int m) : out(n + 1, m + 1), in(n + 1, m + 1) {}
 };
 
-void relax(Cand& cell, double cost, Step step, int pi, int pj) {
-  if (cost < cell.cost) cell = {cost, (uint16_t)pi, (uint16_t)pj, step};
+// Exact cost ties go to the plan with fewer regions.
+bool better(double cost, int moves, const Cand& than) {
+  return cost < than.cost || (REGION_TIEBREAK && cost == than.cost && moves < than.moves);
+}
+
+void relax(Cand& cell, double cost, int moves, Step step, int pi, int pj) {
+  if (better(cost, moves, cell)) cell = {cost, (uint16_t)pi, (uint16_t)pj, (uint16_t)moves, step};
 }
 
 // One multi-source sweep prices every deletion of column j within the block.
@@ -102,8 +108,9 @@ void relaxDeletes(Tables& t, const Block& b, const BlockCosts& costs, TilingCost
       [&](int ri, const Arrival& a) {
         if (a.cost >= INF) return;
         const int i = ri - b.aBegin, pi = a.seed - b.aBegin;
-        relax(t.out[i, j], a.cost, DELETE, pi, j);
-        if (j < b.m()) relax(t.in[i, j + 1], a.cost + costs.change[j], CHANGE, pi, j);
+        const int moves = t.out[pi, j].moves;
+        relax(t.out[i, j], a.cost, moves, DELETE, pi, j);
+        if (j < b.m()) relax(t.in[i, j + 1], a.cost + costs.change[j], moves, CHANGE, pi, j);
       });
 }
 
@@ -121,25 +128,28 @@ vector<Tables> solveVimDiff(const vector<Block>& blocks, const vector<BlockCosts
         Cand& out = t.out[i, j];
         if (j > 0) {
           const int pj = j - 1;
-          relax(in, t.in[i, pj].cost + c.typed[pj], TYPE, i, pj);
-          relax(in, t.out[i, pj].cost + c.enter[pj], ENTER, i, pj);
+          relax(in, t.in[i, pj].cost + c.typed[pj], t.in[i, pj].moves, TYPE, i, pj);
+          relax(in, t.out[i, pj].cost + c.enter[pj], t.out[i, pj].moves, ENTER, i, pj);
         }
         if (i == j && i <= c.lead) {
           if (k == 0) {
-            relax(out, 0.0, LEADING, 0, 0);
+            relax(out, REGION_PENALTY, 0, LEADING, 0, 0);
           } else {
             const Tables& pt = tables[k - 1];
             const Block& pb = blocks[k - 1];
             for (int tr = 0; tr < (int)c.cross.size(); tr++) {
               const int pi = pb.n() - tr, pj = pb.m() - tr;
-              relax(out, pt.out[pi, pj].cost + c.cross[tr][i], CROSS, pi, pj);
+              const Cand& from = pt.out[pi, pj];
+              relax(out, from.cost + c.cross[tr][i] + REGION_PENALTY, from.moves + 1, CROSS, pi, pj);
             }
           }
         }
         for (int pi = i - 1, pj = j - 1; pi >= 0 && pj >= 0 && matches(b.aBegin + pi, b.bBegin + pj);
-             pi--, pj--)
-          relax(out, t.out[pi, pj].cost + c.move[pi][i], MOVE, pi, pj);
-        relax(out, in.cost, EXIT, i, j);
+             pi--, pj--) {
+          const Cand& from = t.out[pi, pj];
+          relax(out, from.cost + c.move[pi][i] + REGION_PENALTY, from.moves + 1, MOVE, pi, pj);
+        }
+        relax(out, in.cost, in.moves, EXIT, i, j);
       }
       relaxDeletes(t, b, c, del, j);
     }
@@ -227,7 +237,7 @@ void sealedPartition(Planned& p) {
   int prevEnd = -1;
   for (const Block& b : p.blocks) {
     const Region r{b.aBegin, b.aEnd, b.bBegin, b.bEnd};
-    p.plan.cost += p.del.query(r.aBegin, r.aEnd) + insertCost(p.typing, r);
+    p.plan.cost += p.del.query(r.aBegin, r.aEnd) + insertCost(p.typing, r) + REGION_PENALTY;
     if (prevEnd >= 0) p.plan.cost += p.move.query(prevEnd, r.aBegin);
     prevEnd = r.aEnd;
     p.plan.regions.push_back(r);
@@ -242,8 +252,10 @@ void dpPlan(Planned& p) {
   const Block& b = p.blocks[last];
   const Tables& t = p.tables[last];
   int bestT = 0;
-  for (int tr = 1; tr <= p.costs.back().trail; tr++)
-    if (t.out[b.n() - tr, b.m() - tr].cost < t.out[b.n() - bestT, b.m() - bestT].cost) bestT = tr;
+  for (int tr = 1; tr <= p.costs.back().trail; tr++) {
+    const Cand& c = t.out[b.n() - tr, b.m() - tr];
+    if (better(c.cost, c.moves, t.out[b.n() - bestT, b.m() - bestT])) bestT = tr;
+  }
   p.endI = b.n() - bestT;
   p.endJ = b.m() - bestT;
   p.plan = {walk(p.tables, p.blocks, last, p.endI, p.endJ, [](int, int, int, bool) {}),
@@ -283,7 +295,7 @@ CostBreakdown breakdownOf(Planned& p, const Lines& initialLines) {
     const double ins = insertCost(p.typing, r);
     const double mv = prevEnd < 0 ? 0.0 : p.move.query(prevEnd, r.aBegin);
     prevEnd = r.aEnd;
-    bd.total += del + ins + mv;
+    bd.total += del + ins + mv + REGION_PENALTY;
     bd.regions.push_back(RegionBreakdown{diffFromRegion(initialLines, p, r), del, ins, mv});
   }
   return bd;
