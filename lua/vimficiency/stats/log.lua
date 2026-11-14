@@ -5,7 +5,7 @@
 -- Log-first (not aggregate-first) so the stats schema can evolve: if we
 -- later change the efficiency metric or add new buckets, we re-reduce the
 -- raw records instead of being stuck with whatever shape we committed to
--- at write time. See dev/plan discussion for the full rationale.
+-- at write time.
 
 local M = {}
 
@@ -17,12 +17,6 @@ end
 
 M._log_path = log_path
 
-local function ensure_dir()
-  local dir = vim.fn.stdpath("data") .. "/vimficiency"
-  if vim.fn.isdirectory(dir) == 0 then
-    vim.fn.mkdir(dir, "p")
-  end
-end
 
 --- Pick the single lowest-cost entry from `optimal_results`. Motion
 --- comparisons use this (not the full Top-N list) so the optimizer
@@ -62,23 +56,29 @@ function M.build_record(kind, result)
   }
 end
 
---- Append one record to the log. Best-effort: on failure, warn once via
+---@param err any
+local function warn(err)
+  vim.schedule(function()
+    vim.notify("vimfy stats: could not append to log: " .. tostring(err),
+      vim.log.levels.WARN)
+  end)
+end
+
+--- Append one record to the log. Best-effort: on failure, warn via
 --- vim.notify but never raise — a session finish must not be blocked by
 --- stats plumbing.
 function M.append(record)
-  ensure_dir()
-  local path = log_path()
-  local fh, open_err = io.open(path, "a")
-  if not fh then
-    vim.schedule(function()
-      vim.notify("vimfy stats: could not open log: " ..
-        tostring(open_err or "?"), vim.log.levels.WARN)
-    end)
-    return
+  local data_dir = vim.fn.stdpath("data")
+  for _, dir in ipairs({ data_dir, data_dir .. "/vimficiency" }) do
+    local _, mkdir_err, mkdir_code = vim.uv.fs_mkdir(dir, 493) -- 0755
+    if mkdir_err and mkdir_code ~= "EEXIST" then return warn(mkdir_err) end
   end
-  fh:write(vim.json.encode(record))
-  fh:write("\n")
-  fh:close()
+  local fh, open_err = io.open(log_path(), "a")
+  if not fh then return warn(open_err) end
+  local wrote, write_err = fh:write(vim.json.encode(record), "\n")
+  local closed, close_err = fh:close()
+  if not wrote then return warn(write_err) end
+  if not closed then return warn(close_err) end
 end
 
 --- Read every record from the log. Silently drops malformed lines (a

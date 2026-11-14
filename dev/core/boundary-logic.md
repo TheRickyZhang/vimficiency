@@ -236,8 +236,6 @@ editRegion = {"hello"}, hasLinesAbove=true, hasLinesBelow=true
 → effectiveLines = {"", "hello", ""}, lineOffset = 1
 ```
 
-See `dev/edit-boundary-limitations.md` for known limitations with multi-line regions.
-
 ## Key Implementation Notes
 
 ### skipCurrent Behavior

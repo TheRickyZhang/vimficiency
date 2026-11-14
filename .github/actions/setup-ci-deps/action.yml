@@ -14,6 +14,12 @@ inputs:
 runs:
   using: composite
   steps:
+    # The container runs as root over a runner-owned checkout; checkout's own
+    # safe.directory grant doesn't outlive its step.
+    - name: Trust workspace for git
+      shell: bash
+      run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+
     - uses: ./.github/actions/setup-cmake
 
     - name: Cache Neovim

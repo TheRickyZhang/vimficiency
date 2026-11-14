@@ -84,17 +84,7 @@ Any of those makes the "one preset per config" structure pay for itself.
 
 ---
 
-## 4. Retire or use `DebugTracking.cppm`'s `Maybe<T>` pattern
-
-**What.** `src/Optimizer/DebugTracking.cppm` defines a zero-overhead-when-disabled `Maybe<T>` template gated on `kDebugTrackingEnabled` (now driven by `VIMF_TRACK_STATES` via `BuildConfig.h`). It has no users. `SearchStats::exploredStates_` is just a raw `std::vector<ExploredState>` that costs a 24-byte empty-vector member per `BaseSearchStats` even with tracking off.
-
-**Why deferred.** The empty-vector cost is negligible and `Maybe<T>` would require rethreading accessor call sites. Not worth it for one field.
-
-**Threshold to revisit.** A second `if constexpr (SEARCH_TRACE_STATS_ENABLED)` data field lands (e.g. per-pop timing, queue-size history). At two users, `Maybe<T>` starts earning its keep — either adopt it or delete it.
-
----
-
-## 5. Migrate `VIMF_DEBUG` / `VIMF_LEGACY_VIM` into `BuildConfig.h.in`
+## 4. Migrate `VIMF_DEBUG` / `VIMF_LEGACY_VIM` into `BuildConfig.h.in`
 
 **What.** Both flags are still surfaced via `target_compile_definitions(... $<$<BOOL:${VIMF_DEBUG}>:VIMF_DEBUG>)` rather than `#cmakedefine01` in `BuildConfig.h.in`. The `target_compile_definitions` form uses `#ifdef` in source, which is the same "typo silently takes the disabled branch" footgun that caused the original track-states bug.
 
@@ -104,7 +94,7 @@ Any of those makes the "one preset per config" structure pay for itself.
 
 ---
 
-## 6. Re-introduce visual-delete shortcuts to TransformFrontier
+## 5. Re-introduce visual-delete shortcuts to TransformFrontier
 
 **What.** `tryVisualDelete` is still invoked by the batch TransformOptimizer
 (`TransformOptimizer.cpp` in the `PureDeletion` finalization block) but the
@@ -130,7 +120,7 @@ is a multi-token structural macro" comment).
 
 ---
 
-## 7. Rebalance diff generation against composition search
+## 6. Rebalance diff generation against composition search
 
 **What.** A three-step investigation, in order:
 
@@ -200,7 +190,7 @@ one; equal regret means exactness can be dropped and the `N` factor disappears.
 
 ---
 
-## 8. Make the optimizer mapping-aware
+## 7. Make the optimizer mapping-aware
 
 **What.** Capture (via `CmdAtom`, since 2026-11-10) records the *resolved*
 `keys` of each action and discards the user's own mapping LHS. So for a user
@@ -231,7 +221,7 @@ are routinely worse for users who lean on custom mappings. Pointer:
 
 ---
 
-## 9. Replace the optimizer-params X-macros with C++26 reflection (key priority)
+## 8. Replace the optimizer-params X-macros with C++26 reflection (key priority)
 
 **What.** `src/Optimizer/OptimizerParamFields.h` is the single source of truth
 for every optimizer param field, expanded five ways: struct members, `with*`
@@ -261,7 +251,7 @@ retiring X-macros elsewhere.
 
 ---
 
-## 10. Recall records taken through the temporary autocmd window
+## 9. Recall records taken through the temporary autocmd window
 
 **What.** `atom.win` is `nvim_get_current_win()` inside the deferred `CmdAtom`
 callback, and Neovim makes a window showing `ev.buf` current for that call. When
@@ -288,7 +278,7 @@ or the next change to recall's window scoping.
 
 ---
 
-## 11. Share Transform search states across start positions
+## 10. Share Transform search states across start positions
 
 **What.** `TransformStateKey` includes `startIndex`, so every start searches its
 own copy of the state space. Ten starts with no solution explore the same dead

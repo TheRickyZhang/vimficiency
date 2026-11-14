@@ -75,7 +75,7 @@ vector<BlockCosts> calculateTransitionCosts(const FlatText& initial, const FlatT
 // ---- Stage 3: the DP -------------------------------------------------------
 
 // out[i, j]: normal mode, initial [0,i) consumed, goal [0,j) produced; in[i, j]:
-// insert mode. Steps are the three families in VimDiffTrace.h.
+// insert mode. Steps are the three families documented on `Step` in VimDiff.cppm.
 struct Cand {
   double cost = INF;
   uint16_t pi = 0, pj = 0;  // predecessor cell; in the previous block for CROSS

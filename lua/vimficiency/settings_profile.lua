@@ -61,13 +61,13 @@ end
 ---@param version integer
 ---@param data table
 function M.save(feature, version, data)
-  vim.fn.mkdir(dir(), "p")
-  local envelope = { version = version, data = data }
-  local ok, encoded = pcall(vim.json.encode, envelope)
-  if not ok then return end
+  for _, d in ipairs({ vim.fn.stdpath("data"), dir() }) do
+    local _, mkdir_err, mkdir_code = vim.uv.fs_mkdir(d, 493) -- 0755
+    if mkdir_err and mkdir_code ~= "EEXIST" then return end
+  end
   local fh = io.open(path(feature), "w")
   if not fh then return end
-  fh:write(encoded)
+  fh:write(vim.json.encode({ version = version, data = data }))
   fh:close()
 end
 

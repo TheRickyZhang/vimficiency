@@ -64,9 +64,8 @@ local fields = {
   -- `lua/vimficiency/explore/settings.lua` as `VIEW_SETTINGS` (the runtime
   -- source of truth). This table is just the user-override bag: values placed
   -- here via `setup({ explore = { ... } })` shadow the built-in defaults.
-  -- Runtime toggles via the `gs` modal also persist here in-memory and
-  -- reset on restart — declare overrides in `setup()` to make them
-  -- permanent.
+  -- Runtime toggles via the `gs` modal persist to the `explore_settings.json`
+  -- sidecar (`settings_profile.lua`), layered over these overrides.
   explore = {},
 
   play = {
