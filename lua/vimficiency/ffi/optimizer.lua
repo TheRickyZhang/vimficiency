@@ -31,7 +31,15 @@ local optimizer_defaults_cache = nil
 ---@return table<"shared"|"nav"|"transform"|"composition", table<string, number|boolean>>
 function M.get_optimizer_defaults()
   if optimizer_defaults_cache == nil then
-    optimizer_defaults_cache = core.unwrap(lib.vf_get_optimizer_defaults())
+    local defaults = core.unwrap(lib.vf_get_optimizer_defaults(), "vf.search.OptimizerDefaults")
+    optimizer_defaults_cache = {}
+    for scope, params in pairs(defaults) do
+      local values = {}
+      for _, param in ipairs(params) do
+        values[param.name] = param[param.value]
+      end
+      optimizer_defaults_cache[scope] = values
+    end
   end
   return optimizer_defaults_cache
 end
@@ -41,13 +49,12 @@ end
 ---@return VF.Optimizer.Result[] results, number user_cost, string debug, VF.Diff.Region[] diffs
 function M.analyze(req, results_calculated)
   ---@type VF.Optimizer.AnalyzeResult
-  local result = core.with_search_request(req, function(request)
-    return core.unwrap(lib.vf_analyze(request, results_calculated))
-  end)
+  local result = core.call(lib.vf_analyze, "vf.search.AnalyzeRequest",
+    { search = req, results_calculated = results_calculated }, "vf.search.AnalyzeResult")
   return result.results, result.user_cost, result.dbg, result.diffs
 end
 
---- Packed by `runAnalyze` (src/LuaExports/AnalyzeExports.cpp).
+--- `vf.search.AnalyzeResult` (src/LuaExports/proto/search.proto).
 ---@class VF.Optimizer.AnalyzeResult
 ---@field results VF.Optimizer.Result[]
 ---@field user_cost number
@@ -62,10 +69,11 @@ end
 ---@param deadline_ms integer
 ---@return integer job_id
 function M.analyze_start_async(req, results_calculated, deadline_ms)
-  return core.with_search_request(req, function(request)
-    return core.unwrap(
-      lib.vf_analyze_start_async(request, results_calculated, deadline_ms))
-  end)
+  return core.call(lib.vf_analyze_start_async, "vf.search.AnalyzeRequest", {
+    search = req,
+    results_calculated = results_calculated,
+    deadline_ms = deadline_ms,
+  }, "vf.JobHandle").job_id
 end
 
 --- Returns the analyze result once the worker finishes, or nil while it is
@@ -73,7 +81,7 @@ end
 ---@param job_id integer
 ---@return VF.Optimizer.AnalyzeResult|nil
 function M.analyze_poll(job_id)
-  return core.unwrap(lib.vf_analyze_poll(job_id))
+  return core.unwrap(lib.vf_analyze_poll(job_id), "vf.search.AnalyzeResult")
 end
 
 ---@param job_id integer

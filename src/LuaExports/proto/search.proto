@@ -1,0 +1,75 @@
+// The vf_analyze* exports (src/LuaExports/AnalyzeExports.cpp) and the search
+// request they share with vf_explore_start_async.
+syntax = "proto3";
+
+package vf.search;
+
+option optimize_for = LITE_RUNTIME;
+
+// One search problem. Rows and columns are 0-indexed and relative to the slice.
+message SearchRequest {
+  repeated bytes initial_lines = 1;
+  repeated bytes goal_lines = 2;
+  int32 start_row = 3;
+  int32 start_col = 4;
+  int32 end_row = 5;
+  int32 end_col = 6;
+  bool has_lines_above = 7;
+  bool has_lines_below = 8;
+  int32 window_height = 9;
+  int32 scroll_amount = 10;
+  bytes user_seq = 11;
+  // `scope:key=value` lines; empty for none.
+  bytes optimizer_overrides = 12;
+}
+
+message AnalyzeRequest {
+  SearchRequest search = 1;
+  int32 results_calculated = 2;
+  // Async only; 0 runs to the natural caps.
+  int32 deadline_ms = 3;
+}
+
+message Result {
+  bytes seq = 1;
+  double cost = 2;
+}
+
+// Half-open, 0-indexed.
+message Span {
+  int32 begin_row = 1;
+  int32 begin_col = 2;
+  int32 end_row = 3;
+  int32 end_col = 4;
+}
+
+// The initial-side (deleted) and goal-side (inserted) span of one change. An
+// empty init span is a pure insertion, an empty goal span a pure deletion.
+message DiffRegion {
+  Span init = 1;
+  Span goal = 2;
+}
+
+message AnalyzeResult {
+  repeated Result results = 1;
+  double user_cost = 2;
+  // The planner's regions the search ran against; empty for pure navigation.
+  repeated DiffRegion diffs = 3;
+  bytes dbg = 4;
+}
+
+message ParamDefault {
+  string name = 1;
+  oneof value {
+    bool bool_value = 2;
+    int32 int_value = 3;
+    double number_value = 4;
+  }
+}
+
+message OptimizerDefaults {
+  repeated ParamDefault shared = 1;
+  repeated ParamDefault nav = 2;
+  repeated ParamDefault transform = 3;
+  repeated ParamDefault composition = 4;
+}

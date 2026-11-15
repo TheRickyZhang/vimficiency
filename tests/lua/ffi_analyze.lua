@@ -249,6 +249,18 @@ test("ffi.analyze: rejects empty line arrays", function()
   end, "at least one line")
 end)
 
+test("ffi.analyze: a misspelled request field raises instead of defaulting", function()
+  assert_error(function()
+    ffi_lib.analyze(request({ "a" }, { "a" }, { window_hieght = 40 }), 1)
+  end, "unknown field 'search.window_hieght' in vf.search.AnalyzeRequest")
+end)
+
+test("ffi.analyze: a request field of the wrong type raises", function()
+  assert_error(function()
+    ffi_lib.analyze(request({ "a" }, { "a" }, { start_row = "first" }), 1)
+  end, "start_row")
+end)
+
 test("ffi.analyze: rejects NUL bytes inside lines", function()
   assert_error(function()
     ffi_lib.analyze(request({ "a" .. string.char(0) .. "b" }, { "a" }, {}), 1)

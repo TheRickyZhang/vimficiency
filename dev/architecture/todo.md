@@ -295,32 +295,29 @@ Transform time dominates a profiled session.
 
 ---
 
-## 11. Finish the protobuf migration of the FFI payloads (high priority)
+## 11. Generate the Lua types from the FFI schema (high priority)
 
-**What.** The `vf_explore_*` results are protobuf messages
-(`src/LuaExports/proto/`, see `dev/lua/ffi-payloads.md`). Everything else still
-returns msgpack whose shape exists twice, as `MsgpackWriter` calls and as LuaLS
-classes, with nothing tying the two together.
+**What.** Every FFI request and result is a protobuf message
+(`src/LuaExports/proto/`, see `dev/lua/ffi-payloads.md`), but the LuaLS classes
+in `lua/vimficiency/types.lua` that describe the same shapes are still
+hand-written. A field renamed in the schema shows up as a nil at the Lua use
+site, caught only by a Lua test through the real library.
 
-Remaining, in order:
+1. Generate the LuaLS classes from the descriptor with a C++ build tool, into
+   a committed file that CI regenerates and diffs. The Lua lint then flags
+   reads of fields that no longer exist.
+2. Hash that generated file into the library next to the `Api.def` hash and
+   check it in `ffi/core.lua`, so Lua code written against another schema
+   fails at load.
 
-1. Move the Analyze, Display and Utility results to messages. Then delete
-   `MsgpackWriter`, `guarded`, `storeBytes`, `core.unwrap`/`core.decode`, and
-   the test-only msgpack-cxx dependency.
-2. Generate the LuaLS classes in `types.lua` from the descriptor with a C++
-   build tool, into a committed file that CI regenerates and diffs. The Lua
-   lint then flags reads of fields that no longer exist.
-3. Hash the descriptor next to the `Api.def` hash and check it in
-   `ffi/core.lua`, so Lua code written against another schema fails at load.
-4. Decide whether inputs move too. `pb.encode` silently drops a misspelled
-   key, so requests would need a strict check before they give up the
-   compile-checked structs.
+The lite runtime has no descriptor reflection, so the tool needs either the
+full runtime or to run as a `protoc` plugin.
 
-**Why not done yet (2026-11-15).** Explore went first to prove the build on all
-three release platforms before the larger surface moves.
+**Why not done yet (2026-11-15).** The migration to protobuf landed first; the
+generator is separable and needs the build decision above.
 
-**Threshold.** Before the next new or reshaped non-Explore payload. Each one
-added first is another `pack*` function to migrate.
+**Threshold.** Before the next release that changes a message, or the first
+bug traced to `types.lua` disagreeing with the schema.
 
 ---
 

@@ -296,7 +296,7 @@ target_compile_definitions(vimfy_core PUBLIC
     $<$<BOOL:${VIMF_LEGACY_VIM}>:VIMF_LEGACY_VIM>
 )
 
-# Protobuf carries the C++ to Lua payloads declared in src/LuaExports/proto/
+# Protobuf carries the FFI requests and results declared in src/LuaExports/proto/
 # (dev/lua/ffi-payloads.md). Generated C++ only compiles against the exact
 # runtime version its protoc belongs to, so both are pinned here. protoc is the
 # official prebuilt: building it from source is ~80% of the dependency's
@@ -393,13 +393,12 @@ target_link_libraries(vimfy_proto PUBLIC protobuf::libprotobuf-lite utf8_validit
 # The LuaExports module interfaces plus the payload/logic code that tests
 # exercise without the FFI entry points. A separate target because a module
 # interface can only be built once: tests import these instead of recompiling
-# Payload.cpp into each binary.
+# them into each binary.
 file(GLOB VIMFY_LUA_COMMON_MODULES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LuaExports/*.cppm
 )
 add_library(vimfy_lua_common STATIC
     src/LuaExports/Envelope.cpp
-    src/LuaExports/Payload.cpp
     src/LuaExports/Logic.cpp
 )
 target_sources(vimfy_lua_common PUBLIC

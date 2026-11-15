@@ -225,7 +225,7 @@ ffi_sequence.tokenize_movements(seq) → VF.Sequence.Token[]   -- all kind="moti
 
 ## Configuration (config.lua)
 
-Config keys are owned by exactly one side. C++ owns process globals (`VFConfig`: keyboard cost model, shiftwidth), pushed once by `ffi_config.apply_globals`. Lua owns everything read at call time, including per-search optimizer parameters passed as FFI arguments:
+Config keys are owned by exactly one side. C++ owns process globals (`vf.config.Config`: keyboard cost model, shiftwidth), pushed once by `ffi_config.apply_globals`. Lua owns everything read at call time, including per-search optimizer parameters passed as FFI arguments:
 
 | Setting | Default | Description |
 |---------|---------|-------------|

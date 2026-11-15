@@ -1,4 +1,6 @@
 #include "LuaExports/Api.h"
+#include "proto/common.pb.h"
+#include "proto/display.pb.h"
 
 import std.compat;
 import vf.LuaExports.Common;
@@ -10,25 +12,25 @@ using namespace VF::LuaExports;
 
 namespace {
 
-VF::SessionView::Result sessionResult(const VFSessionResult& r) {
+Proto textMessage(string text) {
+  vf::Text msg;
+  msg.set_text(std::move(text));
+  return proto(msg);
+}
+
+VF::SessionView::Result sessionResult(const vf::display::SessionResult& r) {
   VF::SessionView::Result result;
-  result.lines.reserve(r.lines_count);
-  for (size_t i = 0; i < r.lines_count; ++i) {
-    result.lines.emplace_back(sliceView(r.lines[i]));
-  }
-  result.startRow = r.start_row;
-  result.startCol = r.start_col;
-  result.endRow = r.end_row;
-  result.endCol = r.end_col;
-  result.userSeq = sliceView(r.user_seq);
+  for (const auto& line : r.lines()) result.lines.emplace_back(line);
+  result.startRow = r.start_row();
+  result.startCol = r.start_col();
+  result.endRow = r.end_row();
+  result.endCol = r.end_col();
+  result.userSeq = r.user_seq();
   result.hasUserCost = true;
-  result.userCost = r.user_cost;
-  result.kind = sliceView(r.kind);
-  for (size_t i = 0; i < r.optimal_results_count; ++i) {
-    result.optimalResults.push_back({
-        .seq = string(sliceView(r.optimal_results[i].seq)),
-        .cost = r.optimal_results[i].cost,
-    });
+  result.userCost = r.user_cost();
+  result.kind = r.kind();
+  for (const auto& optimal : r.optimal_results()) {
+    result.optimalResults.push_back({.seq = optimal.seq(), .cost = optimal.cost()});
   }
   return result;
 }
@@ -37,127 +39,83 @@ VF::SessionView::Result sessionResult(const VFSessionResult& r) {
 
 extern "C" {
 
-VFByteSlice vf_sequence_display_lines(
-    const char* seq,
-    size_t seq_len,
-    bool tokenize,
-    bool sectionize) {
-  static string result_storage;
-  return guarded(result_storage, [&] {
-    return requiredBytes(seq, seq_len, "seq")
-        .transform([&](string_view seqText) {
-          return packStrings(VF::SequenceDisplay::lines(
-              seqText,
-              {.tokenize = tokenize, .sectionize = sectionize}));
-        });
-  });
-}
-
-VFByteSlice vf_sequence_display_inline(
-    const char* seq,
-    size_t seq_len,
-    bool tokenize) {
-  static string result_storage;
-  return guarded(result_storage, [&] {
-    return requiredBytes(seq, seq_len, "seq")
-        .transform([&](string_view seqText) {
-          return packString(VF::SequenceDisplay::inlineText(
-              seqText,
-              {.tokenize = tokenize, .sectionize = false}));
-        });
-  });
-}
-
-VFByteSlice vf_sequence_display_key_notation(
-    const char* text,
-    size_t text_len) {
-  static string result_storage;
-  return guarded(result_storage, [&] {
-    return requiredBytes(text, text_len, "text")
-        .transform([](string_view textValue) {
-          return packString(VF::SequenceDisplay::displayKeyNotation(textValue));
-        });
-  });
-}
-
-VFByteSlice vf_sequence_display_typed_text(
-    const char* text,
-    size_t text_len,
-    bool key_notation) {
-  static string result_storage;
-  return guarded(result_storage, [&] {
-    return requiredBytes(text, text_len, "text")
-        .transform([&](string_view textValue) {
-          return packString(key_notation
-              ? VF::SequenceDisplay::displayTypedText(textValue)
-              : VF::SequenceDisplay::displayLiteralTypedText(textValue));
-        });
-  });
-}
-
-VFByteSlice vf_sequence_display_typed_chunks(
-    const VFTypedChunk* chunks,
-    size_t chunks_count,
-    bool tokenize) {
-  static string result_storage;
-  return guarded(result_storage, [&] {
-    vector<VF::SequenceDisplay::TypedChunk> typed;
-    typed.reserve(chunks_count);
-    for (size_t i = 0; i < chunks_count; ++i) {
-      typed.push_back({
-          .kind = string(sliceView(chunks[i].kind)),
-          .text = string(sliceView(chunks[i].text)),
+VFByteSlice vf_sequence_display_lines(const char* request, size_t request_len) {
+  static string storage;
+  return guardedRequest<vf::display::SequenceRequest>(
+      storage, request, request_len, [](const auto& req) {
+        vf::Lines msg;
+        for (auto& line : VF::SequenceDisplay::lines(
+                 req.seq(), {.tokenize = req.tokenize(), .sectionize = req.sectionize()})) {
+          msg.add_lines(std::move(line));
+        }
+        return proto(msg);
       });
-    }
-    return packString(VF::SequenceDisplay::typedChunksInline(typed, tokenize));
+}
+
+VFByteSlice vf_sequence_display_inline(const char* request, size_t request_len) {
+  static string storage;
+  return guardedRequest<vf::display::SequenceRequest>(
+      storage, request, request_len, [](const auto& req) {
+        return textMessage(VF::SequenceDisplay::inlineText(
+            req.seq(), {.tokenize = req.tokenize(), .sectionize = false}));
+      });
+}
+
+VFByteSlice vf_sequence_display_key_notation(const char* request, size_t request_len) {
+  static string storage;
+  return guardedRequest<vf::Text>(storage, request, request_len, [](const auto& req) {
+    return textMessage(VF::SequenceDisplay::displayKeyNotation(req.text()));
   });
 }
 
-VFByteSlice vf_format_result_position(
-    int start_row,
-    int start_col,
-    int end_row,
-    int end_col) {
-  static string result_storage;
-  return guarded(result_storage, [&] {
-    return packString(VF::SessionView::formatPosition(VF::SessionView::Result{
-        .startRow = start_row,
-        .startCol = start_col,
-        .endRow = end_row,
-        .endCol = end_col,
-    }));
-  });
+VFByteSlice vf_sequence_display_typed_text(const char* request, size_t request_len) {
+  static string storage;
+  return guardedRequest<vf::display::TypedTextRequest>(
+      storage, request, request_len, [](const auto& req) {
+        return textMessage(req.key_notation()
+            ? VF::SequenceDisplay::displayTypedText(req.text())
+            : VF::SequenceDisplay::displayLiteralTypedText(req.text()));
+      });
 }
 
-VFByteSlice vf_format_result_kind_suffix(
-    const char* kind,
-    size_t kind_len) {
-  static string result_storage;
-  return guarded(result_storage, [&] {
-    return requiredBytes(kind, kind_len, "kind")
-        .transform([](string_view kindText) {
-          return packString(VF::SessionView::formatKindSuffix(
-              VF::SessionView::Result{.kind = string(kindText)}));
-        });
-  });
+VFByteSlice vf_sequence_display_typed_chunks(const char* request, size_t request_len) {
+  static string storage;
+  return guardedRequest<vf::display::TypedChunksRequest>(
+      storage, request, request_len, [](const auto& req) {
+        vector<VF::SequenceDisplay::TypedChunk> typed;
+        typed.reserve(req.chunks_size());
+        for (const auto& chunk : req.chunks()) {
+          typed.push_back({.kind = chunk.kind(), .text = chunk.text()});
+        }
+        return textMessage(VF::SequenceDisplay::typedChunksInline(typed, req.tokenize()));
+      });
 }
 
-VFByteSlice vf_format_result_message(
-    const char* title,
-    size_t title_len,
-    const VFSessionResult* result,
-    bool tokenize,
-    bool sectionize) {
-  static string result_storage;
-  return guarded(result_storage, [&] {
-    return requiredBytes(title, title_len, "title")
-        .transform([&](string_view titleText) {
-          return packString(VF::SessionView::formatMessage(
-              titleText,
-              sessionResult(*result),
-              {.tokenize = tokenize, .sectionize = sectionize}));
-        });
-  });
+VFByteSlice vf_format_result_position(const char* request, size_t request_len) {
+  static string storage;
+  return guardedRequest<vf::display::SessionResult>(
+      storage, request, request_len, [](const auto& req) {
+        return textMessage(VF::SessionView::formatPosition(sessionResult(req)));
+      });
+}
+
+VFByteSlice vf_format_result_kind_suffix(const char* request, size_t request_len) {
+  static string storage;
+  return guardedRequest<vf::display::SessionResult>(
+      storage, request, request_len, [](const auto& req) {
+        return textMessage(VF::SessionView::formatKindSuffix(sessionResult(req)));
+      });
+}
+
+VFByteSlice vf_format_result_message(const char* request, size_t request_len) {
+  static string storage;
+  return guardedRequest<vf::display::ResultMessageRequest>(
+      storage, request, request_len, [](const auto& req) {
+        return textMessage(VF::SessionView::formatMessage(
+            req.title(),
+            sessionResult(req.result()),
+            {.tokenize = req.tokenize(), .sectionize = req.sectionize()}));
+      });
 }
 
 }

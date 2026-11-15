@@ -22,7 +22,7 @@ abstraction over motion types, particularly word. We create different edge types
 creating a boundary to not do actions outside a current subbuffer (pass only subset for efficiency)
 composing multiple planned edits to be consistent and reasonable in producing an answer.
 
-Lua uses an FFI bridge to call the C++ library for efficiency. Inputs cross that bridge as typed C structs and results come back as protobuf or msgpack, so neither side hand-parses a payload; see `dev/lua/ffi-payloads.md`.
+Lua uses an FFI bridge to call the C++ library for efficiency. Requests and results cross that bridge as protobuf messages from one schema, so neither side hand-parses a payload; see `dev/lua/ffi-payloads.md`.
 
 Finished session results live in two tiers. The **workspace** is an in-memory ring in `session/store.lua`, indexed by alias; Mark slots cap at 5 and the Recall ring evicts by the union of `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS`. The **archive** is a durable on-disk JSON store under `stdpath('data')/vimficiency/saved/`, indexed by filename. `save` copies workspace→archive, `store` moves workspace→archive, `fetch` copies archive→workspace, and `:Vimfy play` falls back to archive when a name isn't in memory. See `dev/lua/session-storage.md` for the Lua APIs and on-disk JSON schema.
 

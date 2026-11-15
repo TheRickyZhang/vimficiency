@@ -1,5 +1,6 @@
 #include "LuaExports/Api.h"
 #include "Utils/CheckMacro.h"
+#include "proto/common.pb.h"
 #include "proto/explore.pb.h"
 
 import std.compat;
@@ -26,10 +27,12 @@ using Explore::Outcome;
 
 ViewRegistry g_registry;
 
-SuggestionSortMode parseSuggestionSortMode(string_view text) {
-  if (text == "distance") return SuggestionSortMode::Distance;
-  if (text == "score") return SuggestionSortMode::Score;
-  return SuggestionSortMode::Effort;
+SuggestionSortMode suggestionSortMode(vf::explore::RecommendationsRequest::SortMode mode) {
+  switch (mode) {
+    case vf::explore::RecommendationsRequest::distance: return SuggestionSortMode::Distance;
+    case vf::explore::RecommendationsRequest::score:    return SuggestionSortMode::Score;
+    default:                                            return SuggestionSortMode::Effort;
+  }
 }
 
 void setPosition(vf::Position* out, int row, int col) {
@@ -103,7 +106,7 @@ Proto headerRowsMessage(const View& v) {
 }
 
 // Background composition search. The job owns its inputs and config so the
-// worker is independent of the FFI buffers and the main thread. The View is
+// worker is independent of the request bytes and the main thread. The View is
 // constructed from the precomputed plan only once `vf_explore_poll` observes
 // `ready()`.
 struct ExploreState {
@@ -116,34 +119,33 @@ using ExploreJob = AsyncJob<ExploreState>;
 
 JobRegistry<ExploreJob> g_jobs;
 
-ProtoResult startAsyncImpl(const VFSearchRequest* request, int deadline_ms) {
-  auto inputsRes = logic::decodeSearchRequest(request);
-  if (!inputsRes) return unexpected(inputsRes.error());
-  CompositionOptimizerParams compositionParams =
-      inputsRes->overrides.resolved(CompositionOptimizerParams{});
-
-  auto job = std::make_unique<ExploreJob>(
-      ExploreState{std::move(*inputsRes), std::move(compositionParams), g_config_internal, {}},
-      deadline_ms,
-      [](ExploreState& s, const SearchControl& control) {
-        s.trace = View::computeTrace(
-            s.inputs.initialLines, s.inputs.initialPos,
-            s.inputs.goalLines, s.inputs.goalPos,
-            s.compositionParams, s.inputs.userSeq,
-            s.inputs.boundary, s.inputs.navContext, s.config, control);
-      });
-  vf::explore::JobHandle handle;
-  handle.set_job_id(g_jobs.create(std::move(job)));
-  return proto(handle);
-}
-
 }  // namespace
 
 extern "C" {
 
-VFByteSlice vf_explore_start_async(const VFSearchRequest* request, int deadline_ms) {
+VFByteSlice vf_explore_start_async(const char* request, size_t request_len) {
   static string storage;
-  return guardedProto(storage, [&] { return startAsyncImpl(request, deadline_ms); });
+  return guardedRequest<vf::explore::StartRequest>(
+      storage, request, request_len, [](const auto& req) -> ProtoResult {
+        auto inputs = logic::decodeSearchRequest(req.search());
+        if (!inputs) return unexpected(inputs.error());
+        CompositionOptimizerParams compositionParams =
+            inputs->overrides.resolved(CompositionOptimizerParams{});
+
+        auto job = std::make_unique<ExploreJob>(
+            ExploreState{std::move(*inputs), std::move(compositionParams), g_config_internal, {}},
+            req.deadline_ms(),
+            [](ExploreState& s, const SearchControl& control) {
+              s.trace = View::computeTrace(
+                  s.inputs.initialLines, s.inputs.initialPos,
+                  s.inputs.goalLines, s.inputs.goalPos,
+                  s.compositionParams, s.inputs.userSeq,
+                  s.inputs.boundary, s.inputs.navContext, s.config, control);
+            });
+        vf::JobHandle handle;
+        handle.set_job_id(g_jobs.create(std::move(job)));
+        return proto(handle);
+      });
 }
 
 // Returns pending while the worker runs; once done, frees the job and either
@@ -151,8 +153,8 @@ VFByteSlice vf_explore_start_async(const VFSearchRequest* request, int deadline_
 // view_id, or returns the worker's failure.
 VFByteSlice vf_explore_poll(int job_id) {
   static string storage;
-  if (!g_jobs.get(job_id).ready()) return storeProtoPending(storage);
-  return guardedProto(storage, [&]() -> ProtoResult {
+  if (!g_jobs.get(job_id).ready()) return storePending(storage);
+  return guarded(storage, [&]() -> ProtoResult {
     std::unique_ptr<ExploreJob> owned = g_jobs.take(job_id);
     if (!owned->error().empty()) return unexpectedError(owned->error());
     ExploreState& s = owned->state();
@@ -192,99 +194,72 @@ int vf_explore_destroy(int view_id) {
 
 VFByteSlice vf_explore_state(int view_id) {
   static string storage;
-  return guardedProto(storage, [&] { return stateMessage(g_registry.get(view_id)); });
+  return guarded(storage, [&] { return stateMessage(g_registry.get(view_id)); });
 }
 
-VFByteSlice vf_explore_recommendations(
-    int view_id,
-    int max_count,
-    const char* optimizer_overrides,
-    size_t optimizer_overrides_len,
-    const char* sort_mode,
-    size_t sort_mode_len) {
+VFByteSlice vf_explore_recommendations(const char* request, size_t request_len) {
   static string storage;
-  return guardedProto(storage, [&]() -> ProtoResult {
-    CHECK(max_count >= 0, "max_count must be non-negative");
-    View& v = g_registry.get(view_id);
-    auto overridesText = requiredBytes(
-        optimizer_overrides,
-        optimizer_overrides_len,
-        "optimizer_overrides");
-    if (!overridesText) return unexpected(overridesText.error());
-    auto sortModeText = requiredBytes(sort_mode, sort_mode_len, "sort_mode");
-    if (!sortModeText) return unexpected(sortModeText.error());
-
-    auto overrides = logic::parseOverrides(*overridesText);
-    if (!overrides) return unexpected(overrides.error());
-    const SuggestionSortMode mode = parseSuggestionSortMode(*sortModeText);
-    return recommendationsMessage(v.recommendations(max_count, &*overrides, mode));
-  });
+  return guardedRequest<vf::explore::RecommendationsRequest>(
+      storage, request, request_len, [](const auto& req) -> ProtoResult {
+        CHECK(req.max_count() >= 0, "max_count must be non-negative");
+        View& v = g_registry.get(req.view_id());
+        auto overrides = logic::parseOverrides(req.optimizer_overrides());
+        if (!overrides) return unexpected(overrides.error());
+        return recommendationsMessage(v.recommendations(
+            req.max_count(), &*overrides, suggestionSortMode(req.sort_mode())));
+      });
 }
 
-VFByteSlice vf_explore_reconfigure_plan(
-    int view_id,
-    const char* optimizer_overrides,
-    size_t optimizer_overrides_len) {
+VFByteSlice vf_explore_reconfigure_plan(const char* request, size_t request_len) {
   static string storage;
-  return guardedProto(storage, [&]() -> ProtoResult {
-    View& v = g_registry.get(view_id);
-    auto overridesText = requiredBytes(
-        optimizer_overrides,
-        optimizer_overrides_len,
-        "optimizer_overrides");
-    if (!overridesText) return unexpected(overridesText.error());
-
-    auto overrides = logic::parseOverrides(*overridesText);
-    if (!overrides) return unexpected(overrides.error());
-    vf::explore::ReconfigurePlanResult msg;
-    msg.set_reset(v.reconfigurePlan(overrides->resolved(CompositionOptimizerParams{})));
-    return proto(msg);
-  });
+  return guardedRequest<vf::explore::ReconfigurePlanRequest>(
+      storage, request, request_len, [](const auto& req) -> ProtoResult {
+        View& v = g_registry.get(req.view_id());
+        auto overrides = logic::parseOverrides(req.optimizer_overrides());
+        if (!overrides) return unexpected(overrides.error());
+        vf::explore::ReconfigurePlanResult msg;
+        msg.set_reset(v.reconfigurePlan(overrides->resolved(CompositionOptimizerParams{})));
+        return proto(msg);
+      });
 }
 
 VFByteSlice vf_explore_current_lines(int view_id) {
   static string storage;
-  return guardedProto(storage, [&] {
-    vf::explore::Lines msg;
+  return guarded(storage, [&] {
+    vf::Lines msg;
     for (const auto& line : g_registry.get(view_id).state().lines) msg.add_lines(line);
     return proto(msg);
   });
 }
 
-VFByteSlice vf_explore_accept_snapshot(
-    int view_id,
-    const VFByteSlice* lines,
-    size_t lines_count,
-    int new_row,
-    int new_col,
-    const char* raw_keys,
-    size_t raw_keys_len,
-    bool insert_mode) {
+VFByteSlice vf_explore_accept_snapshot(const char* request, size_t request_len) {
   static string storage;
-  return guardedProto(storage, [&]() -> ProtoResult {
-    View& v = g_registry.get(view_id);
-    auto rawKeys = requiredBytes(raw_keys, raw_keys_len, "raw_keys");
-    if (!rawKeys) return unexpected(rawKeys.error());
-    auto liveLines = payload::linesFromSlices(lines, lines_count);
-    if (!liveLines) return unexpected(liveLines.error());
-    return outcomeMessage(v.acceptSnapshot(
-        *liveLines, CursorPos(new_row, new_col), *rawKeys, insert_mode));
-  });
+  return guardedRequest<vf::explore::SnapshotRequest>(
+      storage, request, request_len, [](const auto& req) -> ProtoResult {
+        View& v = g_registry.get(req.view_id());
+        auto liveLines = payload::linesFrom(req.lines());
+        if (!liveLines) return unexpected(liveLines.error());
+        return outcomeMessage(v.acceptSnapshot(
+            *liveLines,
+            CursorPos(req.cursor().row(), req.cursor().col()),
+            req.raw_keys(),
+            req.insert_mode()));
+      });
 }
 
 VFByteSlice vf_explore_undo(int view_id) {
   static string storage;
-  return guardedProto(storage, [&] { return outcomeMessage(g_registry.get(view_id).undo()); });
+  return guarded(storage, [&] { return outcomeMessage(g_registry.get(view_id).undo()); });
 }
 
 VFByteSlice vf_explore_redo(int view_id) {
   static string storage;
-  return guardedProto(storage, [&] { return outcomeMessage(g_registry.get(view_id).redo()); });
+  return guarded(storage, [&] { return outcomeMessage(g_registry.get(view_id).redo()); });
 }
 
 VFByteSlice vf_explore_header_rows(int view_id) {
   static string storage;
-  return guardedProto(storage, [&] { return headerRowsMessage(g_registry.get(view_id)); });
+  return guarded(storage, [&] { return headerRowsMessage(g_registry.get(view_id)); });
 }
 
 }  // extern "C"

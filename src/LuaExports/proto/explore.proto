@@ -1,14 +1,17 @@
-// Results of the vf_explore_* exports (src/LuaExports/InteractiveExports.cpp).
+// The vf_explore_* exports (src/LuaExports/InteractiveExports.cpp).
 syntax = "proto3";
 
 package vf.explore;
 
 import "common.proto";
+import "search.proto";
 
 option optimize_for = LITE_RUNTIME;
 
-message JobHandle {
-  int32 job_id = 1;
+message StartRequest {
+  vf.search.SearchRequest search = 1;
+  // 0 runs to the natural caps.
+  int32 deadline_ms = 2;
 }
 
 message ViewHandle {
@@ -41,6 +44,14 @@ message State {
   vf.Range target_range = 9;
 }
 
+message SnapshotRequest {
+  int32 view_id = 1;
+  repeated bytes lines = 2;
+  vf.Position cursor = 3;
+  bytes raw_keys = 4;
+  bool insert_mode = 5;
+}
+
 message Applied {}
 
 message Rejected {
@@ -52,6 +63,19 @@ message ApplyResult {
     Applied applied = 1;
     Rejected rejected = 2;
   }
+}
+
+message RecommendationsRequest {
+  enum SortMode {
+    effort = 0;
+    distance = 1;
+    score = 2;
+  }
+  int32 view_id = 1;
+  int32 max_count = 2;
+  // `scope:key=value` lines; empty for none.
+  bytes optimizer_overrides = 3;
+  SortMode sort_mode = 4;
 }
 
 // Whether it is a motion, an edit, or typed text follows from State.phase.
@@ -68,12 +92,13 @@ message Recommendations {
   repeated Recommendation items = 1;
 }
 
-message ReconfigurePlanResult {
-  bool reset = 1;
+message ReconfigurePlanRequest {
+  int32 view_id = 1;
+  bytes optimizer_overrides = 2;
 }
 
-message Lines {
-  repeated bytes lines = 1;
+message ReconfigurePlanResult {
+  bool reset = 1;
 }
 
 // Rows are raw key sequences; Lua formats them when rendering.

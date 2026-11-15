@@ -1,6 +1,9 @@
 #include "LuaExports/Api.h"
 #include "Optimizer/OptimizerParamFields.h"
 #include "Utils/CheckMacro.h"
+#include "proto/common.pb.h"
+#include "proto/search.pb.h"
+#include "proto/session.pb.h"
 
 import std.compat;
 import vf.LuaExports.Common;
@@ -20,147 +23,138 @@ using namespace VF::LuaExports;
 
 namespace {
 
-// `kind` values of `VF.Sequence.Token` (lua/vimficiency/types.lua).
-//
+using vf::session::Token;
+
 // Sending the kind is the point of the tokenize_* exports: without it, the
 // Lua side would keep parallel classifier tables to re-derive what the
 // parser already knows, and they'd drift. See `dev/lua/replay-precompute.md`.
-string_view tokenKindName(TokenKind kind) {
+Token::Kind tokenKind(TokenKind kind) {
   switch (kind) {
-    case TokenKind::Movement:  return "movement";
-    case TokenKind::Delete:    return "delete";
-    case TokenKind::Change:    return "change";
-    case TokenKind::Visual:    return "visual";
-    case TokenKind::TypedText: return "typed";
-    case TokenKind::Escape:    return "escape";
+    case TokenKind::Movement:  return Token::movement;
+    case TokenKind::Delete:    return Token::delete_;
+    case TokenKind::Change:    return Token::change;
+    case TokenKind::Visual:    return Token::visual;
+    case TokenKind::TypedText: return Token::typed;
+    case TokenKind::Escape:    return Token::escape;
   }
-  return "?";  // Unreachable — compiler should warn if a case is missed.
+  CHECK(false, "unhandled TokenKind");
 }
 
-void writeToken(MsgpackWriter& w, TokenKind kind, string_view text) {
-  w.map(2).key("text").str(text).key("kind").str(tokenKindName(kind));
+void addToken(vf::session::Tokens& msg, TokenKind kind, string_view text) {
+  Token* token = msg.add_tokens();
+  token->set_text(text);
+  token->set_kind(tokenKind(kind));
 }
+
+void setDefault(vf::search::ParamDefault* out, bool v) { out->set_bool_value(v); }
+void setDefault(vf::search::ParamDefault* out, int v) { out->set_int_value(v); }
+void setDefault(vf::search::ParamDefault* out, double v) { out->set_number_value(v); }
 
 }  // namespace
 
 extern "C" {
 
-VFByteSlice vf_tokenize_movements(const char *seq, size_t seq_len) {
-  static string result_storage;
-  return guarded(result_storage, [&]() -> PackedResult {
-    auto seqText = requiredBytes(seq, seq_len, "seq");
-    if (!seqText) return unexpected(seqText.error());
-    auto motions = parseMovements(*seqText);
-    if (!motions) return unexpectedError(formatMovementParseError(motions.error()));
+VFByteSlice vf_tokenize_movements(const char* request, size_t request_len) {
+  static string storage;
+  return guardedRequest<vf::session::SequenceRequest>(
+      storage, request, request_len, [](const auto& req) -> ProtoResult {
+        auto motions = parseMovements(req.seq());
+        if (!motions) return unexpectedError(formatMovementParseError(motions.error()));
 
-    // All motion-parser output is TokenKind::Movement by construction.
-    MsgpackWriter w;
-    w.array(motions->size());
-    for (const auto& motion : *motions) {
-      ostringstream oss;
-      oss << motion;
-      writeToken(w, TokenKind::Movement, oss.str());
-    }
-    return w.take();
-  });
+        // All motion-parser output is TokenKind::Movement by construction.
+        vf::session::Tokens msg;
+        for (const auto& motion : *motions) {
+          ostringstream oss;
+          oss << motion;
+          addToken(msg, TokenKind::Movement, oss.str());
+        }
+        return proto(msg);
+      });
 }
 
-VFByteSlice vf_tokenize_sequence(const char *seq, size_t seq_len) {
-  static string result_storage;
-  return guarded(result_storage, [&]() -> PackedResult {
-    auto seqText = requiredBytes(seq, seq_len, "seq");
-    if (!seqText) return unexpected(seqText.error());
-    auto tokens = parseSequence(*seqText);
-    if (!tokens) return unexpectedError(formatSequenceParseError(tokens.error()));
+VFByteSlice vf_tokenize_sequence(const char* request, size_t request_len) {
+  static string storage;
+  return guardedRequest<vf::session::SequenceRequest>(
+      storage, request, request_len, [](const auto& req) -> ProtoResult {
+        auto tokens = parseSequence(req.seq());
+        if (!tokens) return unexpectedError(formatSequenceParseError(tokens.error()));
 
-    MsgpackWriter w;
-    w.array(tokens->size());
-    for (const auto& tok : *tokens) writeToken(w, tok.kind, tok.token);
-    return w.take();
-  });
+        vf::session::Tokens msg;
+        for (const auto& tok : *tokens) addToken(msg, tok.kind, tok.token);
+        return proto(msg);
+      });
 }
 
-VFByteSlice vf_build_sequence(const VFKeyEvent* events, size_t events_count) {
-  static string result_storage;
-  return guarded(result_storage, [&] {
-    return packString(logic::buildKeySequence(events, events_count));
-  });
+VFByteSlice vf_build_sequence(const char* request, size_t request_len) {
+  static string storage;
+  return guardedRequest<vf::session::BuildSequenceRequest>(
+      storage, request, request_len, [](const auto& req) {
+        vector<logic::KeyEvent> events;
+        events.reserve(req.events_size());
+        for (const auto& ev : req.events()) {
+          events.push_back({.mode = ev.mode(), .keyTyped = ev.key_typed()});
+        }
+        vf::Text msg;
+        msg.set_text(logic::buildKeySequence(events));
+        return proto(msg);
+      });
 }
 
-VFByteSlice vf_compute_search_region(
-    const VFByteSlice* start_lines,
-    size_t start_lines_count,
-    const VFByteSlice* end_lines,
-    size_t end_lines_count,
-    int start_row,
-    int end_row,
-    int padding) {
-  static string result_storage;
-  return guarded(result_storage, [&]() -> PackedResult {
-    auto startLines = payload::linesFromSlices(start_lines, start_lines_count);
-    if (!startLines) return unexpected(startLines.error());
-    auto endLines = payload::linesFromSlices(end_lines, end_lines_count);
-    if (!endLines) return unexpected(endLines.error());
+VFByteSlice vf_compute_search_region(const char* request, size_t request_len) {
+  static string storage;
+  return guardedRequest<vf::session::SearchRegionRequest>(
+      storage, request, request_len, [](const auto& req) -> ProtoResult {
+        auto startLines = payload::linesFrom(req.start_lines());
+        if (!startLines) return unexpected(startLines.error());
+        auto endLines = payload::linesFrom(req.end_lines());
+        if (!endLines) return unexpected(endLines.error());
 
-    const auto [regionStart, regionEnd] = logic::computeSearchRegion(
-        start_row, end_row, *startLines, *endLines, padding);
-    return MsgpackWriter()
-        .map(2)
-        .key("region_start").integer(regionStart)
-        .key("region_end").integer(regionEnd)
-        .take();
-  });
+        const auto [regionStart, regionEnd] = logic::computeSearchRegion(
+            req.start_row(), req.end_row(), *startLines, *endLines, req.padding());
+        vf::session::SearchRegion msg;
+        msg.set_region_start(regionStart);
+        msg.set_region_end(regionEnd);
+        return proto(msg);
+      });
 }
 
-int vf_manual_evict_reason(
-    int start_row,
-    int cursor_row,
-    int64_t last_key_time_ns,
-    bool has_last_key,
-    int64_t now_ns,
-    int max_search_lines,
-    int manual_idle_timeout_seconds) {
-  return noUnwind([&] {
-    CHECK(max_search_lines >= 0, "max_search_lines must be non-negative");
-    CHECK(manual_idle_timeout_seconds >= 0, "manual_idle_timeout_seconds must be non-negative");
-    return logic::manualEvictReason(
-        start_row,
-        cursor_row,
-        last_key_time_ns,
-        has_last_key,
-        now_ns,
-        max_search_lines,
-        manual_idle_timeout_seconds);
-  });
+VFByteSlice vf_manual_evict_reason(const char* request, size_t request_len) {
+  static string storage;
+  return guardedRequest<vf::session::ManualEvictRequest>(
+      storage, request, request_len, [](const auto& req) {
+        CHECK(req.max_search_lines() >= 0, "max_search_lines must be non-negative");
+        CHECK(req.manual_idle_timeout_seconds() >= 0,
+              "manual_idle_timeout_seconds must be non-negative");
+        vf::session::ManualEvict msg;
+        msg.set_reason(static_cast<vf::session::ManualEvict::Reason>(logic::manualEvictReason(
+            req.start_row(),
+            req.cursor_row(),
+            req.last_key_time_ns(),
+            req.has_last_key_time_ns(),
+            req.now_ns(),
+            req.max_search_lines(),
+            req.manual_idle_timeout_seconds())));
+        return proto(msg);
+      });
 }
 
 // Lua settings_schema consumes these defaults without mirroring C++ values.
-// Packs `{scope = {key = value}}` with each value in its native type.
 VFByteSlice vf_get_optimizer_defaults() {
-  static string cached;
-  if (cached.empty()) guarded(cached, [] {
-    MsgpackWriter w;
-    auto emit = [&](string_view key, auto v) {
-      w.key(key);
-      if constexpr (is_same_v<decltype(v), bool>) w.boolean(v);
-      else if constexpr (is_same_v<decltype(v), int>) w.integer(v);
-      else w.number(v);
-    };
-#define VF_COUNT_FIELD(type, name, withName, def) + 1
-#define VF_EMIT_FIELD(type, name, withName, def) emit(#name, p.name);
-#define VF_EMIT_SCOPE(scopeName, Params, FIELDS) \
-    { const Params p; w.key(scopeName).map(0 FIELDS(VF_COUNT_FIELD)); FIELDS(VF_EMIT_FIELD) }
-    w.map(4);
-    VF_EMIT_SCOPE("shared", OptimizerParamsBase, OPTIMIZER_BASE_FIELDS)
-    VF_EMIT_SCOPE("nav", NavOptimizerParams, NAV_ALL_FIELDS)
-    VF_EMIT_SCOPE("transform", TransformOptimizerParams, TRANSFORM_ALL_FIELDS)
-    VF_EMIT_SCOPE("composition", CompositionOptimizerParams, COMPOSITION_ALL_FIELDS)
+  static string storage;
+  return guarded(storage, [] {
+    vf::search::OptimizerDefaults msg;
+#define VF_EMIT_FIELD(type, name, withName, def) \
+    { auto* d = scope->Add(); d->set_name(#name); setDefault(d, p.name); }
+#define VF_EMIT_SCOPE(field, Params, FIELDS) \
+    { const Params p; auto* scope = msg.mutable_##field(); FIELDS(VF_EMIT_FIELD) }
+    VF_EMIT_SCOPE(shared, OptimizerParamsBase, OPTIMIZER_BASE_FIELDS)
+    VF_EMIT_SCOPE(nav, NavOptimizerParams, NAV_ALL_FIELDS)
+    VF_EMIT_SCOPE(transform, TransformOptimizerParams, TRANSFORM_ALL_FIELDS)
+    VF_EMIT_SCOPE(composition, CompositionOptimizerParams, COMPOSITION_ALL_FIELDS)
 #undef VF_EMIT_SCOPE
 #undef VF_EMIT_FIELD
-#undef VF_COUNT_FIELD
-    return w.take();
+    return proto(msg);
   });
-  return byteSlice(cached);
 }
 
 }

@@ -4,8 +4,6 @@
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
-#include "LuaExports/Api.h"
-
 import std.compat;
 import vf.Interpreter.SequenceParser;
 import vf.LuaExports.Common;
@@ -18,14 +16,12 @@ namespace payload = VF::LuaExports::payload;
 namespace {
 
 void LineArraysCopyOrReject(vector<string> lines) {
-  vector<VFByteSlice> slices;
   bool valid = !lines.empty();
   for (const string& line : lines) {
-    slices.push_back(VFByteSlice{.data = line.data(), .len = line.size()});
     if (line.contains('\n') || line.contains('\0')) valid = false;
   }
 
-  auto copied = payload::linesFromSlices(slices.data(), slices.size());
+  auto copied = payload::linesFrom(lines);
   ASSERT_EQ(copied.has_value(), valid);
   if (!copied) return;
 

@@ -1,24 +1,31 @@
-module;
-#include "LuaExports/Api.h"
-
 export module vf.LuaExports.Payload;
 
 import std.compat;
 import vf.LuaExports.Common;
-import vf.Optimizer.DiffPlanner.DiffState;
 import vf.Types.Lines;
 
 export namespace VF::LuaExports::payload {
 
-// Copies a borrowed line array. Rejects an empty array and any line holding a
-// newline or NUL byte.
-Expected<Lines> linesFromSlices(const VFByteSlice* slices, size_t count);
-
-// Array of `VF.Diff.Region` (lua/vimficiency/types.lua): 0-indexed, half-open
-// `init` and `goal` spans. An empty init span is a pure insertion, an empty
-// goal span a pure deletion. Both spans share begin (the common prefix is
-// identical in both buffers) but are written explicitly so each pane is
-// consumed independently.
-void writeDiffRegions(MsgpackWriter& w, const std::vector<DiffState>& diffs);
+// Copies a line array (any range of strings, e.g. a repeated bytes field).
+// Rejects an empty array and any line holding a newline or NUL byte.
+template <typename Range>
+Expected<Lines> linesFrom(const Range& range) {
+  Lines lines;
+  for (const auto& line : range) {
+    const std::string_view text = line;
+    const std::string index = std::to_string(lines.size());
+    if (text.contains('\n')) {
+      return unexpectedError("line array contains newline byte at line " + index);
+    }
+    if (text.contains('\0')) {
+      return unexpectedError("line array contains NUL byte at line " + index);
+    }
+    lines.push_back(std::string(text));
+  }
+  if (lines.empty()) {
+    return unexpectedError("line array must contain at least one line");
+  }
+  return lines;
+}
 
 }  // namespace VF::LuaExports::payload

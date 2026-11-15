@@ -1,6 +1,3 @@
-module;
-#include "LuaExports/Api.h"
-
 module vf.LuaExports.Logic;
 
 import std.compat;
@@ -23,39 +20,6 @@ Expected<OptimizerParamOverrides> parseOverrides(string_view text) {
     return unexpectedError(formatOptimizerParamOverrideErrors(parsed.error()));
   }
   return std::move(*parsed);
-}
-
-Expected<SearchInputs> decodeSearchRequest(const VFSearchRequest* request) {
-  if (!request) return unexpectedError("missing search request");
-  const VFSearchRequest& r = *request;
-
-  auto userSeq = requiredBytes(r.user_seq, r.user_seq_len, "user_seq");
-  if (!userSeq) return unexpected(userSeq.error());
-  auto overridesText = requiredBytes(
-      r.optimizer_overrides, r.optimizer_overrides_len, "optimizer_overrides");
-  if (!overridesText) return unexpected(overridesText.error());
-
-  auto initialLines = payload::linesFromSlices(r.initial_lines, r.initial_lines_count);
-  if (!initialLines) return unexpected(initialLines.error());
-  auto goalLines = payload::linesFromSlices(r.goal_lines, r.goal_lines_count);
-  if (!goalLines) return unexpected(goalLines.error());
-  auto overrides = parseOverrides(*overridesText);
-  if (!overrides) return unexpected(overrides.error());
-
-  SearchInputs in;
-  in.initialLines = std::move(*initialLines);
-  in.goalLines = std::move(*goalLines);
-  in.userSeq.assign(*userSeq);
-  in.overrides = std::move(*overrides);
-  // Neovim can capture an insert-mode / 'virtualedit' cursor one past
-  // end-of-line, or (for recall windows) a row outside the sliced buffer. The
-  // optimizer requires normal-mode-valid endpoints, so clamp at the boundary
-  // rather than aborting on the downstream CHECK.
-  in.initialPos = in.initialLines.clamp(CursorPos(r.start_row, r.start_col));
-  in.goalPos = in.goalLines.clamp(CursorPos(r.end_row, r.end_col));
-  in.boundary = sliceBoundary(in.initialLines, r.has_lines_above, r.has_lines_below);
-  in.navContext = NavContext(r.window_height, r.scroll_amount);
-  return in;
 }
 
 namespace {
@@ -88,9 +52,10 @@ pair<int, int> findDiffRange(const Lines& a, const Lines& b) {
 
 }  // namespace
 
-string buildKeySequence(const VFKeyEvent* events, size_t count) {
-  const auto mode = [&](size_t i) { return modePrefix(sliceView(events[i].mode)); };
-  const auto keyTyped = [&](size_t i) { return string(sliceView(events[i].key_typed)); };
+string buildKeySequence(span<const KeyEvent> events) {
+  const size_t count = events.size();
+  const auto mode = [&](size_t i) { return modePrefix(events[i].mode); };
+  const auto keyTyped = [&](size_t i) -> const string& { return events[i].keyTyped; };
 
   string out;
   out.reserve(count * 2);
