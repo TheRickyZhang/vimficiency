@@ -36,6 +36,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check tag matches CMake version
+        # The library reports PROJECT_VERSION, so a tag without a bump would ship mislabeled.
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(sed -nE 's/^project\(vimficiency VERSION ([0-9.]+).*/\1/p' CMakeLists.txt)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match CMakeLists.txt version $version" >&2
+            exit 1
+          fi
+
       - name: Setup CI deps (Linux)
         if: runner.os == 'Linux'
         uses: ./.github/actions/setup-ci-deps

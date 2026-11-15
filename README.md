@@ -92,8 +92,9 @@ Plug 'TheRickyZhang/vimficiency', { 'tag': '*', 'do': './scripts/install.sh' }
 ### Manual build
 
 ```bash
-git clone --branch v0.1.1 https://github.com/TheRickyZhang/vimficiency
+git clone https://github.com/TheRickyZhang/vimficiency
 cd vimficiency
+git checkout "$(git describe --tags --abbrev=0)"
 ./scripts/install.sh
 ```
 
