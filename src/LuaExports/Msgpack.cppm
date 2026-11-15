@@ -17,10 +17,10 @@ struct Packed {
 // an absent field is omitted instead.
 class MsgpackWriter {
  public:
-  MsgpackWriter& map(size_t count) { return container(count, 0x80, 0xde); }
-  MsgpackWriter& array(size_t count) { return container(count, 0x90, 0xdc); }
+  inline MsgpackWriter& map(size_t count) { return container(count, 0x80, 0xde); }
+  inline MsgpackWriter& array(size_t count) { return container(count, 0x90, 0xdc); }
 
-  MsgpackWriter& str(std::string_view text) {
+  inline MsgpackWriter& str(std::string_view text) {
     const size_t n = text.size();
     if (n < 32) {
       put(0xa0 | n);
@@ -38,9 +38,9 @@ class MsgpackWriter {
     return *this;
   }
 
-  MsgpackWriter& key(std::string_view name) { return str(name); }
+  inline MsgpackWriter& key(std::string_view name) { return str(name); }
 
-  MsgpackWriter& integer(int64_t v) {
+  inline MsgpackWriter& integer(int64_t v) {
     if (v >= 0 && v < 0x80) {
       put(v);
     } else {
@@ -50,13 +50,13 @@ class MsgpackWriter {
     return *this;
   }
 
-  MsgpackWriter& number(double v) {
+  inline MsgpackWriter& number(double v) {
     put(0xcb);
     bigEndian(std::bit_cast<uint64_t>(v), 8);
     return *this;
   }
 
-  MsgpackWriter& boolean(bool v) {
+  inline MsgpackWriter& boolean(bool v) {
     put(v ? 0xc3 : 0xc2);
     return *this;
   }
@@ -68,22 +68,22 @@ class MsgpackWriter {
     return *this;
   }
 
-  MsgpackWriter& value(const Packed& packed) {
+  inline MsgpackWriter& value(const Packed& packed) {
     out_ += packed.bytes;
     return *this;
   }
 
-  Packed take() { return Packed{std::move(out_)}; }
+  inline Packed take() { return Packed{std::move(out_)}; }
 
  private:
-  void put(uint64_t byte) { out_.push_back(static_cast<char>(byte)); }
+  inline void put(uint64_t byte) { out_.push_back(static_cast<char>(byte)); }
 
-  void bigEndian(uint64_t v, int width) {
+  inline void bigEndian(uint64_t v, int width) {
     for (int shift = (width - 1) * 8; shift >= 0; shift -= 8) put(v >> shift);
   }
 
   // `wide` is the 16-bit-count tag; the 32-bit tag is always the next byte.
-  MsgpackWriter& container(size_t count, uint64_t fix, uint64_t wide) {
+  inline MsgpackWriter& container(size_t count, uint64_t fix, uint64_t wide) {
     if (count < 16) {
       put(fix | count);
     } else if (count < 0x10000) {

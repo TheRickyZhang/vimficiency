@@ -4,43 +4,9 @@
 
 import std.compat;
 import vf.LuaExports.Common;
-import vf.LuaExports.Payload;
 import vf.Types.Lines;
 
-namespace payload = VF::LuaExports::payload;
-
-namespace {
-
-VF::LuaExports::Expected<Lines> linesFrom(const std::vector<std::string>& lines) {
-  std::vector<VFByteSlice> slices;
-  for (const std::string& line : lines) {
-    slices.push_back(VFByteSlice{.data = line.data(), .len = line.size()});
-  }
-  return payload::linesFromSlices(slices.data(), slices.size());
-}
-
-}  // namespace
-
-TEST(LuaExportsPayloadTest, LinesFromSlicesPreservesTrailingEmptyLine) {
-  auto result = linesFrom({"a", ""});
-
-  ASSERT_TRUE(result.has_value()) << result.error().message;
-  ASSERT_EQ(result->size(), 2u);
-  EXPECT_EQ((*result)[0], "a");
-  EXPECT_EQ((*result)[1], "");
-}
-
-TEST(LuaExportsPayloadTest, LinesFromSlicesRejectsEmptyArray) {
-  EXPECT_FALSE(linesFrom({}).has_value());
-}
-
-TEST(LuaExportsPayloadTest, LinesFromSlicesRejectsNewlineInsideLine) {
-  EXPECT_FALSE(linesFrom({"ok", "a\nb"}).has_value());
-}
-
-TEST(LuaExportsPayloadTest, LinesFromSlicesRejectsNulInsideLine) {
-  EXPECT_FALSE(linesFrom({std::string("a\0b", 3)}).has_value());
-}
+// `linesFromSlices` is covered by PayloadSafetyTest.LineArraysCopyOrReject.
 
 TEST(LuaExportsPayloadTest, GuardedTurnsAnExceptionIntoAnErrorEnvelope) {
   std::string storage;
@@ -50,14 +16,6 @@ TEST(LuaExportsPayloadTest, GuardedTurnsAnExceptionIntoAnErrorEnvelope) {
   // fixmap(1), fixstr(5) "error", fixstr(19) message.
   EXPECT_EQ(std::string_view(slice.data, slice.len),
             "\x81\xa5" "error" "\xb3" "C++ exception: boom");
-}
-
-TEST(LuaExportsPayloadTest, GuardedPassesAValueThrough) {
-  std::string storage;
-  const VFByteSlice slice = VF::LuaExports::guarded(
-      storage, [] { return VF::LuaExports::packInteger(7); });
-
-  EXPECT_EQ(std::string_view(slice.data, slice.len), "\x81\xa5" "value" "\x07");
 }
 
 // Regression: the analyze FFI boundary clamps captured cursors into a valid

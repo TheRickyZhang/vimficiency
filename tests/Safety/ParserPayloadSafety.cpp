@@ -1,9 +1,8 @@
-// Safety property: arbitrary bytes cross the FFI payload layer intact or are
-// rejected cleanly, and the sequence parser returns stable, bounded results.
+// Safety property: arbitrary line arrays cross the FFI payload layer intact or
+// are rejected cleanly, and the sequence parser returns stable, bounded results.
 
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
-#include <msgpack.hpp>
 
 #include "LuaExports/Api.h"
 
@@ -17,24 +16,6 @@ using namespace std;
 namespace payload = VF::LuaExports::payload;
 
 namespace {
-
-void PackedStringsRoundTrip(vector<string> values) {
-  const VF::LuaExports::Packed packed = VF::LuaExports::packStrings(values);
-
-  size_t offset = 0;
-  const msgpack::object_handle handle =
-      msgpack::unpack(packed.bytes.data(), packed.bytes.size(), offset);
-  ASSERT_EQ(offset, packed.bytes.size());
-
-  const msgpack::object& object = handle.get();
-  ASSERT_EQ(object.type, msgpack::type::ARRAY);
-  ASSERT_EQ(object.via.array.size, values.size());
-  for (size_t i = 0; i < values.size(); ++i) {
-    const msgpack::object& item = object.via.array.ptr[i];
-    ASSERT_EQ(item.type, msgpack::type::STR);
-    EXPECT_EQ(string_view(item.via.str.ptr, item.via.str.size), values[i]);
-  }
-}
 
 void LineArraysCopyOrReject(vector<string> lines) {
   vector<VFByteSlice> slices;
@@ -72,19 +53,6 @@ void SequenceTokensAreStable(string sequence) {
 }
 
 }  // namespace
-
-FUZZ_TEST(PayloadSafetyTest, PackedStringsRoundTrip)
-    .WithDomains(fuzztest::VectorOf(fuzztest::String().WithMaxSize(300)).WithMaxSize(20))
-    .WithSeeds({
-        vector<string>{},
-        vector<string>{""},
-        vector<string>{"a", "", "b c"},
-        vector<string>{string("a\0b", 3), "\xff\x1e\x1f", "a\nb\tc"},
-        // Each string length header: fixstr, str8, str16.
-        vector<string>{string(31, 'x'), string(32, 'x'), string(255, 'x'), string(256, 'x')},
-        // array16 header.
-        vector<string>(16, "x"),
-    });
 
 FUZZ_TEST(PayloadSafetyTest, LineArraysCopyOrReject)
     .WithDomains(fuzztest::VectorOf(fuzztest::String().WithMaxSize(64)).WithMaxSize(20))

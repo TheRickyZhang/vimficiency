@@ -46,11 +46,8 @@ the file's only clock), and
 unversioned files, and strips it before validating; there is no migration.
 Bump `FORMAT_VERSION` on any change that old files cannot satisfy. All fields
 are required except the debug-only `capture_debug` and `analyze_ms`, and
-`optimizer_overrides` and `results_calculated`.
-
-Those last two, with the lines, positions, `has_lines_*`, window fields and
-`user_seq`, make a file a complete `VF.SearchRequest` for re-running analyze.
-They are optional only because files saved before 0.3.0 lack them.
+`optimizer_overrides` and `results_calculated`, which complete the replayable
+`VF.SearchRequest` and are absent from files saved before 0.3.0.
 
 The persisted clock is wall time because `hrtime` values from another boot are
 not comparable; the workspace keeps its own `*_mono_ns` stamps on the record
