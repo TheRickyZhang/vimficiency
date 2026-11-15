@@ -1,0 +1,28 @@
+// Text fields are `bytes`, not `string`: they carry buffer content and key
+// sequences, which need not be valid UTF-8. Lua sees a string either way.
+syntax = "proto3";
+
+package vf;
+
+option optimize_for = LITE_RUNTIME;
+
+// What every protobuf export returns in its VFByteSlice.
+message Envelope {
+  oneof result {
+    bytes value = 1;  // the export's own message, serialized
+    bytes error = 2;
+    bool pending = 3;  // async job still running
+  }
+}
+
+// 0-indexed.
+message Position {
+  int32 row = 1;
+  int32 col = 2;
+}
+
+// Half-open [begin_pos, end_pos).
+message Range {
+  Position begin_pos = 1;
+  Position end_pos = 2;
+}

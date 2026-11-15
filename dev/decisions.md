@@ -157,11 +157,19 @@ to deeper docs when needed.
 - Fixed on the way: the Guide sidebar was empty because `autogenerate: { directory: '.' }` never matched the glob loader's root-relative file paths. See `dev/web/how-it-works-site.md`.
 
 ## FFI boundary: typed structs in, msgpack out (2026-11-15)
-- Lua to C++ is `Api.def` structs and `VFByteSlice` arrays; C++ to Lua is a msgpack `{value}`/`{error}`/`{pending}` envelope decoded by `vim.mpack.decode`. This replaced five hand-rolled text formats and an in-band `ERROR:` prefix. See `dev/lua/ffi-payloads.md`.
+- Lua to C++ is `Api.def` structs and `VFByteSlice` arrays; C++ to Lua was a msgpack `{value}`/`{error}`/`{pending}` envelope decoded by `vim.mpack.decode`. This replaced five hand-rolled text formats and an in-band `ERROR:` prefix. See `dev/lua/ffi-payloads.md`.
 - Asymmetric on purpose: each direction uses the half that needs no parser of ours (the C compiler's struct layout in, Neovim's decoder out). Typed both ways would need a C++-owned pointer graph plus a per-shape cdata-to-table walk in Lua.
 - Msgpack both ways was rejected because request fields would become runtime-checked instead of compile-checked and ABI-hash-covered.
-- The C++ encoder is the hand-written `MsgpackWriter`, with msgpack-cxx (the `msgpack-c` repo's C++ library) linked only into the tests to decode its output. msgpack-cxx is the intended encoder: the switch is `dev/architecture/todo.md` item 11.
+- The msgpack encoder is the hand-written `MsgpackWriter`, with msgpack-cxx (the `msgpack-c` repo's C++ library) linked only into the tests to decode its output. Both go once every output is protobuf (next entry).
 - `optimizer_overrides` stays `scope:key=value` text: identifier keys and numeric values cannot carry arbitrary bytes.
+
+## FFI results move from msgpack to protobuf (2026-11-15)
+- Msgpack payload shapes existed twice, as `MsgpackWriter` calls and as LuaLS classes, with nothing tying them together. A `.proto` schema is one contract that generates the C++ side and is what Lua decodes with. See `dev/lua/ffi-payloads.md`.
+- Lua decodes with lua-protobuf compiled into `libvimficiency`, against a descriptor set embedded in the same library. A stale library therefore cannot disagree with its own decoder or schema.
+- msgpack-cxx with `MSGPACK_DEFINE_MAP` structs was the alternative. It removes hand-counted maps but leaves the Lua types hand-written, with no schema to generate them from.
+- Cost, measured on Linux x86_64 Release: a clean build goes from about 18 s to 43 s and the library from 2.2 MB to 4.3 MB. Building `protoc` from source as well took 2 min 42 s, hence the pinned prebuilt binary.
+- Decoding an Explore state took 1.9 µs against 6.0 µs for `vim.mpack.decode`, at 26 bytes against 179.
+- Explore results moved first. The remaining outputs, generated LuaLS types, and inputs are `dev/architecture/todo.md` item 11.
 
 ## C++20 named modules instead of headers (2026-11-09)
 - Every former header is a named module `vf.<Dir>.<Name>` (`dev/code-style.md` has the unit layout, `dev/architecture/module-dependencies.md` the allowed graph). The motivation is structural: the import graph *is* the dependency graph, so a layering violation or a transitive leak is a compile error rather than a `scripts/lint-module-deps.sh` finding, and macros from `<cassert>`/X-macro `.inc` fragments stay in the unit that includes them. `import std.compat` replaces per-TU standard-header parsing.

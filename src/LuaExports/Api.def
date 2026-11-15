@@ -117,6 +117,8 @@ VFByteSlice vf_get_warnings();
 VFByteSlice vf_get_optimizer_defaults();
 const char* vf_version_string();
 const char* vf_abi_hash();
+// The compiled src/LuaExports/proto/ schema, raw (no envelope), for pb.load().
+VFByteSlice vf_proto_descriptor();
 VFByteSlice vf_debug_config();
 
 VFByteSlice vf_tokenize_movements(const char* seq, size_t seq_len);

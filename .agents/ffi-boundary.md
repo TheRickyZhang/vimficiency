@@ -50,12 +50,15 @@ camelCase — it doesn't cross the boundary, so the rule doesn't apply.
 - **int64 over FFI:** pass it as a direct `int64_t` cdef parameter (as
   `vf_manual_evict_reason` does). Never send a number as text: `tostring(n)` on
   hrtime-scale numbers emits scientific notation (`1.7e+18`).
-- Every export body runs inside `guarded` (returns `VFByteSlice`) or `noUnwind`
-  (no error channel); an exception must never unwind into LuaJIT.
+- Every export body runs inside `guardedProto` / `guarded` (returns
+  `VFByteSlice`) or `noUnwind` (no error channel); an exception must never
+  unwind into LuaJIT.
 - Strings cross as `const char*` + length where possible; do not assume
   null-termination on the C++ side for buffer content sourced from Neovim.
-- Structured inputs cross as typed C structs and results come back as msgpack;
-  never add a text format or a hand-written parser. See `dev/lua/ffi-payloads.md`.
+- Structured inputs cross as typed C structs and results come back as protobuf
+  messages from `src/LuaExports/proto/`; never add a text format or a
+  hand-written parser. New results are protobuf, not msgpack. See
+  `dev/lua/ffi-payloads.md`.
 - Search inputs (analyze, explore-start) cross as one `VFSearchRequest` struct
   pointer. A Lua string assigned to a cdata pointer field is not pinned the way
   a direct string argument is, so build the struct only through

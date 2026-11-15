@@ -74,8 +74,8 @@ inline std::string_view sliceView(VFByteSlice slice) {
   return std::string_view(slice.data, slice.len);
 }
 
-// Every VFByteSlice return is a one-entry msgpack map: {value}, {error}, or
-// {pending}. Lua decoder: `decode` in ffi/core.lua.
+// Msgpack exports return a one-entry map: {value}, {error}, or {pending}. Lua
+// decoder: `decode` in ffi/core.lua.
 inline VFByteSlice storeBytes(std::string& storage, PackedResult result) {
   MsgpackWriter w;
   w.map(1);
@@ -93,8 +93,26 @@ inline VFByteSlice storePending(std::string& storage) {
   return byteSlice(storage);
 }
 
+// One serialized protobuf message from src/LuaExports/proto/. A distinct type
+// so raw text cannot be returned across the FFI unserialized.
+struct Proto {
+  std::string bytes;
+};
+
+using ProtoResult = Expected<Proto>;
+
+template <typename Message>
+Proto proto(const Message& message) {
+  return Proto{message.SerializeAsString()};
+}
+
+// Protobuf exports return a `vf.Envelope` (proto/common.proto) holding the
+// message, an error, or pending. Lua decoder: `unwrap_proto` in ffi/core.lua.
+VFByteSlice storeProto(std::string& storage, ProtoResult result);
+VFByteSlice storeProtoPending(std::string& storage);
+
 // An exception unwinding out of an export into LuaJIT's C frames is undefined
-// behaviour, so every export body runs inside one of the two wrappers below.
+// behaviour, so every export body runs inside one of the wrappers below.
 
 // For exports returning VFByteSlice: an escaping exception becomes an {error}
 // envelope, which Lua raises like any other C++ error.
@@ -106,6 +124,18 @@ VFByteSlice guarded(std::string& storage, Body body) noexcept {
     return storeBytes(storage, unexpectedError(std::string("C++ exception: ") + e.what()));
   } catch (...) {
     return storeBytes(storage, unexpectedError("unknown C++ exception"));
+  }
+}
+
+// `guarded` for exports whose result is a protobuf message.
+template <typename Body>
+VFByteSlice guardedProto(std::string& storage, Body body) noexcept {
+  try {
+    return storeProto(storage, body());
+  } catch (const std::exception& e) {
+    return storeProto(storage, unexpectedError(std::string("C++ exception: ") + e.what()));
+  } catch (...) {
+    return storeProto(storage, unexpectedError("unknown C++ exception"));
   }
 }
 

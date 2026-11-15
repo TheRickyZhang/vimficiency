@@ -45,14 +45,6 @@ struct overload : Ts... { using Ts::operator()...; };
 // Apple clang lacks aggregate CTAD (P1816); keep the guide explicit.
 template <class... Ts> overload(Ts...) -> overload<Ts...>;
 
-inline std::string_view phaseName(const Phase& p) {
-  return std::visit(overload{
-      [](const Navigate&)  { return std::string_view{"Navigate"}; },
-      [](const Transform&) { return std::string_view{"Transform"}; },
-      [](const Insert&)    { return std::string_view{"Insert"}; },
-  }, p);
-}
-
 inline int phaseIndex(const Phase& p) {
   return std::visit([](auto&& x) { return x.index; }, p);
 }

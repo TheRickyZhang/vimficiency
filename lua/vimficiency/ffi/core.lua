@@ -24,22 +24,23 @@ end
 local api_def_text = read_ffi_api_def()
 ffi.cdef(api_def_text)
 
----@return string filename
----@return string system_name
-local function lib_filenames()
+---@return string
+local function lib_filename()
   local os_name = jit and jit.os or ""
   if os_name == "OSX" then
-    return "libvimficiency.dylib", "vimficiency"
+    return "libvimficiency.dylib"
   elseif os_name == "Windows" then
-    return "vimficiency.dll", "vimficiency"
+    return "vimficiency.dll"
   else
-    return "libvimficiency.so", "vimficiency"
+    return "libvimficiency.so"
   end
 end
 
+M.lib_filename = lib_filename()
+
 local function load_lib()
   local root = find_plugin_root()
-  local lib_filename, system_name = lib_filenames()
+  local lib_filename = M.lib_filename
   local paths = {}
   if type(vim.env.VIMFICIENCY_LIB_PATH) == "string"
       and vim.env.VIMFICIENCY_LIB_PATH ~= "" then
@@ -49,7 +50,9 @@ local function load_lib()
     table.insert(paths, _G.__vimficiency_reload_lib_path)
   end
   table.insert(paths, root .. "/build/" .. lib_filename)
-  table.insert(paths, system_name)
+  -- The bare filename, not "vimficiency": `package.loadlib` reuses this path
+  -- and, unlike `ffi.load`, does not add the lib prefix or the extension.
+  table.insert(paths, lib_filename)
 
   local expected_hash = vim.fn.sha256(api_def_text)
 
@@ -87,7 +90,18 @@ local function build_enum(count, name_fn)
 end
 
 M.lib = load_lib()
-M.lib_filename = lib_filenames()
+
+-- lua-protobuf is compiled into the library, and so is the schema it decodes
+-- with, so neither can drift from the C++ that encodes.
+local function load_pb()
+  local pb = assert(package.loadlib(M.lib_path, "luaopen_pb"))()
+  local descriptor = M.lib.vf_proto_descriptor()
+  assert(pb.load(ffi.string(descriptor.data, tonumber(descriptor.len))))
+  pb.option("decode_default_array")
+  return pb
+end
+
+local pb = load_pb()
 
 M.Key = build_enum(M.lib.VF_KEY_COUNT, M.lib.vf_key_name)
 M.Finger = build_enum(M.lib.VF_FINGER_COUNT, M.lib.vf_finger_name)
@@ -118,6 +132,19 @@ function M.unwrap(slice)
   local e = envelope(slice)
   if e.error then error(e.error, 0) end
   return e.value
+end
+
+--- Decodes a `vf.Envelope` (C++ `storeProto` / `storeProtoPending`) and the
+--- `message` inside it. Raises on a C++ error; returns nil while an async job
+--- is still pending.
+---@param slice VF.C.ByteSlice
+---@param message string fully qualified, e.g. "vf.explore.State"
+---@return table|nil
+function M.unwrap_proto(slice, message)
+  local e = assert(pb.decode("vf.Envelope", ffi.string(slice.data, tonumber(slice.len))))
+  if e.result == "error" then error(e.error, 0) end
+  if e.result == "pending" then return nil end
+  return assert(pb.decode(message, e.value))
 end
 
 -- The cdata built by `set_slice` and `byte_slices` holds raw pointers and

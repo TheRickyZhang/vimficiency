@@ -165,12 +165,12 @@ local function accept_live_snapshot(insert_mode)
 
   local applied = ffi_explore.explore_accept_snapshot(
     view.view_id, lines, new_row, new_col, raw_keys, insert_mode)
-  if applied.status == "Rejected" then
+  if applied.rejected then
     view.pending = nil
     view.warning = nil
     clear_key_buffer(view)
-    notify_plan_deviation(applied.reason)
-    restore_rejected_snapshot(view, applied.reason, restore_from_insert)
+    notify_plan_deviation(applied.rejected.reason)
+    restore_rejected_snapshot(view, applied.rejected.reason, restore_from_insert)
     return false
   end
 

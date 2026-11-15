@@ -167,6 +167,17 @@ const char *vf_version_string() { return VIMF_VERSION; }
 
 const char *vf_abi_hash() { return VF_ABI_HASH; }
 
+// Defined in the generated descriptor.cpp (scripts/embed-binary.cmake).
+extern const unsigned char VF_PROTO_DESCRIPTOR[];
+extern const size_t VF_PROTO_DESCRIPTOR_SIZE;
+
+VFByteSlice vf_proto_descriptor() {
+  return VFByteSlice{
+      .data = reinterpret_cast<const char*>(VF_PROTO_DESCRIPTOR),
+      .len = VF_PROTO_DESCRIPTOR_SIZE,
+  };
+}
+
 VFByteSlice vf_debug_config() {
   static std::string debug_storage;
   return guarded(debug_storage, [] {

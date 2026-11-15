@@ -134,16 +134,14 @@
 ---@field can_redo boolean
 ---@field target_range VF.Range
 
----@class VF.Explore.AppliedResult
----@field status "Applied"
-
----@class VF.Explore.RejectedResult
----@field status "Rejected"
+---@class VF.Explore.Rejected
 ---@field reason string
 
----@alias VF.Explore.ApplyResult
----| VF.Explore.AppliedResult
----| VF.Explore.RejectedResult
+--- Exactly one of `applied` / `rejected` is set; `outcome` names it.
+---@class VF.Explore.ApplyResult
+---@field outcome "applied"|"rejected"
+---@field applied? table
+---@field rejected? VF.Explore.Rejected
 
 ---@class VF.Explore.Recommendation
 ---@field text string
@@ -157,9 +155,12 @@
 ---@class VF.Explore.ReconfigurePlanResult
 ---@field reset boolean
 
+---@class VF.Explore.HeaderRowsResult
+---@field rows string[]
+
 ---@class VF.Explore.HeaderRows
 ---@field explored string[]
----@field optimal string[][]
+---@field optimal VF.Explore.HeaderRowsResult[]
 
 
 return {}

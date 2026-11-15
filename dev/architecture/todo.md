@@ -295,50 +295,32 @@ Transform time dominates a profiled session.
 
 ---
 
-## 11. Type and hash-check the C++ to Lua payload shapes (high priority)
+## 11. Finish the protobuf migration of the FFI payloads (high priority)
 
-**What.** The ABI hash covers only `Api.def`, which declares every result as an
-opaque `VFByteSlice`. Payload shapes exist twice with nothing tying them
-together: imperative `MsgpackWriter` calls in `src/LuaExports/*.cpp` and LuaLS
-classes in `lua/vimficiency/types.lua`.
+**What.** The `vf_explore_*` results are protobuf messages
+(`src/LuaExports/proto/`, see `dev/lua/ffi-payloads.md`). Everything else still
+returns msgpack whose shape exists twice, as `MsgpackWriter` calls and as LuaLS
+classes, with nothing tying the two together.
 
-Two failures follow. A stale library whose payloads changed loads without an
-ABI mismatch, and a field renamed on one side shows up as a nil at the Lua use
-site. Only per-shape Lua tests (`tests/lua/ffi_analyze.lua`) catch either.
+Remaining, in order:
 
-The fix makes C++ payload structs the single source of truth, encoded by
-msgpack-cxx instead of `MsgpackWriter`:
+1. Move the Analyze, Display and Utility results to messages. Then delete
+   `MsgpackWriter`, `guarded`, `storeBytes`, `core.unwrap`/`core.decode`, and
+   the test-only msgpack-cxx dependency.
+2. Generate the LuaLS classes in `types.lua` from the descriptor with a C++
+   build tool, into a committed file that CI regenerates and diffs. The Lua
+   lint then flags reads of fields that no longer exist.
+3. Hash the descriptor next to the `Api.def` hash and check it in
+   `ffi/core.lua`, so Lua code written against another schema fails at load.
+4. Decide whether inputs move too. `pb.encode` silently drops a misspelled
+   key, so requests would need a strict check before they give up the
+   compile-checked structs.
 
-1. One struct per payload with `MSGPACK_DEFINE_MAP(fields...)`, e.g.
-   `ExploreStatePayload` for `packState`. msgpack-cxx then packs it as a map
-   keyed by member name, including nested structs, strings, and vectors.
-2. Exports return `Expected<Payload>` and one generic `msgpack::pack` call
-   replaces every `pack*` function. `MsgpackWriter` and its test are deleted,
-   and hand-counted `map(n)` goes with them.
-3. A C++ build tool that emits the LuaLS classes into a committed generated
-   file, with CI failing on a regeneration diff. The Lua lint then flags reads
-   of fields that no longer exist.
-4. The library bakes in the generated file's hash next to the `Api.def` hash,
-   and `ffi/core.lua` checks both on load.
+**Why not done yet (2026-11-15).** Explore went first to prove the build on all
+three release platforms before the larger surface moves.
 
-Build work: msgpack-cxx moves from `tests/CMakeLists.txt` to the root so the
-library and the wasm module get it. Keep `<msgpack.hpp>` in `.cpp` files, not
-module interfaces, which means `storeBytes` leaves `Common.cppm`.
-
-Open points. The stock `std::optional` adaptor writes nil, which Lua sees as
-the truthy `vim.NIL`, so absent fields need an adaptor that omits the key.
-Tagged unions (`VF.Explore.Phase`, `VF.Explore.ApplyResult`) need their wire
-shape checked against the stock `std::variant` adaptor. Step 3 still needs
-field names and types that `MSGPACK_DEFINE_MAP` does not expose for
-generation; item 8's reflection would supply them.
-
-**Why not done yet (2026-11-15).** The msgpack envelope landed this week and
-the shapes were still moving. A hand-bumped payload version in `Api.def` would
-cover the stale-library case alone, but relies on remembering to bump it.
-
-**Threshold.** Before the next new or reshaped payload, and before the next
-release that changes any output shape. Each one added first is another
-`pack*` function to migrate.
+**Threshold.** Before the next new or reshaped non-Explore payload. Each one
+added first is another `pack*` function to migrate.
 
 ---
 
