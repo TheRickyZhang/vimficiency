@@ -89,7 +89,7 @@ local function gather_columns(active)
   for i = 1, want do
     cols[#cols + 1] = {
       title = string.format("Optimal %d", i),
-      rows = header_rows.optimal[i],
+      rows = header_rows.optimal[i].rows,
       empty_text = "(none)",
     }
   end

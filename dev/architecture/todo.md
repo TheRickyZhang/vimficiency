@@ -295,6 +295,32 @@ Transform time dominates a profiled session.
 
 ---
 
+## 11. Generate the Lua types from the FFI schema (high priority)
+
+**What.** Every FFI request and result is a protobuf message
+(`src/LuaExports/proto/`, see `dev/lua/ffi-payloads.md`), but the LuaLS classes
+in `lua/vimficiency/types.lua` that describe the same shapes are still
+hand-written. A field renamed in the schema shows up as a nil at the Lua use
+site, caught only by a Lua test through the real library.
+
+1. Generate the LuaLS classes from the descriptor with a C++ build tool, into
+   a committed file that CI regenerates and diffs. The Lua lint then flags
+   reads of fields that no longer exist.
+2. Hash that generated file into the library next to the `Api.def` hash and
+   check it in `ffi/core.lua`, so Lua code written against another schema
+   fails at load.
+
+The lite runtime has no descriptor reflection, so the tool needs either the
+full runtime or to run as a `protoc` plugin.
+
+**Why not done yet (2026-11-15).** The migration to protobuf landed first; the
+generator is separable and needs the build decision above.
+
+**Threshold.** Before the next release that changes a message, or the first
+bug traced to `types.lua` disagreeing with the schema.
+
+---
+
 ## Noted alternative: item 1 vs. the current approach
 
 The defense layers chosen for the track-states fix (`BuildConfig.h` + `static_assert` + workflow `jq` check + differentiated dashboard message) are cheaper and more localized than `CMakePresets.json`. Item 1 becomes the better path only when configuration count or CI complexity makes per-flag discipline hard to maintain — otherwise the current three-layer defense subsumes what presets would give us.

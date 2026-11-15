@@ -73,7 +73,7 @@ local fields = {
     window_count = 2,                              -- total panes shown side-by-side; 1..4 (user pane consumes one slot if included)
   },
 
-  -- C++ process globals (`VFConfig` in src/LuaExports/Api.def): the keyboard cost
+  -- C++ process globals (`vf.config.Config` in src/LuaExports/proto/config.proto): the keyboard cost
   -- model and Vim options, pushed once by `ffi_config.apply_globals`. Everything
   -- above is Lua-owned and read from this table at call time.
   default_keyboard = CPP,

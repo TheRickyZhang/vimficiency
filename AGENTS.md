@@ -62,6 +62,7 @@ Lua (User concepts):
 - Never use `rm -rf build` unless something appears corrupted. The build directory contains downloaded libraries (googletest, etc.) that take time to re-fetch.
 - Do not use python or write to tmp for debugging! Always debug print in tests/Debug.
 - Generally, only run the corresponding test suite after making a logic change to ensure compatibility. Lua for lua, C++ for C++.
+- Before calling a change ready to push, run the CI lint jobs (`bench.yml`) for what you touched: `./scripts/lint-lua.sh` for Lua, `./scripts/lint-module-deps.sh` and `./scripts/lint-module-inline.sh` for C++ modules, `bash scripts/check-doc-titles.sh` for `doc-src/`.
 
 ## Design Constraints
 
@@ -154,7 +155,7 @@ Optimizer:
 - `dev/optimizer/interactive-explore.md` - Before changing the Explore state machine, frontiers, or interactive replay
 
 Lua:
-- `dev/lua/ffi-payloads.md` - Before adding or changing what crosses the FFI: typed input structs, or a msgpack result payload
+- `dev/lua/ffi-payloads.md` - Before adding or changing what crosses the FFI: an export, or a protobuf request or result message
 - `dev/lua/key-normalization.md` - Before forwarding captured key bytes (CmdAtom keys/lhs, or Explore's `vim.on_key`) to C++; skipping normalization asserts on Ctrl-letter input
 - `dev/lua/atom-stream.md` - Before changing session capture (manual/recall/triggers), the CmdAtom admission policy, or recall snapshotting
 - `dev/lua/neovim_on_key_issues.md` - Historical: the `vim.on_key` hazards that motivated the CmdAtom migration; still applies to `key_tracking.lua` (Explore-only)

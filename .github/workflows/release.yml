@@ -73,11 +73,11 @@ jobs:
 
       - name: Load smoke test
         # Loads the built library through the Lua FFI loader, which also
-        # checks the embedded Api.def hash against the checkout.
+        # checks the embedded Api.def hash against the checkout and opens the
+        # protobuf decoder. Script mode (-l), so a Lua error fails the step.
         run: |
-          nvim --headless -u NONE --cmd "set rtp+=." \
-            -c 'lua print("vimficiency " .. require("vimficiency.ffi").version_string())' \
-            -c q
+          echo 'print("vimficiency " .. require("vimficiency.ffi").version_string())' |
+            nvim -u NONE --cmd "set rtp+=." -l -
 
       - name: Stage asset
         run: cp "build/${{ matrix.lib }}" "${{ matrix.asset }}"

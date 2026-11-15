@@ -26,41 +26,36 @@ If you find yourself reaching for nontrivial logic in Lua, stop. Either:
 
 ## Naming — same identifier, snake_case, every side
 
-**The rule:** the same identifier appears in C++, in `Api.def`, and in
-`ffi.lua`, in snake_case. No case conversion, no translation.
-
-The only adjustments are namespace prefixes that exist because C has no
-namespaces:
+**The rule:** the same identifier appears in the `.proto` schema, in
+`Api.def`, and in the Lua wrappers, in snake_case. No case conversion, no
+translation.
 
 - **Functions** are prefixed `vf_` in `Api.def` (always, on every export);
   the Lua wrapper strips it. `vf_explore_destroy` ↔ `M.explore_destroy`.
-- **Struct types** are prefixed `VF` in `Api.def` (`VFScoreWeights`) and
-  `VF.C.` in Lua-LS annotations (`VF.C.ScoreWeights`); the stem matches
-  the C++ name (`ScoreWeights`).
-- **Fields** have no prefix — they're already namespaced by their struct.
+- **Messages** live in `src/LuaExports/proto/` under a `vf.<area>` package.
+  Lua tables use the message's field names unchanged.
+- **Enum values** that Lua reads by name keep the casing Lua compares
+  against (`Phase.Kind`, `Token.Kind`).
 
-C++ structs whose layout *is* the wire format (`ScoreWeights`, `KeyInfo`,
-the `VFConfig` payload) follow the boundary's snake_case so the FFI shim
-is a plain member-by-member copy. Other C++ code keeps its normal
-camelCase — it doesn't cross the boundary, so the rule doesn't apply.
+C++ code behind the boundary keeps its normal camelCase.
 
 
 ## Encoding rules
 
-- **int64 over FFI:** pass it as a direct `int64_t` cdef parameter (as
-  `vf_manual_evict_reason` does). Never send a number as text: `tostring(n)` on
-  hrtime-scale numbers emits scientific notation (`1.7e+18`).
-- Every export body runs inside `guarded` (returns `VFByteSlice`) or `noUnwind`
-  (no error channel); an exception must never unwind into LuaJIT.
-- Strings cross as `const char*` + length where possible; do not assume
-  null-termination on the C++ side for buffer content sourced from Neovim.
-- Structured inputs cross as typed C structs and results come back as msgpack;
-  never add a text format or a hand-written parser. See `dev/lua/ffi-payloads.md`.
-- Search inputs (analyze, explore-start) cross as one `VFSearchRequest` struct
-  pointer. A Lua string assigned to a cdata pointer field is not pinned the way
-  a direct string argument is, so build the struct only through
-  `ffi/core.with_search_request`, which keeps the slice arrays and their strings
-  alive for the duration of the call.
+- Data crosses as protobuf both ways: one serialized request message in, a
+  `vf.Envelope` around the result message out. Never add a struct to
+  `Api.def`, a text format, or a hand-written parser. See
+  `dev/lua/ffi-payloads.md`.
+- Job and view ids alone cross as plain `int` parameters.
+- Encode requests only through `ffi/core.encode` (or `core.call`): it rejects
+  a field the message does not have, which `pb.encode` would silently drop.
+- Every export body runs inside `guarded` / `guardedRequest` (returns
+  `VFByteSlice`) or `noUnwind` (no error channel); an exception must never
+  unwind into LuaJIT.
+- Buffer content and key sequences are `bytes` fields; do not assume UTF-8 or
+  null-termination on the C++ side.
+- Never send a number as text: `tostring(n)` on hrtime-scale numbers emits
+  scientific notation (`1.7e+18`). Use an `int64` field.
 
 ## No dead fallbacks
 

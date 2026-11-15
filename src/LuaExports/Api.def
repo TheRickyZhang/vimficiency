@@ -1,204 +1,63 @@
 // Canonical C ABI for LuaJIT FFI.
 // Included by Api.h for C++ compile-time checks and read directly by
-// lua/vimficiency/ffi.lua for ffi.cdef().
-
-extern const int VF_KEY_COUNT;
-extern const int VF_FINGER_COUNT;
-extern const int VF_HAND_COUNT;
-extern const int VF_COUNT_CLASS_COUNT;
-
-typedef struct {
-  double key_weight;
-  double same_finger_weight;
-  double same_key_weight;
-  double alt_hand_weight;
-  double good_roll_weight;
-  double bad_roll_weight;
-} VFScoreWeights;
-
-typedef struct {
-  int8_t hand;
-  int8_t finger;
-  double base_cost;
-} VFKeyInfo;
-
-typedef struct {
-  bool has_base;
-  double base;
-  bool has_count_slope;
-  double count_slope;
-  bool has_span_slope;
-  double span_slope;
-} VFCountPenaltyOverride;
-
-typedef struct {
-  int default_keyboard;
-  VFScoreWeights weights;
-  VFKeyInfo keys[61];  // must match C++ KEY_COUNT
-  int slice_buffer_amount;
-  int32_t shiftwidth;
-  bool use_count_penalty_overrides;
-  VFCountPenaltyOverride count_penalty_overrides[14];  // must match C++ CountClassCOUNT
-} VFConfig;
+// lua/vimficiency/ffi/core.lua for ffi.cdef().
+//
+// Data crosses as protobuf (src/LuaExports/proto/). A `request` is one
+// serialized message, borrowed for the call. A VFByteSlice return is a
+// serialized vf.Envelope around the result message named beside the export.
+// Job and view ids alone cross as plain ints.
 
 typedef struct {
   const char* data;
   size_t len;
 } VFByteSlice;
 
-// Every pointer and VFByteSlice in the input structs below borrows Lua memory
-// for the duration of the call only; C++ copies everything it keeps.
-
-typedef struct {
-  VFByteSlice mode;
-  VFByteSlice key_typed;
-} VFKeyEvent;
-
-typedef struct {
-  VFByteSlice kind;
-  VFByteSlice text;
-} VFTypedChunk;
-
-typedef struct {
-  VFByteSlice seq;
-  double cost;
-} VFOptimizerResult;
-
-typedef struct {
-  const VFByteSlice* lines;
-  size_t lines_count;
-  int start_row;
-  int start_col;
-  int end_row;
-  int end_col;
-  VFByteSlice user_seq;
-  double user_cost;
-  VFByteSlice kind;
-  const VFOptimizerResult* optimal_results;
-  size_t optimal_results_count;
-} VFSessionResult;
-
-// One search problem, shared by analyze (sync and async) and explore-start.
-typedef struct {
-  const VFByteSlice* initial_lines;
-  size_t initial_lines_count;
-  const VFByteSlice* goal_lines;
-  size_t goal_lines_count;
-  int start_row;
-  int start_col;
-  int end_row;
-  int end_col;
-  bool has_lines_above;
-  bool has_lines_below;
-  int window_height;
-  int scroll_amount;
-  const char* user_seq;
-  size_t user_seq_len;
-  const char* optimizer_overrides;
-  size_t optimizer_overrides_len;
-} VFSearchRequest;
-
-VFConfig* vf_get_config();
-void vf_apply_config();
-void vf_reset_config();
-
-const char* vf_key_name(int index);
-const char* vf_finger_name(int index);
-const char* vf_hand_name(int index);
-const char* vf_count_class_name(int index);
-VFByteSlice vf_analyze(const VFSearchRequest* request, int results_calculated);
-VFByteSlice vf_analyze_start_async(
-  const VFSearchRequest* request,
-  int results_calculated,
-  int deadline_ms);
-VFByteSlice vf_analyze_poll(int job_id);
-int vf_analyze_cancel(int job_id);
-VFByteSlice vf_get_warnings();
-VFByteSlice vf_get_optimizer_defaults();
 const char* vf_version_string();
 const char* vf_abi_hash();
-VFByteSlice vf_debug_config();
+// The compiled schema, raw (no envelope), for pb.load().
+VFByteSlice vf_proto_descriptor();
 
-VFByteSlice vf_tokenize_movements(const char* seq, size_t seq_len);
-VFByteSlice vf_tokenize_sequence(const char* seq, size_t seq_len);
-VFByteSlice vf_build_sequence(const VFKeyEvent* events, size_t events_count);
-VFByteSlice vf_compute_search_region(
-  const VFByteSlice* start_lines,
-  size_t start_lines_count,
-  const VFByteSlice* end_lines,
-  size_t end_lines_count,
-  int start_row,
-  int end_row,
-  int padding);
-int vf_manual_evict_reason(
-  int start_row,
-  int cursor_row,
-  int64_t last_key_time_ns,
-  bool has_last_key,
-  int64_t now_ns,
-  int max_search_lines,
-  int manual_idle_timeout_seconds);
-VFByteSlice vf_sequence_display_lines(
-  const char* seq,
-  size_t seq_len,
-  bool tokenize,
-  bool sectionize);
-VFByteSlice vf_sequence_display_inline(
-  const char* seq,
-  size_t seq_len,
-  bool tokenize);
-VFByteSlice vf_sequence_display_key_notation(
-  const char* text,
-  size_t text_len);
-VFByteSlice vf_sequence_display_typed_text(
-  const char* text,
-  size_t text_len,
-  bool key_notation);
-VFByteSlice vf_sequence_display_typed_chunks(
-  const VFTypedChunk* chunks,
-  size_t chunks_count,
-  bool tokenize);
-VFByteSlice vf_format_result_position(
-  int start_row,
-  int start_col,
-  int end_row,
-  int end_col);
-VFByteSlice vf_format_result_kind_suffix(
-  const char* kind,
-  size_t kind_len);
-VFByteSlice vf_format_result_message(
-  const char* title,
-  size_t title_len,
-  const VFSessionResult* result,
-  bool tokenize,
-  bool sectionize);
+// vf.config (lua_exports.cpp)
+VFByteSlice vf_enums();                                             // Enums
+VFByteSlice vf_apply_config(const char* request, size_t request_len);  // Config -> vf.Empty
+void vf_reset_config();
+VFByteSlice vf_debug_config();                                      // vf.Text
+VFByteSlice vf_get_warnings();                                      // vf.Text
 
-VFByteSlice vf_explore_start_async(const VFSearchRequest* request, int deadline_ms);
-VFByteSlice vf_explore_poll(int job_id);
+// vf.search (AnalyzeExports.cpp)
+VFByteSlice vf_analyze(const char* request, size_t request_len);              // AnalyzeRequest -> AnalyzeResult
+VFByteSlice vf_analyze_start_async(const char* request, size_t request_len);  // AnalyzeRequest -> vf.JobHandle
+VFByteSlice vf_analyze_poll(int job_id);                                      // AnalyzeResult
+int vf_analyze_cancel(int job_id);
+VFByteSlice vf_get_optimizer_defaults();                                      // OptimizerDefaults
+
+// vf.session (UtilityExports.cpp)
+VFByteSlice vf_tokenize_movements(const char* request, size_t request_len);     // SequenceRequest -> Tokens
+VFByteSlice vf_tokenize_sequence(const char* request, size_t request_len);      // SequenceRequest -> Tokens
+VFByteSlice vf_build_sequence(const char* request, size_t request_len);         // BuildSequenceRequest -> vf.Text
+VFByteSlice vf_compute_search_region(const char* request, size_t request_len);  // SearchRegionRequest -> SearchRegion
+VFByteSlice vf_manual_evict_reason(const char* request, size_t request_len);    // ManualEvictRequest -> ManualEvict
+
+// vf.display (DisplayExports.cpp)
+VFByteSlice vf_sequence_display_lines(const char* request, size_t request_len);         // SequenceRequest -> vf.Lines
+VFByteSlice vf_sequence_display_inline(const char* request, size_t request_len);        // SequenceRequest -> vf.Text
+VFByteSlice vf_sequence_display_key_notation(const char* request, size_t request_len);  // vf.Text -> vf.Text
+VFByteSlice vf_sequence_display_typed_text(const char* request, size_t request_len);    // TypedTextRequest -> vf.Text
+VFByteSlice vf_sequence_display_typed_chunks(const char* request, size_t request_len);  // TypedChunksRequest -> vf.Text
+VFByteSlice vf_format_result_position(const char* request, size_t request_len);         // SessionResult -> vf.Text
+VFByteSlice vf_format_result_kind_suffix(const char* request, size_t request_len);      // SessionResult -> vf.Text
+VFByteSlice vf_format_result_message(const char* request, size_t request_len);          // ResultMessageRequest -> vf.Text
+
+// vf.explore (InteractiveExports.cpp)
+VFByteSlice vf_explore_start_async(const char* request, size_t request_len);       // StartRequest -> vf.JobHandle
+VFByteSlice vf_explore_poll(int job_id);                                           // ViewHandle
 int vf_explore_cancel(int job_id);
 int vf_explore_destroy(int view_id);
-VFByteSlice vf_explore_state(int view_id);
-VFByteSlice vf_explore_recommendations(
-  int view_id,
-  int max_count,
-  const char* optimizer_overrides,
-  size_t optimizer_overrides_len,
-  const char* sort_mode,
-  size_t sort_mode_len);
-VFByteSlice vf_explore_reconfigure_plan(
-  int view_id,
-  const char* optimizer_overrides,
-  size_t optimizer_overrides_len);
-VFByteSlice vf_explore_current_lines(int view_id);
-VFByteSlice vf_explore_accept_snapshot(
-  int view_id,
-  const VFByteSlice* lines,
-  size_t lines_count,
-  int new_row,
-  int new_col,
-  const char* raw_keys,
-  size_t raw_keys_len,
-  bool insert_mode);
-VFByteSlice vf_explore_undo(int view_id);
-VFByteSlice vf_explore_redo(int view_id);
-VFByteSlice vf_explore_header_rows(int view_id);
+VFByteSlice vf_explore_state(int view_id);                                         // State
+VFByteSlice vf_explore_recommendations(const char* request, size_t request_len);   // RecommendationsRequest -> Recommendations
+VFByteSlice vf_explore_reconfigure_plan(const char* request, size_t request_len);  // ReconfigurePlanRequest -> ReconfigurePlanResult
+VFByteSlice vf_explore_current_lines(int view_id);                                 // vf.Lines
+VFByteSlice vf_explore_accept_snapshot(const char* request, size_t request_len);   // SnapshotRequest -> ApplyResult
+VFByteSlice vf_explore_undo(int view_id);                                          // ApplyResult
+VFByteSlice vf_explore_redo(int view_id);                                          // ApplyResult
+VFByteSlice vf_explore_header_rows(int view_id);                                   // HeaderRows

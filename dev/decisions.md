@@ -156,11 +156,16 @@ to deeper docs when needed.
 - Two read-only surfaces were added to core for the widgets: `TilingCost::cover` (chunk backpointers on `Arrival`) and `VimDiff::trace` (tables, path, blocks). `VimDiffTraceExport` now dumps the trace instead of re-running a naive DP; the committed animation traces still render, regenerating would need the scene adjusted (`anim/dp-walkthrough/README.md`).
 - Fixed on the way: the Guide sidebar was empty because `autogenerate: { directory: '.' }` never matched the glob loader's root-relative file paths. See `dev/web/how-it-works-site.md`.
 
-## FFI boundary: typed structs in, msgpack out (2026-11-15)
-- Lua to C++ is `Api.def` structs and `VFByteSlice` arrays; C++ to Lua is a msgpack `{value}`/`{error}`/`{pending}` envelope decoded by `vim.mpack.decode`. This replaced five hand-rolled text formats and an in-band `ERROR:` prefix. See `dev/lua/ffi-payloads.md`.
-- Asymmetric on purpose: each direction uses the half that needs no parser of ours (the C compiler's struct layout in, Neovim's decoder out). Typed both ways would need a C++-owned pointer graph plus a per-shape cdata-to-table walk in Lua.
-- Msgpack both ways via msgpack-c was rejected because request fields would become runtime-checked instead of compile-checked and ABI-hash-covered. msgpack-c stays a test-only dependency that decodes our `MsgpackWriter` output.
-- `optimizer_overrides` stays `scope:key=value` text: identifier keys and numeric values cannot carry arbitrary bytes.
+## FFI boundary: protobuf both ways (2026-11-15)
+- Every request and result is a message from `src/LuaExports/proto/`; `Api.def` keeps one struct (`VFByteSlice`) and plain ints for ids. See `dev/lua/ffi-payloads.md`.
+- This replaced typed C structs in and a hand-written msgpack writer out. Result shapes existed twice (writer calls and LuaLS classes) with nothing tying them together, and struct inputs needed a keep-alive rule for every borrowed pointer.
+- Lua encodes and decodes with lua-protobuf compiled into `libvimficiency`, against a descriptor set embedded in the same library. A stale library therefore cannot disagree with its own codec or schema.
+- Requests are runtime-checked, not compile-checked. lua-protobuf raises on a wrong type but drops an unknown key, and has no strict mode, so `ffi/core.encode` checks keys against the schema first. That one generic walk is the only hand-written part.
+- msgpack-cxx with `MSGPACK_DEFINE_MAP` structs was the alternative for results. It removes hand-counted maps but leaves the Lua types hand-written, with no schema to generate them from.
+- Cost, measured on Linux x86_64 Release with only the Explore results migrated: a clean build went from about 18 s to 43 s and the library from 2.2 MB to 4.3 MB. Building `protoc` from source as well took 2 min 42 s, hence the pinned prebuilt binary.
+- Decoding an Explore state took 1.9 µs against 6.0 µs for `vim.mpack.decode`, at 26 bytes against 179.
+- `optimizer_overrides` stays `scope:key=value` text inside a `bytes` field: its keys are the optimizer-param X-macro names, which the schema would have to mirror.
+- Still open (`dev/architecture/todo.md` item 11): generated LuaLS types and a schema hash.
 
 ## C++20 named modules instead of headers (2026-11-09)
 - Every former header is a named module `vf.<Dir>.<Name>` (`dev/code-style.md` has the unit layout, `dev/architecture/module-dependencies.md` the allowed graph). The motivation is structural: the import graph *is* the dependency graph, so a layering violation or a transitive leak is a compile error rather than a `scripts/lint-module-deps.sh` finding, and macros from `<cassert>`/X-macro `.inc` fragments stay in the unit that includes them. `import std.compat` replaces per-TU standard-header parsing.

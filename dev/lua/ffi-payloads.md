@@ -1,61 +1,118 @@
 # FFI payloads
 
-Code of record: `src/LuaExports/Api.def`, `src/LuaExports/Msgpack.cppm`,
-`src/LuaExports/Common.cppm`, `lua/vimficiency/ffi/core.lua`.
+Code of record: `src/LuaExports/Api.def`, `src/LuaExports/proto/`,
+`src/LuaExports/Common.cppm`, `src/LuaExports/Envelope.cpp`,
+`lua/vimficiency/ffi/core.lua`.
 
-**Rule.** Lua to C++ is typed C structs. C++ to Lua is msgpack. Neither side
-has a hand-written parser, and none should be added. The rationale is in
+**Rule.** Data crosses the FFI as protobuf in both directions. The schema in
+`src/LuaExports/proto/` is the contract; neither side has a hand-written
+parser or a struct of its own, and none should be added. The rationale is in
 `dev/decisions.md`.
 
-## Lua to C++: typed inputs
+## The C ABI
 
-Scalars are direct cdef parameters. Byte strings are a pointer plus a length, or
-a `VFByteSlice`. Lists are a pointer to an array of structs plus a count.
+`Api.def` declares one struct, `VFByteSlice`, and three export shapes:
+
+| Shape | Used for |
+|---|---|
+| `VFByteSlice vf_x(const char* request, size_t request_len)` | Anything taking data |
+| `VFByteSlice vf_x(int id)` / `VFByteSlice vf_x()` | A job or view id alone, or no input |
+| `int vf_x(int id)`, `void vf_x()` | Cancel, destroy, reset: no result to report |
+
+`vf_version_string`, `vf_abi_hash` and `vf_proto_descriptor` are the bootstrap
+exceptions: Lua needs them before it can decode anything.
+
+The comment beside each export names its request and result messages. The
+`Api.def` hash still guards the ABI (`vf_abi_hash`).
+
+## Lua to C++: requests
 
 ```lua
-local slices, count = core.byte_slices(lines)
-local slice = lib.vf_explore_accept_snapshot(view_id, slices, count, ...)
-core.keep_alive(lines, slices)
-return core.unwrap(slice)
+return core.call(lib.vf_compute_search_region, "vf.session.SearchRegionRequest", {
+  start_lines = start_lines,
+  end_lines = end_lines,
+  start_row = start_row,
+  end_row = end_row,
+  padding = padding,
+}, "vf.session.SearchRegion")
 ```
 
-**Lifetime.** cdata anchors nothing: not the Lua strings a slice points into,
-and not a cdata array stored in a struct field. Keep the FFI call out of tail
-position and pass the source tables and cdata arrays to `core.keep_alive` after
-it.
+`core.call` encodes the table, calls the export, and unwraps the result. The
+request bytes are a Lua string passed as a direct argument, which LuaJIT keeps
+alive for the call, so there is no lifetime rule to follow.
 
-`optimizer_overrides` is the one text input (`scope:key=value` lines, parsed in
-the core). A search request carries no boundary columns; C++ derives the
-whole-slice boundary (`sliceBoundary`).
+**Strictness.** `pb.encode` raises on a value of the wrong type but silently
+drops a key the message does not have. `core.encode` therefore walks the table
+against the schema first and raises `unknown field 'search.window_hieght'`.
+Always encode through `core.encode` or `core.call`.
+
+An unset field arrives as its default. Use `optional` in the schema when C++
+must tell unset from zero (`vf.config.Config`, `last_key_time_ns`).
+
+C++ parses with `guardedRequest<Message>(storage, request, request_len, body)`,
+which hands `body` the parsed message and turns a parse failure into an error.
+
+`optimizer_overrides` is the one text field (`scope:key=value` lines, parsed
+in the core).
 
 ## C++ to Lua: one envelope
 
-Every export returning `VFByteSlice` returns a msgpack map with exactly one key:
+Every `VFByteSlice` return is a serialized `vf.Envelope` holding exactly one
+of:
 
-| Map | Meaning |
+| Case | Meaning |
 |---|---|
-| `{value = <payload>}` | Success |
-| `{error = "<message>"}` | An `Expected` error or an escaped exception |
-| `{pending = true}` | Async job still running |
+| `value` | Success; the serialized result message |
+| `error` | An `Expected` error or an escaped exception |
+| `pending` | Async job still running |
 
-`core.unwrap(slice)` raises the error and returns the value, or nil while
-pending. `core.decode(slice)` returns `value, err` instead of raising.
+`core.unwrap(slice, message)` raises the error and returns the decoded
+message, or nil while pending. `core.decode` returns `value, err` instead of
+raising.
 
 **Exceptions.** Unwinding into LuaJIT is undefined behaviour, so every export
-body runs inside `guarded` (exception becomes `{error}`) or `noUnwind` (no
-error channel; terminates). `AsyncJob` catches a worker's exception and the
-`*_poll` export returns it.
+body runs inside `guarded` / `guardedRequest` (exception becomes an error
+envelope) or `noUnwind` (no error channel; terminates). `AsyncJob` catches a
+worker's exception and the `*_poll` export returns it.
 
-## Writing a payload
+## Writing a message
 
-Emit the exact shape of the LuaLS class the wrapper returns, with the same
-snake_case field names. `packState` in `InteractiveExports.cpp` and
-`VF.Explore.State` in `types.lua` are the pattern.
+Add it to the matching `.proto`, fill it in the export, and return
+`proto(message)`. `stateMessage` in `InteractiveExports.cpp` is the pattern.
 
-- `map(n)` and `array(n)` must be followed by exactly `n` entries; a wrong
-  count corrupts everything after it.
-- Never write nil: `vim.mpack.decode` turns it into `vim.NIL`, a truthy
-  userdata. Omit the key instead.
-- Output shapes are not covered by the ABI hash. A renamed field shows up as a
-  nil at the use site, so cover the shape with a Lua test through the real
-  library (`tests/lua/ffi_analyze.lua`).
+- Field names are the snake_case names Lua reads and writes.
+- Text is `bytes`, not `string`: buffer content and key sequences need not be
+  UTF-8. `string` is for identifiers.
+- Enums cross as their value name, so name the values as Lua compares them
+  (`Phase.Kind`). Encoding an unknown name raises.
+- A `oneof` decodes as the set member plus the oneof name holding that member's
+  name: `{outcome = "rejected", rejected = {reason = ...}}`.
+- Scalars decode to their default when unset and empty repeated fields to `{}`
+  (`decode_default_array`). An unset message field is nil.
+- The LuaLS classes in `types.lua` are still hand-written. A field renamed in
+  the schema shows up as a nil at the use site, so cover the shape with a Lua
+  test through the real library (`tests/lua/ffi_analyze.lua`,
+  `tests/lua/explore/`).
+
+## How Lua gets the schema
+
+`protoc` compiles the schema to a descriptor set that is embedded in the
+library (`vf_proto_descriptor`). lua-protobuf's `pb.c` is compiled into the
+same library and opened by `ffi/core.lua` with `package.loadlib`.
+
+The Lua codec and the schema therefore always match the C++ on the other
+side, including across a stale rebuild.
+
+## Build
+
+- `protoc` is the official prebuilt binary, pinned by SHA-256 per host in
+  `CMakeLists.txt`. Only the lite runtime and Abseil build from source.
+- Generated code is locked to the exact runtime version, so the `protoc`
+  release and the runtime tag move together.
+- Abseil is declared once at the root under FuzzTest's name and tag; protobuf
+  and FuzzTest would otherwise each define its targets.
+- `pb.c` builds against fetched LuaJIT headers and resolves the Lua C API from
+  the host Neovim at load (`-undefined dynamic_lookup` on macOS).
+- Generated headers include standard headers, so they are included only from
+  `.cpp` files, ahead of `import std.compat`, never from a module interface.
+  Helpers in `Common.cppm` that touch a message are templates for that reason.

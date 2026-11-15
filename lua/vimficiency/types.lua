@@ -1,60 +1,13 @@
 -- Shared LuaLS annotations for cross-module Vimficiency records.
 
---- Reads yield cdata (`len` is a `size_t`, so `tonumber` it); writes take a Lua
---- string and integer.
+--- `len` is a `size_t` cdata, so `tonumber` it.
 ---@class VF.C.ByteSlice
----@field data ffi.cdata*|string
----@field len ffi.cdata*|integer
+---@field data ffi.cdata*
+---@field len ffi.cdata*
 
---- cdata view of `VFSearchRequest` (Api.def); pointer fields borrow Lua memory.
----@class VF.C.SearchRequest
----@field initial_lines ffi.cdata*         # `VFByteSlice[]` from `ffi/core.byte_slices`
----@field initial_lines_count integer
----@field goal_lines ffi.cdata*
----@field goal_lines_count integer
----@field start_row integer
----@field start_col integer
----@field end_row integer
----@field end_col integer
----@field has_lines_above boolean
----@field has_lines_below boolean
----@field window_height integer
----@field scroll_amount integer
----@field user_seq string
----@field user_seq_len integer
----@field optimizer_overrides string
----@field optimizer_overrides_len integer
-
---- cdata views of the other `Api.def` input structs. Arrays are 0-indexed.
-
----@class VF.C.KeyEvent
----@field mode VF.C.ByteSlice
----@field key_typed VF.C.ByteSlice
-
----@class VF.C.TypedChunk
----@field kind VF.C.ByteSlice
----@field text VF.C.ByteSlice
-
----@class VF.C.OptimizerResult
----@field seq VF.C.ByteSlice
----@field cost number
-
----@class VF.C.SessionResult
----@field lines ffi.cdata*                 # `VFByteSlice[]`
----@field lines_count integer
----@field start_row integer
----@field start_col integer
----@field end_row integer
----@field end_col integer
----@field user_seq VF.C.ByteSlice
----@field user_cost number
----@field kind VF.C.ByteSlice
----@field optimal_results ffi.cdata*       # `VFOptimizerResult[]`
----@field optimal_results_count integer
-
---- One search problem for analyze or explore-start; marshalled into a
---- `VF.C.SearchRequest` by `ffi/core.with_search_request`. Rows/cols are
---- 0-indexed and relative to the slice.
+--- One search problem for analyze or explore-start: `vf.search.SearchRequest`
+--- (src/LuaExports/proto/search.proto). Rows/cols are 0-indexed and relative to
+--- the slice.
 ---@class VF.SearchRequest
 ---@field initial_lines string[]
 ---@field goal_lines string[]
@@ -134,16 +87,14 @@
 ---@field can_redo boolean
 ---@field target_range VF.Range
 
----@class VF.Explore.AppliedResult
----@field status "Applied"
-
----@class VF.Explore.RejectedResult
----@field status "Rejected"
+---@class VF.Explore.Rejected
 ---@field reason string
 
----@alias VF.Explore.ApplyResult
----| VF.Explore.AppliedResult
----| VF.Explore.RejectedResult
+--- Exactly one of `applied` / `rejected` is set; `outcome` names it.
+---@class VF.Explore.ApplyResult
+---@field outcome "applied"|"rejected"
+---@field applied? table
+---@field rejected? VF.Explore.Rejected
 
 ---@class VF.Explore.Recommendation
 ---@field text string
@@ -157,9 +108,12 @@
 ---@class VF.Explore.ReconfigurePlanResult
 ---@field reset boolean
 
+---@class VF.Explore.HeaderRowsResult
+---@field rows string[]
+
 ---@class VF.Explore.HeaderRows
 ---@field explored string[]
----@field optimal string[][]
+---@field optimal VF.Explore.HeaderRowsResult[]
 
 
 return {}

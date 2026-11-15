@@ -1,5 +1,7 @@
 #include "LuaExports/Api.h"
 #include "Utils/CheckMacro.h"
+#include "proto/common.pb.h"
+#include "proto/search.pb.h"
 
 import std.compat;
 import vf.LuaExports.Common;
@@ -20,9 +22,15 @@ using logic::SearchInputs;
 
 namespace {
 
-// Synchronous run of the full analyze entry point. Packs a
-// `VF.Optimizer.AnalyzeResult` (lua/vimficiency/ffi/optimizer.lua).
-Packed runAnalyze(
+void setSpan(vf::search::Span* out, const CursorPos& begin, const CursorPos& end) {
+  out->set_begin_row(begin.line);
+  out->set_begin_col(begin.col);
+  out->set_end_row(end.line);
+  out->set_end_col(end.col);
+}
+
+// Synchronous run of the full analyze entry point.
+Proto runAnalyze(
     const SearchInputs& in,
     int resultsCalculated,
     const Config& config,
@@ -86,72 +94,73 @@ Packed runAnalyze(
     debug = consume_debug_output();
   }
 
-  MsgpackWriter w;
-  w.map(4);
-  w.key("results").array(results.size());
+  vf::search::AnalyzeResult msg;
   for (const Result& result : results) {
-    w.map(2)
-        .key("seq").str(result.getSequence().view())
-        .key("cost").number(result.getCost());
+    vf::search::Result* out = msg.add_results();
+    out->set_seq(result.getSequence().view());
+    out->set_cost(result.getCost());
   }
-  w.key("user_cost").number(userCost);
-  w.key("diffs");
-  payload::writeDiffRegions(w, diffs);
-  w.key("dbg").str(debug);
-  return w.take();
+  msg.set_user_cost(userCost);
+  // Both spans share begin (the common prefix is identical in both buffers).
+  for (const DiffState& d : diffs) {
+    vf::search::DiffRegion* region = msg.add_diffs();
+    setSpan(region->mutable_init(), d.beginPos, d.endPos);
+    setSpan(region->mutable_goal(), d.beginPos,
+            DiffText::advancePositionByText(d.beginPos, d.insertedText));
+  }
+  msg.set_dbg(debug);
+  return proto(msg);
 }
 
 // Background analyze search. The job owns its inputs and a Config snapshot so
-// the worker is independent of the FFI buffers and the main thread. The result
-// is read once `vf_analyze_poll` observes `ready()`.
+// the worker is independent of the request bytes and the main thread. The
+// result is read once `vf_analyze_poll` observes `ready()`.
 struct AnalyzeState {
   SearchInputs inputs;
   int resultsCalculated;
   Config config;
-  Packed result;
+  Proto result;
 };
 using AnalyzeJob = AsyncJob<AnalyzeState>;
 
 JobRegistry<AnalyzeJob> g_analyze_jobs;
 
-PackedResult startAsyncImpl(
-    const VFSearchRequest* request, int results_calculated, int deadline_ms) {
-  CHECK(results_calculated >= 0, "results_calculated must be non-negative");
-  auto inputsRes = logic::decodeSearchRequest(request);
-  if (!inputsRes) return unexpected(inputsRes.error());
-
-  auto job = std::make_unique<AnalyzeJob>(
-      AnalyzeState{std::move(*inputsRes), results_calculated, g_config_internal, {}},
-      deadline_ms,
-      [](AnalyzeState& s, const SearchControl& control) {
-        s.result = runAnalyze(s.inputs, s.resultsCalculated, s.config, control);
-      });
-  const int job_id = g_analyze_jobs.create(std::move(job));
-  return packInteger(job_id);
-}
-
 }  // namespace
 
 extern "C" {
 
-VFByteSlice vf_analyze(const VFSearchRequest* request, int results_calculated) {
+VFByteSlice vf_analyze(const char* request, size_t request_len) {
   static string storage;
-  return guarded(storage, [&]() -> PackedResult {
-    CHECK(results_calculated >= 0, "results_calculated must be non-negative");
-    auto inputsRes = logic::decodeSearchRequest(request);
-    if (!inputsRes) return unexpected(inputsRes.error());
-    return runAnalyze(*inputsRes, results_calculated, g_config_internal, SearchControl::NEVER_STOP);
-  });
+  return guardedRequest<vf::search::AnalyzeRequest>(
+      storage, request, request_len, [](const auto& req) -> ProtoResult {
+        CHECK(req.results_calculated() >= 0, "results_calculated must be non-negative");
+        auto inputs = logic::decodeSearchRequest(req.search());
+        if (!inputs) return unexpected(inputs.error());
+        return runAnalyze(
+            *inputs, req.results_calculated(), g_config_internal, SearchControl::NEVER_STOP);
+      });
 }
 
 // Kicks off the analyze search on a worker thread and returns a job id
 // immediately. Poll with vf_analyze_poll until it stops returning pending.
-VFByteSlice vf_analyze_start_async(
-    const VFSearchRequest* request, int results_calculated, int deadline_ms) {
+VFByteSlice vf_analyze_start_async(const char* request, size_t request_len) {
   static string storage;
-  return guarded(storage, [&] {
-    return startAsyncImpl(request, results_calculated, deadline_ms);
-  });
+  return guardedRequest<vf::search::AnalyzeRequest>(
+      storage, request, request_len, [](const auto& req) -> ProtoResult {
+        CHECK(req.results_calculated() >= 0, "results_calculated must be non-negative");
+        auto inputs = logic::decodeSearchRequest(req.search());
+        if (!inputs) return unexpected(inputs.error());
+
+        auto job = std::make_unique<AnalyzeJob>(
+            AnalyzeState{std::move(*inputs), req.results_calculated(), g_config_internal, {}},
+            req.deadline_ms(),
+            [](AnalyzeState& s, const SearchControl& control) {
+              s.result = runAnalyze(s.inputs, s.resultsCalculated, s.config, control);
+            });
+        vf::JobHandle handle;
+        handle.set_job_id(g_analyze_jobs.create(std::move(job)));
+        return proto(handle);
+      });
 }
 
 // Returns pending while the worker runs; once done, frees the job and returns
@@ -159,7 +168,7 @@ VFByteSlice vf_analyze_start_async(
 VFByteSlice vf_analyze_poll(int job_id) {
   static string storage;
   if (!g_analyze_jobs.get(job_id).ready()) return storePending(storage);
-  return guarded(storage, [&]() -> PackedResult {
+  return guarded(storage, [&]() -> ProtoResult {
     std::unique_ptr<AnalyzeJob> owned = g_analyze_jobs.take(job_id);
     if (!owned->error().empty()) return unexpectedError(owned->error());
     return std::move(owned->state().result);
@@ -180,3 +189,4 @@ int vf_analyze_cancel(int job_id) {
 }
 
 }
+

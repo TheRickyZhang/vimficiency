@@ -1,0 +1,71 @@
+// Session capture helpers and sequence tokenizing
+// (src/LuaExports/UtilityExports.cpp).
+syntax = "proto3";
+
+package vf.session;
+
+option optimize_for = LITE_RUNTIME;
+
+message SequenceRequest {
+  bytes seq = 1;
+}
+
+message Token {
+  // Lua reads these by name, so they keep the casing its code compares against.
+  enum Kind {
+    movement = 0;
+    delete = 1;
+    change = 2;
+    visual = 3;
+    typed = 4;
+    escape = 5;
+  }
+  bytes text = 1;
+  Kind kind = 2;
+}
+
+message Tokens {
+  repeated Token tokens = 1;
+}
+
+message KeyEvent {
+  bytes mode = 1;
+  bytes key_typed = 2;
+}
+
+message BuildSequenceRequest {
+  repeated KeyEvent events = 1;
+}
+
+message SearchRegionRequest {
+  repeated bytes start_lines = 1;
+  repeated bytes end_lines = 2;
+  int32 start_row = 3;
+  int32 end_row = 4;
+  int32 padding = 5;
+}
+
+// Inclusive row range.
+message SearchRegion {
+  int32 region_start = 1;
+  int32 region_end = 2;
+}
+
+message ManualEvictRequest {
+  int32 start_row = 1;
+  int32 cursor_row = 2;
+  // Unset before the first key.
+  optional int64 last_key_time_ns = 3;
+  int64 now_ns = 4;
+  int32 max_search_lines = 5;
+  int32 manual_idle_timeout_seconds = 6;
+}
+
+message ManualEvict {
+  enum Reason {
+    none = 0;
+    drift = 1;
+    idle = 2;
+  }
+  Reason reason = 1;
+}

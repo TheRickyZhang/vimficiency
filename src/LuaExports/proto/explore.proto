@@ -1,0 +1,111 @@
+// The vf_explore_* exports (src/LuaExports/InteractiveExports.cpp).
+syntax = "proto3";
+
+package vf.explore;
+
+import "common.proto";
+import "search.proto";
+
+option optimize_for = LITE_RUNTIME;
+
+message StartRequest {
+  vf.search.SearchRequest search = 1;
+  // 0 runs to the natural caps.
+  int32 deadline_ms = 2;
+}
+
+message ViewHandle {
+  int32 view_id = 1;
+}
+
+message Phase {
+  // Lua reads these by name, so they keep the casing its code compares against.
+  enum Kind {
+    Navigate = 0;
+    Transform = 1;
+    Insert = 2;
+  }
+  Kind kind = 1;
+  // Planned edit this phase belongs to; Navigate(total_edits) is the final
+  // cursor segment.
+  int32 edit_index = 2;
+}
+
+message State {
+  Phase phase = 1;
+  // The cursor has reached the goal after the last planned edit.
+  bool is_completed = 2;
+  vf.Position cursor = 3;
+  int32 total_edits = 4;
+  double cost = 5;
+  bytes seq = 6;
+  bool can_undo = 7;
+  bool can_redo = 8;
+  vf.Range target_range = 9;
+}
+
+message SnapshotRequest {
+  int32 view_id = 1;
+  repeated bytes lines = 2;
+  vf.Position cursor = 3;
+  bytes raw_keys = 4;
+  bool insert_mode = 5;
+}
+
+message Applied {}
+
+message Rejected {
+  bytes reason = 1;
+}
+
+message ApplyResult {
+  oneof outcome {
+    Applied applied = 1;
+    Rejected rejected = 2;
+  }
+}
+
+message RecommendationsRequest {
+  enum SortMode {
+    effort = 0;
+    distance = 1;
+    score = 2;
+  }
+  int32 view_id = 1;
+  int32 max_count = 2;
+  // `scope:key=value` lines; empty for none.
+  bytes optimizer_overrides = 3;
+  SortMode sort_mode = 4;
+}
+
+// Whether it is a motion, an edit, or typed text follows from State.phase.
+message Recommendation {
+  bytes text = 1;
+  double cost_diff = 2;
+  double distance = 3;
+  double score = 4;
+  vf.Position landing = 5;
+  bytes literal_text = 6;
+}
+
+message Recommendations {
+  repeated Recommendation items = 1;
+}
+
+message ReconfigurePlanRequest {
+  int32 view_id = 1;
+  bytes optimizer_overrides = 2;
+}
+
+message ReconfigurePlanResult {
+  bool reset = 1;
+}
+
+// Rows are raw key sequences; Lua formats them when rendering.
+message HeaderRows {
+  message Result {
+    repeated bytes rows = 1;
+  }
+  repeated bytes explored = 1;
+  repeated Result optimal = 2;
+}

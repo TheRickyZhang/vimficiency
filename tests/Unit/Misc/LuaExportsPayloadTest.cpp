@@ -1,21 +1,34 @@
 #include <gtest/gtest.h>
 
 #include "LuaExports/Api.h"
+#include "proto/common.pb.h"
 
 import std.compat;
 import vf.LuaExports.Common;
 import vf.Types.Lines;
 
-// `linesFromSlices` is covered by PayloadSafetyTest.LineArraysCopyOrReject.
+// `linesFrom` is covered by PayloadSafetyTest.LineArraysCopyOrReject.
 
 TEST(LuaExportsPayloadTest, GuardedTurnsAnExceptionIntoAnErrorEnvelope) {
   std::string storage;
   const VFByteSlice slice = VF::LuaExports::guarded(
-      storage, []() -> VF::LuaExports::PackedResult { throw std::out_of_range("boom"); });
+      storage, []() -> VF::LuaExports::ProtoResult { throw std::out_of_range("boom"); });
 
-  // fixmap(1), fixstr(5) "error", fixstr(19) message.
-  EXPECT_EQ(std::string_view(slice.data, slice.len),
-            "\x81\xa5" "error" "\xb3" "C++ exception: boom");
+  vf::Envelope envelope;
+  ASSERT_TRUE(envelope.ParseFromArray(slice.data, slice.len));
+  EXPECT_EQ(envelope.error(), "C++ exception: boom");
+}
+
+TEST(LuaExportsPayloadTest, GuardedRequestRejectsMalformedBytes) {
+  std::string storage;
+  const std::string garbage = "\xff\xff\xff";
+  const VFByteSlice slice = VF::LuaExports::guardedRequest<vf::Position>(
+      storage, garbage.data(), garbage.size(),
+      [](const vf::Position& p) { return VF::LuaExports::proto(p); });
+
+  vf::Envelope envelope;
+  ASSERT_TRUE(envelope.ParseFromArray(slice.data, slice.len));
+  EXPECT_EQ(envelope.error(), "malformed vf.Position request");
 }
 
 // Regression: the analyze FFI boundary clamps captured cursors into a valid

@@ -1,0 +1,42 @@
+// Messages shared by every export. Buffer content and key sequences are
+// `bytes`, not `string`: neither is guaranteed to be UTF-8.
+syntax = "proto3";
+
+package vf;
+
+option optimize_for = LITE_RUNTIME;
+
+// What every export returning VFByteSlice returns. `value` is the serialized
+// result message of that export.
+message Envelope {
+  oneof result {
+    bytes value = 1;
+    bytes error = 2;
+    bool pending = 3;
+  }
+}
+
+message Position {
+  int32 row = 1;
+  int32 col = 2;
+}
+
+// Half-open [begin_pos, end_pos).
+message Range {
+  Position begin_pos = 1;
+  Position end_pos = 2;
+}
+
+message Empty {}
+
+message Text {
+  bytes text = 1;
+}
+
+message Lines {
+  repeated bytes lines = 1;
+}
+
+message JobHandle {
+  int32 job_id = 1;
+}

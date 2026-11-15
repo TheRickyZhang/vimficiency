@@ -17,8 +17,8 @@ local M = {}
 local function apply_history(view, fn)
   handlers.clear_key_buffer(view)
   local result = fn(view.view_id)
-  if result.status == "Rejected" then
-    vim.notify("vimfy explore: " .. result.reason, vim.log.levels.INFO)
+  if result.rejected then
+    vim.notify("vimfy explore: " .. result.rejected.reason, vim.log.levels.INFO)
     return false
   end
   state.restore(view)
@@ -39,7 +39,7 @@ local function undo_all()
   local steps = 0
   while true do
     local result = ffi_explore.explore_undo(view.view_id)
-    if result.status == "Rejected" then break end
+    if result.rejected then break end
     steps = steps + 1
   end
   if steps == 0 then

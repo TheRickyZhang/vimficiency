@@ -1,0 +1,51 @@
+// Requests of the display and result-formatting exports
+// (src/LuaExports/DisplayExports.cpp). They return vf.Text or vf.Lines.
+syntax = "proto3";
+
+package vf.display;
+
+import "search.proto";
+
+option optimize_for = LITE_RUNTIME;
+
+message SequenceRequest {
+  bytes seq = 1;
+  bool tokenize = 2;
+  // Lines only.
+  bool sectionize = 3;
+}
+
+message TypedTextRequest {
+  bytes text = 1;
+  bool key_notation = 2;
+}
+
+message TypedChunk {
+  string kind = 1;
+  bytes text = 2;
+}
+
+message TypedChunksRequest {
+  repeated TypedChunk chunks = 1;
+  bool tokenize = 2;
+}
+
+// The stored session result being formatted. Rows and columns are 0-indexed.
+message SessionResult {
+  repeated bytes lines = 1;
+  int32 start_row = 2;
+  int32 start_col = 3;
+  int32 end_row = 4;
+  int32 end_col = 5;
+  bytes user_seq = 6;
+  double user_cost = 7;
+  string kind = 8;
+  repeated vf.search.Result optimal_results = 9;
+}
+
+message ResultMessageRequest {
+  bytes title = 1;
+  SessionResult result = 2;
+  bool tokenize = 3;
+  bool sectionize = 4;
+}
