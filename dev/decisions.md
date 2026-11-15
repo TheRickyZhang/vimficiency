@@ -159,7 +159,8 @@ to deeper docs when needed.
 ## FFI boundary: typed structs in, msgpack out (2026-11-15)
 - Lua to C++ is `Api.def` structs and `VFByteSlice` arrays; C++ to Lua is a msgpack `{value}`/`{error}`/`{pending}` envelope decoded by `vim.mpack.decode`. This replaced five hand-rolled text formats and an in-band `ERROR:` prefix. See `dev/lua/ffi-payloads.md`.
 - Asymmetric on purpose: each direction uses the half that needs no parser of ours (the C compiler's struct layout in, Neovim's decoder out). Typed both ways would need a C++-owned pointer graph plus a per-shape cdata-to-table walk in Lua.
-- Msgpack both ways via msgpack-c was rejected because request fields would become runtime-checked instead of compile-checked and ABI-hash-covered. msgpack-c stays a test-only dependency that decodes our `MsgpackWriter` output.
+- Msgpack both ways was rejected because request fields would become runtime-checked instead of compile-checked and ABI-hash-covered.
+- The C++ encoder is the hand-written `MsgpackWriter`, with msgpack-cxx (the `msgpack-c` repo's C++ library) linked only into the tests to decode its output. msgpack-cxx is the intended encoder: the switch is `dev/architecture/todo.md` item 11.
 - `optimizer_overrides` stays `scope:key=value` text: identifier keys and numeric values cannot carry arbitrary bytes.
 
 ## C++20 named modules instead of headers (2026-11-09)

@@ -295,6 +295,53 @@ Transform time dominates a profiled session.
 
 ---
 
+## 11. Type and hash-check the C++ to Lua payload shapes (high priority)
+
+**What.** The ABI hash covers only `Api.def`, which declares every result as an
+opaque `VFByteSlice`. Payload shapes exist twice with nothing tying them
+together: imperative `MsgpackWriter` calls in `src/LuaExports/*.cpp` and LuaLS
+classes in `lua/vimficiency/types.lua`.
+
+Two failures follow. A stale library whose payloads changed loads without an
+ABI mismatch, and a field renamed on one side shows up as a nil at the Lua use
+site. Only per-shape Lua tests (`tests/lua/ffi_analyze.lua`) catch either.
+
+The fix makes C++ payload structs the single source of truth, encoded by
+msgpack-cxx instead of `MsgpackWriter`:
+
+1. One struct per payload with `MSGPACK_DEFINE_MAP(fields...)`, e.g.
+   `ExploreStatePayload` for `packState`. msgpack-cxx then packs it as a map
+   keyed by member name, including nested structs, strings, and vectors.
+2. Exports return `Expected<Payload>` and one generic `msgpack::pack` call
+   replaces every `pack*` function. `MsgpackWriter` and its test are deleted,
+   and hand-counted `map(n)` goes with them.
+3. A C++ build tool that emits the LuaLS classes into a committed generated
+   file, with CI failing on a regeneration diff. The Lua lint then flags reads
+   of fields that no longer exist.
+4. The library bakes in the generated file's hash next to the `Api.def` hash,
+   and `ffi/core.lua` checks both on load.
+
+Build work: msgpack-cxx moves from `tests/CMakeLists.txt` to the root so the
+library and the wasm module get it. Keep `<msgpack.hpp>` in `.cpp` files, not
+module interfaces, which means `storeBytes` leaves `Common.cppm`.
+
+Open points. The stock `std::optional` adaptor writes nil, which Lua sees as
+the truthy `vim.NIL`, so absent fields need an adaptor that omits the key.
+Tagged unions (`VF.Explore.Phase`, `VF.Explore.ApplyResult`) need their wire
+shape checked against the stock `std::variant` adaptor. Step 3 still needs
+field names and types that `MSGPACK_DEFINE_MAP` does not expose for
+generation; item 8's reflection would supply them.
+
+**Why not done yet (2026-11-15).** The msgpack envelope landed this week and
+the shapes were still moving. A hand-bumped payload version in `Api.def` would
+cover the stale-library case alone, but relies on remembering to bump it.
+
+**Threshold.** Before the next new or reshaped payload, and before the next
+release that changes any output shape. Each one added first is another
+`pack*` function to migrate.
+
+---
+
 ## Noted alternative: item 1 vs. the current approach
 
 The defense layers chosen for the track-states fix (`BuildConfig.h` + `static_assert` + workflow `jq` check + differentiated dashboard message) are cheaper and more localized than `CMakePresets.json`. Item 1 becomes the better path only when configuration count or CI complexity makes per-flag discipline hard to maintain — otherwise the current three-layer defense subsumes what presets would give us.

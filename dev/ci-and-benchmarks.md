@@ -56,13 +56,6 @@ machine. A failure leaves the previously published docs live.
 everything else. Keeping those paths disjoint is what makes a push race safe:
 a rejected docs push rebuilds its one commit on the new tip.
 
-## Runner watchdog (`.github/workflows/runner-watchdog.yml`)
-
-A daily check fails when the `vimficiency-bench` runner is offline or no longer
-registered. Without it, `bench-main` queues until GitHub cancels the run, with
-no alert. It needs a `RUNNER_STATUS_TOKEN` repository secret: a fine-grained
-token with repository Administration read access.
-
 ### CI cache and performance notes
 
 - ccache can't cache C++20 module compiles, so each build job caches its whole

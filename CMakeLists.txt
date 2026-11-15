@@ -325,6 +325,100 @@ add_library(vimficiency SHARED
 vimfy_enable_modules(vimficiency)
 target_link_libraries(vimficiency PRIVATE vimfy_lua_common)
 
+# Protobuf viability spike (spike/protobuf/): generated C++ for one payload and
+# starwing/lua-protobuf's pb.c compiled into the shared library.
+option(VIMF_PROTOBUF_SPIKE "Build the protobuf viability spike into libvimficiency" OFF)
+target_compile_definitions(vimficiency PRIVATE VIMF_PROTOBUF_SPIKE=$<BOOL:${VIMF_PROTOBUF_SPIKE}>)
+if(VIMF_PROTOBUF_SPIKE)
+  enable_language(C)
+
+  # Generated C++ only compiles against the exact runtime version that protoc
+  # belongs to, so both are pinned here. protoc is the official prebuilt:
+  # building it from source is ~80% of the dependency's compile time.
+  set(_vimfy_protobuf_version 36.1)
+  set(_vimfy_protoc_host "${CMAKE_HOST_SYSTEM_NAME}-${CMAKE_HOST_SYSTEM_PROCESSOR}")
+  if(_vimfy_protoc_host STREQUAL "Linux-x86_64")
+    set(_vimfy_protoc_asset linux-x86_64)
+    set(_vimfy_protoc_sha256 c4bc672d9d49214dc8cafdceadf4df92182d6ca8e3ec65a56b2d7de5602669b4)
+  elseif(_vimfy_protoc_host STREQUAL "Linux-aarch64")
+    set(_vimfy_protoc_asset linux-aarch_64)
+    set(_vimfy_protoc_sha256 237a68856edf1bd28b6204bddd0596c1cf46d298bc29c620012540b2e44c73e7)
+  elseif(_vimfy_protoc_host STREQUAL "Darwin-arm64")
+    set(_vimfy_protoc_asset osx-aarch_64)
+    set(_vimfy_protoc_sha256 de56d57afe30c5d191b11d24ff93dd4025728d7fb43b773886b2d3613e0bdbb2)
+  elseif(_vimfy_protoc_host STREQUAL "Darwin-x86_64")
+    set(_vimfy_protoc_asset osx-x86_64)
+    set(_vimfy_protoc_sha256 ee2c5496e4af0aa6a224894bc0f7025145260e004d890487d510725ce8b473eb)
+  else()
+    message(FATAL_ERROR "No prebuilt protoc for host ${_vimfy_protoc_host}")
+  endif()
+  FetchContent_Declare(
+      protoc_prebuilt
+      URL https://github.com/protocolbuffers/protobuf/releases/download/v${_vimfy_protobuf_version}/protoc-${_vimfy_protobuf_version}-${_vimfy_protoc_asset}.zip
+      URL_HASH SHA256=${_vimfy_protoc_sha256}
+  )
+  FetchContent_MakeAvailable(protoc_prebuilt)
+  set(protobuf_PROTOC_EXE ${protoc_prebuilt_SOURCE_DIR}/bin/protoc)
+
+  set(protobuf_BUILD_PROTOC_BINARIES OFF CACHE BOOL "" FORCE)
+  set(protobuf_BUILD_LIBUPB OFF CACHE BOOL "" FORCE)
+  set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
+  set(protobuf_FORCE_FETCH_DEPENDENCIES ON CACHE BOOL "" FORCE)
+  set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
+  FetchContent_Declare(
+      protobuf
+      GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
+      GIT_TAG        v${_vimfy_protobuf_version}
+      GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(protobuf)
+  include(${protobuf_SOURCE_DIR}/cmake/protobuf-generate.cmake)
+
+  set(_vimfy_proto_out ${CMAKE_CURRENT_BINARY_DIR}/generated/proto)
+  file(MAKE_DIRECTORY ${_vimfy_proto_out})
+  add_library(vimfy_proto STATIC spike/protobuf/explore.proto)
+  protobuf_generate(
+      TARGET vimfy_proto
+      LANGUAGE cpp
+      IMPORT_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/spike/protobuf
+      PROTOC_OUT_DIR ${_vimfy_proto_out}
+      PROTOC_EXE ${protobuf_PROTOC_EXE}
+  )
+  target_include_directories(vimfy_proto PUBLIC ${_vimfy_proto_out})
+  target_link_libraries(vimfy_proto PUBLIC protobuf::libprotobuf-lite)
+  target_link_libraries(vimficiency PRIVATE vimfy_proto)
+
+  # The schema Lua loads with pb.load().
+  add_custom_command(
+      OUTPUT ${_vimfy_proto_out}/explore.desc
+      COMMAND ${protobuf_PROTOC_EXE}
+          --descriptor_set_out=${_vimfy_proto_out}/explore.desc
+          -I ${CMAKE_CURRENT_SOURCE_DIR}/spike/protobuf explore.proto
+      DEPENDS spike/protobuf/explore.proto
+  )
+  add_custom_target(vimfy_proto_desc ALL DEPENDS ${_vimfy_proto_out}/explore.desc)
+  add_dependencies(vimficiency vimfy_proto_desc)
+
+  # SOURCE_SUBDIR points nowhere so the checkout is not add_subdirectory()'d.
+  FetchContent_Declare(
+      lua_protobuf
+      GIT_REPOSITORY https://github.com/starwing/lua-protobuf.git
+      GIT_TAG        0.6.0
+      SOURCE_SUBDIR  _none
+  )
+  FetchContent_MakeAvailable(lua_protobuf)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(LUAJIT REQUIRED luajit)
+  add_library(vimfy_pb OBJECT ${lua_protobuf_SOURCE_DIR}/pb.c)
+  target_include_directories(vimfy_pb PRIVATE ${LUAJIT_INCLUDE_DIRS})
+  target_sources(vimficiency PRIVATE $<TARGET_OBJECTS:vimfy_pb>)
+  # pb.c's Lua C API calls resolve against the Neovim process at load time.
+  if(APPLE)
+    target_link_options(vimficiency PRIVATE LINKER:-undefined,dynamic_lookup)
+  endif()
+endif()
+
 # CLI for independent testing
 add_executable(vimficiency_cli src/main.cpp)
 vimfy_enable_modules(vimficiency_cli)

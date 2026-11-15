@@ -1,0 +1,72 @@
+name: Protobuf spike
+# Temporary: builds libvimficiency with VIMF_PROTOBUF_SPIKE on every release
+# platform and runs spike/protobuf/spike.lua against it. Delete with the spike.
+on:
+  push:
+    branches: [lua-cpp-seam]
+    paths:
+      - 'spike/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/protobuf-spike.yml'
+  workflow_dispatch:
+
+env:
+  NEOVIM_VERSION: v0.11.5
+
+jobs:
+  spike:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            container: gcc:16-trixie
+            lib: libvimficiency.so
+          - os: ubuntu-24.04-arm
+            container: gcc:16-trixie
+            lib: libvimficiency.so
+          - os: macos-15
+            lib: libvimficiency.dylib
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup CI deps (Linux)
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-neovim: "true"
+          neovim-version: ${{ env.NEOVIM_VERSION }}
+
+      - name: LuaJIT headers (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends pkg-config libluajit-5.1-dev
+
+      - name: Setup deps (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake ninja neovim gcc luajit pkgconf
+
+      - name: Build library with the spike
+        run: |
+          # Same flags as release.yml so the result matches a shipped prebuilt.
+          flags=(-DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_BUILD_TESTS=OFF
+                 -DCMAKE_SHARED_LINKER_FLAGS=-static-libstdc++
+                 -DVIMF_PROTOBUF_SPIKE=ON)
+          if [ "$RUNNER_OS" = macOS ]; then
+            flags+=(-DCMAKE_C_COMPILER=gcc-16 -DCMAKE_CXX_COMPILER=g++-16
+                    -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0)
+          fi
+          time cmake -G Ninja -B build "${flags[@]}"
+          time cmake --build build -j --target vimficiency
+          ls -l "build/${{ matrix.lib }}"
+
+      - name: Load pb from the library and compare decodings
+        run: |
+          VIMFICIENCY_LIB_PATH="$PWD/build/${{ matrix.lib }}" \
+            nvim --headless -u NONE -l spike/protobuf/spike.lua build/generated/proto/explore.desc

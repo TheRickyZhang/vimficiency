@@ -1,5 +1,8 @@
 #include "LuaExports/Api.h"
 #include "Utils/CheckMacro.h"
+#if VIMF_PROTOBUF_SPIKE
+#include "explore.pb.h"
+#endif
 
 import std.compat;
 import vf.LuaExports.Common;
@@ -287,5 +290,50 @@ VFByteSlice vf_explore_header_rows(int view_id) {
   static string storage;
   return guarded(storage, [&] { return packHeaderRows(g_registry.get(view_id)); });
 }
+
+#if VIMF_PROTOBUF_SPIKE
+// Protobuf viability spike: raw protobuf bytes, no envelope. Declared by
+// spike/protobuf/spike.lua, not Api.def.
+VFByteSlice vf_spike_explore_state_pb(int view_id) {
+  static string storage;
+  return noUnwind([&] {
+    const View& v = g_registry.get(view_id);
+    const CharRange target = v.currentTargetRange();
+    const Explore::State& st = v.state();
+    vf::spike::State msg;
+    msg.mutable_phase()->set_kind(Explore::phaseName(st.phase));
+    msg.mutable_phase()->set_edit_index(Explore::phaseIndex(st.phase));
+    msg.set_is_completed(v.isCompleted());
+    msg.mutable_cursor()->set_row(st.cursor.line);
+    msg.mutable_cursor()->set_col(st.cursor.col);
+    msg.set_total_edits(v.totalEdits());
+    msg.set_cost(st.cost);
+    msg.set_seq(st.seq);
+    msg.set_can_undo(v.canUndo());
+    msg.set_can_redo(v.canRedo());
+    vf::spike::Range* range = msg.mutable_target_range();
+    range->mutable_begin_pos()->set_row(target.begin.line);
+    range->mutable_begin_pos()->set_col(target.begin.col);
+    range->mutable_end_pos()->set_row(target.end.line);
+    range->mutable_end_pos()->set_col(target.end.col);
+    storage = msg.SerializeAsString();
+    return byteSlice(storage);
+  });
+}
+
+VFByteSlice vf_spike_apply_result_pb(bool rejected) {
+  static string storage;
+  return noUnwind([&] {
+    vf::spike::ApplyResult msg;
+    if (rejected) {
+      msg.mutable_rejected()->set_reason("cursor left the target range");
+    } else {
+      msg.mutable_applied();
+    }
+    storage = msg.SerializeAsString();
+    return byteSlice(storage);
+  });
+}
+#endif
 
 }  // extern "C"
