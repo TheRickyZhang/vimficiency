@@ -32,7 +32,7 @@ struct SearchInputs {
 
 Expected<SearchInputs> decodeSearchRequest(const VFSearchRequest* request);
 
-Expected<std::string> buildKeySequence(std::string_view encoded);
+std::string buildKeySequence(const VFKeyEvent* events, size_t count);
 std::pair<int, int> computeSearchRegion(
     int startRow,
     int endRow,

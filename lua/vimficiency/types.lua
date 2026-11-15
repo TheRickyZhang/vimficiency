@@ -4,12 +4,12 @@
 ---@field data ffi.cdata*
 ---@field len ffi.cdata*
 
---- cdata view of `VFSearchRequest` (Api.def); pointer fields borrow Lua strings.
+--- cdata view of `VFSearchRequest` (Api.def); pointer fields borrow Lua memory.
 ---@class VF.C.SearchRequest
----@field encoded_initial_lines string
----@field encoded_initial_lines_len integer
----@field encoded_goal_lines string
----@field encoded_goal_lines_len integer
+---@field initial_lines ffi.cdata*         # `VFByteSlice[]` from `ffi/core.byte_slices`
+---@field initial_lines_count integer
+---@field goal_lines ffi.cdata*
+---@field goal_lines_count integer
 ---@field start_row integer
 ---@field start_col integer
 ---@field end_row integer

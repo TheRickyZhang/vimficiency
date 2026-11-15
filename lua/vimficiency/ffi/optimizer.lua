@@ -4,70 +4,6 @@ local M = {}
 
 local lib = core.lib
 
-local DEBUG_MARKER = "----------------DEBUG----------------"
-local SEP = core.EVENT_FIELD_SEP
-
--- Decoder for `payload::encodeDiffRegions` (LuaExports/Payload.cppm).
----@param line string
----@return VF.Diff.Region
-local function parse_diff_region(line)
-  local f = vim.split(line, SEP, { plain = true })
-  if #f ~= 8 then error("malformed diff region line: " .. line) end
-  return {
-    init = { begin_row = tonumber(f[1]), begin_col = tonumber(f[2]),
-             end_row = tonumber(f[3]), end_col = tonumber(f[4]) },
-    goal = { begin_row = tonumber(f[5]), begin_col = tonumber(f[6]),
-             end_row = tonumber(f[7]), end_col = tonumber(f[8]) },
-  }
-end
-
--- Count-framed: `size: N user_cost: X`, N result lines, `diffs: M`, M region
--- lines, then an optional DEBUG trailer that is only looked for between
--- sections (dev/lua/ffi-separators.md § Convention 3).
----@param result_str string
----@return VF.Optimizer.Result[] results, number user_cost, VF.Diff.Region[] diffs
-local function parse_analyze_results(result_str)
-  local results, diffs = {}, {}
-  local user_cost = 0
-  local header_seen = false
-  local pending_results, pending_diffs = 0, 0
-  for line in result_str:gmatch("[^\n]+") do
-    if not header_seen then
-      header_seen = true
-      pending_results = tonumber(line:match("size:%s*(%d+)")) or 0
-      user_cost = tonumber(line:match("user_cost:%s*(%S+)")) or 0
-    elseif pending_results > 0 then
-      pending_results = pending_results - 1
-      local seq, cost_str = line:match("^(.*)\x1F(%S+)$")
-      if not seq then error("malformed analyze result line: " .. line) end
-      results[#results + 1] = { seq = seq, cost = tonumber(cost_str) or 0 }
-    elseif pending_diffs > 0 then
-      pending_diffs = pending_diffs - 1
-      diffs[#diffs + 1] = parse_diff_region(line)
-    elseif line:find(DEBUG_MARKER, 1, true) then
-      break
-    else
-      pending_diffs = tonumber(line:match("^diffs:%s*(%d+)")) or 0
-    end
-  end
-  return results, user_cost, diffs
-end
-
-M._parse_analyze_results = parse_analyze_results
-
--- The async worker runs the search (and thus debug accumulation) on its own
--- thread, so its debug output is embedded in the result string rather than
--- reachable via the main-thread `vf_get_debug()`. Pull it back out at poll time.
----@param result_str string
----@return string
-local function extract_debug(result_str)
-  local idx = result_str:find(DEBUG_MARKER, 1, true)
-  if not idx then return "" end
-  local nl = result_str:find("\n", idx, true)
-  if not nl then return "" end
-  return result_str:sub(nl + 1)
-end
-
 ---@param overrides? VF.OptimizerOverrides
 ---@return string
 function M.encode_optimizer_overrides(overrides)
@@ -92,45 +28,26 @@ end
 
 local optimizer_defaults_cache = nil
 
+---@return table<"shared"|"nav"|"transform"|"composition", table<string, number|boolean>>
 function M.get_optimizer_defaults()
-  if optimizer_defaults_cache ~= nil then return optimizer_defaults_cache end
-  local raw = core.slice_to_string(lib.vf_get_optimizer_defaults())
-  local out = { shared = {}, nav = {}, transform = {}, composition = {} }
-  for line in string.gmatch(raw, "[^\n]+") do
-    local scope, key, typ, value = line:match("^([^:]+):([^:]+):([^=]+)=(.*)$")
-    if scope and out[scope] then
-      if typ == "int" then
-        out[scope][key] = tonumber(value)
-      elseif typ == "double" then
-        out[scope][key] = tonumber(value)
-      elseif typ == "bool" then
-        out[scope][key] = (value == "1" or value == "true")
-      else
-        out[scope][key] = value
-      end
-    end
+  if optimizer_defaults_cache == nil then
+    optimizer_defaults_cache = core.unwrap(lib.vf_get_optimizer_defaults())
   end
-  optimizer_defaults_cache = out
-  return out
+  return optimizer_defaults_cache
 end
 
 ---@param req VF.SearchRequest
 ---@param results_calculated integer
 ---@return VF.Optimizer.Result[] results, number user_cost, string debug, VF.Diff.Region[] diffs
 function M.analyze(req, results_calculated)
-  local result_str = core.with_search_request(req, function(request)
-    return core.slice_to_string(lib.vf_analyze(request, results_calculated))
+  ---@type VF.Optimizer.AnalyzeResult
+  local result = core.with_search_request(req, function(request)
+    return core.unwrap(lib.vf_analyze(request, results_calculated))
   end)
-  local dbg = core.slice_to_string(lib.vf_get_debug())
-
-  if result_str:sub(1, 6) == "ERROR:" then
-    error(result_str, 0)
-  end
-
-  local results, user_cost, diffs = parse_analyze_results(result_str)
-  return results, user_cost, dbg, diffs
+  return result.results, result.user_cost, result.dbg, result.diffs
 end
 
+--- Packed by `runAnalyze` (src/LuaExports/AnalyzeExports.cpp).
 ---@class VF.Optimizer.AnalyzeResult
 ---@field results VF.Optimizer.Result[]
 ---@field user_cost number
@@ -145,34 +62,18 @@ end
 ---@param deadline_ms integer
 ---@return integer job_id
 function M.analyze_start_async(req, results_calculated, deadline_ms)
-  local payload = core.with_search_request(req, function(request)
-    return core.slice_to_string(
+  return core.with_search_request(req, function(request)
+    return core.unwrap(
       lib.vf_analyze_start_async(request, results_calculated, deadline_ms))
   end)
-  if payload:sub(1, 6) == "ERROR:" then
-    error(payload)
-  end
-  return tonumber(payload)
-    or error("analyze_start_async returned non-numeric job_id: " .. payload, 0)
 end
 
---- Returns the parsed analyze result once the worker finishes, or nil while it
---- is still computing.
+--- Returns the analyze result once the worker finishes, or nil while it is
+--- still computing.
 ---@param job_id integer
 ---@return VF.Optimizer.AnalyzeResult|nil
 function M.analyze_poll(job_id)
-  local result_str = core.slice_to_string(lib.vf_analyze_poll(job_id))
-  if result_str == "pending" then return nil end
-  if result_str:sub(1, 6) == "ERROR:" then
-    error(result_str, 0)
-  end
-  local results, user_cost, diffs = parse_analyze_results(result_str)
-  return {
-    results = results,
-    user_cost = user_cost,
-    dbg = extract_debug(result_str),
-    diffs = diffs,
-  }
+  return core.unwrap(lib.vf_analyze_poll(job_id))
 end
 
 ---@param job_id integer

@@ -53,11 +53,13 @@ camelCase — it doesn't cross the boundary, so the rule doesn't apply.
   See `dev/lua/` and `memory/ffi_int64_encoding.md`.
 - Strings cross as `const char*` + length where possible; do not assume
   null-termination on the C++ side for buffer content sourced from Neovim.
+- Structured inputs cross as typed C structs and results come back as msgpack;
+  never add a text format or a hand-written parser. See `dev/lua/ffi-payloads.md`.
 - Search inputs (analyze, explore-start) cross as one `VFSearchRequest` struct
   pointer. A Lua string assigned to a cdata pointer field is not pinned the way
   a direct string argument is, so build the struct only through
-  `ffi/core.with_search_request`, which keeps the encoded strings alive for the
-  duration of the call.
+  `ffi/core.with_search_request`, which keeps the slice arrays and their strings
+  alive for the duration of the call.
 
 ## No dead fallbacks
 

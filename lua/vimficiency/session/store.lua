@@ -9,7 +9,7 @@
 ---@field session_type            fun(kind: VF.Session.Kind): VF.Session.Type
 ---
 --- Creating and storing active records
----@field new_active_session      fun(id: string, stream_sub: string|nil, win: integer, buf: integer, start_state: VF.BufferState, kind: "mark"|"watch"|"recall"): VF.Session.Active
+---@field new_active_session      fun(id: string, stream_sub: string|nil, win: integer, buf: integer, start_state: VF.ViewState, kind: "mark"|"watch"|"recall"): VF.Session.Active
 ---@field has_room_for_named      fun(alias: string): boolean
 ---@field store_named             fun(alias: string, record: VF.Session.Active): boolean
 ---@field store_recall            fun(record: VF.Session.Active)
@@ -57,6 +57,7 @@ local M = {}
 
 local alias_mod = require("vimficiency.session.alias")
 local atom_stream = require("vimficiency.capture.atom_stream")
+local buffer_history = require("vimficiency.capture.buffer_history")
 local util = require("vimficiency.util")
 local config = require("vimficiency.config")
 
@@ -100,7 +101,8 @@ end
 ---@class VF.Session.Active : VF.Session.Core
 ---@field win          integer           # Window where session started
 ---@field buf          integer           # Buffer where session started
----@field start_state  VF.BufferState    # Cursor/viewport at start
+---@field start_state  VF.ViewState      # Cursor/viewport at start. Mark/watch: a VF.BufferState, so the start text rides along
+---@field start_seq    integer|nil       # Recall only: `buffer_history` seq to rebuild the start text from, in place of `start_state.lines`
 ---@field atoms        VF.Atom[]
 ---@field last_atom_mono_ns integer|nil # vim.uv.hrtime() of the last appended atom; nil until the first. Drives idle eviction
 ---@field stream_sub   string|nil        # Atom listener name this record owns (mark/watch); nil for recall (shared listener)
@@ -160,7 +162,7 @@ end
 ---@param stream_sub string|nil  Atom listener this record owns (mark/watch); nil for recall
 ---@param win integer
 ---@param buf integer
----@param start_state VF.BufferState
+---@param start_state VF.ViewState
 ---@param kind "mark"|"watch"|"recall"
 ---@return VF.Session.Active
 function M.new_active_session(id, stream_sub, win, buf, start_state, kind)
@@ -644,14 +646,26 @@ end
 -- Recall install
 --------------------------------------------------------------------------------
 
+---@class VF.Session.RecallMark
+---@field view VF.ViewState
+---@field seq  integer        # `buffer_history` seq of the buffer text at this point
+
 -- Buffer state immediately *before* the next atom in each buffer. A CmdAtom
 -- fires after its action, so a recall record created at atom i needs the state
--- that preceded it — which is the state captured right after atom i-1. We keep
--- one rolling snapshot per buffer and shift it forward each atom. The first
--- atom in a buffer has no predecessor, so it seeds the snapshot without spawning
--- a record (recalling "before the very first command" is not meaningful).
----@type table<integer, VF.BufferState>
+-- that preceded it — which is the state marked right after atom i-1. We keep
+-- one rolling mark per buffer and shift it forward each atom. The first atom in
+-- a buffer has no predecessor, so it seeds the mark without spawning a record
+-- (recalling "before the very first command" is not meaningful).
+---@type table<integer, VF.Session.RecallMark>
 local recall_prev_state = {}
+
+---@param buf integer
+---@param win integer
+---@return VF.Session.RecallMark
+local function recall_mark(buf, win)
+  buffer_history.track(buf)
+  return { view = util.capture_view(buf, win), seq = buffer_history.seq(buf) }
+end
 
 --- Ingest one recorded atom into the rolling recall ring.
 ---
@@ -667,16 +681,40 @@ function M.ingest_recall_atom(atom)
 
   local prev = recall_prev_state[atom.buf]
   -- Shift: this atom's post-state becomes the predecessor for the next one.
-  recall_prev_state[atom.buf] = util.capture_state(atom.buf, atom.win)
+  recall_prev_state[atom.buf] = recall_mark(atom.buf, atom.win)
 
-  -- Without a predecessor snapshot we can't frame "before this atom"; seed and wait.
+  -- Without a predecessor mark we can't frame "before this atom"; seed and wait.
   if not prev then return end
 
   local id = util.new_id(atom.buf)
-  local rec = M.new_active_session(id, nil, atom.win, atom.buf, prev, "recall")
+  local rec = M.new_active_session(id, nil, atom.win, atom.buf, prev.view, "recall")
+  rec.start_seq = prev.seq
   M.append_atom(rec, atom)
   M.store_recall(rec)
+
+  -- Seqs grow along the ring, so the buffer's oldest active record bounds what
+  -- any of them can still ask `buffer_history` to rebuild.
+  for _, rid in ipairs(recall_id_order) do
+    local oldest = active_sessions[rid]
+    if oldest and oldest.buf == atom.buf then
+      buffer_history.trim(atom.buf, oldest.start_seq)
+      break
+    end
+  end
 end
+
+--- `buf`'s active recall records can no longer be finished: drop them and the
+--- predecessor mark, so the next atom reseeds.
+---@param buf integer
+local function drop_recall(buf)
+  for _, id in ipairs(vim.list_slice(recall_id_order)) do
+    local rec = active_sessions[id]
+    if rec and rec.buf == buf then M.remove(id) end
+  end
+  recall_prev_state[buf] = nil
+end
+
+buffer_history.set_reset_handler(drop_recall)
 
 --- An unreplayable atom changed `buf`: its active recall records can no longer
 --- reach their end state, so drop them and restart the predecessor chain from
@@ -684,11 +722,8 @@ end
 ---@param buf integer
 ---@param win integer
 function M.abort_recall(buf, win)
-  for _, id in ipairs(vim.list_slice(recall_id_order)) do
-    local rec = active_sessions[id]
-    if rec and rec.buf == buf then M.remove(id) end
-  end
-  recall_prev_state[buf] = util.capture_state(buf, win)
+  drop_recall(buf)
+  recall_prev_state[buf] = recall_mark(buf, win)
 end
 
 --------------------------------------------------------------------------------

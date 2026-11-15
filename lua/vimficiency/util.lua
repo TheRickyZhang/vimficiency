@@ -17,8 +17,9 @@
 ---@field find_plugin_root           fun(): string
 --- Session ids and buffer state
 ---@field new_id                     fun(buf: integer): string
+---@field capture_view               fun(buf: integer, win: integer): VF.ViewState
 ---@field capture_state              fun(buf: integer, win: integer): VF.BufferState
----@field check_state_inconsistencies fun(start_state: VF.BufferState, end_state: VF.BufferState)
+---@field check_state_inconsistencies fun(start_state: VF.ViewState, end_state: VF.ViewState)
 ---@field compute_search_region      fun(start_row: integer, end_row: integer, start_lines: string[], end_lines: string[], padding: integer): integer, integer
 local M = {}
 
@@ -85,7 +86,7 @@ end
 -- Types
 --------------------------------------------------------------------------------
 
----@class VF.BufferState
+---@class VF.ViewState
 ---@field bufname string       # original buffer name (full path)
 ---@field filetype string      # buffer filetype
 ---@field row integer          # 0-indexed cursor row
@@ -94,6 +95,8 @@ end
 ---@field bottom_row integer   # bottom visible row
 ---@field window_height integer # Ctrl-F, B distance
 ---@field scroll_amount integer # Ctrl-D, U distance (may differ from window_height/2)
+
+---@class VF.BufferState : VF.ViewState
 ---@field lines string[]       # buffer lines at capture time
 
 ---@class VF.Keymap
@@ -426,10 +429,10 @@ function M.new_id(buf)
   return string.format("%s__%s__%d__%04d__b%d", base, wall, ms, seq, buf)
 end
 
----@return VF.BufferState
-function M.capture_state(buf, win)
+---@return VF.ViewState
+function M.capture_view(buf, win)
   local cursor = v.nvim_win_get_cursor(win)
-  ---@type VF.BufferState
+  ---@type VF.ViewState
   return {
     bufname = v.nvim_buf_get_name(buf),
     filetype = vim.bo[buf].filetype,
@@ -439,8 +442,14 @@ function M.capture_state(buf, win)
     bottom_row = vim.fn.line("w$"),
     window_height = v.nvim_win_get_height(win),
     scroll_amount = v.nvim_get_option_value("scroll", { win = win }),
-    lines = v.nvim_buf_get_lines(buf, 0, -1, false),
   }
+end
+
+---@return VF.BufferState
+function M.capture_state(buf, win)
+  local state = M.capture_view(buf, win) --[[@as VF.BufferState]]
+  state.lines = v.nvim_buf_get_lines(buf, 0, -1, false)
+  return state
 end
 
 function M.check_state_inconsistencies(start_state, end_state)

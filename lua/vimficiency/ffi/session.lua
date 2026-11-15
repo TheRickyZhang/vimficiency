@@ -1,29 +1,23 @@
+local ffi = require("ffi")
 local core = require("vimficiency.ffi.core")
 
 local M = {}
 
 local lib = core.lib
 
+local KeyEvents = ffi.typeof("VFKeyEvent[?]")
+
 ---@param key_seq VF.KeyEvent[]
 ---@return string
 function M.build_sequence(key_seq)
-  local parts = {}
-  for i = 1, #key_seq do
+  local count = #key_seq
+  local events = KeyEvents(count)
+  for i = 1, count do
     local ev = key_seq[i]
-    assert(not ev.key_typed:find("[\x1e\x1f]"),
-      "build_sequence: key_typed contains a record/field separator; " ..
-      "callers must pass keytrans'd strings")
-    parts[#parts + 1] = ev.mode
-    parts[#parts + 1] = core.EVENT_FIELD_SEP
-    parts[#parts + 1] = ev.key_typed
-    parts[#parts + 1] = core.EVENT_RECORD_SEP
+    core.set_slice(events[i - 1].mode, ev.mode)
+    core.set_slice(events[i - 1].key_typed, ev.key_typed)
   end
-  local payload = table.concat(parts)
-  local result = core.slice_to_string(lib.vf_build_sequence(payload, #payload))
-  if result:sub(1, 7) == "ERROR: " then
-    error("vf_build_sequence failed: " .. result, 0)
-  end
-  return result
+  return core.unwrap(lib.vf_build_sequence(events, count))
 end
 
 ---@param start_lines string[]
@@ -34,25 +28,18 @@ end
 ---@return integer
 ---@return integer
 function M.compute_search_region(start_lines, end_lines, start_row, end_row, padding)
-  local start_payload = core.encode_line_array(start_lines, "start_lines")
-  local end_payload = core.encode_line_array(end_lines, "end_lines")
-  local result = core.slice_to_string(lib.vf_compute_search_region(
-    start_payload,
-    #start_payload,
-    end_payload,
-    #end_payload,
+  local start_slices, start_count = core.byte_slices(start_lines)
+  local end_slices, end_count = core.byte_slices(end_lines)
+  local region = core.unwrap(lib.vf_compute_search_region(
+    start_slices,
+    start_count,
+    end_slices,
+    end_count,
     start_row,
     end_row,
     padding
   ))
-  if result:sub(1, 7) == "ERROR: " then
-    error("vf_compute_search_region failed: " .. result, 0)
-  end
-  local parts = vim.split(result, core.EVENT_FIELD_SEP, { plain = true, trimempty = true })
-  assert(#parts == 2, "vf_compute_search_region returned malformed payload")
-  local a = assert(tonumber(parts[1]), "vf_compute_search_region: non-numeric region start")
-  local b = assert(tonumber(parts[2]), "vf_compute_search_region: non-numeric region end")
-  return a, b
+  return region.region_start, region.region_end
 end
 
 

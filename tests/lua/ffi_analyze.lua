@@ -1,83 +1,5 @@
 local ffi_lib = require("vimficiency.ffi")
 
-test("ffi._parse_analyze_results: preserves literal whitespace inside the sequence", function()
-  -- C++ `AnalyzeExports.cpp` emits `<raw_seq_bytes>\x1F<cost>\n`. Captured
-  -- insert-mode text can contain spaces, tabs, or other bytes; none collide
-  -- with the Unit Separator (0x1F), which the user cannot type.
-  local US = "\x1F"
-  local payload = table.concat({
-    "size: 4 user_cost: 12.345",
-    "ihello world\27" .. US .. "3.500",        -- embedded space + <Esc>
-    "ifoo bar baz\27" .. US .. "5.250",        -- multiple embedded spaces
-    "ia\tb\27" .. US .. "2.000",               -- embedded tab
-    "$Ef2r3" .. US .. "1.125",                 -- no embedded whitespace
-  }, "\n")
-
-  local results, user_cost = ffi_lib._parse_analyze_results(payload)
-
-  assert_eq(user_cost, 12.345, "user_cost should parse from header")
-  assert_eq(#results, 4, "should parse all four result lines")
-
-  assert_eq(results[1].seq, "ihello world\27",
-    "first seq must retain its embedded space and <Esc>")
-  assert_eq(results[1].cost, 3.500)
-
-  assert_eq(results[2].seq, "ifoo bar baz\27",
-    "second seq must retain all embedded spaces")
-  assert_eq(results[2].cost, 5.250)
-
-  assert_eq(results[3].seq, "ia\tb\27",
-    "third seq must retain an embedded tab")
-  assert_eq(results[3].cost, 2.000)
-
-  assert_eq(results[4].seq, "$Ef2r3", "baseline (no embedded whitespace) unchanged")
-  assert_eq(results[4].cost, 1.125)
-end)
-
-test("ffi._parse_analyze_results: stops at the DEBUG separator", function()
-  local US = "\x1F"
-  local payload = table.concat({
-    "size: 1 user_cost: 2.000",
-    "abc" .. US .. "1.500",
-    "----------------DEBUG----------------",
-    "noise line" .. US .. "99.999",   -- would parse as a fake result without the guard
-  }, "\n")
-
-  local results = ffi_lib._parse_analyze_results(payload)
-  assert_eq(#results, 1, "must stop at DEBUG marker")
-  assert_eq(results[1].seq, "abc")
-end)
-
-test("ffi._parse_analyze_results: reads the count-framed diffs section", function()
-  local US = "\x1F"
-  local payload = table.concat({
-    "size: 1 user_cost: 2.000",
-    "diffs: 0" .. US .. "1.500",   -- header-shaped seq; the count keeps it a result
-    "diffs: 2",
-    table.concat({ "0", "4", "0", "7", "0", "4", "0", "7" }, US),
-    table.concat({ "1", "0", "1", "0", "1", "0", "2", "3" }, US),
-    "----------------DEBUG----------------",
-    table.concat({ "9", "9", "9", "9", "9", "9", "9", "9" }, US),  -- trailer noise, not a region
-  }, "\n")
-
-  local results, user_cost, diffs = ffi_lib._parse_analyze_results(payload)
-  assert_eq(user_cost, 2.0)
-  assert_eq(#results, 1)
-  assert_eq(results[1].seq, "diffs: 0")
-  assert_eq(#diffs, 2, "exactly the announced regions are read")
-  assert_eq(diffs[1].init.begin_col, 4)
-  assert_eq(diffs[1].goal.end_col, 7)
-  assert_eq(diffs[2].goal.end_row, 2)
-end)
-
-test("ffi._parse_analyze_results: zero results still carries user_cost and diffs", function()
-  local results, user_cost, diffs = ffi_lib._parse_analyze_results(
-    "size: 0 user_cost: 5.250\ndiffs: 0\n")
-  assert_eq(#results, 0)
-  assert_eq(user_cost, 5.25)
-  assert_eq(#diffs, 0)
-end)
-
 local function find_result(results, seq)
   for _, result in ipairs(results) do
     if result.seq == seq then
@@ -125,6 +47,36 @@ local function with_reset_globals(fn)
   ffi_lib.reset_globals()
   if not ok then error(err) end
 end
+
+test("ffi.analyze: typed text with whitespace survives the boundary", function()
+  -- Every way to turn an empty line into this goal has to type both words, so
+  -- a sequence cut short at the space would fail on every result.
+  local results, user_cost, dbg, diffs = ffi_lib.analyze(request({ "" }, { "hello world" }, {
+    end_col = 10,
+    user_seq = "ihello world<Esc>",
+  }), 5)
+
+  assert_true(#results > 0, "an insertion must produce at least one result")
+  for _, result in ipairs(results) do
+    assert_true(result.seq:find("hello.+world") ~= nil,
+      "typed text must cross intact; got " .. vim.inspect(result.seq))
+    assert_true(type(result.cost) == "number" and result.cost > 0,
+      "cost must cross as a number; got " .. vim.inspect(result.cost))
+  end
+  assert_true(user_cost > 0, "user cost must cross as a positive number")
+  assert_true(type(dbg) == "string", "debug text must always be present")
+  assert_eq(#diffs, 1, "one planned region; got " .. vim.inspect(diffs))
+end)
+
+test("ffi.analyze: identical buffers plan no diff regions", function()
+  local line = "one two three"
+  local _, _, _, diffs = ffi_lib.analyze(request({ line }, { line }, {
+    boundary_last_col = #line - 1,
+    end_col = 4,
+    user_seq = "w",
+  }), 5)
+  assert_eq(#diffs, 0)
+end)
 
 test("ffi.configure: count penalty overrides affect analyze costs", function()
   with_reset_globals(function()

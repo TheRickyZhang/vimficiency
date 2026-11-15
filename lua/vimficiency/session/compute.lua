@@ -1,5 +1,6 @@
 local v = vim.api
 
+local buffer_history = require("vimficiency.capture.buffer_history")
 local config = require("vimficiency.config")
 local disk = require("vimficiency.session.disk")
 local ffi_optimizer = require("vimficiency.ffi.optimizer")
@@ -131,7 +132,9 @@ end
 ---@return table input
 local function build_analyze_input(active, end_state)
   local start_state = active.start_state
-  local initial_lines = start_state.lines
+  local initial_lines = active.kind == "recall"
+    and buffer_history.lines_at(active.buf, active.start_seq)
+    or (start_state --[[@as VF.BufferState]]).lines
   local goal_lines = end_state.lines
 
   local start_search, end_search = util.compute_search_region(

@@ -156,16 +156,9 @@ const char *vf_count_class_name(int index) {
   return g_count_class_names[index];
 }
 
-VFByteSlice vf_get_debug() {
-  static std::string debug_storage;
-  debug_storage = consume_debug_output();
-  return byteSlice(debug_storage);
-}
-
 VFByteSlice vf_get_warnings() {
   static std::string warning_storage;
-  warning_storage = consume_warning_output();
-  return byteSlice(warning_storage);
+  return storeBytes(warning_storage, packString(consume_warning_output()));
 }
 
 const char *vf_version_string() { return VIMF_VERSION; }
@@ -201,8 +194,7 @@ VFByteSlice vf_debug_config() {
   show_key(Key::Key_J, "J");
   show_key(Key::Key_K, "K");
 
-  debug_storage = oss.str();
-  return byteSlice(debug_storage);
+  return storeBytes(debug_storage, packString(oss.str()));
 }
 
 }

@@ -20,25 +20,25 @@ using namespace VF::LuaExports;
 
 namespace {
 
-// Wire format for tokenize_* FFI: one token per line, `<kind>\t<text>\n`.
-// `<kind>` is a single ASCII char encoding the `TokenKind` — see switch
-// below. `<text>` is the raw token as emitted by the parser. Token text
-// never contains `\t` or `\n` (special keys are stored as literal
-// `<Key>` strings), so these separators are unambiguous.
+// `kind` values of `VF.Sequence.Token` (lua/vimficiency/types.lua).
 //
-// The kind payload is the whole point of this format: without it, the
+// Sending the kind is the point of the tokenize_* exports: without it, the
 // Lua side would keep parallel classifier tables to re-derive what the
 // parser already knows, and they'd drift. See `dev/lua/replay-precompute.md`.
-char tokenKindChar(TokenKind kind) {
+string_view tokenKindName(TokenKind kind) {
   switch (kind) {
-    case TokenKind::Movement:    return 'M';
-    case TokenKind::Delete:    return 'D';
-    case TokenKind::Change:    return 'C';
-    case TokenKind::Visual:    return 'V';
-    case TokenKind::TypedText: return 'T';
-    case TokenKind::Escape:    return 'E';
+    case TokenKind::Movement:  return "movement";
+    case TokenKind::Delete:    return "delete";
+    case TokenKind::Change:    return "change";
+    case TokenKind::Visual:    return "visual";
+    case TokenKind::TypedText: return "typed";
+    case TokenKind::Escape:    return "escape";
   }
-  return '?';  // Unreachable — compiler should warn if a case is missed.
+  return "?";  // Unreachable — compiler should warn if a case is missed.
+}
+
+void writeToken(MsgpackWriter& w, TokenKind kind, string_view text) {
+  w.map(2).key("text").str(text).key("kind").str(tokenKindName(kind));
 }
 
 }  // namespace
@@ -49,18 +49,18 @@ VFByteSlice vf_tokenize_movements(const char *seq, size_t seq_len) {
   static string result_storage;
   return storeBytes(result_storage,
       requiredBytes(seq, seq_len, "seq")
-          .and_then([](string_view seqText) -> Expected<string> {
+          .and_then([](string_view seqText) -> Expected<Packed> {
             return parseMovements(seqText)
           .transform([](const vector<ParsedMovement>& motions) {
             // All motion-parser output is TokenKind::Movement by construction.
-            vector<string> rows;
-            rows.reserve(motions.size());
+            MsgpackWriter w;
+            w.array(motions.size());
             for (const auto& motion : motions) {
               ostringstream oss;
               oss << motion;
-              rows.push_back(string{tokenKindChar(TokenKind::Movement)} + "\t" + oss.str());
+              writeToken(w, TokenKind::Movement, oss.str());
             }
-            return joinWithTrailingNewline(rows);
+            return w.take();
           })
           .transform_error([](const MovementParseError& error) {
             return ExportError{formatMovementParseError(error)};
@@ -75,12 +75,10 @@ VFByteSlice vf_tokenize_sequence(const char *seq, size_t seq_len) {
           .and_then([](string_view seqText) {
             return parseSequence(seqText)
           .transform([](const vector<TaggedToken>& tokens) {
-            vector<string> rows;
-            rows.reserve(tokens.size());
-            for (const auto& tok : tokens) {
-              rows.push_back(string{tokenKindChar(tok.kind)} + "\t" + tok.token);
-            }
-            return joinWithTrailingNewline(rows);
+            MsgpackWriter w;
+            w.array(tokens.size());
+            for (const auto& tok : tokens) writeToken(w, tok.kind, tok.token);
+            return w.take();
           })
           .transform_error([](const SequenceParseError& error) {
             return ExportError{formatSequenceParseError(error)};
@@ -88,40 +86,33 @@ VFByteSlice vf_tokenize_sequence(const char *seq, size_t seq_len) {
           }));
 }
 
-VFByteSlice vf_build_sequence(const char *encoded_events, size_t encoded_events_len) {
+VFByteSlice vf_build_sequence(const VFKeyEvent* events, size_t events_count) {
   static string result_storage;
   return storeBytes(result_storage,
-      requiredBytes(encoded_events, encoded_events_len, "encoded_events")
-          .and_then(logic::buildKeySequence));
+      packString(logic::buildKeySequence(events, events_count)));
 }
 
 VFByteSlice vf_compute_search_region(
-    const char *encoded_start_lines,
-    size_t encoded_start_lines_len,
-    const char *encoded_end_lines,
-    size_t encoded_end_lines_len,
+    const VFByteSlice* start_lines,
+    size_t start_lines_count,
+    const VFByteSlice* end_lines,
+    size_t end_lines_count,
     int start_row,
     int end_row,
     int padding) {
   static string result_storage;
-  return storeBytes(result_storage,
-      requiredBytes(
-          encoded_start_lines,
-          encoded_start_lines_len,
-          "encoded_start_lines")
-          .and_then(payload::decodeLineArray)
-          .and_then([&](const Lines& startLines) {
-            return requiredBytes(
-                    encoded_end_lines,
-                    encoded_end_lines_len,
-                    "encoded_end_lines")
-                .and_then(payload::decodeLineArray)
-                .transform([&](const Lines& endLines) {
-                  const auto [regionStart, regionEnd] = logic::computeSearchRegion(
-                      start_row, end_row, startLines, endLines, padding);
-                  return packInts(regionStart, regionEnd);
-                });
-          }));
+  auto startLines = payload::linesFromSlices(start_lines, start_lines_count);
+  if (!startLines) return storeBytes(result_storage, unexpected(startLines.error()));
+  auto endLines = payload::linesFromSlices(end_lines, end_lines_count);
+  if (!endLines) return storeBytes(result_storage, unexpected(endLines.error()));
+
+  const auto [regionStart, regionEnd] = logic::computeSearchRegion(
+      start_row, end_row, *startLines, *endLines, padding);
+  return storeBytes(result_storage, MsgpackWriter()
+      .map(2)
+      .key("region_start").integer(regionStart)
+      .key("region_end").integer(regionEnd)
+      .take());
 }
 
 int vf_manual_evict_reason(
@@ -145,28 +136,30 @@ int vf_manual_evict_reason(
 }
 
 // Lua settings_schema consumes these defaults without mirroring C++ values.
-// Wire format: `<scope>:<key>:<int|double|bool>=<value>` per line.
+// Packs `{scope = {key = value}}` with each value in its native type.
 VFByteSlice vf_get_optimizer_defaults() {
   static string cached;
   if (cached.empty()) {
-    ostringstream out;
-    auto emit = [&](string_view scope, string_view key, auto v) {
-      out << scope << ':' << key;
-      if constexpr (is_same_v<decltype(v), bool>) out << ":bool=" << (v ? '1' : '0');
-      else if constexpr (is_same_v<decltype(v), int>) out << ":int=" << v;
-      else out << ":double=" << v;
-      out << '\n';
+    MsgpackWriter w;
+    auto emit = [&](string_view key, auto v) {
+      w.key(key);
+      if constexpr (is_same_v<decltype(v), bool>) w.boolean(v);
+      else if constexpr (is_same_v<decltype(v), int>) w.integer(v);
+      else w.number(v);
     };
-#define VF_EMIT_FIELD(type, name, withName, def) emit(scope, #name, p.name);
+#define VF_COUNT_FIELD(type, name, withName, def) + 1
+#define VF_EMIT_FIELD(type, name, withName, def) emit(#name, p.name);
 #define VF_EMIT_SCOPE(scopeName, Params, FIELDS) \
-    { const Params p; const string_view scope = scopeName; FIELDS(VF_EMIT_FIELD) }
+    { const Params p; w.key(scopeName).map(0 FIELDS(VF_COUNT_FIELD)); FIELDS(VF_EMIT_FIELD) }
+    w.map(4);
     VF_EMIT_SCOPE("shared", OptimizerParamsBase, OPTIMIZER_BASE_FIELDS)
     VF_EMIT_SCOPE("nav", NavOptimizerParams, NAV_ALL_FIELDS)
     VF_EMIT_SCOPE("transform", TransformOptimizerParams, TRANSFORM_ALL_FIELDS)
     VF_EMIT_SCOPE("composition", CompositionOptimizerParams, COMPOSITION_ALL_FIELDS)
 #undef VF_EMIT_SCOPE
 #undef VF_EMIT_FIELD
-    cached = out.str();
+#undef VF_COUNT_FIELD
+    storeBytes(cached, w.take());
   }
   return byteSlice(cached);
 }

@@ -1,18 +1,45 @@
 #include <gtest/gtest.h>
 
+#include "LuaExports/Api.h"
+
 import std.compat;
+import vf.LuaExports.Common;
 import vf.LuaExports.Payload;
 import vf.Types.Lines;
 
 namespace payload = VF::LuaExports::payload;
 
-TEST(LuaExportsPayloadTest, DecodeLineArrayPreservesTrailingEmptyLine) {
-  auto result = payload::decodeLineArray("1:a0:");
+namespace {
+
+VF::LuaExports::Expected<Lines> linesFrom(const std::vector<std::string>& lines) {
+  std::vector<VFByteSlice> slices;
+  for (const std::string& line : lines) {
+    slices.push_back(VFByteSlice{.data = line.data(), .len = line.size()});
+  }
+  return payload::linesFromSlices(slices.data(), slices.size());
+}
+
+}  // namespace
+
+TEST(LuaExportsPayloadTest, LinesFromSlicesPreservesTrailingEmptyLine) {
+  auto result = linesFrom({"a", ""});
 
   ASSERT_TRUE(result.has_value()) << result.error().message;
   ASSERT_EQ(result->size(), 2u);
   EXPECT_EQ((*result)[0], "a");
   EXPECT_EQ((*result)[1], "");
+}
+
+TEST(LuaExportsPayloadTest, LinesFromSlicesRejectsEmptyArray) {
+  EXPECT_FALSE(linesFrom({}).has_value());
+}
+
+TEST(LuaExportsPayloadTest, LinesFromSlicesRejectsNewlineInsideLine) {
+  EXPECT_FALSE(linesFrom({"ok", "a\nb"}).has_value());
+}
+
+TEST(LuaExportsPayloadTest, LinesFromSlicesRejectsNulInsideLine) {
+  EXPECT_FALSE(linesFrom({std::string("a\0b", 3)}).has_value());
 }
 
 // Regression: the analyze FFI boundary clamps captured cursors into a valid

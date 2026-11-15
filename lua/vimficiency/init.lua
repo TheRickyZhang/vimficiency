@@ -171,6 +171,7 @@ function M.shutdown()
 
   -- Tear down the CmdAtom capture and every subscriber last.
   atom_stream.shutdown()
+  require("vimficiency.capture.buffer_history").shutdown()
 
   vim.api.nvim_create_augroup(M.AUGROUP, { clear = true })
 

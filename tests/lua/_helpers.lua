@@ -210,8 +210,11 @@ function M.seed_recall(opts)
   local win = vim.api.nvim_get_current_win()
   local id = opts.id or util.new_id(buf)
   vim.api.nvim_win_set_buf(win, buf)
+  local buffer_history = require("vimficiency.capture.buffer_history")
+  buffer_history.track(buf)
   local rec = session_store.new_active_session(
-    id, nil, win, buf, util.capture_state(buf, win), "recall")
+    id, nil, win, buf, util.capture_view(buf, win), "recall")
+  rec.start_seq = buffer_history.seq(buf)
   if opts.backdate_s then
     rec.started_mono_ns = vim.uv.hrtime() - opts.backdate_s * 1e9
   end

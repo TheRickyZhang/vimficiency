@@ -239,6 +239,7 @@ vimfy_test_modules(vimfy_safety_tests)
 target_link_libraries(vimfy_safety_tests
   PRIVATE
     vimfy_lua_common
+    msgpack-cxx
 )
 
 link_fuzztest(vimfy_safety_tests)

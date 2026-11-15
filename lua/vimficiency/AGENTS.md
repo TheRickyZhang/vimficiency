@@ -75,6 +75,7 @@ Subdirectories hold supporting modules for each domain:
 | `capture/atom_stream.lua` | CmdAtom-driven capture: one atom per atomic user action, normalized and fanned out to named subscribers (manual/recall/triggers). See `dev/lua/atom-stream.md`. |
 | `capture/key_tracking.lua` | Legacy `vim.on_key()` capture, now used only by interactive Explore's frontier replay. |
 | `capture/recall.lua` | Rolling recall-ring capture driven by atom events. |
+| `capture/buffer_history.lua` | Per-buffer shadow copy plus replaced lines from `on_lines`; rebuilds a recall record's start text on demand. |
 | `capture/end_trigger.lua` | Idle/command-count auto-end triggers (Watch / Suggest). |
 | `capture/auto_suggest.lua` | Idle-trigger auto-suggest (runs optimizer on a recall window). |
 
@@ -193,7 +194,7 @@ moved. `atom_stream.lua` normalizes each event into a `VF.Atom`, classifies it
 (record / skip / abort), and fans it out to named subscribers; buffer
 and window scoping is each subscriber's job. See `dev/lua/atom-stream.md` for
 the full design (admission policy, synthetic-count stripping, recall
-snapshot-shift, the deferred-burst limitation).
+mark-shift, the deferred-burst limitation).
 
 Because the event already resolves operator-pending and mapping expansion,
 none of the old `vim.on_key` hazards apply: no operator-motion duplication, no
