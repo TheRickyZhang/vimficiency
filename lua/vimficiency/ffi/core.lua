@@ -94,71 +94,80 @@ M.Finger = build_enum(M.lib.VF_FINGER_COUNT, M.lib.vf_finger_name)
 M.Hand = build_enum(M.lib.VF_HAND_COUNT, M.lib.vf_hand_name)
 M.CountClass = build_enum(M.lib.VF_COUNT_CLASS_COUNT, M.lib.vf_count_class_name)
 
-M.EVENT_FIELD_SEP = string.char(0x1f)
-M.EVENT_RECORD_SEP = string.char(0x1e)
+-- Every `VFByteSlice` return is a msgpack map holding exactly one of `value`,
+-- `error`, or `pending` (C++ `storeBytes` / `storePending`).
+---@param slice VF.C.ByteSlice
+---@return { value: any, error: string?, pending: boolean? }
+local function envelope(slice)
+  return vim.mpack.decode(ffi.string(slice.data, tonumber(slice.len)))
+end
+
+--- Returns the C++ error instead of raising it.
+---@param slice VF.C.ByteSlice
+---@return any value
+---@return string|nil err
+function M.decode(slice)
+  local e = envelope(slice)
+  return e.value, e.error
+end
+
+--- Raises on a C++ error; returns nil while an async job is still pending.
+---@param slice VF.C.ByteSlice
+---@return any
+function M.unwrap(slice)
+  local e = envelope(slice)
+  if e.error then error(e.error, 0) end
+  return e.value
+end
+
+-- The cdata built by `set_slice` and `byte_slices` holds raw pointers and
+-- anchors neither the Lua strings it points into nor any cdata array stored in
+-- a struct field. Pass both to `keep_alive` after the FFI call: a local that is
+-- dead after its last use (or a frame dropped by a tail call) is collectable
+-- while C++ still reads it.
+
+function M.keep_alive(...) end
 
 ---@param slice VF.C.ByteSlice
----@return string
-function M.slice_to_string(slice)
-  local len = tonumber(slice.len) or 0
-  if len == 0 then
-    return ""
-  end
-  return ffi.string(slice.data, len)
+---@param text string
+function M.set_slice(slice, text)
+  slice.data = text
+  slice.len = #text
 end
 
----@param items string[]
----@return string
-function M.encode_string_list(items)
-  local out = {}
-  for i = 1, #items do
-    local item = items[i]
-    out[#out + 1] = tostring(#item)
-    out[#out + 1] = ":"
-    out[#out + 1] = item
-  end
-  return table.concat(out)
-end
+local ByteSlices = ffi.typeof("VFByteSlice[?]")
 
----@param lines string[]
----@param name string
----@return string
-function M.encode_line_array(lines, name)
-  assert(type(lines) == "table", name .. " must be a table")
-  assert(#lines > 0, name .. " must contain at least one line")
-  for i = 1, #lines do
-    local line = lines[i]
-    assert(type(line) == "string", name .. "[" .. i .. "] must be a string")
-    assert(not line:find("\n", 1, true), name .. "[" .. i .. "] contains newline byte")
-    assert(not line:find("\0", 1, true), name .. "[" .. i .. "] contains NUL byte")
+---@param strings string[]
+---@return ffi.cdata* slices
+---@return integer count
+function M.byte_slices(strings)
+  local count = #strings
+  local slices = ByteSlices(count)
+  for i = 1, count do
+    M.set_slice(slices[i - 1], strings[i])
   end
-  return M.encode_string_list(lines)
+  return slices, count
 end
 
 local VFSearchRequest = ffi.typeof("VFSearchRequest")
 
---- Fills a `VFSearchRequest` from `req` and passes it to `call`. The cdata holds
---- raw pointers into Lua strings, which LuaJIT pins only when a string is itself
---- the FFI argument, so the encoded payloads live in this frame until `call`
---- returns.
+--- Fills a `VFSearchRequest` from `req` and passes it to `call`.
 ---@generic T
 ---@param req VF.SearchRequest
 ---@param call fun(request: VF.C.SearchRequest): T
 ---@return T
 function M.with_search_request(req, call)
-  local initial_payload = M.encode_line_array(req.initial_lines, "initial_lines")
-  local goal_payload = M.encode_line_array(req.goal_lines, "goal_lines")
+  local initial_lines, initial_lines_count = M.byte_slices(req.initial_lines)
+  local goal_lines, goal_lines_count = M.byte_slices(req.goal_lines)
   local request = VFSearchRequest() --[[@as VF.C.SearchRequest]]
-  request.encoded_initial_lines = initial_payload
-  request.encoded_initial_lines_len = #initial_payload
-  request.encoded_goal_lines = goal_payload
-  request.encoded_goal_lines_len = #goal_payload
+  request.initial_lines = initial_lines
+  request.initial_lines_count = initial_lines_count
+  request.goal_lines = goal_lines
+  request.goal_lines_count = goal_lines_count
   request.start_row = req.start_row
   request.start_col = req.start_col
   request.end_row = req.end_row
   request.end_col = req.end_col
-  request.boundary_first_col = req.boundary_first_col
-  request.boundary_last_col = req.boundary_last_col
   request.has_lines_above = req.has_lines_above
   request.has_lines_below = req.has_lines_below
   request.window_height = req.window_height
@@ -167,25 +176,9 @@ function M.with_search_request(req, call)
   request.user_seq_len = #req.user_seq
   request.optimizer_overrides = req.optimizer_overrides
   request.optimizer_overrides_len = #req.optimizer_overrides
-  return call(request)
-end
-
----@param encoded string
----@return string[]
-function M.decode_string_list(encoded)
-  local out = {}
-  local i = 1
-  while i <= #encoded do
-    local colon = encoded:find(":", i, true)
-    assert(colon, "decode_string_list: missing colon")
-    local len = tonumber(encoded:sub(i, colon - 1))
-    assert(len and len >= 0, "decode_string_list: invalid length")
-    local start = colon + 1
-    local stop = start + len - 1
-    out[#out + 1] = encoded:sub(start, stop)
-    i = stop + 1
-  end
-  return out
+  local result = call(request)
+  M.keep_alive(req, initial_lines, goal_lines)
+  return result
 end
 
 function M.version_string()
@@ -193,7 +186,7 @@ function M.version_string()
 end
 
 function M.debug_config()
-  return M.slice_to_string(M.lib.vf_debug_config())
+  return M.unwrap(M.lib.vf_debug_config())
 end
 
 return M

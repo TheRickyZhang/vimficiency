@@ -156,6 +156,12 @@ to deeper docs when needed.
 - Two read-only surfaces were added to core for the widgets: `TilingCost::cover` (chunk backpointers on `Arrival`) and `VimDiff::trace` (tables, path, blocks). `VimDiffTraceExport` now dumps the trace instead of re-running a naive DP; the committed animation traces still render, regenerating would need the scene adjusted (`anim/dp-walkthrough/README.md`).
 - Fixed on the way: the Guide sidebar was empty because `autogenerate: { directory: '.' }` never matched the glob loader's root-relative file paths. See `dev/web/how-it-works-site.md`.
 
+## FFI boundary: typed structs in, msgpack out (2026-11-15)
+- Lua to C++ is `Api.def` structs and `VFByteSlice` arrays; C++ to Lua is a msgpack `{value}`/`{error}`/`{pending}` envelope decoded by `vim.mpack.decode`. This replaced five hand-rolled text formats and an in-band `ERROR:` prefix. See `dev/lua/ffi-payloads.md`.
+- Asymmetric on purpose: each direction uses the half that needs no parser of ours (the C compiler's struct layout in, Neovim's decoder out). Typed both ways would need a C++-owned pointer graph plus a per-shape cdata-to-table walk in Lua.
+- Msgpack both ways via msgpack-c was rejected because request fields would become runtime-checked instead of compile-checked and ABI-hash-covered. msgpack-c stays a test-only dependency that decodes our `MsgpackWriter` output.
+- `optimizer_overrides` stays `scope:key=value` text: identifier keys and numeric values cannot carry arbitrary bytes.
+
 ## C++20 named modules instead of headers (2026-11-09)
 - Every former header is a named module `vf.<Dir>.<Name>` (`dev/code-style.md` has the unit layout, `dev/architecture/module-dependencies.md` the allowed graph). The motivation is structural: the import graph *is* the dependency graph, so a layering violation or a transitive leak is a compile error rather than a `scripts/lint-module-deps.sh` finding, and macros from `<cassert>`/X-macro `.inc` fragments stay in the unit that includes them. `import std.compat` replaces per-TU standard-header parsing.
 - Clean Release build time was approximately equal to the header tree's, so it is not a reason either way.

@@ -11,8 +11,8 @@ namespace VF::LuaExports {
 // control)` executes on the worker; the main thread polls `ready()` and reads
 // `state()` only once it is true, or calls `cancel()` and drops the job.
 //
-// Lifetime: the destructor joins `worker_` before any member is torn down. Dropping a job whose worker is still running (the cancel
-// path) blocks until the search observes the flag and returns, so the worker
+// Lifetime: the destructor joins `worker_` before any member is torn down.
+// Dropping a job whose worker is still running (the cancel path) blocks until the search observes the flag and returns, so the worker
 // can never outlive what it reads or writes. The join is bounded by the
 // search's polling granularity: per pop, and between composition setup phases.
 //
@@ -32,7 +32,15 @@ class AsyncJob {
                      : SearchControl::Clock::time_point::max()),
         state_(std::move(state)) {
     worker_ = std::thread([this, run = std::move(run)]() mutable {
-      run(state_, control_);
+      // An exception leaving a thread body is std::terminate, which would take
+      // Neovim down with it.
+      try {
+        run(state_, control_);
+      } catch (const std::exception& e) {
+        error_ = std::string("C++ exception: ") + e.what();
+      } catch (...) {
+        error_ = "unknown C++ exception";
+      }
       done_.store(true, std::memory_order_release);
     });
   }
@@ -50,10 +58,14 @@ class AsyncJob {
   inline void cancel() { control_.cancel(); }
   // Only meaningful after `ready()`.
   inline State& state() { return state_; }
+  // Only meaningful after `ready()`. Non-empty when `run` threw, in which case
+  // `state()` is whatever the body had written so far.
+  inline const std::string& error() const { return error_; }
 
  private:
   SearchControl control_;
   std::atomic<bool> done_{false};
+  std::string error_;
   State state_;
   std::thread worker_;
 };

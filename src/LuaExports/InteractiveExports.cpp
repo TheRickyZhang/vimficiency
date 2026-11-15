@@ -25,92 +25,87 @@ using Explore::Outcome;
 
 ViewRegistry g_registry;
 
-using payload::encodeField;
-using payload::encodeFields;
-using payload::encodeStringList;
-
 SuggestionSortMode parseSuggestionSortMode(string_view text) {
   if (text == "distance") return SuggestionSortMode::Distance;
   if (text == "score") return SuggestionSortMode::Score;
   return SuggestionSortMode::Effort;
 }
 
-// State payload. Length-prefixed fields so raw bytes in `seq` survive
-// round-tripping. `is_completed` is the C++-side derived predicate (cursor
-// has reached goalPos at the post-final-edit nav segment). The trailing
-// four ints carry the current target range; the UI decides whether to
-// render it based on phase (e.g. hidden during Insert).
-string encodeState(const View& v) {
+// The pack* functions below write the `VF.Explore.*` shapes declared in
+// lua/vimficiency/types.lua, field for field.
+
+void writePosition(MsgpackWriter& w, int row, int col) {
+  w.map(2).key("row").integer(row).key("col").integer(col);
+}
+
+// `is_completed` is the C++-side derived predicate (cursor has reached goalPos
+// at the post-final-edit nav segment). The UI decides whether to render
+// `target_range` based on phase (e.g. hidden during Insert).
+Packed packState(const View& v) {
   const CharRange target = v.currentTargetRange();
   const Explore::State& st = v.state();
-  return encodeFields(
-      Explore::phaseName(st.phase),
-      Explore::phaseIndex(st.phase),
-      v.isCompleted() ? 1 : 0,
-      st.cursor.line,
-      st.cursor.col,
-      v.totalEdits(),
-      st.cost,
-      string_view(st.seq),
-      v.canUndo() ? 1 : 0,
-      v.canRedo() ? 1 : 0,
-      target.begin.line,
-      target.begin.col,
-      target.end.line,
-      target.end.col);
+  MsgpackWriter w;
+  w.map(9);
+  w.key("phase").map(2)
+      .key("kind").str(Explore::phaseName(st.phase))
+      .key("edit_index").integer(Explore::phaseIndex(st.phase));
+  w.key("is_completed").boolean(v.isCompleted());
+  w.key("cursor");
+  writePosition(w, st.cursor.line, st.cursor.col);
+  w.key("total_edits").integer(v.totalEdits());
+  w.key("cost").number(st.cost);
+  w.key("seq").str(st.seq);
+  w.key("can_undo").boolean(v.canUndo());
+  w.key("can_redo").boolean(v.canRedo());
+  w.key("target_range").map(2);
+  w.key("begin_pos");
+  writePosition(w, target.begin.line, target.begin.col);
+  w.key("end_pos");
+  writePosition(w, target.end.line, target.end.col);
+  return w.take();
 }
 
-// Apply-result payload. Two fields: status ("Applied" | "Rejected") and
-// reason (empty on Applied). The new view state is read separately via
-// vf_explore_state — Lua callers refresh state after every action anyway.
-string encodeOutcome(const Outcome& outcome) {
-  const string_view status = outcome.has_value() ? "Applied" : "Rejected";
-  const string_view reason =
-      outcome.has_value() ? string_view{} : string_view(outcome.error().reason);
-  return encodeFields(status, reason);
-}
-
-// Wire encoder for one recommendation. 7 fields — Lua's
-// parse_explore_recommendations must match the field count. The recommendation's
-// "kind" (motion vs edit-structural vs typed-text) is implicit in the view's
-// current phase, which Lua already reads off `state.phase.kind`.
-string encodeSuggestion(const Suggestion& item) {
-  return encodeFields(
-      string_view(item.token),
-      item.costDiff,
-      item.distance,
-      item.score,
-      item.landingPos.line,
-      item.landingPos.col,
-      string_view(item.literalText));
-}
-
-string encodeSuggestions(const vector<Suggestion>& recs) {
-  string out = encodeField(recs.size());
-  for (const auto& r : recs) out += encodeSuggestion(r);
-  return out;
-}
-
-// Length-prefixed header-rows payload. Each row is a raw key sequence (may
-// contain `<Esc>` and arbitrary insert-mode bytes); length-prefix encoding
-// avoids the separator-escape problem entirely. Lua applies
-// `sequence_display.inline()` per row when rendering.
-//
-// Layout (all fields are length-prefixed via `encodeField`):
-//   explored_count, row_0, row_1, ..., row_{explored_count-1},
-//   optimal_count,
-//   for each i in [0, optimal_count):
-//     col_i_count, row_0, row_1, ..., row_{col_i_count-1}
-string encodeHeaderRows(const View& v) {
-  const auto rows = v.headerRows();
-  string out = encodeField(rows.explored.size());
-  out += encodeStringList(rows.explored);
-  out += encodeField(rows.optimal.size());
-  for (const auto& col : rows.optimal) {
-    out += encodeField(col.size());
-    out += encodeStringList(col);
+// The new view state is read separately via vf_explore_state — Lua callers
+// refresh state after every action anyway.
+Packed packOutcome(const Outcome& outcome) {
+  MsgpackWriter w;
+  if (outcome.has_value()) {
+    w.map(1).key("status").str("Applied");
+  } else {
+    w.map(2).key("status").str("Rejected").key("reason").str(outcome.error().reason);
   }
-  return out;
+  return w.take();
+}
+
+// The recommendation's "kind" (motion vs edit-structural vs typed-text) is
+// implicit in the view's current phase, which Lua already reads off
+// `state.phase.kind`.
+Packed packSuggestions(const vector<Suggestion>& recs) {
+  MsgpackWriter w;
+  w.array(recs.size());
+  for (const Suggestion& item : recs) {
+    w.map(6);
+    w.key("text").str(item.token);
+    w.key("cost_diff").number(item.costDiff);
+    w.key("distance").number(item.distance);
+    w.key("score").number(item.score);
+    w.key("landing");
+    writePosition(w, item.landingPos.line, item.landingPos.col);
+    w.key("literal_text").str(item.literalText);
+  }
+  return w.take();
+}
+
+// Each row is a raw key sequence; Lua applies `sequence_display.inline()` per
+// row when rendering.
+Packed packHeaderRows(const View& v) {
+  const auto rows = v.headerRows();
+  MsgpackWriter w;
+  w.map(2);
+  w.key("explored").strings(rows.explored);
+  w.key("optimal").array(rows.optimal.size());
+  for (const auto& col : rows.optimal) w.strings(col);
+  return w.take();
 }
 
 // Background composition search. The job owns its inputs and config so the
@@ -127,7 +122,7 @@ using ExploreJob = AsyncJob<ExploreState>;
 
 JobRegistry<ExploreJob> g_jobs;
 
-VF::LuaExports::Expected<string> startAsyncImpl(const VFSearchRequest* request, int deadline_ms) {
+PackedResult startAsyncImpl(const VFSearchRequest* request, int deadline_ms) {
   auto inputsRes = logic::decodeSearchRequest(request);
   if (!inputsRes) return unexpected(inputsRes.error());
   CompositionOptimizerParams compositionParams =
@@ -144,7 +139,7 @@ VF::LuaExports::Expected<string> startAsyncImpl(const VFSearchRequest* request, 
             s.inputs.boundary, s.inputs.navContext, s.config, control);
       });
   const int job_id = g_jobs.create(std::move(job));
-  return to_string(job_id);
+  return packInteger(job_id);
 }
 
 }  // namespace
@@ -153,34 +148,33 @@ extern "C" {
 
 VFByteSlice vf_explore_start_async(const VFSearchRequest* request, int deadline_ms) {
   static string storage;
-  return storeBytes(storage, startAsyncImpl(request, deadline_ms));
+  return guarded(storage, [&] { return startAsyncImpl(request, deadline_ms); });
 }
 
-// Returns "pending" while the worker runs; once done, builds the View from the
-// precomputed plan, registers it, frees the job, and returns the view_id.
+// Returns pending while the worker runs; once done, frees the job and either
+// builds the View from the precomputed plan, registers it and returns the
+// view_id, or returns the worker's failure.
 VFByteSlice vf_explore_poll(int job_id) {
   static string storage;
-  ExploreJob& job = g_jobs.get(job_id);
-  if (!job.ready()) {
-    storage = "pending";
-    return byteSlice(storage);
-  }
-  std::unique_ptr<ExploreJob> owned = g_jobs.take(job_id);
-  ExploreState& s = owned->state();
-  logic::SearchInputs& in = s.inputs;
-  const int view_id = g_registry.create(
-      std::move(in.initialLines),
-      in.initialPos,
-      std::move(in.goalLines),
-      in.goalPos,
-      std::move(in.boundary),
-      in.navContext,
-      std::move(s.config),
-      in.userSeq,
-      s.compositionParams,
-      std::move(s.trace));
-  storage = to_string(view_id);
-  return byteSlice(storage);
+  if (!g_jobs.get(job_id).ready()) return storePending(storage);
+  return guarded(storage, [&]() -> PackedResult {
+    std::unique_ptr<ExploreJob> owned = g_jobs.take(job_id);
+    if (!owned->error().empty()) return unexpectedError(owned->error());
+    ExploreState& s = owned->state();
+    logic::SearchInputs& in = s.inputs;
+    const int view_id = g_registry.create(
+        std::move(in.initialLines),
+        in.initialPos,
+        std::move(in.goalLines),
+        in.goalPos,
+        std::move(in.boundary),
+        in.navContext,
+        std::move(s.config),
+        in.userSeq,
+        s.compositionParams,
+        std::move(s.trace));
+    return packInteger(view_id);
+  });
 }
 
 // Signals cancellation and frees the job; dropping it joins the worker on this
@@ -188,20 +182,21 @@ VFByteSlice vf_explore_poll(int job_id) {
 // polled between composition setup phases and per pop in every search loop,
 // so the join is bounded by one diff's precompute or one pop expansion.
 int vf_explore_cancel(int job_id) {
-  std::unique_ptr<ExploreJob> owned = g_jobs.take(job_id);
-  if (!owned) return 0;
-  owned->cancel();
-  return 1;
+  return noUnwind([&] {
+    std::unique_ptr<ExploreJob> owned = g_jobs.take(job_id);
+    if (!owned) return 0;
+    owned->cancel();
+    return 1;
+  });
 }
 
 int vf_explore_destroy(int view_id) {
-  return g_registry.destroy(view_id) ? 1 : 0;
+  return noUnwind([&] { return g_registry.destroy(view_id) ? 1 : 0; });
 }
 
 VFByteSlice vf_explore_state(int view_id) {
   static string storage;
-  storage = encodeState(g_registry.get(view_id));
-  return byteSlice(storage);
+  return guarded(storage, [&] { return packState(g_registry.get(view_id)); });
 }
 
 VFByteSlice vf_explore_recommendations(
@@ -211,25 +206,23 @@ VFByteSlice vf_explore_recommendations(
     size_t optimizer_overrides_len,
     const char* sort_mode,
     size_t sort_mode_len) {
-  CHECK(max_count >= 0, "max_count must be non-negative");
   static string storage;
-  View& v = g_registry.get(view_id);
-  auto overridesText = requiredBytes(
-      optimizer_overrides,
-      optimizer_overrides_len,
-      "optimizer_overrides");
-  if (!overridesText) return storeBytes(storage, unexpected(overridesText.error()));
-  auto sortModeText = requiredBytes(sort_mode, sort_mode_len, "sort_mode");
-  if (!sortModeText) return storeBytes(storage, unexpected(sortModeText.error()));
+  return guarded(storage, [&]() -> PackedResult {
+    CHECK(max_count >= 0, "max_count must be non-negative");
+    View& v = g_registry.get(view_id);
+    auto overridesText = requiredBytes(
+        optimizer_overrides,
+        optimizer_overrides_len,
+        "optimizer_overrides");
+    if (!overridesText) return unexpected(overridesText.error());
+    auto sortModeText = requiredBytes(sort_mode, sort_mode_len, "sort_mode");
+    if (!sortModeText) return unexpected(sortModeText.error());
 
-  auto overridesResult = logic::parseOverrides(*overridesText);
-  if (!overridesResult) {
-    return storeBytes(storage, unexpected(overridesResult.error()));
-  }
-  const OptimizerParamOverrides overrides = std::move(*overridesResult);
-  const SuggestionSortMode mode = parseSuggestionSortMode(*sortModeText);
-  storage = encodeSuggestions(v.recommendations(max_count, &overrides, mode));
-  return byteSlice(storage);
+    auto overrides = logic::parseOverrides(*overridesText);
+    if (!overrides) return unexpected(overrides.error());
+    const SuggestionSortMode mode = parseSuggestionSortMode(*sortModeText);
+    return packSuggestions(v.recommendations(max_count, &*overrides, mode));
+  });
 }
 
 VFByteSlice vf_explore_reconfigure_plan(
@@ -237,73 +230,62 @@ VFByteSlice vf_explore_reconfigure_plan(
     const char* optimizer_overrides,
     size_t optimizer_overrides_len) {
   static string storage;
-  View& v = g_registry.get(view_id);
-  auto overridesText = requiredBytes(
-      optimizer_overrides,
-      optimizer_overrides_len,
-      "optimizer_overrides");
-  if (!overridesText) return storeBytes(storage, unexpected(overridesText.error()));
+  return guarded(storage, [&]() -> PackedResult {
+    View& v = g_registry.get(view_id);
+    auto overridesText = requiredBytes(
+        optimizer_overrides,
+        optimizer_overrides_len,
+        "optimizer_overrides");
+    if (!overridesText) return unexpected(overridesText.error());
 
-  auto overridesResult = logic::parseOverrides(*overridesText);
-  if (!overridesResult) {
-    return storeBytes(storage, unexpected(overridesResult.error()));
-  }
-  const OptimizerParamOverrides overrides = std::move(*overridesResult);
-  CompositionOptimizerParams compositionParams = overrides.resolved(CompositionOptimizerParams{});
-  storage = v.reconfigurePlan(std::move(compositionParams)) ? "1" : "0";
-  return byteSlice(storage);
+    auto overrides = logic::parseOverrides(*overridesText);
+    if (!overrides) return unexpected(overrides.error());
+    const bool reset = v.reconfigurePlan(overrides->resolved(CompositionOptimizerParams{}));
+    return MsgpackWriter().map(1).key("reset").boolean(reset).take();
+  });
 }
 
 VFByteSlice vf_explore_current_lines(int view_id) {
   static string storage;
-  storage = encodeStringList(g_registry.get(view_id).state().lines);
-  return byteSlice(storage);
+  return guarded(storage, [&] {
+    return packStrings(g_registry.get(view_id).state().lines);
+  });
 }
 
 VFByteSlice vf_explore_accept_snapshot(
     int view_id,
-    const char* encoded_lines,
-    size_t encoded_lines_len,
+    const VFByteSlice* lines,
+    size_t lines_count,
     int new_row,
     int new_col,
     const char* raw_keys,
     size_t raw_keys_len,
     bool insert_mode) {
   static string storage;
-  View& v = g_registry.get(view_id);
-  auto rawKeysResult = requiredBytes(raw_keys, raw_keys_len, "raw_keys");
-  if (!rawKeysResult) return storeBytes(storage, unexpected(rawKeysResult.error()));
-  return storeBytes(storage, requiredBytes(
-          encoded_lines,
-          encoded_lines_len,
-          "encoded_lines")
-      .and_then(payload::decodeLineArray)
-      .transform([&](const Lines& liveLines) {
-        return encodeOutcome(
-            v.acceptSnapshot(liveLines, CursorPos(new_row, new_col),
-                             *rawKeysResult, insert_mode));
-      }));
+  return guarded(storage, [&]() -> PackedResult {
+    View& v = g_registry.get(view_id);
+    auto rawKeys = requiredBytes(raw_keys, raw_keys_len, "raw_keys");
+    if (!rawKeys) return unexpected(rawKeys.error());
+    auto liveLines = payload::linesFromSlices(lines, lines_count);
+    if (!liveLines) return unexpected(liveLines.error());
+    return packOutcome(v.acceptSnapshot(
+        *liveLines, CursorPos(new_row, new_col), *rawKeys, insert_mode));
+  });
 }
 
 VFByteSlice vf_explore_undo(int view_id) {
   static string storage;
-  View& v = g_registry.get(view_id);
-  storage = encodeOutcome(v.undo());
-  return byteSlice(storage);
+  return guarded(storage, [&] { return packOutcome(g_registry.get(view_id).undo()); });
 }
 
 VFByteSlice vf_explore_redo(int view_id) {
   static string storage;
-  View& v = g_registry.get(view_id);
-  storage = encodeOutcome(v.redo());
-  return byteSlice(storage);
+  return guarded(storage, [&] { return packOutcome(g_registry.get(view_id).redo()); });
 }
 
 VFByteSlice vf_explore_header_rows(int view_id) {
   static string storage;
-  View& v = g_registry.get(view_id);
-  storage = encodeHeaderRows(v);
-  return byteSlice(storage);
+  return guarded(storage, [&] { return packHeaderRows(g_registry.get(view_id)); });
 }
 
 }  // extern "C"

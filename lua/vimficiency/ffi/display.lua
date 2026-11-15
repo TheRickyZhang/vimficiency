@@ -1,85 +1,61 @@
+local ffi = require("ffi")
 local core = require("vimficiency.ffi.core")
 
 local M = {}
 
 local lib = core.lib
 
-local function checked_string(slice)
-  local text = core.slice_to_string(slice)
-  if text:sub(1, 6) == "ERROR:" then
-    error(text, 2)
-  end
-  return text
-end
-
----@param result VF.Session.Result
-local function encode_result(result)
-  local recs = {}
-  for _, rec in ipairs(result.optimal_results) do
-    recs[#recs + 1] = rec.seq
-    recs[#recs + 1] = tostring(rec.cost)
-  end
-
-  return core.encode_string_list({
-    core.encode_string_list(result.lines),
-    tostring(result.start_row),
-    tostring(result.start_col),
-    tostring(result.end_row),
-    tostring(result.end_col),
-    result.user_seq,
-    "1",
-    tostring(result.user_cost),
-    result.kind or "",
-    core.encode_string_list(recs),
-  })
-end
+local TypedChunks = ffi.typeof("VFTypedChunk[?]")
+local OptimizerResults = ffi.typeof("VFOptimizerResult[?]")
+local SessionResult = ffi.typeof("VFSessionResult")
 
 ---@param seq string
 ---@param tokenize boolean
 ---@param sectionize boolean
 ---@return string[]
 function M.sequence_display_lines(seq, tokenize, sectionize)
-  local payload = checked_string(lib.vf_sequence_display_lines(seq, #seq, tokenize, sectionize))
-  return core.decode_string_list(payload)
+  return core.unwrap(lib.vf_sequence_display_lines(seq, #seq, tokenize, sectionize))
 end
 
 ---@param seq string
 ---@param tokenize boolean
 ---@return string
 function M.sequence_display_inline(seq, tokenize)
-  return checked_string(lib.vf_sequence_display_inline(seq, #seq, tokenize))
+  return core.unwrap(lib.vf_sequence_display_inline(seq, #seq, tokenize))
 end
 
 ---@param text string
 ---@return string
 function M.sequence_display_key_notation(text)
-  return checked_string(lib.vf_sequence_display_key_notation(text, #text))
+  return core.unwrap(lib.vf_sequence_display_key_notation(text, #text))
 end
 
 ---@param text string
 ---@param key_notation boolean
 ---@return string
 function M.sequence_display_typed_text(text, key_notation)
-  return checked_string(lib.vf_sequence_display_typed_text(text, #text, key_notation))
+  return core.unwrap(lib.vf_sequence_display_typed_text(text, #text, key_notation))
 end
 
 ---@param chunks { kind: string, text: string }[]
 ---@param tokenize boolean
 ---@return string
 function M.sequence_display_typed_chunks(chunks, tokenize)
-  local fields = {}
-  for _, chunk in ipairs(chunks) do
-    fields[#fields + 1] = chunk.kind
-    fields[#fields + 1] = chunk.text
+  local count = #chunks
+  local typed = TypedChunks(count) --[[@as VF.C.TypedChunk[] ]]
+  for i = 1, count do
+    core.set_slice(typed[i - 1].kind, chunks[i].kind)
+    core.set_slice(typed[i - 1].text, chunks[i].text)
   end
-  local payload = core.encode_string_list(fields)
-  return checked_string(lib.vf_sequence_display_typed_chunks(payload, #payload, tokenize))
+  local slice = lib.vf_sequence_display_typed_chunks(typed, count, tokenize)
+  core.keep_alive(chunks, typed)
+  return core.unwrap(slice)
 end
 
 ---@param result VF.Session.Result
 ---@return string
 function M.format_result_position(result)
-  return checked_string(lib.vf_format_result_position(
+  return core.unwrap(lib.vf_format_result_position(
     result.start_row, result.start_col, result.end_row, result.end_col))
 end
 
@@ -87,7 +63,7 @@ end
 ---@return string
 function M.format_result_kind_suffix(result)
   local kind = result.kind or ""
-  return checked_string(lib.vf_format_result_kind_suffix(kind, #kind))
+  return core.unwrap(lib.vf_format_result_kind_suffix(kind, #kind))
 end
 
 ---@param title string
@@ -96,9 +72,32 @@ end
 ---@param sectionize boolean
 ---@return string
 function M.format_result_message(title, result, tokenize, sectionize)
-  local payload = encode_result(result)
-  return checked_string(lib.vf_format_result_message(
-    title, #title, payload, #payload, tokenize, sectionize))
+  local lines, lines_count = core.byte_slices(result.lines)
+  local optimal_count = #result.optimal_results
+  local optimal_results = OptimizerResults(optimal_count) --[[@as VF.C.OptimizerResult[] ]]
+  for i = 1, optimal_count do
+    local rec = result.optimal_results[i]
+    core.set_slice(optimal_results[i - 1].seq, rec.seq)
+    optimal_results[i - 1].cost = rec.cost
+  end
+
+  local c_result = SessionResult() --[[@as VF.C.SessionResult]]
+  c_result.lines = lines
+  c_result.lines_count = lines_count
+  c_result.start_row = result.start_row
+  c_result.start_col = result.start_col
+  c_result.end_row = result.end_row
+  c_result.end_col = result.end_col
+  core.set_slice(c_result.user_seq, result.user_seq)
+  c_result.user_cost = result.user_cost
+  core.set_slice(c_result.kind, result.kind or "")
+  c_result.optimal_results = optimal_results
+  c_result.optimal_results_count = optimal_count
+
+  local slice = lib.vf_format_result_message(
+    title, #title, c_result, tokenize, sectionize)
+  core.keep_alive(result, lines, optimal_results)
+  return core.unwrap(slice)
 end
 
 return M

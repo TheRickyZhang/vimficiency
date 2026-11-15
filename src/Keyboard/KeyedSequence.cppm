@@ -45,17 +45,23 @@ struct KeyedSequence {
     return *this;
   }
 
-  // Primitive appends
+  // Primitive appends. A byte with no key (non-ASCII text) stays in `seq` but
+  // adds no keys, as in SequenceToKeys::tokenize, so the user's sequence and
+  // ours under-count it alike.
   inline void append(char c, int count = 1) {
     seq.append(displayChar(c), count);
-    keys.append(CHAR_TO_KEYS.at(c), count);
+    appendKeys(c, count);
   }
   inline void append(std::string_view text) {
     keys.reserve(keys.size() + text.size());
     for (char c : text) {
       seq.append(displayChar(c));
-      keys.append(CHAR_TO_KEYS.at(c));
+      appendKeys(c, 1);
     }
+  }
+  inline void appendKeys(char c, int count) {
+    const auto it = CHAR_TO_KEYS.find(c);
+    if (it != CHAR_TO_KEYS.end()) keys.append(it->second, count);
   }
 
   // Same type appends

@@ -7,7 +7,7 @@
 -- The event is *deferred*: under fast typeahead every atom for a burst of input
 -- arrives back-to-back once control returns to the main loop, by which point the
 -- buffer is already at its final state. Subscribers that need pre-action buffer
--- state must therefore shift (atom i's start == atom i-1's end), not snapshot at
+-- state must therefore shift (atom i's start == atom i-1's end), not read it at
 -- atom time. See `dev/lua/atom-stream.md`.
 
 ---@class (exact) VF.AtomStream

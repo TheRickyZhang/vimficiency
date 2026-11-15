@@ -29,21 +29,15 @@ Expected<SearchInputs> decodeSearchRequest(const VFSearchRequest* request) {
   if (!request) return unexpectedError("missing search request");
   const VFSearchRequest& r = *request;
 
-  auto initialText = requiredBytes(
-      r.encoded_initial_lines, r.encoded_initial_lines_len, "encoded_initial_lines");
-  if (!initialText) return unexpected(initialText.error());
-  auto goalText = requiredBytes(
-      r.encoded_goal_lines, r.encoded_goal_lines_len, "encoded_goal_lines");
-  if (!goalText) return unexpected(goalText.error());
   auto userSeq = requiredBytes(r.user_seq, r.user_seq_len, "user_seq");
   if (!userSeq) return unexpected(userSeq.error());
   auto overridesText = requiredBytes(
       r.optimizer_overrides, r.optimizer_overrides_len, "optimizer_overrides");
   if (!overridesText) return unexpected(overridesText.error());
 
-  auto initialLines = payload::decodeLineArray(*initialText);
+  auto initialLines = payload::linesFromSlices(r.initial_lines, r.initial_lines_count);
   if (!initialLines) return unexpected(initialLines.error());
-  auto goalLines = payload::decodeLineArray(*goalText);
+  auto goalLines = payload::linesFromSlices(r.goal_lines, r.goal_lines_count);
   if (!goalLines) return unexpected(goalLines.error());
   auto overrides = parseOverrides(*overridesText);
   if (!overrides) return unexpected(overrides.error());
@@ -59,9 +53,7 @@ Expected<SearchInputs> decodeSearchRequest(const VFSearchRequest* request) {
   // rather than aborting on the downstream CHECK.
   in.initialPos = in.initialLines.clamp(CursorPos(r.start_row, r.start_col));
   in.goalPos = in.goalLines.clamp(CursorPos(r.end_row, r.end_col));
-  in.boundary = sliceBoundary(
-      in.initialLines, r.boundary_first_col, r.boundary_last_col,
-      r.has_lines_above, r.has_lines_below);
+  in.boundary = sliceBoundary(in.initialLines, r.has_lines_above, r.has_lines_below);
   in.navContext = NavContext(r.window_height, r.scroll_amount);
   return in;
 }
@@ -96,41 +88,41 @@ pair<int, int> findDiffRange(const Lines& a, const Lines& b) {
 
 }  // namespace
 
-Expected<string> buildKeySequence(string_view encoded) {
-  return payload::decodeKeyTrackingEvents(encoded).transform([](const vector<payload::KeyTrackingEvent>& events) {
-    string out;
-    out.reserve(events.size() * 2);
+string buildKeySequence(const VFKeyEvent* events, size_t count) {
+  const auto mode = [&](size_t i) { return modePrefix(sliceView(events[i].mode)); };
+  const auto keyTyped = [&](size_t i) { return string(sliceView(events[i].key_typed)); };
 
-    size_t i = 0;
-    while (i < events.size()) {
-      const auto& curr = events[i];
-      bool dominated = false;
-      if (i + 1 < events.size()) {
-        const auto& next = events[i + 1];
-        const bool sameKey = curr.keyTyped == next.keyTyped;
-        const string_view currMode = modePrefix(curr.mode);
-        const string_view nextMode = modePrefix(next.mode);
-        if (sameKey && currMode == "no" && nextMode == "no" &&
-            endsWithOperatorEdit(out + curr.keyTyped)) {
-          out += curr.keyTyped;
-          i += 2;
-          dominated = true;
-        } else if (sameKey && currMode == "no" && nextMode != "no" &&
-                   i + 2 < events.size() &&
-                   endsWithOperatorEdit(out + curr.keyTyped + events[i + 2].keyTyped)) {
-          out += curr.keyTyped;
-          i += 2;
-          dominated = true;
-        }
-      }
-      if (!dominated) {
-        out += curr.keyTyped;
-        i += 1;
+  string out;
+  out.reserve(count * 2);
+
+  size_t i = 0;
+  while (i < count) {
+    const string curr = keyTyped(i);
+    bool dominated = false;
+    if (i + 1 < count) {
+      const bool sameKey = curr == keyTyped(i + 1);
+      const string_view currMode = mode(i);
+      const string_view nextMode = mode(i + 1);
+      if (sameKey && currMode == "no" && nextMode == "no" &&
+          endsWithOperatorEdit(out + curr)) {
+        out += curr;
+        i += 2;
+        dominated = true;
+      } else if (sameKey && currMode == "no" && nextMode != "no" &&
+                 i + 2 < count &&
+                 endsWithOperatorEdit(out + curr + keyTyped(i + 2))) {
+        out += curr;
+        i += 2;
+        dominated = true;
       }
     }
+    if (!dominated) {
+      out += curr;
+      i += 1;
+    }
+  }
 
-    return out;
-  });
+  return out;
 }
 
 pair<int, int> computeSearchRegion(

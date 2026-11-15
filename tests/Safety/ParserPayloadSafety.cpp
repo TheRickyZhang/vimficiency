@@ -1,11 +1,14 @@
-// Safety property: payload and sequence decoders reject arbitrary bytes cleanly
-// or return stable, bounded results.
+// Safety property: arbitrary line arrays cross the FFI payload layer intact or
+// are rejected cleanly, and the sequence parser returns stable, bounded results.
 
 #include <fuzztest/fuzztest.h>
 #include <gtest/gtest.h>
 
+#include "LuaExports/Api.h"
+
 import std.compat;
 import vf.Interpreter.SequenceParser;
+import vf.LuaExports.Common;
 import vf.LuaExports.Payload;
 
 using namespace std;
@@ -14,37 +17,22 @@ namespace payload = VF::LuaExports::payload;
 
 namespace {
 
-template <typename Fields>
-string encodeFields(const Fields& fields) {
-  string encoded;
-  for (const auto& field : fields) {
-    encoded += payload::encodeField(string_view(field.data(), field.size()));
-  }
-  return encoded;
-}
-
-void LengthPrefixedPayloadsRoundTrip(string encoded) {
-  auto decoded = payload::decodeLengthPrefixedStrings(encoded);
-  if (!decoded) return;
-
-  auto reparsed = payload::decodeLengthPrefixedStrings(encodeFields(*decoded));
-  ASSERT_TRUE(reparsed) << reparsed.error().message;
-  EXPECT_EQ(*reparsed, *decoded);
-}
-
-void LineArraysRoundTrip(string encoded) {
-  auto decoded = payload::decodeLineArray(encoded);
-  if (!decoded) return;
-
-  ASSERT_FALSE(decoded->empty());
-  for (const string& line : *decoded) {
-    EXPECT_FALSE(line.contains('\n'));
-    EXPECT_FALSE(line.contains('\0'));
+void LineArraysCopyOrReject(vector<string> lines) {
+  vector<VFByteSlice> slices;
+  bool valid = !lines.empty();
+  for (const string& line : lines) {
+    slices.push_back(VFByteSlice{.data = line.data(), .len = line.size()});
+    if (line.contains('\n') || line.contains('\0')) valid = false;
   }
 
-  auto reparsed = payload::decodeLineArray(encodeFields(*decoded));
-  ASSERT_TRUE(reparsed) << reparsed.error().message;
-  EXPECT_EQ(*reparsed, *decoded);
+  auto copied = payload::linesFromSlices(slices.data(), slices.size());
+  ASSERT_EQ(copied.has_value(), valid);
+  if (!copied) return;
+
+  ASSERT_EQ(copied->size(), lines.size());
+  for (size_t i = 0; i < lines.size(); ++i) {
+    EXPECT_EQ((*copied)[i], lines[i]);
+  }
 }
 
 void SequenceTokensAreStable(string sequence) {
@@ -66,70 +54,17 @@ void SequenceTokensAreStable(string sequence) {
 
 }  // namespace
 
-FUZZ_TEST(PayloadSafetyTest, LengthPrefixedPayloadsRoundTrip)
-    .WithDomains(fuzztest::String().WithMaxSize(512))
+FUZZ_TEST(PayloadSafetyTest, LineArraysCopyOrReject)
+    .WithDomains(fuzztest::VectorOf(fuzztest::String().WithMaxSize(64)).WithMaxSize(20))
     .WithSeeds({
-        "",
-
-        // Valid frames.
-        "0:",
-        "1:a",
-        "2:ab",
-        "3:a\nb",
-        "5:hello",
-        "1:a0:",
-        "0:1:a",
-        "3:a:b",
-        "1::",
-        string("3:a\0b", 5),
-
-        // Malformed frames.
-        "1:",
-        "1:ab",
-        "2:a",
-        "2:abc",
-        "0:x",
-        "999:x",
-        ":abc",
-        "x:abc",
-        "-1:a",
-        "+1:a",
-        "1",
-        "1;",
-        " 1:a",
-
-        // Overflow.
-        "18446744073709551615:x",
-        "18446744073709551616:x",
-        "999999999999999999999999999999:x",
-    });
-
-FUZZ_TEST(PayloadSafetyTest, LineArraysRoundTrip)
-    .WithDomains(fuzztest::String().WithMaxSize(512))
-    .WithSeeds({
-        "",
-
-        // Valid arrays.
-        "0:",
-        "1:a",
-        "3:abc",
-        "1:a0:",
-        "0:1:a",
-        "0:0:",
-
-        // Framing succeeds; line validation rejects contents.
-        "3:a\nb",
-        "1:\n",
-        string("3:a\0b", 5),
-        string("1:\0", 3),
-
-        // Malformed frames.
-        "1:",
-        "1:ab",
-        "2:a",
-        "0:x",
-        ":abc",
-        "999999999999999999999999999999:x",
+        vector<string>{},
+        vector<string>{""},
+        vector<string>{"a", ""},
+        vector<string>{"", "", ""},
+        vector<string>{"a\nb"},
+        vector<string>{"ok", "\n"},
+        vector<string>{string("a\0b", 3)},
+        vector<string>{"\xff\x1e\x1f"},
     });
 
 FUZZ_TEST(

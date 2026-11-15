@@ -1,18 +1,21 @@
 #include <gtest/gtest.h>
 
+#include "LuaExports/Api.h"
+
 import std.compat;
-import vf.LuaExports.Payload;
+import vf.LuaExports.Common;
 import vf.Types.Lines;
 
-namespace payload = VF::LuaExports::payload;
+// `linesFromSlices` is covered by PayloadSafetyTest.LineArraysCopyOrReject.
 
-TEST(LuaExportsPayloadTest, DecodeLineArrayPreservesTrailingEmptyLine) {
-  auto result = payload::decodeLineArray("1:a0:");
+TEST(LuaExportsPayloadTest, GuardedTurnsAnExceptionIntoAnErrorEnvelope) {
+  std::string storage;
+  const VFByteSlice slice = VF::LuaExports::guarded(
+      storage, []() -> VF::LuaExports::PackedResult { throw std::out_of_range("boom"); });
 
-  ASSERT_TRUE(result.has_value()) << result.error().message;
-  ASSERT_EQ(result->size(), 2u);
-  EXPECT_EQ((*result)[0], "a");
-  EXPECT_EQ((*result)[1], "");
+  // fixmap(1), fixstr(5) "error", fixstr(19) message.
+  EXPECT_EQ(std::string_view(slice.data, slice.len),
+            "\x81\xa5" "error" "\xb3" "C++ exception: boom");
 }
 
 // Regression: the analyze FFI boundary clamps captured cursors into a valid

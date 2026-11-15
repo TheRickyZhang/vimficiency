@@ -4,20 +4,19 @@ module;
 export module vf.LuaExports.Common;
 
 import std.compat;
+export import vf.LuaExports.Msgpack;
 import vf.Boundary.NavBoundary;
 import vf.Keyboard.Config;
 import vf.Types.Lines;
 
 export {
 
-// Shared by every LuaExports/*.cpp: error/result types, wire constants, the
-// FFI config globals (defined in lua_exports.cpp), and argument/result
-// marshaling. Wire encoders/decoders live in vf.LuaExports.Payload and
-// optimizer-facing logic in vf.LuaExports.Logic.
+// Shared by every LuaExports/*.cpp: error/result types, the FFI config globals
+// (defined in lua_exports.cpp), and argument/result marshaling. The msgpack
+// encoder lives in vf.LuaExports.Msgpack, shared payload shapes in
+// vf.LuaExports.Payload, and optimizer-facing logic in vf.LuaExports.Logic.
 namespace VF::LuaExports {
 
-inline constexpr char EVENT_FIELD_SEP = '\x1f';
-inline constexpr char EVENT_RECORD_SEP = '\x1e';
 inline constexpr int MANUAL_EVICT_NONE = 0;
 inline constexpr int MANUAL_EVICT_DRIFT = 1;
 inline constexpr int MANUAL_EVICT_IDLE = 2;
@@ -28,6 +27,8 @@ struct ExportError {
 
 template <typename T>
 using Expected = std::expected<T, ExportError>;
+
+using PackedResult = Expected<Packed>;
 
 enum DEFAULT_KEYBOARD {
   NONE,
@@ -53,12 +54,12 @@ inline Expected<std::string_view> requiredBytes(
   return data ? std::string_view(data, len) : std::string_view{};
 }
 
-// Boundary for a sliced buffer: `lastCol` is inclusive, so the exclusive end
-// is one past it on the last line.
-inline NavBoundary sliceBoundary(const Lines& lines, int firstCol, int lastCol,
-                                 bool hasLinesAbove, bool hasLinesBelow) {
-  return NavBoundary(lines, CursorPos(0, firstCol),
-                     CursorPos(lines.lastLine(), lastCol + 1),
+// Boundary for a sliced buffer. The slice is the whole edit region, so there is
+// no horizontal prefix or suffix; only the lines cut off above and below vary.
+inline NavBoundary sliceBoundary(const Lines& lines, bool hasLinesAbove, bool hasLinesBelow) {
+  const int lastLine = lines.lastLine();
+  return NavBoundary(lines, CursorPos(0, 0),
+                     CursorPos(lastLine, lines.getSize(lastLine)),
                      hasLinesAbove, hasLinesBelow);
 }
 
@@ -69,25 +70,50 @@ inline VFByteSlice byteSlice(const std::string& storage) {
   };
 }
 
-inline VFByteSlice storeBytes(std::string& storage, Expected<std::string> result) {
-  if (!result) {
-    storage = "ERROR: " + result.error().message;
-    return byteSlice(storage);
+inline std::string_view sliceView(VFByteSlice slice) {
+  return std::string_view(slice.data, slice.len);
+}
+
+// Every VFByteSlice return is a one-entry msgpack map: {value}, {error}, or
+// {pending}. Lua decoder: `decode` in ffi/core.lua.
+inline VFByteSlice storeBytes(std::string& storage, PackedResult result) {
+  MsgpackWriter w;
+  w.map(1);
+  if (result) {
+    w.key("value").value(*result);
+  } else {
+    w.key("error").str(result.error().message);
   }
-  storage = std::move(*result);
+  storage = w.take().bytes;
   return byteSlice(storage);
 }
 
-inline std::string packInts(int first, int second) {
-  return std::to_string(first) + std::string(1, EVENT_FIELD_SEP) + std::to_string(second);
+inline VFByteSlice storePending(std::string& storage) {
+  storage = MsgpackWriter().map(1).key("pending").boolean(true).take().bytes;
+  return byteSlice(storage);
 }
 
-inline std::string joinWithTrailingNewline(const std::vector<std::string>& items) {
-  std::ostringstream oss;
-  for (const auto& item : items) {
-    oss << item << "\n";
+// An exception unwinding out of an export into LuaJIT's C frames is undefined
+// behaviour, so every export body runs inside one of the two wrappers below.
+
+// For exports returning VFByteSlice: an escaping exception becomes an {error}
+// envelope, which Lua raises like any other C++ error.
+template <typename Body>
+VFByteSlice guarded(std::string& storage, Body body) noexcept {
+  try {
+    return storeBytes(storage, body());
+  } catch (const std::exception& e) {
+    return storeBytes(storage, unexpectedError(std::string("C++ exception: ") + e.what()));
+  } catch (...) {
+    return storeBytes(storage, unexpectedError("unknown C++ exception"));
   }
-  return oss.str();
+}
+
+// For exports with no error channel: `noexcept` turns an escaping exception
+// into std::terminate, which reports it and aborts.
+template <typename Body>
+auto noUnwind(Body body) noexcept {
+  return body();
 }
 
 }  // namespace VF::LuaExports

@@ -12,7 +12,15 @@ TEST(AsyncJobTest, ReadyPublishesTheState) {
   auto job = std::make_unique<AsyncJob<int>>(
       0, 0, [](int& value, const SearchControl&) { value = 42; });
   while (!job->ready()) std::this_thread::yield();
+  EXPECT_TRUE(job->error().empty());
   EXPECT_EQ(job->state(), 42);
+}
+
+TEST(AsyncJobTest, ThrowingRunBecomesReadyWithAnError) {
+  auto job = std::make_unique<AsyncJob<int>>(
+      0, 0, [](int&, const SearchControl&) { throw std::out_of_range("boom"); });
+  while (!job->ready()) std::this_thread::yield();
+  EXPECT_EQ(job->error(), "C++ exception: boom");
 }
 
 // Records, at destruction, whether the run body had finished with it.

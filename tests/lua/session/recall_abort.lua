@@ -1,6 +1,7 @@
 -- Recall records are per buffer, and an abort atom ends every active one in
--- its buffer while reseeding the predecessor snapshot from the post-abort state.
+-- its buffer while reseeding the predecessor mark from the post-abort state.
 
+local buffer_history = require("vimficiency.capture.buffer_history")
 local session_store = require("vimficiency.session.store")
 local h             = require("_helpers")
 
@@ -38,7 +39,7 @@ test("abort_recall: the next atom starts a record from the post-abort text", fun
   assert_true(rec ~= nil, "abort reseeds the snapshot, so the first atom after it spawns a record")
   rec = assert(rec)
   assert_eq(rec.buf, buf)
-  assert_eq(rec.start_state.lines[1], "after")
+  assert_eq(buffer_history.lines_at(buf, rec.start_seq), { "after" })
 
   session_store.remove(rec.id)
   pcall(vim.api.nvim_buf_delete, buf, { force = true })

@@ -149,6 +149,10 @@ local function reset_state()
   local atom_stream = package.loaded["vimficiency.capture.atom_stream"]
   if atom_stream then atom_stream.shutdown() end
 
+  -- Buffer attachments outlive module reload too.
+  local buffer_history = package.loaded["vimficiency.capture.buffer_history"]
+  if buffer_history then buffer_history.shutdown() end
+
   -- C++ config lives in the shared library, not package.loaded.
   local ffi_lib = package.loaded["vimficiency.ffi"]
   if ffi_lib and type(ffi_lib.reset_globals) == "function" then

@@ -4,7 +4,7 @@
 -- should proceed instead of hard-rejecting.
 
 local compute = require("vimficiency.session.compute")
-local ffi_lib = require("vimficiency.ffi")
+local ffi_optimizer = require("vimficiency.ffi.optimizer")
 local util    = require("vimficiency.util")
 local h       = require("_helpers")
 
@@ -87,14 +87,15 @@ test("compute_result_for_active: includes capture key debug", function()
 
   local result
   h.with_patch({
-    { ffi_lib, "analyze", function()
-      return {}, 9.0, ""
+    { ffi_optimizer, "analyze", function()
+      return {}, 9.0, "", {}
     end },
   }, function()
     local end_state = assert(compute.capture_end_state(active))
     result = assert(compute.compute_result_for_active(active, end_state))
   end)
 
+  assert_eq(result.user_cost, 9.0, "the analyze stub must be the one compute calls")
   assert_eq(result.user_seq, "cwW2<Esc>dl")
   assert_eq(vim.inspect(result.capture_debug.atom_keys), vim.inspect({ "cwW2<Esc>", "dl" }))
 
