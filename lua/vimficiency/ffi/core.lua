@@ -25,7 +25,7 @@ local api_def_text = read_ffi_api_def()
 ffi.cdef(api_def_text)
 
 ---@return string
-local function lib_filename()
+local function platform_lib_filename()
   local os_name = jit and jit.os or ""
   if os_name == "OSX" then
     return "libvimficiency.dylib"
@@ -36,7 +36,7 @@ local function lib_filename()
   end
 end
 
-M.lib_filename = lib_filename()
+M.lib_filename = platform_lib_filename()
 
 local function load_lib()
   local root = find_plugin_root()
@@ -139,7 +139,7 @@ end
 --- is still pending.
 ---@param slice VF.C.ByteSlice
 ---@param message string fully qualified, e.g. "vf.explore.State"
----@return table|nil
+---@return any
 function M.unwrap_proto(slice, message)
   local e = assert(pb.decode("vf.Envelope", ffi.string(slice.data, tonumber(slice.len))))
   if e.result == "error" then error(e.error, 0) end

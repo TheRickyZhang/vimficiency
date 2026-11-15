@@ -339,6 +339,11 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(abseil-cpp)
+if(APPLE)
+  # cctz sets _XOPEN_SOURCE, which makes the macOS SDK hide quick_exit while
+  # libstdc++'s <cstdlib> still expects it.
+  target_compile_definitions(time_zone PRIVATE _DARWIN_C_SOURCE)
+endif()
 
 set(protobuf_BUILD_PROTOC_BINARIES OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_LIBUPB OFF CACHE BOOL "" FORCE)
@@ -382,7 +387,8 @@ protobuf_generate(
     PROTOC_EXE ${protobuf_PROTOC_EXE}
 )
 target_include_directories(vimfy_proto PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/generated)
-target_link_libraries(vimfy_proto PUBLIC protobuf::libprotobuf-lite)
+# protobuf's headers include utf8_validity.h but link the target privately.
+target_link_libraries(vimfy_proto PUBLIC protobuf::libprotobuf-lite utf8_validity)
 
 # The LuaExports module interfaces plus the payload/logic code that tests
 # exercise without the FFI entry points. A separate target because a module

@@ -12,7 +12,7 @@ end
 
 -- Results are the vf.explore messages of src/LuaExports/proto/explore.proto.
 ---@param slice VF.C.ByteSlice
----@return table|nil
+---@return any
 local function unwrap(slice, message)
   drain_warnings()
   return core.unwrap_proto(slice, "vf.explore." .. message)

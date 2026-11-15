@@ -62,6 +62,7 @@ Lua (User concepts):
 - Never use `rm -rf build` unless something appears corrupted. The build directory contains downloaded libraries (googletest, etc.) that take time to re-fetch.
 - Do not use python or write to tmp for debugging! Always debug print in tests/Debug.
 - Generally, only run the corresponding test suite after making a logic change to ensure compatibility. Lua for lua, C++ for C++.
+- Before calling a change ready to push, run the CI lint jobs (`bench.yml`) for what you touched: `./scripts/lint-lua.sh` for Lua, `./scripts/lint-module-deps.sh` and `./scripts/lint-module-inline.sh` for C++ modules, `bash scripts/check-doc-titles.sh` for `doc-src/`.
 
 ## Design Constraints
 
