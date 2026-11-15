@@ -37,15 +37,20 @@ filename, and `play`/`explore`/`view` accept either via
 
 The result table plus `version` (`disk.FORMAT_VERSION`), pretty-printed with
 sorted keys: `lines`, `goal_lines`, `start_row/col`, `end_row/col`,
-`has_lines_above/below`, `prefix`, `suffix`, `diffs`, `user_seq`, `user_cost`,
-`optimal_results`, `key_count`, `finished_wall_epoch` (`os.time()` at finish;
+`has_lines_above/below`, `prefix`, `suffix`, `diffs`, `window_height`,
+`scroll_amount`, `user_seq`, `user_cost`, `optimal_results`, `key_count`, `finished_wall_epoch` (`os.time()` at finish;
 the file's only clock), and
 `kind` ∈ `{mark, watch, recall, suggest_idle, suggest_keys, suggest_cost}`.
 
 `disk.decode` rejects any `version` other than the current one, including
 unversioned files, and strips it before validating; there is no migration.
-Bump `FORMAT_VERSION` on any schema change. All fields except the debug-only
-`capture_debug` and `analyze_ms` are required.
+Bump `FORMAT_VERSION` on any change that old files cannot satisfy. All fields
+are required except the debug-only `capture_debug` and `analyze_ms`, and
+`optimizer_overrides` and `results_calculated`.
+
+Those last two, with the lines, positions, `has_lines_*`, window fields and
+`user_seq`, make a file a complete `VF.SearchRequest` for re-running analyze.
+They are optional only because files saved before 0.3.0 lack them.
 
 The persisted clock is wall time because `hrtime` values from another boot are
 not comparable; the workspace keeps its own `*_mono_ns` stamps on the record

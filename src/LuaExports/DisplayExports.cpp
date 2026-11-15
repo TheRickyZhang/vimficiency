@@ -43,14 +43,14 @@ VFByteSlice vf_sequence_display_lines(
     bool tokenize,
     bool sectionize) {
   static string result_storage;
-  return storeBytes(
-      result_storage,
-      requiredBytes(seq, seq_len, "seq")
-          .transform([&](string_view seqText) {
-            return packStrings(VF::SequenceDisplay::lines(
-                seqText,
-                {.tokenize = tokenize, .sectionize = sectionize}));
-          }));
+  return guarded(result_storage, [&] {
+    return requiredBytes(seq, seq_len, "seq")
+        .transform([&](string_view seqText) {
+          return packStrings(VF::SequenceDisplay::lines(
+              seqText,
+              {.tokenize = tokenize, .sectionize = sectionize}));
+        });
+  });
 }
 
 VFByteSlice vf_sequence_display_inline(
@@ -58,26 +58,26 @@ VFByteSlice vf_sequence_display_inline(
     size_t seq_len,
     bool tokenize) {
   static string result_storage;
-  return storeBytes(
-      result_storage,
-      requiredBytes(seq, seq_len, "seq")
-          .transform([&](string_view seqText) {
-            return packString(VF::SequenceDisplay::inlineText(
-                seqText,
-                {.tokenize = tokenize, .sectionize = false}));
-          }));
+  return guarded(result_storage, [&] {
+    return requiredBytes(seq, seq_len, "seq")
+        .transform([&](string_view seqText) {
+          return packString(VF::SequenceDisplay::inlineText(
+              seqText,
+              {.tokenize = tokenize, .sectionize = false}));
+        });
+  });
 }
 
 VFByteSlice vf_sequence_display_key_notation(
     const char* text,
     size_t text_len) {
   static string result_storage;
-  return storeBytes(
-      result_storage,
-      requiredBytes(text, text_len, "text")
-          .transform([](string_view textValue) {
-            return packString(VF::SequenceDisplay::displayKeyNotation(textValue));
-          }));
+  return guarded(result_storage, [&] {
+    return requiredBytes(text, text_len, "text")
+        .transform([](string_view textValue) {
+          return packString(VF::SequenceDisplay::displayKeyNotation(textValue));
+        });
+  });
 }
 
 VFByteSlice vf_sequence_display_typed_text(
@@ -85,14 +85,14 @@ VFByteSlice vf_sequence_display_typed_text(
     size_t text_len,
     bool key_notation) {
   static string result_storage;
-  return storeBytes(
-      result_storage,
-      requiredBytes(text, text_len, "text")
-          .transform([&](string_view textValue) {
-            return packString(key_notation
-                ? VF::SequenceDisplay::displayTypedText(textValue)
-                : VF::SequenceDisplay::displayLiteralTypedText(textValue));
-          }));
+  return guarded(result_storage, [&] {
+    return requiredBytes(text, text_len, "text")
+        .transform([&](string_view textValue) {
+          return packString(key_notation
+              ? VF::SequenceDisplay::displayTypedText(textValue)
+              : VF::SequenceDisplay::displayLiteralTypedText(textValue));
+        });
+  });
 }
 
 VFByteSlice vf_sequence_display_typed_chunks(
@@ -100,17 +100,17 @@ VFByteSlice vf_sequence_display_typed_chunks(
     size_t chunks_count,
     bool tokenize) {
   static string result_storage;
-  vector<VF::SequenceDisplay::TypedChunk> typed;
-  typed.reserve(chunks_count);
-  for (size_t i = 0; i < chunks_count; ++i) {
-    typed.push_back({
-        .kind = string(sliceView(chunks[i].kind)),
-        .text = string(sliceView(chunks[i].text)),
-    });
-  }
-  return storeBytes(
-      result_storage,
-      packString(VF::SequenceDisplay::typedChunksInline(typed, tokenize)));
+  return guarded(result_storage, [&] {
+    vector<VF::SequenceDisplay::TypedChunk> typed;
+    typed.reserve(chunks_count);
+    for (size_t i = 0; i < chunks_count; ++i) {
+      typed.push_back({
+          .kind = string(sliceView(chunks[i].kind)),
+          .text = string(sliceView(chunks[i].text)),
+      });
+    }
+    return packString(VF::SequenceDisplay::typedChunksInline(typed, tokenize));
+  });
 }
 
 VFByteSlice vf_format_result_position(
@@ -119,27 +119,27 @@ VFByteSlice vf_format_result_position(
     int end_row,
     int end_col) {
   static string result_storage;
-  return storeBytes(
-      result_storage,
-      packString(VF::SessionView::formatPosition(VF::SessionView::Result{
-          .startRow = start_row,
-          .startCol = start_col,
-          .endRow = end_row,
-          .endCol = end_col,
-      })));
+  return guarded(result_storage, [&] {
+    return packString(VF::SessionView::formatPosition(VF::SessionView::Result{
+        .startRow = start_row,
+        .startCol = start_col,
+        .endRow = end_row,
+        .endCol = end_col,
+    }));
+  });
 }
 
 VFByteSlice vf_format_result_kind_suffix(
     const char* kind,
     size_t kind_len) {
   static string result_storage;
-  return storeBytes(
-      result_storage,
-      requiredBytes(kind, kind_len, "kind")
-          .transform([](string_view kindText) {
-            return packString(VF::SessionView::formatKindSuffix(
-                VF::SessionView::Result{.kind = string(kindText)}));
-          }));
+  return guarded(result_storage, [&] {
+    return requiredBytes(kind, kind_len, "kind")
+        .transform([](string_view kindText) {
+          return packString(VF::SessionView::formatKindSuffix(
+              VF::SessionView::Result{.kind = string(kindText)}));
+        });
+  });
 }
 
 VFByteSlice vf_format_result_message(
@@ -149,15 +149,15 @@ VFByteSlice vf_format_result_message(
     bool tokenize,
     bool sectionize) {
   static string result_storage;
-  return storeBytes(
-      result_storage,
-      requiredBytes(title, title_len, "title")
-          .transform([&](string_view titleText) {
-            return packString(VF::SessionView::formatMessage(
-                titleText,
-                sessionResult(*result),
-                {.tokenize = tokenize, .sectionize = sectionize}));
-          }));
+  return guarded(result_storage, [&] {
+    return requiredBytes(title, title_len, "title")
+        .transform([&](string_view titleText) {
+          return packString(VF::SessionView::formatMessage(
+              titleText,
+              sessionResult(*result),
+              {.tokenize = tokenize, .sectionize = sectionize}));
+        });
+  });
 }
 
 }

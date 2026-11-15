@@ -132,6 +132,8 @@ end
 ---@field window_height integer        # Captured window height for page/scroll semantics
 ---@field scroll_amount integer        # Captured 'scroll' option for Ctrl-D/U semantics
 ---@field user_seq string              # What the user typed (keytrans string), mouse events stripped
+---@field optimizer_overrides string|nil # Encoded overrides the analyze ran with; with results_calculated, completes the replayable request. Absent on files saved before 0.3.0
+---@field results_calculated integer|nil # Result count the analyze was asked for
 ---@field user_cost number             # Effort cost of user's sequence
 ---@field optimal_results VF.Optimizer.Result[] # Top N results from optimizer (seq + cost)
 ---@field capture_debug table|nil      # Per-atom key boundaries behind user_seq, persisted only for debugging

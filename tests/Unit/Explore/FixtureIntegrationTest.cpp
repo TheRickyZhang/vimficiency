@@ -24,7 +24,7 @@ namespace {
 Explore::View viewFromFixture(const ExploreFixtures::Fixture& f,
                               NavContext navContext, Config config) {
   NavBoundary boundary = VF::LuaExports::sliceBoundary(
-      f.lines, 0, f.lines.back().size(), f.hasLinesAbove, f.hasLinesBelow);
+      f.lines, f.hasLinesAbove, f.hasLinesBelow);
   return Explore::View(f.lines, f.startPos, f.goalLines, f.endPos,
                        std::move(boundary), navContext, config,
                        /*userSequence=*/"");

@@ -71,9 +71,11 @@ end
 ---@return VF.Explore.ApplyResult
 function M.explore_accept_snapshot(view_id, lines, new_row, new_col, raw_keys, insert_mode)
   local slices, count = core.byte_slices(lines)
-  return unwrap(lib.vf_explore_accept_snapshot(
+  local slice = lib.vf_explore_accept_snapshot(
     view_id, slices, count, new_row, new_col,
-    raw_keys, #raw_keys, insert_mode))
+    raw_keys, #raw_keys, insert_mode)
+  core.keep_alive(lines, slices)
+  return unwrap(slice)
 end
 
 ---@return VF.Explore.ApplyResult

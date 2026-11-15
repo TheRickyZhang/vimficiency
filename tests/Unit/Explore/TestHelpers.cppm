@@ -30,7 +30,7 @@ protected:
   Explore::View makeView(Lines initial, CursorPos initialPos, Lines goal,
                          CursorPos goalPos) {
     NavBoundary boundary = VF::LuaExports::sliceBoundary(
-        initial, 0, initial.back().size(),
+        initial,
         /*hasLinesAbove=*/false,
         /*hasLinesBelow=*/false);
     return Explore::View(std::move(initial), initialPos, std::move(goal),

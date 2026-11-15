@@ -93,6 +93,8 @@ local REQUIRED_FIELDS = {
 local OPTIONAL_FIELDS = {
   { key = "capture_debug", kind = "table" },
   { key = "analyze_ms",    kind = "number" },
+  { key = "optimizer_overrides", kind = "string" },
+  { key = "results_calculated",  kind = "number" },
 }
 
 ---@param data any

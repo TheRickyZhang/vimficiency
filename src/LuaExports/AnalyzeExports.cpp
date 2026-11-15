@@ -114,7 +114,7 @@ using AnalyzeJob = AsyncJob<AnalyzeState>;
 
 JobRegistry<AnalyzeJob> g_analyze_jobs;
 
-VF::LuaExports::Expected<Packed> startAsyncImpl(
+PackedResult startAsyncImpl(
     const VFSearchRequest* request, int results_calculated, int deadline_ms) {
   CHECK(results_calculated >= 0, "results_calculated must be non-negative");
   auto inputsRes = logic::decodeSearchRequest(request);
@@ -136,10 +136,12 @@ extern "C" {
 
 VFByteSlice vf_analyze(const VFSearchRequest* request, int results_calculated) {
   static string storage;
-  CHECK(results_calculated >= 0, "results_calculated must be non-negative");
-  auto inputsRes = logic::decodeSearchRequest(request);
-  if (!inputsRes) return storeBytes(storage, unexpected(inputsRes.error()));
-  return storeBytes(storage, runAnalyze(*inputsRes, results_calculated, g_config_internal, SearchControl::NEVER_STOP));
+  return guarded(storage, [&]() -> PackedResult {
+    CHECK(results_calculated >= 0, "results_calculated must be non-negative");
+    auto inputsRes = logic::decodeSearchRequest(request);
+    if (!inputsRes) return unexpected(inputsRes.error());
+    return runAnalyze(*inputsRes, results_calculated, g_config_internal, SearchControl::NEVER_STOP);
+  });
 }
 
 // Kicks off the analyze search on a worker thread and returns a job id
@@ -147,17 +149,21 @@ VFByteSlice vf_analyze(const VFSearchRequest* request, int results_calculated) {
 VFByteSlice vf_analyze_start_async(
     const VFSearchRequest* request, int results_calculated, int deadline_ms) {
   static string storage;
-  return storeBytes(storage, startAsyncImpl(request, results_calculated, deadline_ms));
+  return guarded(storage, [&] {
+    return startAsyncImpl(request, results_calculated, deadline_ms);
+  });
 }
 
-// Returns pending while the worker runs; once done, returns the same result
-// vf_analyze would produce and frees the job.
+// Returns pending while the worker runs; once done, frees the job and returns
+// the same result vf_analyze would produce, or the worker's failure.
 VFByteSlice vf_analyze_poll(int job_id) {
   static string storage;
-  AnalyzeJob& job = g_analyze_jobs.get(job_id);
-  if (!job.ready()) return storePending(storage);
-  std::unique_ptr<AnalyzeJob> owned = g_analyze_jobs.take(job_id);
-  return storeBytes(storage, std::move(owned->state().result));
+  if (!g_analyze_jobs.get(job_id).ready()) return storePending(storage);
+  return guarded(storage, [&]() -> PackedResult {
+    std::unique_ptr<AnalyzeJob> owned = g_analyze_jobs.take(job_id);
+    if (!owned->error().empty()) return unexpectedError(owned->error());
+    return std::move(owned->state().result);
+  });
 }
 
 // Signals cancellation and frees the job; dropping it joins the worker on this
@@ -165,10 +171,12 @@ VFByteSlice vf_analyze_poll(int job_id) {
 // polled between composition setup phases and per pop in every search loop,
 // so the join is bounded by one diff's precompute or one pop expansion.
 int vf_analyze_cancel(int job_id) {
-  std::unique_ptr<AnalyzeJob> owned = g_analyze_jobs.take(job_id);
-  if (!owned) return 0;
-  owned->cancel();
-  return 1;
+  return noUnwind([&] {
+    std::unique_ptr<AnalyzeJob> owned = g_analyze_jobs.take(job_id);
+    if (!owned) return 0;
+    owned->cancel();
+    return 1;
+  });
 }
 
 }

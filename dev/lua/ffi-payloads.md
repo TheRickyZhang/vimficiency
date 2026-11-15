@@ -2,8 +2,8 @@
 
 Code of record: `src/LuaExports/Api.def` (input structs), `src/LuaExports/Msgpack.cppm`
 (`MsgpackWriter`, `Packed`), `src/LuaExports/Common.cppm` (`storeBytes`,
-`storePending`), `lua/vimficiency/ffi/core.lua` (`unwrap`, `decode`,
-`byte_slices`, `set_slice`).
+`storePending`, `guarded`, `noUnwind`), `lua/vimficiency/ffi/core.lua` (`unwrap`,
+`decode`, `byte_slices`, `set_slice`, `keep_alive`).
 
 **Rule.** Lua to C++ is typed C structs. C++ to Lua is msgpack. Neither side
 has a hand-written parser, and none should be added.
@@ -22,13 +22,23 @@ in C++. The ABI hash covers the layout, so a stale library fails at load.
 
 ```lua
 local slices, count = core.byte_slices(lines)
-return core.unwrap(lib.vf_explore_accept_snapshot(view_id, slices, count, ...))
+local slice = lib.vf_explore_accept_snapshot(view_id, slices, count, ...)
+core.keep_alive(lines, slices)
+return core.unwrap(slice)
 ```
 
-**Lifetime.** cdata holds raw pointers and anchors nothing. The source strings
-(or the table holding them) and the cdata arrays must stay reachable until the
-call returns, so build them in the wrapper that makes the call. C++ copies
-whatever it keeps (`linesFromSlices`, `decodeSearchRequest`).
+**Lifetime.** cdata holds raw pointers and anchors nothing: not the Lua strings
+a slice points into, and not a cdata array stored in a struct field. A local
+that is dead after its last use, or a frame dropped by a tail call, can be
+collected while C++ still reads it.
+
+Build the cdata in the wrapper that makes the call, keep the FFI call out of
+tail position, and pass the source tables and cdata arrays to `core.keep_alive`
+after it. C++ copies whatever it keeps (`linesFromSlices`,
+`decodeSearchRequest`).
+
+A search request carries no boundary columns. The slice is the whole edit
+region, so C++ derives the boundary from the lines (`sliceBoundary`).
 
 `optimizer_overrides` is the one text input: `scope:key=value` lines parsed by
 `OptimizerParamOverrides::parse` in the core. Its keys are identifiers and its
@@ -47,6 +57,14 @@ Every export returning `VFByteSlice` returns a msgpack map with exactly one key:
 `core.unwrap(slice)` raises the error and returns the value, or nil while
 pending. `core.decode(slice)` returns `value, err` for the callers that report
 an error instead of raising (the tokenizers).
+
+**Exceptions.** An exception unwinding into LuaJIT's C frames is undefined
+behaviour, so every export body runs inside `guarded` or `noUnwind`
+(`Common.cppm`). `guarded` turns an escaping exception into an `{error}`
+envelope; `noUnwind` is for exports with no error channel and terminates.
+
+A worker thread's exception is caught in `AsyncJob`, stored as `error()`, and
+returned by the `*_poll` export as an `{error}` envelope.
 
 `storeBytes` takes `Expected<Packed>`, not a string. `Packed` only comes out of
 `MsgpackWriter::take()` or the `pack*` helpers, so raw text cannot be returned

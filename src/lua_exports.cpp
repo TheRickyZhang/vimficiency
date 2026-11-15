@@ -129,11 +129,13 @@ extern const int VF_HAND_COUNT = HAND_COUNT;
 extern const int VF_COUNT_CLASS_COUNT = static_cast<int>(CountClassCOUNT);
 
 VFConfig *vf_get_config() { return &g_config_ffi; }
-void vf_apply_config() { sync_config(); }
+void vf_apply_config() { noUnwind([] { sync_config(); }); }
 void vf_reset_config() {
-  g_config_ffi = defaultConfigFfi();
-  VimOptions::shiftwidthRef() = 8;
-  sync_config();
+  noUnwind([] {
+    g_config_ffi = defaultConfigFfi();
+    VimOptions::shiftwidthRef() = 8;
+    sync_config();
+  });
 }
 
 const char *vf_key_name(int index) {
@@ -158,7 +160,7 @@ const char *vf_count_class_name(int index) {
 
 VFByteSlice vf_get_warnings() {
   static std::string warning_storage;
-  return storeBytes(warning_storage, packString(consume_warning_output()));
+  return guarded(warning_storage, [] { return packString(consume_warning_output()); });
 }
 
 const char *vf_version_string() { return VIMF_VERSION; }
@@ -167,6 +169,7 @@ const char *vf_abi_hash() { return VF_ABI_HASH; }
 
 VFByteSlice vf_debug_config() {
   static std::string debug_storage;
+  return guarded(debug_storage, [] {
   std::ostringstream oss;
 
   oss << "=== VFConfig Debug ===\n";
@@ -194,7 +197,8 @@ VFByteSlice vf_debug_config() {
   show_key(Key::Key_J, "J");
   show_key(Key::Key_K, "K");
 
-  return storeBytes(debug_storage, packString(oss.str()));
+  return packString(oss.str());
+  });
 }
 
 }

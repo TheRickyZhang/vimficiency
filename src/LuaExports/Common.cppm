@@ -28,6 +28,8 @@ struct ExportError {
 template <typename T>
 using Expected = std::expected<T, ExportError>;
 
+using PackedResult = Expected<Packed>;
+
 enum DEFAULT_KEYBOARD {
   NONE,
   UNIFORM,
@@ -52,12 +54,12 @@ inline Expected<std::string_view> requiredBytes(
   return data ? std::string_view(data, len) : std::string_view{};
 }
 
-// Boundary for a sliced buffer: `lastCol` is inclusive, so the exclusive end
-// is one past it on the last line.
-inline NavBoundary sliceBoundary(const Lines& lines, int firstCol, int lastCol,
-                                 bool hasLinesAbove, bool hasLinesBelow) {
-  return NavBoundary(lines, CursorPos(0, firstCol),
-                     CursorPos(lines.lastLine(), lastCol + 1),
+// Boundary for a sliced buffer. The slice is the whole edit region, so there is
+// no horizontal prefix or suffix; only the lines cut off above and below vary.
+inline NavBoundary sliceBoundary(const Lines& lines, bool hasLinesAbove, bool hasLinesBelow) {
+  const int lastLine = lines.lastLine();
+  return NavBoundary(lines, CursorPos(0, 0),
+                     CursorPos(lastLine, lines.getSize(lastLine)),
                      hasLinesAbove, hasLinesBelow);
 }
 
@@ -74,7 +76,7 @@ inline std::string_view sliceView(VFByteSlice slice) {
 
 // Every VFByteSlice return is a one-entry msgpack map: {value}, {error}, or
 // {pending}. Lua decoder: `decode` in ffi/core.lua.
-inline VFByteSlice storeBytes(std::string& storage, Expected<Packed> result) {
+inline VFByteSlice storeBytes(std::string& storage, PackedResult result) {
   MsgpackWriter w;
   w.map(1);
   if (result) {
@@ -89,6 +91,29 @@ inline VFByteSlice storeBytes(std::string& storage, Expected<Packed> result) {
 inline VFByteSlice storePending(std::string& storage) {
   storage = MsgpackWriter().map(1).key("pending").boolean(true).take().bytes;
   return byteSlice(storage);
+}
+
+// An exception unwinding out of an export into LuaJIT's C frames is undefined
+// behaviour, so every export body runs inside one of the two wrappers below.
+
+// For exports returning VFByteSlice: an escaping exception becomes an {error}
+// envelope, which Lua raises like any other C++ error.
+template <typename Body>
+VFByteSlice guarded(std::string& storage, Body body) noexcept {
+  try {
+    return storeBytes(storage, body());
+  } catch (const std::exception& e) {
+    return storeBytes(storage, unexpectedError(std::string("C++ exception: ") + e.what()));
+  } catch (...) {
+    return storeBytes(storage, unexpectedError("unknown C++ exception"));
+  }
+}
+
+// For exports with no error channel: `noexcept` turns an escaping exception
+// into std::terminate, which reports it and aborts.
+template <typename Body>
+auto noUnwind(Body body) noexcept {
+  return body();
 }
 
 }  // namespace VF::LuaExports

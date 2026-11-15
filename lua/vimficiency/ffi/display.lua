@@ -42,12 +42,14 @@ end
 ---@return string
 function M.sequence_display_typed_chunks(chunks, tokenize)
   local count = #chunks
-  local typed = TypedChunks(count)
+  local typed = TypedChunks(count) --[[@as VF.C.TypedChunk[] ]]
   for i = 1, count do
     core.set_slice(typed[i - 1].kind, chunks[i].kind)
     core.set_slice(typed[i - 1].text, chunks[i].text)
   end
-  return core.unwrap(lib.vf_sequence_display_typed_chunks(typed, count, tokenize))
+  local slice = lib.vf_sequence_display_typed_chunks(typed, count, tokenize)
+  core.keep_alive(chunks, typed)
+  return core.unwrap(slice)
 end
 
 ---@param result VF.Session.Result
@@ -72,14 +74,14 @@ end
 function M.format_result_message(title, result, tokenize, sectionize)
   local lines, lines_count = core.byte_slices(result.lines)
   local optimal_count = #result.optimal_results
-  local optimal_results = OptimizerResults(optimal_count)
+  local optimal_results = OptimizerResults(optimal_count) --[[@as VF.C.OptimizerResult[] ]]
   for i = 1, optimal_count do
     local rec = result.optimal_results[i]
     core.set_slice(optimal_results[i - 1].seq, rec.seq)
     optimal_results[i - 1].cost = rec.cost
   end
 
-  local c_result = SessionResult()
+  local c_result = SessionResult() --[[@as VF.C.SessionResult]]
   c_result.lines = lines
   c_result.lines_count = lines_count
   c_result.start_row = result.start_row
@@ -92,8 +94,10 @@ function M.format_result_message(title, result, tokenize, sectionize)
   c_result.optimal_results = optimal_results
   c_result.optimal_results_count = optimal_count
 
-  return core.unwrap(lib.vf_format_result_message(
-    title, #title, c_result, tokenize, sectionize))
+  local slice = lib.vf_format_result_message(
+    title, #title, c_result, tokenize, sectionize)
+  core.keep_alive(result, lines, optimal_results)
+  return core.unwrap(slice)
 end
 
 return M

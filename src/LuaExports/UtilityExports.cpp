@@ -47,49 +47,44 @@ extern "C" {
 
 VFByteSlice vf_tokenize_movements(const char *seq, size_t seq_len) {
   static string result_storage;
-  return storeBytes(result_storage,
-      requiredBytes(seq, seq_len, "seq")
-          .and_then([](string_view seqText) -> Expected<Packed> {
-            return parseMovements(seqText)
-          .transform([](const vector<ParsedMovement>& motions) {
-            // All motion-parser output is TokenKind::Movement by construction.
-            MsgpackWriter w;
-            w.array(motions.size());
-            for (const auto& motion : motions) {
-              ostringstream oss;
-              oss << motion;
-              writeToken(w, TokenKind::Movement, oss.str());
-            }
-            return w.take();
-          })
-          .transform_error([](const MovementParseError& error) {
-            return ExportError{formatMovementParseError(error)};
-          });
-          }));
+  return guarded(result_storage, [&]() -> PackedResult {
+    auto seqText = requiredBytes(seq, seq_len, "seq");
+    if (!seqText) return unexpected(seqText.error());
+    auto motions = parseMovements(*seqText);
+    if (!motions) return unexpectedError(formatMovementParseError(motions.error()));
+
+    // All motion-parser output is TokenKind::Movement by construction.
+    MsgpackWriter w;
+    w.array(motions->size());
+    for (const auto& motion : *motions) {
+      ostringstream oss;
+      oss << motion;
+      writeToken(w, TokenKind::Movement, oss.str());
+    }
+    return w.take();
+  });
 }
 
 VFByteSlice vf_tokenize_sequence(const char *seq, size_t seq_len) {
   static string result_storage;
-  return storeBytes(result_storage,
-      requiredBytes(seq, seq_len, "seq")
-          .and_then([](string_view seqText) {
-            return parseSequence(seqText)
-          .transform([](const vector<TaggedToken>& tokens) {
-            MsgpackWriter w;
-            w.array(tokens.size());
-            for (const auto& tok : tokens) writeToken(w, tok.kind, tok.token);
-            return w.take();
-          })
-          .transform_error([](const SequenceParseError& error) {
-            return ExportError{formatSequenceParseError(error)};
-          });
-          }));
+  return guarded(result_storage, [&]() -> PackedResult {
+    auto seqText = requiredBytes(seq, seq_len, "seq");
+    if (!seqText) return unexpected(seqText.error());
+    auto tokens = parseSequence(*seqText);
+    if (!tokens) return unexpectedError(formatSequenceParseError(tokens.error()));
+
+    MsgpackWriter w;
+    w.array(tokens->size());
+    for (const auto& tok : *tokens) writeToken(w, tok.kind, tok.token);
+    return w.take();
+  });
 }
 
 VFByteSlice vf_build_sequence(const VFKeyEvent* events, size_t events_count) {
   static string result_storage;
-  return storeBytes(result_storage,
-      packString(logic::buildKeySequence(events, events_count)));
+  return guarded(result_storage, [&] {
+    return packString(logic::buildKeySequence(events, events_count));
+  });
 }
 
 VFByteSlice vf_compute_search_region(
@@ -101,18 +96,20 @@ VFByteSlice vf_compute_search_region(
     int end_row,
     int padding) {
   static string result_storage;
-  auto startLines = payload::linesFromSlices(start_lines, start_lines_count);
-  if (!startLines) return storeBytes(result_storage, unexpected(startLines.error()));
-  auto endLines = payload::linesFromSlices(end_lines, end_lines_count);
-  if (!endLines) return storeBytes(result_storage, unexpected(endLines.error()));
+  return guarded(result_storage, [&]() -> PackedResult {
+    auto startLines = payload::linesFromSlices(start_lines, start_lines_count);
+    if (!startLines) return unexpected(startLines.error());
+    auto endLines = payload::linesFromSlices(end_lines, end_lines_count);
+    if (!endLines) return unexpected(endLines.error());
 
-  const auto [regionStart, regionEnd] = logic::computeSearchRegion(
-      start_row, end_row, *startLines, *endLines, padding);
-  return storeBytes(result_storage, MsgpackWriter()
-      .map(2)
-      .key("region_start").integer(regionStart)
-      .key("region_end").integer(regionEnd)
-      .take());
+    const auto [regionStart, regionEnd] = logic::computeSearchRegion(
+        start_row, end_row, *startLines, *endLines, padding);
+    return MsgpackWriter()
+        .map(2)
+        .key("region_start").integer(regionStart)
+        .key("region_end").integer(regionEnd)
+        .take();
+  });
 }
 
 int vf_manual_evict_reason(
@@ -123,23 +120,25 @@ int vf_manual_evict_reason(
     int64_t now_ns,
     int max_search_lines,
     int manual_idle_timeout_seconds) {
-  CHECK(max_search_lines >= 0, "max_search_lines must be non-negative");
-  CHECK(manual_idle_timeout_seconds >= 0, "manual_idle_timeout_seconds must be non-negative");
-  return logic::manualEvictReason(
-      start_row,
-      cursor_row,
-      last_key_time_ns,
-      has_last_key,
-      now_ns,
-      max_search_lines,
-      manual_idle_timeout_seconds);
+  return noUnwind([&] {
+    CHECK(max_search_lines >= 0, "max_search_lines must be non-negative");
+    CHECK(manual_idle_timeout_seconds >= 0, "manual_idle_timeout_seconds must be non-negative");
+    return logic::manualEvictReason(
+        start_row,
+        cursor_row,
+        last_key_time_ns,
+        has_last_key,
+        now_ns,
+        max_search_lines,
+        manual_idle_timeout_seconds);
+  });
 }
 
 // Lua settings_schema consumes these defaults without mirroring C++ values.
 // Packs `{scope = {key = value}}` with each value in its native type.
 VFByteSlice vf_get_optimizer_defaults() {
   static string cached;
-  if (cached.empty()) {
+  if (cached.empty()) guarded(cached, [] {
     MsgpackWriter w;
     auto emit = [&](string_view key, auto v) {
       w.key(key);
@@ -159,8 +158,8 @@ VFByteSlice vf_get_optimizer_defaults() {
 #undef VF_EMIT_SCOPE
 #undef VF_EMIT_FIELD
 #undef VF_COUNT_FIELD
-    storeBytes(cached, w.take());
-  }
+    return w.take();
+  });
   return byteSlice(cached);
 }
 

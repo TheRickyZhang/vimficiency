@@ -120,10 +120,13 @@ function M.unwrap(slice)
   return e.value
 end
 
--- The cdata built by `set_slice` and `byte_slices` holds raw pointers and does
--- not anchor the Lua strings it points into. The source strings (or the table
--- holding them) and the cdata itself must stay reachable until the FFI call
--- returns.
+-- The cdata built by `set_slice` and `byte_slices` holds raw pointers and
+-- anchors neither the Lua strings it points into nor any cdata array stored in
+-- a struct field. Pass both to `keep_alive` after the FFI call: a local that is
+-- dead after its last use (or a frame dropped by a tail call) is collectable
+-- while C++ still reads it.
+
+function M.keep_alive(...) end
 
 ---@param slice VF.C.ByteSlice
 ---@param text string
@@ -148,8 +151,7 @@ end
 
 local VFSearchRequest = ffi.typeof("VFSearchRequest")
 
---- Fills a `VFSearchRequest` from `req` and passes it to `call`. The slice
---- arrays live in this frame, and their strings in `req`, until `call` returns.
+--- Fills a `VFSearchRequest` from `req` and passes it to `call`.
 ---@generic T
 ---@param req VF.SearchRequest
 ---@param call fun(request: VF.C.SearchRequest): T
@@ -166,8 +168,6 @@ function M.with_search_request(req, call)
   request.start_col = req.start_col
   request.end_row = req.end_row
   request.end_col = req.end_col
-  request.boundary_first_col = req.boundary_first_col
-  request.boundary_last_col = req.boundary_last_col
   request.has_lines_above = req.has_lines_above
   request.has_lines_below = req.has_lines_below
   request.window_height = req.window_height
@@ -176,7 +176,9 @@ function M.with_search_request(req, call)
   request.user_seq_len = #req.user_seq
   request.optimizer_overrides = req.optimizer_overrides
   request.optimizer_overrides_len = #req.optimizer_overrides
-  return call(request)
+  local result = call(request)
+  M.keep_alive(req, initial_lines, goal_lines)
+  return result
 end
 
 function M.version_string()

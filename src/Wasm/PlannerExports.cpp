@@ -102,9 +102,9 @@ char* error(string_view message) {
   return j.release();
 }
 
-// KeyedSequence prices typed text with CHAR_TO_KEYS.at(), which throws on bytes
-// without a key; the module is built without exception catching. planner.ts
-// normalizes to the same set first so offsets match; this guards other callers.
+// A byte without a key is priced as zero keys, which would make the widgets'
+// costs misleading. planner.ts normalizes to the same set first so offsets
+// match; this guards other callers.
 string sanitize(const char* s) {
   string out(s ? s : "");
   for (char& c : out)

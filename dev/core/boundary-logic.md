@@ -151,8 +151,8 @@ and horizontally (`leftColOffset`/`rightColOffset` = `prefix_.size()`/`suffix_.s
 These live at different levels:
 
 - **Whole-buffer (session) level**: the boundary handed to the top-level
-  `analyze`/composition covers the entire slice (`boundary_first_col = 0`,
-  `boundary_last_col = last`), so **horizontal prefix/suffix are always empty** —
+  `analyze`/composition covers the entire slice (`sliceBoundary` in
+  `LuaExports/Common.cppm`), so **horizontal prefix/suffix are always empty** —
   the edit region *is* the slice. Only `hasLinesAbove`/`Below` vary.
 - **Per-planned-edit level**: inside `CompositionOptimizer`, each diff's
   `TransformBoundary` carries the real same-line `prefix_`/`suffix_` bordering

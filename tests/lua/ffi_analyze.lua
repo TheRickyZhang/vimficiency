@@ -18,8 +18,7 @@ local function find_result_ending_with(results, suffix)
   return nil
 end
 
--- Cursor at (0,0) in a 40-line window with a zero-width boundary unless
--- `overrides` says otherwise.
+-- Cursor at (0,0) in a 40-line window unless `overrides` says otherwise.
 ---@param initial_lines string[]
 ---@param goal_lines string[]
 ---@param overrides table
@@ -31,7 +30,6 @@ local function request(initial_lines, goal_lines, overrides)
     goal_lines = goal_lines,
     start_row = 0, start_col = 0,
     end_row = 0, end_col = 0,
-    boundary_first_col = 0, boundary_last_col = 0,
     has_lines_above = false, has_lines_below = false,
     window_height = 40, scroll_amount = 20,
     user_seq = "",
@@ -71,7 +69,6 @@ end)
 test("ffi.analyze: identical buffers plan no diff regions", function()
   local line = "one two three"
   local _, _, _, diffs = ffi_lib.analyze(request({ line }, { line }, {
-    boundary_last_col = #line - 1,
     end_col = 4,
     user_seq = "w",
   }), 5)
@@ -87,7 +84,6 @@ test("ffi.configure: count penalty overrides affect analyze costs", function()
     local line = "one two three four five six"
     local function analyze()
       return ffi_lib.analyze(request({ line }, { line }, {
-        boundary_last_col = #line - 1,
         end_col = 19,
       }), 20)
     end
@@ -181,7 +177,6 @@ test("ffi.analyze_start_async: worker result matches sync analyze", function()
   local initial_lines = { "for(int i = 2; i < n; i++) {" }
   local goal_lines    = { "for(int i = 3; i < n; i++) {" }
   local req = request(initial_lines, goal_lines, {
-    boundary_last_col = #initial_lines[1] - 1,
     start_col = 11,
     end_col = 11,
     user_seq = "f2r3",
@@ -232,6 +227,20 @@ test("ffi.analyze: preserves trailing empty physical lines", function()
 
   assert_true(type(results) == "table", "results should parse")
   assert_true(user_cost > 0, "user cost should include j")
+end)
+
+test("ffi.analyze: typed non-ASCII text is analyzed, not rejected", function()
+  -- `é` is two bytes with no physical key; both must come back in the sequence.
+  local results = ffi_lib.analyze(request({ "" }, { "é" }, {
+    end_col = 1,
+    user_seq = "ié<Esc>",
+  }), 5)
+
+  assert_true(#results > 0, "inserting non-ASCII text must produce a result")
+  for _, result in ipairs(results) do
+    assert_true(result.seq:find("é", 1, true) ~= nil,
+      "typed bytes must cross intact; got " .. vim.inspect(result.seq))
+  end
 end)
 
 test("ffi.analyze: rejects empty line arrays", function()

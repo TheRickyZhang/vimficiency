@@ -160,9 +160,6 @@ local function build_analyze_input(active, end_state)
   local keyseq_raw = table.concat(raw_parts)
   local keyseq_str = apply_motion_conversions(keyseq_raw)
 
-  local boundary_last_col = #initial_slice[#initial_slice] - 1
-  if boundary_last_col < 0 then boundary_last_col = 0 end
-
   ---@type VF.SearchRequest
   local request = {
     initial_lines = initial_slice,
@@ -171,8 +168,6 @@ local function build_analyze_input(active, end_state)
     start_col = start_state.col,
     end_row = end_state.row - start_search,
     end_col = end_state.col,
-    boundary_first_col = 0,
-    boundary_last_col = boundary_last_col,
     has_lines_above = start_search > 0,
     has_lines_below = end_search < math.max(#initial_lines, #goal_lines) - 1,
     window_height = start_state.window_height,
@@ -184,6 +179,7 @@ local function build_analyze_input(active, end_state)
   return {
     active = active,
     request = request,
+    results_calculated = config.RESULTS_CALCULATED,
     atom_seq = atom_seq,
   }
 end
@@ -232,15 +228,17 @@ local function build_result(input, analyze, analyze_ms)
     has_lines_above = request.has_lines_above,
     has_lines_below = request.has_lines_below,
     -- Reserved boundary context. At the whole-buffer level the slice IS the
-    -- edit region (boundary_first_col=0, boundary_last_col=last), so horizontal
-    -- prefix/suffix are always empty; nonempty values only arise per planned
-    -- edit inside CompositionOptimizer. Views render them faded when present.
+    -- edit region (C++ `sliceBoundary`), so horizontal prefix/suffix are always
+    -- empty; nonempty values only arise per planned edit inside
+    -- CompositionOptimizer. Views render them faded when present.
     prefix = "",
     suffix = "",
     diffs = diffs,
     window_height = request.window_height,
     scroll_amount = request.scroll_amount,
     user_seq = request.user_seq,
+    optimizer_overrides = request.optimizer_overrides,
+    results_calculated = input.results_calculated,
     user_cost = analyze.user_cost,
     optimal_results = optimal_results,
     capture_debug = build_capture_debug(input.atom_seq),
@@ -263,7 +261,7 @@ function M.compute_result_for_active(active, end_state)
   -- Timestamp and call analyze()
   local analyze_t0 = vim.uv.hrtime()
   local results, user_cost, dbg, diffs =
-    ffi_optimizer.analyze(input.request, config.RESULTS_CALCULATED)
+    ffi_optimizer.analyze(input.request, input.results_calculated)
   local analyze_ms = (vim.uv.hrtime() - analyze_t0) / 1e6
 
   -- Save to corresponding file name, preserve cost, results, and debug info
@@ -286,7 +284,7 @@ function M.compute_result_for_active_async(active, end_state, deadline_ms, on_do
 
   local analyze_t0 = vim.uv.hrtime()
   local job_id = ffi_optimizer.analyze_start_async(
-    input.request, config.RESULTS_CALCULATED, deadline_ms)
+    input.request, input.results_calculated, deadline_ms)
 
   return poller.start(
     function()

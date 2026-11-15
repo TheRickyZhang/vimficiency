@@ -122,7 +122,7 @@ using ExploreJob = AsyncJob<ExploreState>;
 
 JobRegistry<ExploreJob> g_jobs;
 
-VF::LuaExports::Expected<Packed> startAsyncImpl(const VFSearchRequest* request, int deadline_ms) {
+PackedResult startAsyncImpl(const VFSearchRequest* request, int deadline_ms) {
   auto inputsRes = logic::decodeSearchRequest(request);
   if (!inputsRes) return unexpected(inputsRes.error());
   CompositionOptimizerParams compositionParams =
@@ -148,30 +148,33 @@ extern "C" {
 
 VFByteSlice vf_explore_start_async(const VFSearchRequest* request, int deadline_ms) {
   static string storage;
-  return storeBytes(storage, startAsyncImpl(request, deadline_ms));
+  return guarded(storage, [&] { return startAsyncImpl(request, deadline_ms); });
 }
 
-// Returns pending while the worker runs; once done, builds the View from the
-// precomputed plan, registers it, frees the job, and returns the view_id.
+// Returns pending while the worker runs; once done, frees the job and either
+// builds the View from the precomputed plan, registers it and returns the
+// view_id, or returns the worker's failure.
 VFByteSlice vf_explore_poll(int job_id) {
   static string storage;
-  ExploreJob& job = g_jobs.get(job_id);
-  if (!job.ready()) return storePending(storage);
-  std::unique_ptr<ExploreJob> owned = g_jobs.take(job_id);
-  ExploreState& s = owned->state();
-  logic::SearchInputs& in = s.inputs;
-  const int view_id = g_registry.create(
-      std::move(in.initialLines),
-      in.initialPos,
-      std::move(in.goalLines),
-      in.goalPos,
-      std::move(in.boundary),
-      in.navContext,
-      std::move(s.config),
-      in.userSeq,
-      s.compositionParams,
-      std::move(s.trace));
-  return storeBytes(storage, packInteger(view_id));
+  if (!g_jobs.get(job_id).ready()) return storePending(storage);
+  return guarded(storage, [&]() -> PackedResult {
+    std::unique_ptr<ExploreJob> owned = g_jobs.take(job_id);
+    if (!owned->error().empty()) return unexpectedError(owned->error());
+    ExploreState& s = owned->state();
+    logic::SearchInputs& in = s.inputs;
+    const int view_id = g_registry.create(
+        std::move(in.initialLines),
+        in.initialPos,
+        std::move(in.goalLines),
+        in.goalPos,
+        std::move(in.boundary),
+        in.navContext,
+        std::move(s.config),
+        in.userSeq,
+        s.compositionParams,
+        std::move(s.trace));
+    return packInteger(view_id);
+  });
 }
 
 // Signals cancellation and frees the job; dropping it joins the worker on this
@@ -179,19 +182,21 @@ VFByteSlice vf_explore_poll(int job_id) {
 // polled between composition setup phases and per pop in every search loop,
 // so the join is bounded by one diff's precompute or one pop expansion.
 int vf_explore_cancel(int job_id) {
-  std::unique_ptr<ExploreJob> owned = g_jobs.take(job_id);
-  if (!owned) return 0;
-  owned->cancel();
-  return 1;
+  return noUnwind([&] {
+    std::unique_ptr<ExploreJob> owned = g_jobs.take(job_id);
+    if (!owned) return 0;
+    owned->cancel();
+    return 1;
+  });
 }
 
 int vf_explore_destroy(int view_id) {
-  return g_registry.destroy(view_id) ? 1 : 0;
+  return noUnwind([&] { return g_registry.destroy(view_id) ? 1 : 0; });
 }
 
 VFByteSlice vf_explore_state(int view_id) {
   static string storage;
-  return storeBytes(storage, packState(g_registry.get(view_id)));
+  return guarded(storage, [&] { return packState(g_registry.get(view_id)); });
 }
 
 VFByteSlice vf_explore_recommendations(
@@ -201,24 +206,23 @@ VFByteSlice vf_explore_recommendations(
     size_t optimizer_overrides_len,
     const char* sort_mode,
     size_t sort_mode_len) {
-  CHECK(max_count >= 0, "max_count must be non-negative");
   static string storage;
-  View& v = g_registry.get(view_id);
-  auto overridesText = requiredBytes(
-      optimizer_overrides,
-      optimizer_overrides_len,
-      "optimizer_overrides");
-  if (!overridesText) return storeBytes(storage, unexpected(overridesText.error()));
-  auto sortModeText = requiredBytes(sort_mode, sort_mode_len, "sort_mode");
-  if (!sortModeText) return storeBytes(storage, unexpected(sortModeText.error()));
+  return guarded(storage, [&]() -> PackedResult {
+    CHECK(max_count >= 0, "max_count must be non-negative");
+    View& v = g_registry.get(view_id);
+    auto overridesText = requiredBytes(
+        optimizer_overrides,
+        optimizer_overrides_len,
+        "optimizer_overrides");
+    if (!overridesText) return unexpected(overridesText.error());
+    auto sortModeText = requiredBytes(sort_mode, sort_mode_len, "sort_mode");
+    if (!sortModeText) return unexpected(sortModeText.error());
 
-  auto overridesResult = logic::parseOverrides(*overridesText);
-  if (!overridesResult) {
-    return storeBytes(storage, unexpected(overridesResult.error()));
-  }
-  const OptimizerParamOverrides overrides = std::move(*overridesResult);
-  const SuggestionSortMode mode = parseSuggestionSortMode(*sortModeText);
-  return storeBytes(storage, packSuggestions(v.recommendations(max_count, &overrides, mode)));
+    auto overrides = logic::parseOverrides(*overridesText);
+    if (!overrides) return unexpected(overrides.error());
+    const SuggestionSortMode mode = parseSuggestionSortMode(*sortModeText);
+    return packSuggestions(v.recommendations(max_count, &*overrides, mode));
+  });
 }
 
 VFByteSlice vf_explore_reconfigure_plan(
@@ -226,26 +230,26 @@ VFByteSlice vf_explore_reconfigure_plan(
     const char* optimizer_overrides,
     size_t optimizer_overrides_len) {
   static string storage;
-  View& v = g_registry.get(view_id);
-  auto overridesText = requiredBytes(
-      optimizer_overrides,
-      optimizer_overrides_len,
-      "optimizer_overrides");
-  if (!overridesText) return storeBytes(storage, unexpected(overridesText.error()));
+  return guarded(storage, [&]() -> PackedResult {
+    View& v = g_registry.get(view_id);
+    auto overridesText = requiredBytes(
+        optimizer_overrides,
+        optimizer_overrides_len,
+        "optimizer_overrides");
+    if (!overridesText) return unexpected(overridesText.error());
 
-  auto overridesResult = logic::parseOverrides(*overridesText);
-  if (!overridesResult) {
-    return storeBytes(storage, unexpected(overridesResult.error()));
-  }
-  const OptimizerParamOverrides overrides = std::move(*overridesResult);
-  CompositionOptimizerParams compositionParams = overrides.resolved(CompositionOptimizerParams{});
-  const bool reset = v.reconfigurePlan(std::move(compositionParams));
-  return storeBytes(storage, MsgpackWriter().map(1).key("reset").boolean(reset).take());
+    auto overrides = logic::parseOverrides(*overridesText);
+    if (!overrides) return unexpected(overrides.error());
+    const bool reset = v.reconfigurePlan(overrides->resolved(CompositionOptimizerParams{}));
+    return MsgpackWriter().map(1).key("reset").boolean(reset).take();
+  });
 }
 
 VFByteSlice vf_explore_current_lines(int view_id) {
   static string storage;
-  return storeBytes(storage, packStrings(g_registry.get(view_id).state().lines));
+  return guarded(storage, [&] {
+    return packStrings(g_registry.get(view_id).state().lines);
+  });
 }
 
 VFByteSlice vf_explore_accept_snapshot(
@@ -258,30 +262,30 @@ VFByteSlice vf_explore_accept_snapshot(
     size_t raw_keys_len,
     bool insert_mode) {
   static string storage;
-  View& v = g_registry.get(view_id);
-  auto rawKeysResult = requiredBytes(raw_keys, raw_keys_len, "raw_keys");
-  if (!rawKeysResult) return storeBytes(storage, unexpected(rawKeysResult.error()));
-  return storeBytes(storage, payload::linesFromSlices(lines, lines_count)
-      .transform([&](const Lines& liveLines) {
-        return packOutcome(
-            v.acceptSnapshot(liveLines, CursorPos(new_row, new_col),
-                             *rawKeysResult, insert_mode));
-      }));
+  return guarded(storage, [&]() -> PackedResult {
+    View& v = g_registry.get(view_id);
+    auto rawKeys = requiredBytes(raw_keys, raw_keys_len, "raw_keys");
+    if (!rawKeys) return unexpected(rawKeys.error());
+    auto liveLines = payload::linesFromSlices(lines, lines_count);
+    if (!liveLines) return unexpected(liveLines.error());
+    return packOutcome(v.acceptSnapshot(
+        *liveLines, CursorPos(new_row, new_col), *rawKeys, insert_mode));
+  });
 }
 
 VFByteSlice vf_explore_undo(int view_id) {
   static string storage;
-  return storeBytes(storage, packOutcome(g_registry.get(view_id).undo()));
+  return guarded(storage, [&] { return packOutcome(g_registry.get(view_id).undo()); });
 }
 
 VFByteSlice vf_explore_redo(int view_id) {
   static string storage;
-  return storeBytes(storage, packOutcome(g_registry.get(view_id).redo()));
+  return guarded(storage, [&] { return packOutcome(g_registry.get(view_id).redo()); });
 }
 
 VFByteSlice vf_explore_header_rows(int view_id) {
   static string storage;
-  return storeBytes(storage, packHeaderRows(g_registry.get(view_id)));
+  return guarded(storage, [&] { return packHeaderRows(g_registry.get(view_id)); });
 }
 
 }  // extern "C"

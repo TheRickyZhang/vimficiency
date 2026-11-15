@@ -1,8 +1,10 @@
 -- Shared LuaLS annotations for cross-module Vimficiency records.
 
+--- Reads yield cdata (`len` is a `size_t`, so `tonumber` it); writes take a Lua
+--- string and integer.
 ---@class VF.C.ByteSlice
----@field data ffi.cdata*
----@field len ffi.cdata*
+---@field data ffi.cdata*|string
+---@field len ffi.cdata*|integer
 
 --- cdata view of `VFSearchRequest` (Api.def); pointer fields borrow Lua memory.
 ---@class VF.C.SearchRequest
@@ -14,8 +16,6 @@
 ---@field start_col integer
 ---@field end_row integer
 ---@field end_col integer
----@field boundary_first_col integer
----@field boundary_last_col integer
 ---@field has_lines_above boolean
 ---@field has_lines_below boolean
 ---@field window_height integer
@@ -24,6 +24,33 @@
 ---@field user_seq_len integer
 ---@field optimizer_overrides string
 ---@field optimizer_overrides_len integer
+
+--- cdata views of the other `Api.def` input structs. Arrays are 0-indexed.
+
+---@class VF.C.KeyEvent
+---@field mode VF.C.ByteSlice
+---@field key_typed VF.C.ByteSlice
+
+---@class VF.C.TypedChunk
+---@field kind VF.C.ByteSlice
+---@field text VF.C.ByteSlice
+
+---@class VF.C.OptimizerResult
+---@field seq VF.C.ByteSlice
+---@field cost number
+
+---@class VF.C.SessionResult
+---@field lines ffi.cdata*                 # `VFByteSlice[]`
+---@field lines_count integer
+---@field start_row integer
+---@field start_col integer
+---@field end_row integer
+---@field end_col integer
+---@field user_seq VF.C.ByteSlice
+---@field user_cost number
+---@field kind VF.C.ByteSlice
+---@field optimal_results ffi.cdata*       # `VFOptimizerResult[]`
+---@field optimal_results_count integer
 
 --- One search problem for analyze or explore-start; marshalled into a
 --- `VF.C.SearchRequest` by `ffi/core.with_search_request`. Rows/cols are
@@ -35,8 +62,6 @@
 ---@field start_col integer
 ---@field end_row integer
 ---@field end_col integer
----@field boundary_first_col integer
----@field boundary_last_col integer         # inclusive
 ---@field has_lines_above boolean
 ---@field has_lines_below boolean
 ---@field window_height integer

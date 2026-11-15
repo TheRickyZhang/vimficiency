@@ -53,9 +53,7 @@ Expected<SearchInputs> decodeSearchRequest(const VFSearchRequest* request) {
   // rather than aborting on the downstream CHECK.
   in.initialPos = in.initialLines.clamp(CursorPos(r.start_row, r.start_col));
   in.goalPos = in.goalLines.clamp(CursorPos(r.end_row, r.end_col));
-  in.boundary = sliceBoundary(
-      in.initialLines, r.boundary_first_col, r.boundary_last_col,
-      r.has_lines_above, r.has_lines_below);
+  in.boundary = sliceBoundary(in.initialLines, r.has_lines_above, r.has_lines_below);
   in.navContext = NavContext(r.window_height, r.scroll_amount);
   return in;
 }

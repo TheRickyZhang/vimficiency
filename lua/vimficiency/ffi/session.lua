@@ -11,13 +11,15 @@ local KeyEvents = ffi.typeof("VFKeyEvent[?]")
 ---@return string
 function M.build_sequence(key_seq)
   local count = #key_seq
-  local events = KeyEvents(count)
+  local events = KeyEvents(count) --[[@as VF.C.KeyEvent[] ]]
   for i = 1, count do
     local ev = key_seq[i]
     core.set_slice(events[i - 1].mode, ev.mode)
     core.set_slice(events[i - 1].key_typed, ev.key_typed)
   end
-  return core.unwrap(lib.vf_build_sequence(events, count))
+  local slice = lib.vf_build_sequence(events, count)
+  core.keep_alive(key_seq, events)
+  return core.unwrap(slice)
 end
 
 ---@param start_lines string[]
@@ -30,7 +32,7 @@ end
 function M.compute_search_region(start_lines, end_lines, start_row, end_row, padding)
   local start_slices, start_count = core.byte_slices(start_lines)
   local end_slices, end_count = core.byte_slices(end_lines)
-  local region = core.unwrap(lib.vf_compute_search_region(
+  local slice = lib.vf_compute_search_region(
     start_slices,
     start_count,
     end_slices,
@@ -38,7 +40,9 @@ function M.compute_search_region(start_lines, end_lines, start_row, end_row, pad
     start_row,
     end_row,
     padding
-  ))
+  )
+  core.keep_alive(start_lines, end_lines, start_slices, end_slices)
+  local region = core.unwrap(slice)
   return region.region_start, region.region_end
 end
 

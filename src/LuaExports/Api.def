@@ -88,8 +88,6 @@ typedef struct {
   int start_col;
   int end_row;
   int end_col;
-  int boundary_first_col;
-  int boundary_last_col;
   bool has_lines_above;
   bool has_lines_below;
   int window_height;
