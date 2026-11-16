@@ -31,10 +31,10 @@ exists twice: `out[i][j]` for normal mode and `in[i][j]` for insert mode.
 move    out[pi][pj] → out[i][j]   i-pi = j-pj ≥ 1, chars match          moveCost(pi, i)
         previous block's trailing diagonal → this block's leading one   moveCost(seal)
 delete  out[pi][j]  → out[i][j]   delete initial [pi, i)                 delCost(pi, i)
-        out[pi][j-1] → in[i][j]   same, landing in insert via `c`        delCost(pi, i) + esc + typed
-type    out[i][j-1] → in[i][j]    enter insert, type goal char j-1       entry + esc + typed
+        out[pi][j-1] → in[i][j]   same, landing in insert via `c`        delCost(pi, i) + typed
+type    out[i][j-1] → in[i][j]    enter insert, type goal char j-1       entry + typed
         in[i][j-1]  → in[i][j]    type goal char j-1                     typed
-        in[i][j]    → out[i][j]   leave insert                           0
+        in[i][j]    → out[i][j]   leave insert                           esc
 ```
 
 - nothing is charged per region, so a state needs no memory of where its region began; that is why two tables suffice
@@ -44,7 +44,7 @@ type    out[i][j-1] → in[i][j]    enter insert, type goal char j-1       entry
 <GridWidget />
 
 Hover a cell to see its cost and where it came from. The `in` table is reached
-only through `ENTER` or `CHANGE` and left through the free `EXIT` edge; the
+only through `ENTER` or `CHANGE` and left through the `EXIT` edge, which pays `<Esc>`; the
 optimal path (yellow) jumps between the two tables at those points. The large
 dots mark path cells in the table you are viewing, the small ones its cells in
 the other table.

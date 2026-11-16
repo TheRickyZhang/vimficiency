@@ -665,8 +665,7 @@ local recall_prev_state = {}
 ---@param win integer
 ---@return VF.Session.RecallMark
 local function recall_mark(buf, win)
-  buffer_history.track(buf)
-  return { view = util.capture_view(buf, win), seq = buffer_history.seq(buf) }
+  return { view = util.capture_view(buf, win), seq = buffer_history.mark(buf) }
 end
 
 --- Ingest one recorded atom into the rolling recall ring.
@@ -725,7 +724,10 @@ buffer_history.set_reset_handler(drop_recall)
 ---@param win integer
 function M.abort_recall(buf, win)
   drop_recall(buf)
-  recall_prev_state[buf] = recall_mark(buf, win)
+  local mark = recall_mark(buf, win)
+  -- No record is left to rebuild anything older.
+  buffer_history.trim(buf, mark.seq)
+  recall_prev_state[buf] = mark
 end
 
 --------------------------------------------------------------------------------

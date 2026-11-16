@@ -41,11 +41,12 @@ vector<Block> sealMatchedRuns(const FlatText& initial, const FlatText& goal, con
   vector<Block> blocks;
   Block cur{0, 0, 0, 0};
   int initialAt = 0, goalAt = 0;
-  auto matchedRun = [&](int riEnd, int rjEnd) {
+  auto matchedRun = [&](int riEnd, int rjEnd, int slide) {
     const int off = rjEnd - riEnd;
-    const int dmax = (riEnd - initialAt) / 2;
+    const int runEnd = riEnd - slide;
+    const int dmax = (runEnd - initialAt) / 2;
     const int coreBegin = initialAt + leftMargin(initialAt, off, dmax);
-    const int coreEnd = riEnd - rightMargin(riEnd, off, dmax);
+    const int coreEnd = runEnd - rightMargin(runEnd, off, dmax);
     bool sealed = false;
     if (coreBegin < coreEnd) {
       // The full entry+<Esc> round trip stays the worst case despite the change
@@ -66,11 +67,20 @@ vector<Block> sealMatchedRuns(const FlatText& initial, const FlatText& goal, con
   };
   for (const DiffState& diff : MyersDiff::calculate(initialLines, goalLines)) {
     const int diffInitialBegin = initial.lineStarts[diff.beginPos.line] + diff.beginPos.col;
-    matchedRun(diffInitialBegin, goalAt + (diffInitialBegin - initialAt));
+    const int diffGoalBegin = goalAt + (diffInitialBegin - initialAt);
+    // The next run's diagonal also matches this far back, so the same edit can
+    // sit that much earlier: the run really ends where the edit could start.
+    const int a = diffInitialBegin + (int)diff.deletedText.size();
+    const int b = diffGoalBegin + (int)diff.insertedText.size();
+    int slide = 0;
+    while (slide < diffInitialBegin - initialAt &&
+           initial.text[a - 1 - slide] == goal.text[b - 1 - slide])
+      slide++;
+    matchedRun(diffInitialBegin, diffGoalBegin, slide);
     initialAt += (int)diff.deletedText.size();
     goalAt += (int)diff.insertedText.size();
   }
-  matchedRun(N, M);
+  matchedRun(N, M, 0);
   cur.aEnd = N;
   cur.bEnd = M;
   if (cur.n() > 0 || cur.m() > 0) blocks.push_back(cur);

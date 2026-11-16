@@ -69,7 +69,7 @@ CostBreakdown calculateBreakdown(
 // Three step families: move (MOVE within a block, CROSS over a seal), delete
 // (DELETE, or CHANGE when the `c` form lands straight in insert mode and so
 // skips the entry key) and type (ENTER from normal mode, TYPE within insert
-// mode). EXIT is the free edge back to normal mode; LEADING is the root.
+// mode). EXIT is the edge back to normal mode, paying <Esc>; LEADING is the root.
 enum Step : int8_t { LEADING, MOVE, CROSS, DELETE, CHANGE, ENTER, TYPE, EXIT };
 
 struct TraceCell {

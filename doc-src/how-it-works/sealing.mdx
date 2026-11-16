@@ -56,12 +56,12 @@ edit begins or ends.
 
 ## Complexity
 
-Per block of `n × m` cells with count cap `mxcnt`: `n` move sweeps of
-`O(n · mxcnt)`, one `O(n · mxcnt)` deletion sweep per goal column, and `O(nm)`
-type steps. Summed over blocks,
+Per block of `n × m` cells with count cap `mxcnt`: one move sweep per start,
+cut at its longest matched run, one `O(n · mxcnt)` deletion sweep per goal
+column, and `O(nm)` type steps. Summed over blocks,
 
 ```
-O( Σ_k  n_k (n_k + m_k) mxcnt )  +  one crossing sweep per seal
+O( Σ_k  n_k m_k mxcnt )  +  one crossing sweep per seal
 ```
 
 with `Σ n_k ≤ N` and `Σ m_k ≤ M`: quadratic in the changed text, not the

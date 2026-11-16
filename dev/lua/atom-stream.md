@@ -69,16 +69,26 @@ first atom in a buffer only seeds it.
 
 A mark is the cursor/viewport (`util.capture_view`) plus a `buffer_history`
 sequence number, not a copy of the text. `capture/buffer_history.lua` keeps one
-shadow copy per tracked buffer and, from `on_lines`, the lines each change
-replaced; `lines_at(buf, seq)` rebuilds the start text only when a record is
-finished. The ring trims that history to the buffer's oldest active record.
+shadow copy per tracked buffer, as of its last mark. `on_lines` only widens one
+pending range, so its cost does not grow with the buffer or the event count.
+
+`buffer_history.mark(buf)` folds that range into the shadow as a single delta:
+the lines it replaced. `lines_at(buf, seq)` rebuilds the start text only when a
+record is finished, undoing at most one delta per atom in the ring.
+
+The ring trims that history to the buffer's oldest active record, and an abort
+trims it to the new mark. An atom that edits two distant places stores every
+line between them.
+
+A pending range that disagrees with the buffer's line count is replaced by the
+whole buffer. Deleting every line is the known case: Neovim reports zero lines
+left while the buffer shows one empty line.
 
 Records and the mark are per buffer: an atom extends only the records of its
 own buffer, and an abort reseeds the mark from the post-abort state so the next
-record starts from text the chain can actually reach. A reload, an unload, or a
-change report that disagrees with the buffer's line count invalidates earlier
-sequence numbers, so `buffer_history` resets and the store drops that buffer's
-active recall records.
+record starts from text the chain can actually reach. A reload or an unload
+invalidates earlier sequence numbers, so `buffer_history` resets and the store
+drops that buffer's active recall records.
 
 A record whose start falls inside a burst still gets the burst's final text as
 its start, because every mark in the burst is taken after it.

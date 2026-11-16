@@ -133,6 +133,12 @@ to deeper docs when needed.
 
 ## VimDiff deletions are a per-column multi-source sweep, not a table (2026-08-30)
 - `relaxDeletes` prices every delete arrival of a DP column in one `O(N·cap)` sweep: an in-progress deletion's value is independent of where it started, so one carried K-best list serves all starts. Replaces the `O(n²·m)` per-cell start pull (and the `del[pi][i]` table) that the readability restructure had introduced; verified cost-identical on the corpus. The breakdown re-prices regions with single-span `query` calls instead of the table.
+- Re-measured 2026-11-16 against the table walked per cell, as a switch in one Release binary over ~500 inputs (bench catalog, 31 captured slow-fire sessions, 385 git revision pairs, synthetic rewrites/deletes/re-indents of real code): plan costs identical everywhere. The walk was 1.05–1.9× slower on the catalog, 1.1× median / 2× worst on the real sessions, 2× at p90 and 5–7× worst on commit-sized edits, and 1.4× → 17× on a single-block rewrite of 100 → 6400 chars. It won only where a block deletes almost nothing (`n ≪ m`), by at most 30%. Its `n²` table also makes a pure deletion quadratic in the deleted text.
+
+## VimDiff move rows stop at the longest matched run (2026-11-16)
+- `move[pi][len]` replaces the `(n+1)²` `move[pi][i]` table: a move only crosses matched chars, so a row ends at the longest matched diagonal run starting at `pi`. Plan costs are unchanged (corpus byte-identical), and with it the per-block cost is `O(n·m·mxcnt)` with no `n²` term, so `maxPlannerCells` bounds all planner memory.
+- The square table was 20–30% of planner time on balanced blocks and most of it on delete-heavy ones, outside the cell budget: deleting 100 lines (3.7k chars) cost 1.1 s and 108 MB, now 0.44 s. Catalog total −23%, git revision pairs −25%.
+- Rejected: cutting rows at `min(n - pi, m)` instead. It needs no scan and fixes the delete-heavy case equally, but leaves balanced blocks untouched (catalog ±0%).
 
 ## VimDiff counted-command cap is the search's own knob (2026-08-30)
 - The oracle caps counted chunks at every level — including `{k}dd`/`{k}dap`, previously unbounded — at `CostOptions::maxPrefixCount`, wired live from the same `maxPrefixCount` param the Nav/Transform searches obey; the shared default lives in `CountPrefixLimits::DEFAULT_MAX_PREFIX_COUNT`. One variable on purpose: the old private `CAP = 9` underpriced counts the search can emit (10..16) while pricing line counts (`{150}dd`) nothing downstream can produce.

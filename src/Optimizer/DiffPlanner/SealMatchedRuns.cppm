@@ -8,7 +8,8 @@ export {
 namespace VimDiff {
 
 // Raw spans of one alignment block. Consecutive blocks are separated by a sealed
-// run that no optimal plan edits into, so deletions never cross it.
+// run that no plan on the Myers alignment gains by editing into, so deletions
+// never cross it.
 struct Block {
   int aBegin, aEnd, bBegin, bEnd;
   inline int n() const { return aEnd - aBegin; }

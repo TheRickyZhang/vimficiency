@@ -27,9 +27,9 @@ private:
 
 struct BlockCosts {
   int lead = 0, trail = 0;       // matched diagonal length at the block's start / end
-  vector<vector<double>> move;   // [pi][i]
+  vector<vector<double>> move;   // [pi][len]: from pi across len matched chars
   vector<vector<double>> cross;  // [t][i]: from the previous block's (n-t, m-t) to (i,i)
-  vector<double> typed, enter, change;  // per goal char; change = enter without the entry key
+  vector<double> typed, enter;  // per goal char
 };
 
 vector<BlockCosts> calculateTransitionCosts(const FlatText& initial, const FlatText& goal,
@@ -45,10 +45,19 @@ vector<BlockCosts> calculateTransitionCosts(const FlatText& initial, const FlatT
     while (c.lead < min(n, m) && matches(b.aBegin + c.lead, b.bBegin + c.lead)) c.lead++;
     while (c.trail < min(n, m) && matches(b.aEnd - 1 - c.trail, b.bEnd - 1 - c.trail)) c.trail++;
 
-    c.move.assign(n + 1, vector<double>(n + 1, 0.0));
-    for (int pi = 0; pi < n; pi++)
-      move.sweep(b.aBegin + pi, b.aEnd,
-                 [&](int ri, double cost) { c.move[pi][ri - b.aBegin] = cost; });
+    // A move only crosses matched chars, so row pi ends at its longest matched run.
+    vector<int> run(n + 1, 0), longest(n, 0);
+    for (int j = m - 1; j >= 0; j--)
+      for (int i = 0; i < n; i++) {
+        run[i] = matches(b.aBegin + i, b.bBegin + j) ? run[i + 1] + 1 : 0;
+        longest[i] = max(longest[i], run[i]);
+      }
+    c.move.resize(n);
+    for (int pi = 0; pi < n; pi++) {
+      c.move[pi].resize(longest[pi] + 1);
+      move.sweep(b.aBegin + pi, b.aBegin + pi + longest[pi],
+                 [&](int ri, double cost) { c.move[pi][ri - b.aBegin - pi] = cost; });
+    }
 
     if (k > 0) {
       const Block& prev = blocks[k - 1];
@@ -62,11 +71,9 @@ vector<BlockCosts> calculateTransitionCosts(const FlatText& initial, const FlatT
 
     c.typed.resize(m);
     c.enter.resize(m);
-    c.change.resize(m);
     for (int j = 0; j < m; j++) {
       c.typed[j] = typing.ins(b.bBegin + j, b.bBegin + j + 1);
-      c.change[j] = typing.esc + c.typed[j];
-      c.enter[j] = typing.entry + c.change[j];
+      c.enter[j] = typing.entry + c.typed[j];
     }
   }
   return all;
@@ -100,8 +107,8 @@ void relax(Cand& cell, double cost, int moves, Step step, int pi, int pj) {
   if (better(cost, moves, cell)) cell = {cost, (uint16_t)pi, (uint16_t)pj, (uint16_t)moves, step};
 }
 
-// One multi-source sweep prices every deletion of column j within the block.
-// Each arrival lands in out[i, j] and, as a CHANGE, in in[i, j+1].
+// DELETE pulls min over pi < i of out[pi, j] + delCost(pi, i). One sweep down
+// column j yields that for every i; it lands in out[i, j] and, as a CHANGE, in in[i, j+1].
 void relaxDeletes(Tables& t, const Block& b, const BlockCosts& costs, TilingCost& del,
                   const FlatText& initial, int j) {
   del.sweep(
@@ -113,12 +120,13 @@ void relaxDeletes(Tables& t, const Block& b, const BlockCosts& costs, TilingCost
         relax(t.out[i, j], a.cost, moves, DELETE, pi, j);
         // No change form consumes a line's trailing newline.
         if (j < b.m() && initial.text[ri - 1] != '\n')
-          relax(t.in[i, j + 1], a.cost + costs.change[j], moves, CHANGE, pi, j);
+          relax(t.in[i, j + 1], a.cost + costs.typed[j], moves, CHANGE, pi, j);
       });
 }
 
 vector<Tables> solveVimDiff(const vector<Block>& blocks, const vector<BlockCosts>& costs,
-                            const FlatText& initial, const FlatText& goal, TilingCost& del) {
+                            const FlatText& initial, const FlatText& goal, const Typing& typing,
+                            TilingCost& del) {
   auto matches = [&](int ra, int rb) { return initial.text[ra] == goal.text[rb]; };
   vector<Tables> tables;
   for (int k = 0; k < (int)blocks.size(); k++) {
@@ -150,9 +158,9 @@ vector<Tables> solveVimDiff(const vector<Block>& blocks, const vector<BlockCosts
         for (int pi = i - 1, pj = j - 1; pi >= 0 && pj >= 0 && matches(b.aBegin + pi, b.bBegin + pj);
              pi--, pj--) {
           const Cand& from = t.out[pi, pj];
-          relax(out, from.cost + c.move[pi][i] + REGION_PENALTY, from.moves + 1, MOVE, pi, pj);
+          relax(out, from.cost + c.move[pi][i - pi] + REGION_PENALTY, from.moves + 1, MOVE, pi, pj);
         }
-        relax(out, in.cost, in.moves, EXIT, i, j);
+        relax(out, in.cost + typing.esc, in.moves, EXIT, i, j);
       }
       relaxDeletes(t, b, c, del, initial, j);
     }
@@ -255,7 +263,7 @@ void sealedPartition(Planned& p) {
 // The optimum ends anywhere on the last block's trailing matched diagonal.
 void dpPlan(Planned& p) {
   p.costs = calculateTransitionCosts(p.initial, p.goal, p.typing, p.blocks, p.move);
-  p.tables = solveVimDiff(p.blocks, p.costs, p.initial, p.goal, p.del);
+  p.tables = solveVimDiff(p.blocks, p.costs, p.initial, p.goal, p.typing, p.del);
   const int last = (int)p.blocks.size() - 1;
   const Block& b = p.blocks[last];
   const Tables& t = p.tables[last];

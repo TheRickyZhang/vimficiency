@@ -46,7 +46,7 @@ Fixes, in order:
    a stale list shown meanwhile.
 
 The audit should also cover what this pass skipped: the per-atom capture path
-(`capture/atom_stream.lua`, `capture/buffer_history.lua` `on_lines`) on large
+(`capture/atom_stream.lua`, `capture/buffer_history.lua` `mark`) on large
 buffers, and the `VimOptions::shiftwidth` no-reconfigure invariant in
 `AsyncJob.cppm` once more than one worker kind can be live.
 

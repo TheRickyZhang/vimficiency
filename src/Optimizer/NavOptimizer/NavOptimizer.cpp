@@ -81,7 +81,8 @@ LandingNavResult NavOptimizer::optimize(
       : getEffort(userSequence, config);
   const double maxEffort = userEffort * params.exploreFactor;
 
-  NavExplorer explorer(lines, navContext, boundary, params, range, bufferIndex, lineOffset);
+  NavExplorer explorer(lines, navContext, boundary, params,
+                       range, bufferIndex, lineOffset);
 
   NavStateFactory states(config,
     NavHeuristic::StateScorer{

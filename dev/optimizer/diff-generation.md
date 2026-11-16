@@ -148,11 +148,11 @@ predecessor cell it pulls from:
 move    out[pi][pj] -> out[i][j]   i-pi == j-pj >= 1, chars match:   moveCost(pi,i) + REGION_PENALTY
         prev out[n-t][m-t] -> out[i][i]   across a seal (CROSS):      moveCost over the gap + REGION_PENALTY
 delete  out[pi][j]  -> out[i][j]   delete initial [pi,i):            delCost(pi,i)
-        out[pi][j-1] -> in[i][j]   same, landing in insert (CHANGE): delCost(pi,i) + <Esc> + typed(j-1)
+        out[pi][j-1] -> in[i][j]   same, landing in insert (CHANGE): delCost(pi,i) + typed(j-1)
                                    (not when initial[i-1] is a newline)
-type    out[i][j-1] -> in[i][j]    enter insert, type char (ENTER):  entry + <Esc> + typed(j-1)
+type    out[i][j-1] -> in[i][j]    enter insert, type char (ENTER):  entry + typed(j-1)
         in[i][j-1]  -> in[i][j]    type goal char j-1 (TYPE):        typed(j-1)
-        in[i][j]    -> out[i][j]   leave insert (EXIT):              free
+        in[i][j]    -> out[i][j]   leave insert (EXIT):              <Esc>
 out[i][j] = REGION_PENALTY on the first block's leading matched diagonal   # first region
 answer    = min over the last block's trailing matched diagonal     # trailing free
 ```
@@ -173,13 +173,16 @@ Regions are not a DP concept:
 
 The DP runs once per block (see *Sealing matched runs*), column-major, and
 `solveVimDiff` is the relaxations above and nothing else:
-- `move[pi][i]` is a table filled by `calculateTransitionCosts` before the DP —
-  one tiling sweep per start prices every end
-- `typed[j]` / `enter[j]` / `change[j]` come from the goal's prefix sums
-- deletions have no table: an in-progress deletion's cost does not depend on
-  where it started, so `relaxDeletes` prices a whole column's delete arrivals
-  with one multi-source sweep seeded by the column's `out` cells; each arrival
-  carries the seed it came from for the backpointer
+- `move[pi][len]` is a table filled by `calculateTransitionCosts` before the
+  DP — one tiling sweep per start, cut at the longest matched run starting
+  there, since a move never crosses an unmatched char
+- `typed[j]` / `enter[j]` come from the goal's prefix sums; `EXIT` adds `<Esc>`
+- a delete is the same pull as a move without the matching condition:
+  `out[i][j] = min over pi < i of out[pi][j] + delCost(pi,i)`. It has no
+  table: an in-progress deletion's cost does not depend on where it started,
+  so `relaxDeletes` evaluates that min for every `i` of a column with one
+  multi-source sweep seeded by the column's `out` cells; each arrival carries
+  the seed it came from for the backpointer
 - a block after the first is entered by `CROSS` moves from the previous block's
   trailing matched diagonal, priced across the seal
 - within a column, `in` depends only on column `j-1` and `out` on smaller `i`;
@@ -193,23 +196,26 @@ behind `tests/Approval/VimDiffApprovalTest.cpp`.
 ### Complexity
 
 Per block with `n × m` cells:
-- move table: `n` sweeps of `O(n·mxcnt)`
+- move table: an `O(n·m)` scan finds each start's longest matched run, then
+  one sweep per start covers that run, `O(run·mxcnt)`
 - deletions: one multi-source sweep per goal column, `O(n·mxcnt)`
 - type steps: `O(n·m)`, one O(1) relaxation per cell
-- move pulls: each cell walks back along its matched diagonal; unsealed runs
-  are short by construction
+- move pulls: each cell walks back along its matched diagonal, `O(run)`. Runs
+  on the Myers alignment are short by construction (longer ones are sealed);
+  repeated text can still match longer off it
 - each seal: one `CROSS` sweep per trailing-diagonal start, `O(margin·core)`
 
-So `O(n·(n+m)·mxcnt)` per block and
-`O(Σ_k n_k·(n_k+m_k)·mxcnt + Σ_seals margin·core)` overall: quadratic in the
-changed text and linear in `mxcnt`, never in the buffer. There is no `m²`
-term because the insert side is additive; the `n²` term exists because moves
-are not and need a tabulated span cost.
+So `O(n·m·mxcnt)` per block and
+`O(Σ_k n_k·m_k·mxcnt + Σ_seals margin·core)` overall: proportional to the
+cells and linear in `mxcnt`, never in the buffer. There is no `n²` or `m²`
+term: typing is additive, a column's deletions share one sweep, and a move
+row is no longer than a matched run, which is at most `m`.
 
 Memory:
 - `out` and `in` are one column-major `Grid` each — a single allocation with
   `i` contiguous, matching the `for j { for i }` order — of `(n+1)·(m+1)`
-  16-byte cells, plus the `(n+1)²` move table
+  16-byte cells, plus the move table at one double per char of each start's
+  longest matched run (at most `n·m`)
 - `CostOptions::maxPlannerCells` (default `MAX_PLANNER_CELLS`) bounds memory
   as well as time, and a block wider than 65535 on either side overflows the
   predecessor indices
@@ -224,6 +230,12 @@ one `{k}dd`/`dap`/`}` replaces everything inside it, so a longer span can be
 *cheaper* than its pieces. A span's cost therefore cannot be built up
 incrementally; each start needs its own pass, and the sweep keeps that
 affordable by pricing every end of one start in a single `O(n·mxcnt)` walk.
+
+Why deletions are not a `del[pi][i]` table walked per cell, the way moves are:
+the move walk stops at the first unmatched char and a delete walk cannot, so
+it is `O(n)` per cell and its table is `n²` however little is typed. Plan
+costs are identical and the walk measured slower at every realistic block
+size (`dev/decisions.md`).
 
 Insertion has no such effect — per-key cost is exactly additive — so `in`
 extends by `PS(rj+1) - PS(rj)` per char.
@@ -300,9 +312,9 @@ breakdown.
 ### Sealing matched runs
 
 `sealMatchedRuns` (`SealMatchedRuns.cpp`) splits the alignment at every
-Myers-matched run the optimum provably never edits into. Such a run is a
-*separator*: every optimal path crosses it with one move, so the text before it
-and after it are independent subproblems. The output is a list of `Block`s —
+Myers-matched run that no plan following the Myers alignment gains by editing
+into. Such a run is a *separator*: those plans cross it with one move, so the
+text before it and after it are independent subproblems. The output is a list of `Block`s —
 raw spans `[aBegin,aEnd) × [bBegin,bEnd)` — with a sealed core between
 consecutive blocks; inside a block every cell is one character.
 
@@ -328,6 +340,12 @@ tempting there), and the margin widens to match — no constant bounds it, which
 is why the old hand-picked `MATCH_MARGIN = 8` was unsound. The margin chars
 stay in the adjacent block; the core between the margins is the seal.
 
+**Slid edges.** Myers reports a deletion as far right as it goes, so deleting a
+line that shares a prefix with its neighbour shows up as an edit starting
+mid-line, with the natural `dd` lying inside the run before it. The run's right
+edge is therefore taken where the edit could start: back by the length the next
+run's diagonal also matches (`initial[a-1-k] == goal[b-1-k]`).
+
 **Gate.** Seal the core iff
 
 ```
@@ -352,6 +370,74 @@ Validation history:
   mispriced), tall paragraphs — with zero plan-1 cost mismatches
 - the move from collapsed cells to seals (2026-08-31) kept every plan-1 cost on
   the corpus
+- a sealed-vs-unsealed A/B (2026-11-15) showed sealing is not exact and added
+  slid edges; see *Seal exactness and margin size*
+
+### Seal exactness and margin size (open)
+
+Findings from comparing the sealed planner against one unsealed block (the
+true optimum under the cost model), 1,500 cases per corpus, about 12k in all.
+The corpora were code (word, line, mixed edits), prose, wide lines, tall
+paragraphs, junk text (punctuation, indent runs, blank lines), and the
+composition catalog.
+
+**Sealing is not exact.** Cases costing more than the unsealed DP:
+
+| Rule | Worse cases | Worst excess | DP cells |
+|---|---|---|---|
+| Myers edges (before) | 137 | 10.2 | 1.00x |
+| Slid edges (current) | 27 | 10.2 | 1.01–1.22x |
+| Slid + depth-dependent delete slack, same seals | 27 | 10.2 | 0.81–1.03x |
+| Same, seals re-decided on the smaller margins | 31 | 10.2 | 0.66–0.90x |
+
+The misses fall into three classes:
+- **Sliders** (fixed): Myers places a deletion as far right as it goes, so the
+  cheap `dd` lies inside the preceding run. Word-only edits never hit this;
+  line edits hit it in about 4% of cases.
+- **Alternate alignments** (open): with duplicated lines or blocks, a
+  non-Myers pairing saves about one region (excess 1–3, one outlier at 10.2).
+  Sealing commits to the Myers pairing, so no margin rule recovers these.
+- **Margin too small** (must stay zero): none in 4.8k cases (600 per corpus)
+  against an unsealed DP allowed to keep only Myers pairs plus the slid pairs;
+  Myers edges missed 51 there and none with Myers pairs alone. The
+  depth-dependent variants passed too, so this shows plan-level rarity and
+  does not replace the bounds below.
+
+**Margins look loose but are not safely shrinkable.** Mean margin is 17–26
+chars per edge with about 0.1 used on average (max used 34), and no run under
+roughly 47–69 chars seals. Two things blocked a smaller margin:
+- depth-dependent slack — applying the `{k}dd`/`D` terms only once the margin
+  reaches the edge's line end, and `{k}dap` only at the paragraph end — passed
+  a small sample but fails the cut bound on long whitespace runs (41 of 18.7M
+  span triples, worst 1.7), and four more cases went inexact
+- larger sealed cores expose more alternate-alignment misses, so some of the
+  apparent looseness is covering for the Myers commitment
+
+**Bounds checked exhaustively on junk text** (split cost against whole cost):
+- delete `stopSlack`/`startSlack`: hold (0 violations)
+- move `stopSlack`: 131 violations, worst 0.9; move `startSlack`: 8, worst 0.7
+- the right margin's move saving: 32 of 229M, worst 0.7
+- tilings are not subadditive (delete worst 0.7, move 1.7), from the
+  begin-clamp privileges; adding one `maxChunkGap` restores the move bound
+
+The move-side violations are below one keystroke and showed no plan-level
+miss, so they are recorded, not patched.
+
+Open questions:
+- whether the slide should be `max(0, slide - min(|deleted|, |inserted|))`:
+  for a replace, the common suffix inside the diff itself does not reach the
+  run, so the current scan over-shrinks (safe, costs cells)
+- sealing on an alignment that is not Myers-specific, or keeping duplicated
+  blocks unsealed, for the alternate-alignment class
+- a sound depth-dependent slack: the counterexamples are all whitespace runs,
+  where no cheap move chunk exists
+- a dominance argument that restricts competitors to plans that could be
+  optimal, which is what a materially lower gate threshold needs
+
+The harness needed a mode switch inside `sealMatchedRuns` (unsealed, per-rule
+variants), so it was not kept. Rebuilding it means a `tests/Debug` test that
+runs the DP on a single `{0, N, 0, M}` block and compares plan-1 cost. The
+restricted check additionally limits the DP's `matches` to the allowed pairs.
 
 ### Diff-bound via seals
 
@@ -361,7 +447,7 @@ counted-command boundaries inside the run. Three attempts at an `O(1)`
 cross-run oracle were all inexact.
 
 Seals dissolve the tension without one:
-- no optimal deletion crosses a sealed core, so no sweep ever needs to, and
+- no deletion is allowed to cross a sealed core, so no sweep ever needs to, and
   each block's sweeps stay within its own raw span
 - the only raw walks over a core are the per-seal `CROSS` sweeps, one per
   trailing-diagonal start

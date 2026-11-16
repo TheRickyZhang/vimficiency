@@ -1,5 +1,5 @@
 -- `buffer_history` rebuilds an earlier buffer text from the current one plus the
--- lines each change replaced. The oracle is a full snapshot taken at every seq.
+-- lines replaced between marks. The oracle is a full snapshot taken at every mark.
 
 local buffer_history = require("vimficiency.capture.buffer_history")
 local session_store  = require("vimficiency.session.store")
@@ -53,19 +53,19 @@ test("lines_at: every earlier seq rebuilds to the snapshot taken there", functio
   local buf = h.new_buf({ "alpha one", "beta two", "gamma three", "delta four", "epsilon five" })
   vim.bo[buf].textwidth = 12
 
-  buffer_history.track(buf)
-
-  local marks = { { seq = buffer_history.seq(buf), lines = snapshot(buf) } }
+  local marks = { { seq = buffer_history.mark(buf), lines = snapshot(buf) } }
   for _ = 1, 1000 do
-    local n = vim.api.nvim_buf_line_count(buf)
-    vim.api.nvim_win_set_cursor(0, { math.random(1, n), 0 })
-    local before = snapshot(buf)
-    local op = math.random(1, #EDITS)
-    EDITS[op](buf)
-    if not pcall(buffer_history.lines_at, buf, 0) then
-      error(("edit %d reset the history: %s -> %s"):format(op, vim.inspect(before), vim.inspect(snapshot(buf))), 0)
+    for _ = 1, math.random(1, 4) do
+      local n = vim.api.nvim_buf_line_count(buf)
+      vim.api.nvim_win_set_cursor(0, { math.random(1, n), 0 })
+      local before = snapshot(buf)
+      local op = math.random(1, #EDITS)
+      EDITS[op](buf)
+      if not pcall(buffer_history.lines_at, buf, 0) then
+        error(("edit %d reset the history: %s -> %s"):format(op, vim.inspect(before), vim.inspect(snapshot(buf))), 0)
+      end
     end
-    marks[#marks + 1] = { seq = buffer_history.seq(buf), lines = snapshot(buf) }
+    marks[#marks + 1] = { seq = buffer_history.mark(buf), lines = snapshot(buf) }
   end
 
   for _, mark in ipairs(marks) do
@@ -79,6 +79,20 @@ test("lines_at: every earlier seq rebuilds to the snapshot taken there", functio
       assert_eq(buffer_history.lines_at(buf, mark.seq), mark.lines, "after trim, seq " .. mark.seq)
     end
   end
+
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
+test("mark: every change since the last mark folds into one seq step", function()
+  local lines = {}
+  for i = 1, 200 do lines[i] = (i % 2 == 0 and "x " or "keep ") .. i end
+  local buf = h.new_buf(lines)
+
+  local start = buffer_history.mark(buf)
+  vim.cmd("silent g/^x/d")
+  assert_eq(buffer_history.mark(buf), start + 1)
+  assert_eq(buffer_history.mark(buf), start + 1, "a mark with nothing pending adds no step")
+  assert_eq(buffer_history.lines_at(buf, start), lines)
 
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
