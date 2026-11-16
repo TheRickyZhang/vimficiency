@@ -91,7 +91,7 @@ const { initial = 'aa b cc', goal = 'xx b zz' } = Astro.props;
       });
       table.appendChild(body);
       this.q('[data-table]').replaceChildren(table);
-      this.q('[data-total]').textContent = `plan cost ${fmt(r.total)} = Σ del + Σ ins + Σ move`;
+      this.q('[data-total]').textContent = `plan cost ${fmt(r.total)} = Σ del + Σ ins + Σ move + a penalty per edit`;
     }
   }
 

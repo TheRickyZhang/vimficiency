@@ -18,11 +18,16 @@
 `VimDiff::trace()` — the production DP tables and path, so the animation cannot
 drift from the real planner.
 
-The committed traces predate two changes and still render as is. Regenerating
-would need the scene adjusted: the export no longer writes the per-relaxation
-`events` list (Acts 3–4 animate candidate competition from it), and `plans` is
-a one-element list since the planner's K-best removal (Act 5 and Act 6 compare
-`plans[1]`).
+The committed traces predate four planner changes and still render as is.
+Regenerating would need the scene adjusted:
+- the export no longer writes the per-relaxation `events` list (Acts 3–4
+  animate candidate competition from it)
+- `plans` is a one-element list since the planner's K-best removal (Act 5 and
+  Act 6 compare `plans[1]`, and `maxPlans` is gone)
+- every region now pays `REGION_PENALTY`, so the example's optimum is 11
+  against two edits at 14, not 10 against 12
+- `<Esc>` is charged on `EXIT`, where the scene narrates it as prepaid on
+  entering insert mode; `enterExtra` is now the entry key alone
 
 Regenerate (from the repo root; `VIMFY_TRACE_INITIAL` / `VIMFY_TRACE_GOAL`
 override the buffers, literal `\n` for newlines):

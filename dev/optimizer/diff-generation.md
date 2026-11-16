@@ -162,7 +162,7 @@ the goal, typing raw `[begin,end)` costs `PS(end) - PS(begin)`.
 
 Regions are not a DP concept:
 - a region is a maximal stretch of delete/type steps between two moves, read
-  off the winning path afterwards (`reconstructPlan`)
+  off the winning path afterwards (`walk`)
 - the per-region charge sits on the move that reaches the region (and on the
   leading cell for the first), so the state needs no memory of where one
   began — that is why two tables suffice (charging `<Esc>` only when something
@@ -188,10 +188,11 @@ The DP runs once per block (see *Sealing matched runs*), column-major, and
 - within a column, `in` depends only on column `j-1` and `out` on smaller `i`;
   then the deletion sweep lands its arrivals
 
-Each cell holds one 16-byte candidate: cost, predecessor cell, and the step
-that produced it. `calculate` returns the one optimum; `calculateBreakdown`
-re-prices its regions with single-span oracle queries, the diagnostic surface
-behind `tests/Approval/VimDiffApprovalTest.cpp`.
+Each cell holds one 16-byte candidate: cost, predecessor cell, the path's move
+count for the tie-break, and the step that produced it. `calculate` returns
+the one optimum; `calculateBreakdown` re-prices its regions with single-span
+oracle queries, the diagnostic surface behind
+`tests/Approval/VimDiffApprovalTest.cpp`.
 
 ### Complexity
 
@@ -206,10 +207,15 @@ Per block with `n × m` cells:
 - each seal: one `CROSS` sweep per trailing-diagonal start, `O(margin·core)`
 
 So `O(n·m·mxcnt)` per block and
-`O(Σ_k n_k·m_k·mxcnt + Σ_seals margin·core)` overall: proportional to the
-cells and linear in `mxcnt`, never in the buffer. There is no `n²` or `m²`
-term: typing is additive, a column's deletions share one sweep, and a move
-row is no longer than a matched run, which is at most `m`.
+`O(Σ_k n_k·m_k·mxcnt + Σ_seals margin·core)` for the DP: proportional to the
+cells and linear in `mxcnt`. There is no `n²` or `m²` term: typing is
+additive, a column's deletions share one sweep, and a move row is no longer
+than a matched run, which is at most `m`.
+
+Around the DP the buffer enters only linearly:
+- flattening and the oracle's boundary tables, `O(N+M)`
+- the Myers pass that sealing starts from, `O((N+M)·D)` for edit distance `D`
+- the `CROSS` sweeps, since the sealed cores add up to the unchanged text
 
 Memory:
 - `out` and `in` are one column-major `Grid` each — a single allocation with
@@ -222,6 +228,28 @@ Memory:
 - in either case `calculate` skips the DP and returns the sealed partition —
   one region per unmatched block: always valid, never weighed against merging
   or splitting, so downstream sees a coarse partition rather than an abort
+
+Measured 2026-11-16 (Release, one machine) on the bench catalog, 31 captured
+slow-fire sessions, 385 git revision pairs and synthetic edits of real code:
+- the DP costs 60–140 ns per cell from 16k to 41M cells, so its scaling
+  matches the formula. About 85% is the deletion sweep (50–115 ns per
+  position, rising with block size); the per-cell relaxations are about 10 ns
+- real blocks are small: a session's largest block has a median of 44 chars
+  on the initial side, 134 at p90, 584 at most. The planner takes 0.5 ms at
+  the median, 5 ms at p90 and 73 ms at worst on those sessions
+- one-block rewrites: 800×800 chars 75 ms, 1600×1600 320 ms, 3200×3200 1.4 s
+- two small edits far apart in a 23k-char buffer: 23 ms, 14 of them in the
+  `CROSS` sweeps and 7 in sealing
+
+Open, from those measurements:
+- `MAX_PLANNER_CELLS` (100M) is untuned. At that rate it admits 10–15 s and
+  3–4 GB before the sealed-partition fallback; 2–4M cells is 0.25–0.5 s
+- one large contiguous edit is dominated by the Myers pass.
+  `MyersDiff::tracePath` saves all of `V` (`2(N+M)+3` ints) every round, so
+  its history is `O((N+M)·D)` in time and memory: deleting or pasting 100
+  lines in a 19k-char buffer spends 0.4 s and about 1 GB there, against
+  30 ms in the DP. Saving only diagonals `[-d-1, d+1]`, the ones the
+  traceback reads, measured 406 → 45 ms
 
 Why a sweep and not a per-cell running min: a running min extends a span one
 unit at a time, which assumes extending only ever adds cost. Deletion and
@@ -491,7 +519,7 @@ cost) and regret.
 
 Implemented, wired as the default `diffAlgorithm=0`:
 - the four-stage pipeline: `sealMatchedRuns`, `calculateTransitionCosts`,
-  `solveVimDiff` + `relaxDeletes`, `reconstructPlan`
+  `solveVimDiff` + `relaxDeletes`, `walk`
 - the exact two-table (`out`/`in`) DP, run per block, one candidate per cell
 - the shared counted-tiling oracle for delete and movement: span-local runs,
   digit keystrokes plus the shared `CountPenalty` model, counts capped at

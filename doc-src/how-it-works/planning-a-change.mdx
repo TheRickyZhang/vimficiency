@@ -1,6 +1,6 @@
 ---
 title: "Planning a change"
-description: "A plan deletes runs of the initial text, types runs of the goal, and moves across what they share. Its price is the sum of those three."
+description: "A plan deletes runs of the initial text, types runs of the goal, and moves across what they share. Its price is the sum of those three plus a flat charge per edit."
 sidebar: { hidden: true }
 ---
 import PlanWidget from '../../web/docs/src/components/PlanWidget.astro';
@@ -32,14 +32,18 @@ one costs.
 <PlanWidget />
 
 Try `the quick brown fox jumps over the lazy dog` → `the quick red fox leaps over the lazy dog`:
-the planner keeps ` fox ` and makes two edits. Then shorten the gap between the
-edits until it decides one edit through the middle is cheaper.
+the planner makes two edits and moves over `fox ` between them. Then shorten
+the gap between the edits until it decides one edit through the middle is
+cheaper.
 
 ## What a plan costs
 
 ```
-sum(delete costs) + sum(insert costs) + sum(move costs)
+sum(delete costs) + sum(insert costs) + sum(move costs) + penalty × regions
 ```
+
+`penalty` is a flat 1 per region, the mental cost of one more separate edit.
+When two plans still tie, the one with fewer moves wins.
 
 The shared prefix and suffix are free. Every optimal plan starts at the first
 differing character and ends at the last, so reaching them from the cursor costs
@@ -58,8 +62,8 @@ A step advances `(i, j)` in one of three ways:
 A delete followed directly by typing is the `c` form (`cw`, `cc`, `s`), which
 saves the entry key: in the widget, a region that both deletes and types pays
 `<Esc>` but not `i`. Counted commands cost their digit keystrokes plus a
-concave cognitive penalty (roughly `sqrt(k)`), shared with the downstream
-search.
+concave cognitive penalty (each extra unit of the count adds less), shared
+with the downstream search.
 
 Both oracles are deliberately coarse keystroke counts. The planner only ranks
 partitions; the [search](/vimficiency/docs/how-it-works/searching/) re-prices the winning sequence exactly,

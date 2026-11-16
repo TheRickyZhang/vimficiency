@@ -31,48 +31,15 @@ namespace {
 #define VF_NO_UNIQUE_ADDRESS
 #endif
 
-// =============================================================================
-// Edit-tracer policies (display-only segmentation, off the hot path)
-// =============================================================================
+// Edit tracers: optionally record one byte span per planned edit so Explore
+// can segment Optimal-N rows by plan. `optimize()` uses NoTrace (zero
+// per-state cost via [[no_unique_address]]); `optimizeWithEditSpans()` uses
+// EditSpanTrace (one uint32 per state, one arena node per edit transition).
 //
-// The composition A* search can optionally record one byte span per planned
-// edit, so Explore can render Optimal-N header rows segmented by the plan
-// rather than by Vim-token kind. Tracing is opt-in per call:
-//
-//   optimize()              -> NoTrace        (zero per-state cost)
-//   optimizeWithEditSpans() -> EditSpanTrace  (one uint32 per state +
-//                                              arena allocation per edit
-//                                              transition only)
-//
-// Both policies model the same four lifecycle events and the same `State`
-// associated type. The contract is the `EditTracer` concept below; every
-// `optimizeImpl` site that touches the tracer goes through one of these
-// named methods, never through `if constexpr (Trace::collecting)` — with one
-// load-bearing exception at the goal-finalize site, where `collecting`
-// decides whether to push to `resultSpans` at all.
-//
-//   onSearchStart() -> State
-//       Initial trace state attached to the seed CompositionState.
-//
-//   onEditTransition(parent, editIndex, begin, end) -> State
-//       Called when the search enqueues a CompositionState produced by
-//       applying planned edit #editIndex. (begin, end) is the half-open byte
-//       span this transition contributed to the result's flat sequence.
-//
-//   onMotionTransition(parent) -> State
-//       Called when the search enqueues a CompositionState produced by pure
-//       motion (no planned edit advanced). Trace state passes through
-//       unchanged in both current policies, but the explicit call site keeps
-//       motion vs edit transitions symmetric.
-//
-//   onGoalReached(state, totalEdits) -> std::vector<EditSequenceSpan>
-//       Called at goal acceptance to reconstruct the per-edit byte spans for
-//       the result whose tail state is `state`.
-//
-// `collecting` is a static bool — true iff the tracer is doing real work.
-// Wrap-only-when-needed via [[no_unique_address]] inside QueueEntry: with
-// NoTrace, sizeof(QueueEntry) == sizeof(CompositionState) and the queue
-// behaves identically to a plain CompositionState pq.
+// Edit transitions carry the half-open byte span they added to the flat
+// sequence. `optimizeImpl` reaches the tracer only through the `EditTracer`
+// methods, except goal finalize, which checks `collecting` before pushing
+// `resultSpans`.
 
 struct EditTraceNode {
   uint32_t previous = 0;     // 0 = root sentinel (never a real node)
@@ -85,7 +52,6 @@ struct NoTrace {
   struct State {};
   static constexpr bool collecting = false;
 
-  // All event methods are empty — they compile away under -O.
   State onSearchStart() const { return {}; }
   State onEditTransition(const State&, int /*editIndex*/,
                          uint32_t /*begin*/, uint32_t /*end*/) const {
@@ -102,7 +68,7 @@ struct EditSpanTrace {
   struct State { uint32_t node = 0; };
   static constexpr bool collecting = true;
 
-  // Index 0 is a sentinel root used as "no parent". Real nodes start at 1.
+  // Index 0 is the root sentinel; real nodes start at 1.
   vector<EditTraceNode> arena{EditTraceNode{}};
 
   State onSearchStart() const { return {}; }
@@ -142,10 +108,6 @@ struct EditSpanTrace {
   }
 };
 
-// Contract for both tracer policies; checked at the optimizeImpl template
-// head so substitution failures surface at the call site, not deep in the
-// function body. Mirrors the `GoalHandlerCore` concept shape in
-// `TransformTransitionDispatcher.h`.
 template<class T>
 concept EditTracer = requires(
     T t, const T ct, const typename T::State s,
@@ -194,17 +156,8 @@ std::optional<Result> buildWholeBufferRewriteFallback(
   return Result(seq, getEffort(seq.view(), config));
 }
 
-// Templated search core. Both public optimize entrypoints route through here.
-// `Trace` satisfies the `EditTracer` concept above. Today: `NoTrace` (zero
-// per-state cost, used by `optimize()`) or `EditSpanTrace` (used by
-// `optimizeWithEditSpans()`); under `NoTrace` the queue entries are byte-
-// equivalent to a plain CompositionState pq.
-//
-// Returns the goal results plus, when `Trace::collecting`, a parallel vector
-// of per-result edit spans. With NoTrace the spans vector is empty. All
-// tracer interaction goes through `trace.onSearchStart() / onEditTransition /
-// onMotionTransition / onGoalReached`; the only `if constexpr (Trace::collecting)`
-// left here gates pushing to `resultSpans` at the goal site (see comment there).
+// Returns the results plus a parallel vector of per-result edit spans, which
+// is empty under NoTrace.
 template <EditTracer Trace>
 static std::pair<vector<Result>, vector<vector<EditSequenceSpan>>>
 optimizeImpl(
@@ -230,10 +183,8 @@ optimizeImpl(
   pq.push(Entry{startingState, trace.onSearchStart()});
   ctx.costMap[startingState.getKey()] = startingState.getCost();
 
-  // Terminal states (all edits done AND cursor at goalPos) are not cached so
-  // multiple distinct paths to goal can each emit a result. Post-final-edit
-  // nav states (all edits done but cursor still moving toward goalPos) ARE
-  // cached, same as inter-edit nav, to avoid redundant exploration.
+  // Terminal states are not cached, so distinct paths to the goal each emit a
+  // result.
   auto isTerminal = [&](const CompositionState& s) {
     return s.getEditsCompleted() == ctx.totalEdits() && s.getPos() == ctx.goalPos;
   };
@@ -243,10 +194,8 @@ optimizeImpl(
       pq.push(Entry{std::move(newState), traceState});
     }
   };
-  // editOffset splits a transition sequence whose prefix is motion (Navigate)
-  // and suffix is the planned edit. Used for pure-insertion strategies that
-  // fuse motion + insertCmd into one transition; passing editOffset > 0 makes
-  // the recorded edit span cover only the insertion suffix.
+  // editOffset: bytes of leading motion in editSequence, excluded from the
+  // traced edit span.
   auto enqueueEditTransition = [&](const Entry& parent,
                                    const Sequence& editSequence,
                                    const CursorPos& newPos,
@@ -270,9 +219,8 @@ optimizeImpl(
     enqueueState(std::move(newState), trace.onMotionTransition(parent.trace));
   };
 
-  // Slice a padded subset of `fromLines` covering the cursor and target lines,
-  // and build the boundary the inner NavOptimizer will see. Used by both the
-  // range-motion and point-motion exploration helpers below.
+  // Padded line subset covering the cursor and target lines, plus the boundary
+  // NavOptimizer sees for it.
   auto sliceMotionSubset = [&](CursorPos pos, int targetBeginLine, int targetEndLine,
                                const Lines& fromLines) {
     struct Slice {
@@ -305,15 +253,9 @@ optimizeImpl(
     };
   };
 
-  // Enumerate motions from `pos` toward a CharInterval target.
-  // `makeLocalInterval(subset, beginLine)` translates the caller's full-buffer
-  // target intent into subset-local coords (returns nullopt to skip search).
-  // - Multi-sink range targets (inter-edit motion, J-plan motion) use the
-  //   default `keepMultiplePerLanding=false` so we get one cheapest path
-  //   per landing.
-  // - Single-cursor targets (post-final-edit nav) construct a 1-element
-  //   interval and pass `keepMultiplePerLanding=true` so multiple distinct
-  //   sequences to the single point are enumerated.
+  // makeLocalInterval(subset, beginLine) gives the target in subset-local
+  // coords. keepMultiplePerLanding keeps several sequences per landing instead
+  // of the cheapest one, for single-point targets.
   auto exploreMotionsToInterval = [&](
       const Entry& parent, CursorPos pos,
       int targetBeginLine, int targetEndLine,
@@ -357,9 +299,6 @@ optimizeImpl(
       debug("GOAL #" + to_string(results.size()) + ":",
             "\"" + s.getSequence().str() + "\"", "effort:", effort);
       results.emplace_back(s.getSequence(), effort);
-      // Single load-bearing `collecting` check left in optimizeImpl: NoTrace
-      // emits empty span vectors that would otherwise pollute resultSpans.
-      // All other tracer event sites go through unconditional method calls.
       if constexpr (Trace::collecting) {
         resultSpans.push_back(
             trace.onGoalReached(current.trace, ctx.totalEdits()));
@@ -384,16 +323,13 @@ optimizeImpl(
           "pos:", pos, "edits:", editsCompleted,
           "cost:", s.getCost(), "effort:", s.getEffort());
 
-    // ========== POST-FINAL-EDIT NAV PHASE ==========
-    // All edits applied but cursor isn't at goalPos yet. Enumerate motions
-    // from `pos` toward `goalPos` and enqueue, keeping editsCompleted fixed
-    // at totalEdits(). No edit transitions are explored here.
+    // Post-final-edit nav: all edits applied, only motions toward goalPos.
     if (editsCompleted == ctx.totalEdits()) {
       debug("  post-edit nav from", pos, "to goalPos", goalPos);
       exploreMotionsToInterval(
           current, pos, goalPos.line, goalPos.line,
           ctx.getLinesAfter(editsCompleted),
-          clamp(params.maxResults, 1, 10), /*keepMultiplePerLanding=*/true,
+          clamp(params.maxResults, 1, 10), true,
           [&](const Lines& subset, int beginLine) -> CharInterval {
             CursorPos localGoal(goalPos.line - beginLine, goalPos.col, goalPos.targetCol);
             return CharInterval(localGoal, localGoal);
@@ -401,29 +337,20 @@ optimizeImpl(
       continue;
     }
 
-    // Get current buffer state
     const Lines& currentLines = ctx.getLinesAfter(editsCompleted);
     const DiffState& nextEdit = ctx.getDiffState(editsCompleted);
 
-    // ========== PURE INSERTION HANDLING ==========
-    // Pure insertions have no edit region to transition into. Strategies
-    // come from CompositionStrategies::enumerateInsertions — same source
-    // CompositionFrontier consumes — so the depth-1 frontier and the full
-    // optimizer never drift.
+    // Pure insertion: no edit region to enter. Strategies are shared with
+    // CompositionFrontier so the two never drift.
     if (nextEdit.isPureInsertion()) {
       debug("  pure insertion at", nextEdit.beginPos,
             "text='" + VF::prettify(nextEdit.insertedText) + "'");
 
-      // Dispatch one strategy: enqueue zero-prefix edit when cursor is already
-      // in range, otherwise run NavOptimizer to find motion prefixes and
-      // enqueue motion-prefixed edit transitions for each result.
       auto dispatchInsertion = [&](const CompositionStrategies::Insertion& s) {
         const bool inRange = (pos.line == s.targetLine &&
                               pos.col >= s.beginCol && pos.col < s.endCol);
 
         if (inRange) {
-          // No motion prefix: editOffset = 0 — the whole transition sequence
-          // is the planned edit.
           enqueueEditTransition(
               current, Sequence(s.insertCmd), s.goalPos, editsCompleted + 1);
           return;
@@ -443,17 +370,10 @@ optimizeImpl(
           const CursorPos& localGoal = movResult.getGoalPos();
           assert(localGoal >= search->localRangeBegin && localGoal < search->localRangeEnd &&
                  "pure insertion motion goal must be subset-local and inside target range");
-          // Intentionally do not remap localGoal to full-buffer coordinates here:
-          // this branch immediately appends the insertion and transitions using
-          // the strategy's post-insert position, so the intermediate motion
-          // endpoint isn't consumed.
-          //
-          // Tracing: the prefix (motion) is Navigate; only the insertCmd suffix
-          // is the planned edit. editOffset = motion length so the recorded edit
-          // span covers only the insertion, leaving the motion as a nav row.
+          // localGoal stays subset-local: the transition lands on the
+          // strategy's post-insert position, not the motion endpoint.
           Sequence fullSeq = movResult.getSequence();
-          const uint32_t motionBytes =
-              static_cast<uint32_t>(fullSeq.size());
+          const uint32_t motionBytes = static_cast<uint32_t>(fullSeq.size());
           fullSeq.append(s.insertCmd);
           enqueueEditTransition(
               current, fullSeq, s.goalPos, editsCompleted + 1, motionBytes);
@@ -464,7 +384,6 @@ optimizeImpl(
       continue;
     }
 
-    // ========== EDIT vs MOVEMENT TRANSITIONS ==========
     const TransformResult& transformResult = ctx.edits[editsCompleted].transformResult;
 
     // Edit: every Transform result applicable from this cursor.
@@ -504,8 +423,7 @@ optimizeImpl(
       if (joinPlan && pos.line != joinPlan->entryLine) {
         int entryLine = joinPlan->entryLine;
         exploreMotionsToInterval(
-            current, pos, entryLine, entryLine, currentLines, /*maxResults=*/1,
-            /*keepMultiplePerLanding=*/false,
+            current, pos, entryLine, entryLine, currentLines, 1, false,
             [&](const Lines& subset, int beginLine) -> CharInterval {
               return wholeLineMotionInterval(subset, entryLine - beginLine);
             });
@@ -516,18 +434,15 @@ optimizeImpl(
             + ")-[" + to_string(nextEdit.endPos.line) + "," +
             to_string(nextEdit.endPos.col) + ")");
 
-      // Motions to the next edit's diff range
+      // Toward the next edit's diff range.
       exploreMotionsToInterval(
           current, pos, nextEdit.beginPos.line, nextEdit.editEndLine() - 1,
-          currentLines,
-          nextEdit.origCharCount(),
-          /*keepMultiplePerLanding=*/false,
+          currentLines, nextEdit.origCharCount(), false,
           [&](const Lines& subset, int beginLine) -> CharInterval {
             CursorPos localBegin(nextEdit.beginPos.line - beginLine, nextEdit.beginPos.col);
             CursorPos localEnd(nextEdit.endPos.line - beginLine, nextEdit.endPos.col);
             return CharInterval(CharRange(localBegin, localEnd), subset);
           });
-
     }
   }
 
@@ -538,13 +453,8 @@ optimizeImpl(
         "skipped:", ctx.statesSkipped,
         "queueRemaining:", static_cast<int>(pq.size()));
 
-  const int pqRemaining = static_cast<int>(pq.size());
-  const bool fullyExplored = pq.empty();
-  // Stash the search-summary metrics on `ctx` via the wrapper that also
-  // accepts pqRemaining/fullyExplored — we do this here, before pq goes out
-  // of scope, then `buildCompositionResult` reads them back.
-  ctx.lastPqRemaining = pqRemaining;
-  ctx.lastFullyExplored = fullyExplored;
+  ctx.lastPqRemaining = static_cast<int>(pq.size());
+  ctx.lastFullyExplored = pq.empty();
   return std::pair{std::move(results), std::move(resultSpans)};
 }
 
@@ -565,10 +475,7 @@ CompositionResult::CompositionResult(vector<Result> results, CompositionSearchSt
          "CompositionResult requires one TransformResult per diff");
 }
 
-// Build a CompositionResult from the search outputs plus the precomputed
-// per-edit data still owned by `ctx`. Consumes `ctx.edits` (moves diffStates
-// and transformResults out) and `ctx`'s explored states; do not touch ctx
-// after calling.
+// Consumes ctx.edits and ctx's explored states; do not touch ctx afterwards.
 static CompositionResult buildCompositionResult(
     vector<Result> results,
     const Lines& initialLines, CursorPos goalPos,
@@ -601,9 +508,8 @@ static CompositionResult buildCompositionResult(
                            std::move(transformResults));
 }
 
-// `goalPos` is a real terminal target: the search continues past the last edit
-// with motion-only transitions until pos == goalPos. For pure-motion sessions
-// (E == 0), the search starts directly in the post-final-edit nav phase.
+// The search continues past the last edit with motions until pos == goalPos;
+// with no edits it starts there.
 CompositionResult CompositionOptimizer::optimize(
     const Lines& initialLines, const CursorPos initialPos, const Lines& goalLines,
     const CursorPos goalPos, CompositionOptimizerParams params,

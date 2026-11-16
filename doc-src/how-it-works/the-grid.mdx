@@ -15,7 +15,7 @@ A plan is a path from the top-left corner to the bottom-right one.
   <figcaption>The three step families as moves on the grid. A region is a run of delete and type steps between two moves.</figcaption>
 </figure>
 
-- **move** steps diagonally while the characters match, paying the counted-motion cost of the span crossed
+- **move** steps diagonally while the characters match, paying the counted-motion cost of the span crossed plus a flat penalty for the region it leads to
 - **delete** steps down, paying the counted-operator cost of the initial span removed
 - **type** steps right one goal character at a time, paying that key's effort
 
@@ -28,8 +28,8 @@ Typing happens in insert mode and everything else in normal mode, so each cell
 exists twice: `out[i][j]` for normal mode and `in[i][j]` for insert mode.
 
 ```
-move    out[pi][pj] → out[i][j]   i-pi = j-pj ≥ 1, chars match          moveCost(pi, i)
-        previous block's trailing diagonal → this block's leading one   moveCost(seal)
+move    out[pi][pj] → out[i][j]   i-pi = j-pj ≥ 1, chars match          moveCost(pi, i) + penalty
+        previous block's trailing diagonal → this block's leading one   moveCost(seal) + penalty
 delete  out[pi][j]  → out[i][j]   delete initial [pi, i)                 delCost(pi, i)
         out[pi][j-1] → in[i][j]   same, landing in insert via `c`        delCost(pi, i) + typed
 type    out[i][j-1] → in[i][j]    enter insert, type goal char j-1       entry + typed
@@ -37,9 +37,9 @@ type    out[i][j-1] → in[i][j]    enter insert, type goal char j-1       entry
         in[i][j]    → out[i][j]   leave insert                           esc
 ```
 
-- nothing is charged per region, so a state needs no memory of where its region began; that is why two tables suffice
+- `penalty` is the flat charge per region. It rides on the move that reaches the region, and the first region pays it at the start, so a state needs no memory of where its region began; that is why two tables suffice
 - the two sides behave differently, which is why there are two: typing is additive per character, so `in` extends one character at a time, while a deletion is not — a span that grows to swallow a whole line becomes one `dd` — so every delete arrival is priced by a [sweep](/vimficiency/docs/how-it-works/pricing-spans/) from its start
-- each cell keeps one candidate: its cost, the step that produced it, and the predecessor cell
+- each cell keeps one candidate: its cost, the step that produced it, the predecessor cell, and the number of moves so far, which breaks cost ties
 
 <GridWidget />
 
@@ -49,8 +49,9 @@ optimal path (yellow) jumps between the two tables at those points. The large
 dots mark path cells in the table you are viewing, the small ones its cells in
 the other table.
 
-On `aa b cc` → `xx b zz` the winning path runs `DELETE` down the whole left
-column and then `TYPE` across: one region, the `C` plan. Change the goal to
-`xx b cc` and the path turns into a diagonal `MOVE` after the first edit.
+On `aa b cc` → `xx b zz` the winning path takes one `CHANGE` down the whole
+left column and then `TYPE` across: one region, the `C` plan. Lengthen the
+shared middle (`aa bbbbbb cc` → `xx bbbbbb zz`) and it splits into two edits
+joined by a diagonal `MOVE`.
 
 Next: [how a span's cost is priced](/vimficiency/docs/how-it-works/pricing-spans/).

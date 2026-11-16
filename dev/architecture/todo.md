@@ -195,7 +195,7 @@ block cells per axis, `Σ n_k ≤ N`, `mxcnt` = count cap, `E` = planned edits,
 
 | stage | cost | note |
 |---|---|---|
-| VimDiff | `O(Σ n_k·(n_k+m_k)·mxcnt)` | move table + per-column deletion sweeps + O(1) type steps; diff-bound since seals stop sweeps |
+| VimDiff | `O(Σ n_k·m_k·mxcnt)` | per-column deletion sweeps + move rows cut at matched runs + O(1) type steps; seals stop sweeps, so the DP is diff-bound, around a Myers pass and `CROSS` sweeps linear in `N` |
 | Composition construction | `O(E · P_t · B_t)` | `E` Transform A* runs; dominates the `O(E·N)` buffer rebuild and `O(E·L²)` text-object scan |
 | Composition search | `O(P_c · P_n · B_n)` | **nested**: each pop can fire up to ~9 NavOptimizer A* runs (8 ranked start positions + the diff-range search) |
 

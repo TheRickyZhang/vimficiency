@@ -140,12 +140,7 @@ struct CompositionOptimizer {
     const std::vector<DiffState>* forcedDiffs = nullptr
   );
 
-  // Same as `optimize()`, but additionally records a per-edit byte span for
-  // every result the search emits. Intended exclusively for `Explore::View`'s
-  // header-row display: `vf_analyze` and other callers must use `optimize()`
-  // so they pay zero per-state cost for tracing they don't render.
-  // (The trace-aware queue entry uses `[[no_unique_address]]` for its trace
-  // field, so the non-traced code path is byte-identical to `optimize()`.)
+  // Like optimize(), but also records each edit's byte span; used only by Explore::View.
   CompositionTraceResult optimizeWithEditSpans(
     const Lines& initialLines,
     const CursorPos initialPos,

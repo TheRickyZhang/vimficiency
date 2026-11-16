@@ -1,6 +1,6 @@
 ---
 title: "Sealing long matches"
-description: "A long kept run is never edited into. Sealing it splits the grid into blocks, so the planner's work is bounded by the change, not the buffer."
+description: "A long kept run is never edited into. Sealing it splits the grid into blocks, so the grid is sized by the change, not the buffer."
 sidebar: { hidden: true }
 ---
 import Sealing from '../../web/docs/src/assets/how-it-works/sealing.svg';
@@ -22,11 +22,11 @@ cutting through it means retyping it. A matched run with core `R` is sealed
 when
 
 ```
-type(R) > move(R) + cost(i) + cost(Esc) + slack_stop + slack_start
+type(R) > move(R) + penalty + cost(i) + cost(Esc) + slack_stop + slack_start
 ```
 
 - a plan that deletes through `R` pays at least `type(R)` to put it back
-- a plan that moves over `R` pays `move(R)`, at most one extra insert-mode round trip, and the *slack* of stopping a delete tiling at the run's edge and starting another after it (a `{k}dd` cut mid-line, a `{k}dap` cut mid-paragraph)
+- a plan that moves over `R` pays `move(R)`, at most one extra region (its penalty and an insert-mode round trip), and the *slack* of stopping a delete tiling at the run's edge and starting another after it (a `{k}dd` cut mid-line, a `{k}dap` cut mid-paragraph)
 - every term is read from the cost tables, not hand-picked: retyping grows per character while the slack is bounded per edge, so edits may still reach a few characters *into* a run — those margins stay in the blocks
 
 What remains is a list of **blocks**, character-level sub-problems between
@@ -46,12 +46,12 @@ decides:
 ```
 initial   the quick brown fox jumps over the lazy dog
 goal      the quick red fox leaps over the lazy dog
-                    ^^^^^     ^^^^                        one block, two regions
-plan      "brown"→"red"  ·  move  ·  " jum"→" lea"
+                    ^^^^^^    ^^^                         one block, two regions
+plan      "brown "→"red "  ·  move  ·  "jum"→"lea"
 ```
 
-Here the DP moves over ` fox ` rather than retyping it. The second region starts
-on the space: command boundaries price spans, they never constrain where an
+Here the DP moves over `fox ` rather than retyping it. The second region stops
+inside `jumps`: command boundaries price spans, they never constrain where an
 edit begins or ends.
 
 ## Complexity
@@ -64,8 +64,9 @@ column, and `O(nm)` type steps. Summed over blocks,
 O( Σ_k  n_k m_k mxcnt )  +  one crossing sweep per seal
 ```
 
-with `Σ n_k ≤ N` and `Σ m_k ≤ M`: quadratic in the changed text, not the
-buffer. Over a cell budget the planner falls back to one region per block,
-which is always a valid plan.
+with `Σ n_k ≤ N` and `Σ m_k ≤ M`: quadratic in the changed text and only
+linear in the buffer, through the alignment pass that finds the runs and the
+crossing sweeps over them. Over a cell budget the planner falls back to one
+region per block, which is always a valid plan.
 
 Next: [from a plan to keystrokes](/vimficiency/docs/how-it-works/searching/).

@@ -93,11 +93,9 @@ TEST(VimDiffTraceExport, ExportExample) {
   out["esc"] = typing.esc;
   out["typed"] = json::array();
   out["enterExtra"] = json::array();
-  out["changeExtra"] = json::array();
   for (int rj = 0; rj < (int)goal.text.size(); rj++) {
     out["typed"].push_back(typing.PS[rj + 1] - typing.PS[rj]);
-    out["enterExtra"].push_back(typing.entry + typing.esc);
-    out["changeExtra"].push_back(typing.esc);
+    out["enterExtra"].push_back(typing.entry);
   }
   out["blocks"] = json::array();
   for (const TraceBlock& tb : trace.blocks)
