@@ -5,6 +5,7 @@ local min = math.min
 
 local chunks_util = require("vimficiency.chunks")
 local highlights = require("vimficiency.highlights")
+local pool_mod = require("vimficiency.simulate.pool")
 local sequence_display = require("vimficiency.sequence_display")
 local util = require("vimficiency.util")
 
@@ -43,10 +44,12 @@ function M.current_snap(ctx, entry)
   return states[min(ctx.state.global_step + 1, #states)]
 end
 
+---@param ctx table
 ---@param entry VF.Replay.Window
 ---@return string
-local function header_label(entry)
+local function header_label(ctx, entry)
   if entry.is_user then return "[you] " end
+  if entry.seq_idx == 1 and ctx.state.pool.user_is_top then return "[1 · yours] " end
   return string.format("[%d] ", entry.seq_idx)
 end
 
@@ -76,7 +79,7 @@ local function build_virt_lines(ctx, entry)
   local label_hl = is_active and highlights.REPLAY_ACTIVE or "Comment"
 
   local info_row = {
-    { header_label(entry), label_hl },
+    { header_label(ctx, entry), label_hl },
     { string.format("Local %d/%d", local_step, #tokens), "Comment" },
   }
   if is_active and not entry.is_user
@@ -204,8 +207,15 @@ function M.statusline(ctx)
       state.start_row + 1, state.start_col + 1,
       state.end_row + 1, state.end_col + 1)
   end
-  local text = string.format(" vimfy%s  step %d/%d%s ",
-    label_part, state.global_step, ctx.max_total_steps(), pos_part)
+  local panes_part = ""
+  local shown, _, requested = pool_mod.effective_layout(state.pool)
+  if shown < requested then
+    local n = #state.pool.suggestions
+    panes_part = string.format("  panes %d/%d · only %d result%s",
+      shown, requested, n, n == 1 and "" or "s")
+  end
+  local text = string.format(" vimfy%s  step %d/%d%s%s ",
+    label_part, state.global_step, ctx.max_total_steps(), pos_part, panes_part)
   return (text:gsub("%%", "%%%%"))
 end
 

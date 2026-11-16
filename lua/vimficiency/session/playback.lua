@@ -14,8 +14,9 @@ local function run_compare(result, label, count)
   local user_seq = result.user_seq
   local first_optimal = optimal_results[1] and optimal_results[1].seq or ""
 
+  local user_is_top = user_seq ~= "" and user_seq == first_optimal
   local user_item = nil
-  if user_seq ~= "" and user_seq ~= first_optimal then
+  if user_seq ~= "" and not user_is_top then
     user_item = { seq = user_seq, cost = string.format("%.2f", result.user_cost) }
   end
 
@@ -35,6 +36,7 @@ local function run_compare(result, label, count)
     result.start_col,
     {
       user = user_item,
+      user_is_top = user_is_top,
       suggestions = suggestions,
     },
     {

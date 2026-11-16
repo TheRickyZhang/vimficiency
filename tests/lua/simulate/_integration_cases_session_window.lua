@@ -113,6 +113,61 @@ return function(ctx)
     end,
   },
   {
+    name = "session simulate reports capped panes and tags the user's top result",
+    run = function(next)
+      local lines = { "alpha beta gamma" }
+      local result = helpers.fake_result({
+        lines = lines,
+        goal_lines = lines,
+        start_row = 0,
+        start_col = 0,
+        end_row = 0,
+        end_col = 6,
+        user_seq = "w",
+        user_cost = 1,
+        optimal_results = {
+          { seq = "w", cost = 1 },
+          { seq = "fb", cost = 2 },
+        },
+        finished_wall_epoch = 2,
+      })
+
+      helpers.new_buf({ "session simulate source" })
+      local id = session_store.register_fetched_result("simcap", result)
+      require("vimficiency.play").set_setting("include_user_sequence", true)
+      playback.simulate("simcap", 4)
+
+      local tries = 0
+      local function finish(ok, err)
+        sim.cleanup_compare()
+        session_store.remove(id)
+        next(ok, err)
+      end
+
+      local function wait_ready()
+        tries = tries + 1
+        local windows = sim._debug_get_windows()
+        if #windows == 2 and #sim._debug_get_states() == 2 then
+          local ok, err = pcall(function()
+            assert_true(sim._debug_statusline():find("panes 2/4 · only 2 results", 1, true) ~= nil,
+              "status line should report the capped pane count: " .. sim._debug_statusline())
+            assert_true(ctx.header_lines(windows[1].buf)[2]:find("[1 · yours] ", 1, true) ~= nil,
+              "top pane should be tagged as the user's sequence")
+            assert_true(ctx.header_lines(windows[2].buf)[2]:find("[2] ", 1, true) ~= nil,
+              "second pane keeps its plain rank label")
+          end)
+          finish(ok, err)
+        elseif tries > 300 then
+          finish(false, "session.simulate did not finish precompute")
+        else
+          vim.defer_fn(wait_ready, 10)
+        end
+      end
+
+      wait_ready()
+    end,
+  },
+  {
     name = "simulate <CR> focuses the window under cursor and toggles back",
     run = function(next)
       with_replay({ "j", "w", "b" }, {

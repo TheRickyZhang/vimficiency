@@ -11,10 +11,10 @@ local M = {}
 
 ---@alias VF.Replay.PoolRankKey "user" | integer
 
----@param pool_arg { user: { seq: string, cost: string? }?, suggestions: { seq: string, cost: string? }[] }
+---@param pool_arg VF.Replay.PoolArg
 ---@return VF.Replay.Pool
 function M.build(pool_arg)
-  local pool = { user = nil, suggestions = {} }
+  local pool = { user = nil, user_is_top = pool_arg.user_is_top == true, suggestions = {} }
   if pool_arg.user then
     pool.user = {
       tokens = tokenize.for_animation(pool_arg.user.seq),
@@ -43,10 +43,12 @@ end
 ---@param pool VF.Replay.Pool
 ---@return integer window_count
 ---@return boolean include_user
+---@return integer requested_count
 function M.effective_layout(pool)
   local settings = require("vimficiency.play").get_settings()
   local include_user = (settings.include_user_sequence == true) and pool.user ~= nil
-  local window_count = max(1, min(4, settings.window_count))
+  local requested_count = max(1, min(4, settings.window_count))
+  local window_count = requested_count
   local suggestion_slots = window_count - (include_user and 1 or 0)
   local total_suggestions = #pool.suggestions
   if suggestion_slots > total_suggestions then
@@ -54,7 +56,7 @@ function M.effective_layout(pool)
     window_count = suggestion_slots + (include_user and 1 or 0)
   end
   if window_count < 1 then window_count = 1 end
-  return window_count, include_user
+  return window_count, include_user, requested_count
 end
 
 ---@param pool VF.Replay.Pool

@@ -31,6 +31,7 @@ local M = {}
 
 ---@class VF.Replay.Pool
 ---@field user VF.Replay.PoolEntry?
+---@field user_is_top boolean  user typed suggestion 1, so `user` is nil
 ---@field suggestions VF.Replay.PoolEntry[]
 
 ---@class VF.Replay.State
@@ -56,7 +57,7 @@ local M = {}
 local multi_sim = {
   global_step = 0,
   windows = {},
-  pool = { user = nil, suggestions = {} },
+  pool = { user = nil, user_is_top = false, suggestions = {} },
   saved_win = nil,
   saved_tab = nil,
   sim_tab = nil,
@@ -139,7 +140,7 @@ local function cleanup_multi_sim()
 
   multi_sim.global_step = 0
   multi_sim.windows = {}
-  multi_sim.pool = { user = nil, suggestions = {} }
+  multi_sim.pool = { user = nil, user_is_top = false, suggestions = {} }
   multi_sim.saved_win = nil
   multi_sim.saved_tab = nil
   multi_sim.sim_tab = nil
@@ -245,6 +246,7 @@ ctx.ensure_states_for_ranks = ensure_states_for_ranks
 
 ---@class VF.Replay.PoolArg
 ---@field user { seq: string, cost: string? }?
+---@field user_is_top boolean?
 ---@field suggestions { seq: string, cost: string? }[]
 
 ---@param lines string[]
@@ -344,6 +346,7 @@ end
 
 M._debug_get_windows = function() return multi_sim.windows end
 M._debug_get_pool = function() return multi_sim.pool end
+M._debug_statusline = function() return render.statusline(ctx) end
 M._debug_get_focus_state = function() return focus_state end
 M._debug_seek_to = seek_to
 M._debug_toggle_focus = actions.toggle_focus

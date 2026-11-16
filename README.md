@@ -140,6 +140,7 @@ For the full set of commands, save/store/fetch flow, configuration, and the effo
 - **In-editor:** `:help vimficiency` (generated from `doc-src/`).
 - **Limitations:** [`doc-src/13-limitations.md`](doc-src/13-limitations.md) — what the optimizer cannot model.
 - **Internals:** `dev/` — implementation notes on the optimizer, FFI conventions, replay precompute, etc.
+- **Talk:** [slides (PDF)](https://therickyzhang.github.io/vimficiency/docs/talk.pdf) — motivation, the algorithm, and a code trace from command to result.
 
 ## How it works
 
