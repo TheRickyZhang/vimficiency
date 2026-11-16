@@ -140,10 +140,10 @@ decides:</p>
 on the space: command boundaries price spans, they never constrain where an
 edit begins or ends.</p>
 <h2 id="complexity">Complexity</h2>
-<p>Per block of <code dir="auto">n × m</code> cells with count cap <code dir="auto">mxcnt</code>: <code dir="auto">n</code> move sweeps of
-<code dir="auto">O(n · mxcnt)</code>, one <code dir="auto">O(n · mxcnt)</code> deletion sweep per goal column, and <code dir="auto">O(nm)</code>
-type steps. Summed over blocks,</p>
-<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="plaintext"><code><div class="ec-line"><div class="code"><span style="--0:#d6deeb;--1:#403f53">O( Σ_k  n_k (n_k + m_k) mxcnt )  +  one crossing sweep per seal</span></div></div></code></pre><div class="copy"><button title="Copy to clipboard" data-copied="Copied!" data-code="O( Σ_k  n_k (n_k + m_k) mxcnt )  +  one crossing sweep per seal"><div></div></button></div></figure></div>
+<p>Per block of <code dir="auto">n × m</code> cells with count cap <code dir="auto">mxcnt</code>: one move sweep per start,
+cut at its longest matched run, one <code dir="auto">O(n · mxcnt)</code> deletion sweep per goal
+column, and <code dir="auto">O(nm)</code> type steps. Summed over blocks,</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="plaintext"><code><div class="ec-line"><div class="code"><span style="--0:#d6deeb;--1:#403f53">O( Σ_k  n_k m_k mxcnt )  +  one crossing sweep per seal</span></div></div></code></pre><div class="copy"><button title="Copy to clipboard" data-copied="Copied!" data-code="O( Σ_k  n_k m_k mxcnt )  +  one crossing sweep per seal"><div></div></button></div></figure></div>
 <p>with <code dir="auto">Σ n_k ≤ N</code> and <code dir="auto">Σ m_k ≤ M</code>: quadratic in the changed text, not the
 buffer. Over a cell budget the planner falls back to one region per block,
 which is always a valid plan.</p>
