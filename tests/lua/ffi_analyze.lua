@@ -266,3 +266,12 @@ test("ffi.analyze: rejects NUL bytes inside lines", function()
     ffi_lib.analyze(request({ "a" .. string.char(0) .. "b" }, { "a" }, {}), 1)
   end, "NUL byte")
 end)
+
+test("ffi.analyze: polling a finished job again raises", function()
+  local job_id = ffi_lib.analyze_start_async(request({ "a b" }, { "a b" }, { end_col = 2 }), 1, 0)
+  assert_true(
+    vim.wait(5000, function() return ffi_lib.analyze_poll(job_id) ~= nil end, 5),
+    "analyze job did not finish")
+
+  assert_error(function() ffi_lib.analyze_poll(job_id) end, "job_id")
+end)

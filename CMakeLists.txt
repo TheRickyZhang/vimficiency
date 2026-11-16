@@ -359,7 +359,11 @@ FetchContent_MakeAvailable(protobuf)
 include(${protobuf_SOURCE_DIR}/cmake/protobuf-generate.cmake)
 
 set(_vimfy_proto_dir ${CMAKE_CURRENT_SOURCE_DIR}/src/LuaExports/proto)
-set(_vimfy_proto_out ${CMAKE_CURRENT_BINARY_DIR}/generated/proto)
+# protoc output is compiler-independent, so the configure-only clangd tree
+# points this at the real build's copy instead of generating its own.
+set(VIMF_PROTO_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated CACHE PATH
+    "Directory holding the generated proto/ headers")
+set(_vimfy_proto_out ${VIMF_PROTO_GEN_DIR}/proto)
 file(MAKE_DIRECTORY ${_vimfy_proto_out})
 file(GLOB VIMFY_PROTO_FILES CONFIGURE_DEPENDS ${_vimfy_proto_dir}/*.proto)
 
@@ -386,7 +390,7 @@ protobuf_generate(
     PROTOC_OUT_DIR ${_vimfy_proto_out}
     PROTOC_EXE ${protobuf_PROTOC_EXE}
 )
-target_include_directories(vimfy_proto PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/generated)
+target_include_directories(vimfy_proto PUBLIC ${VIMF_PROTO_GEN_DIR})
 # protobuf's headers include utf8_validity.h but link the target privately.
 target_link_libraries(vimfy_proto PUBLIC protobuf::libprotobuf-lite utf8_validity)
 
@@ -455,4 +459,19 @@ if(VIMF_BUILD_TESTS)
   add_subdirectory(tests)
   # Tooling (e.g. exploration data collector; depends on test_utils)
   add_subdirectory(tools)
+endif()
+
+# The clangd tree (.clangd) is configure-only, so nothing reruns its globs when a
+# source is added. Refresh it whenever another tree reconfigures.
+set(_vimfy_clangd_dir ${CMAKE_CURRENT_SOURCE_DIR}/build-clangd)
+if(PROJECT_IS_TOP_LEVEL AND EXISTS ${_vimfy_clangd_dir}/CMakeCache.txt
+   AND NOT CMAKE_CURRENT_BINARY_DIR STREQUAL _vimfy_clangd_dir)
+  execute_process(
+      COMMAND ${CMAKE_COMMAND} ${_vimfy_clangd_dir}
+      RESULT_VARIABLE _vimfy_clangd_result
+      OUTPUT_QUIET ERROR_QUIET
+  )
+  if(NOT _vimfy_clangd_result EQUAL 0)
+    message(WARNING "Refreshing ${_vimfy_clangd_dir} failed; clangd may be stale")
+  endif()
 endif()

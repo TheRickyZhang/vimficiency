@@ -4,6 +4,7 @@ module;
 export module vf.LuaExports.Common;
 
 import std.compat;
+import vf.LuaExports.AsyncJobRegistry;
 import vf.Boundary.NavBoundary;
 import vf.Keyboard.Config;
 import vf.Types.Lines;
@@ -85,6 +86,8 @@ VFByteSlice storePending(std::string& storage);
 
 // An exception unwinding out of an export into LuaJIT's C frames is undefined
 // behaviour, so every export body runs inside one of the wrappers below.
+// Anything Lua passes, ids included, fails as an `unexpectedError`; `CHECK` is
+// for states C++ itself guarantees.
 
 // For exports returning VFByteSlice: an escaping exception becomes an error
 // envelope, which Lua raises like any other C++ error.
@@ -107,6 +110,20 @@ VFByteSlice guardedRequest(
     auto request = parseRequest<Request>(data, len);
     if (!request) return std::unexpected(request.error());
     return body(*request);
+  });
+}
+
+// `guarded` for a `*_poll` export: pending while the worker runs, then frees
+// the job and returns its failure or `finish(state)`.
+template <typename JobT, typename Finish>
+VFByteSlice guardedPoll(
+    std::string& storage, JobRegistry<JobT>& jobs, int id, Finish finish) noexcept {
+  if (jobs.running(id)) return storePending(storage);
+  return guarded(storage, [&]() -> ProtoResult {
+    const std::unique_ptr<JobT> job = jobs.take(id);
+    if (!job) return unexpectedError("unknown job_id " + std::to_string(id));
+    if (!job->error().empty()) return unexpectedError(job->error());
+    return finish(job->state());
   });
 }
 

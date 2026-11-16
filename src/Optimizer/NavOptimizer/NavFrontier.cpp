@@ -5,6 +5,7 @@ module vf.Optimizer.NavOptimizer.NavFrontier;
 
 import std.compat;
 import vf.Effort.RunningEffort;
+import vf.Optimizer.NavOptimizer.BestPerPos;
 import vf.Keyboard.KeyedSequence;
 import vf.Keyboard.ToKeys.MovementToKeys;
 import vf.Optimizer.NavOptimizer.BufferIndex;
@@ -47,8 +48,7 @@ vector<Suggestion> rankNavFrontier(
   // cell. Default 1 keeps just the cheapest token per cell; values > 1
   // surface multiple distinct paths to the same cell (e.g. `w` / `W` /
   // `e` all reaching the same word start).
-  const int cap = params.maxResultsPerEndPos;
-  unordered_map<Pos, vector<Suggestion>> resultsByLanding;
+  BestPerPos<Suggestion> resultsByLanding(params.maxResultsPerEndPos);
 
   auto emit = [&](const NavState& s) {
     Suggestion suggestion{
@@ -60,19 +60,7 @@ vector<Suggestion> rankNavFrontier(
         NavHeuristic::distanceToRange(motionRange, s.getPos()),
         params.effortWeight, params.distanceWeight);
 
-    auto& bucket = resultsByLanding[s.getPos().pos()];
-    if (ssize(bucket) < cap) {
-      bucket.push_back(std::move(suggestion));
-      return;
-    }
-    // Bucket is full — replace the worst entry if the new one is cheaper.
-    auto worst = std::max_element(bucket.begin(), bucket.end(),
-        [&](const Suggestion& a, const Suggestion& b) {
-          return sortValue(a) < sortValue(b);
-        });
-    if (sortValue(suggestion) < sortValue(*worst)) {
-      *worst = std::move(suggestion);
-    }
+    resultsByLanding.add(s.getPos().pos(), sortValue(suggestion), std::move(suggestion));
   };
 
   auto onStatic = [&](KSId motionId, const KeyedSequence& ks, CursorPos endpoint) {
@@ -93,10 +81,7 @@ vector<Suggestion> rankNavFrontier(
   }
   explorer.exploreCountedMotions(base, onCounted, onFMotion);
 
-  vector<Suggestion> items;
-  for (auto& [_, bucket] : resultsByLanding) {
-    for (auto& s : bucket) items.push_back(std::move(s));
-  }
+  vector<Suggestion> items = resultsByLanding.take();
   sortAndCapSuggestions(items, query.maxCount, query.sortMode);
 
   // Pairwise-distinct tokens. Per-cell dedup above bounds each landing cell,

@@ -63,7 +63,7 @@ of:
 | Case | Meaning |
 |---|---|
 | `value` | Success; the serialized result message |
-| `error` | An `Expected` error or an escaped exception |
+| `error` | An `Expected` error (a bad request field, an id that is not live) or an escaped exception |
 | `pending` | Async job still running |
 
 `core.unwrap(slice, message)` raises the error and returns the decoded
@@ -71,9 +71,13 @@ message, or nil while pending. `core.decode` returns `value, err` instead of
 raising.
 
 **Exceptions.** Unwinding into LuaJIT is undefined behaviour, so every export
-body runs inside `guarded` / `guardedRequest` (exception becomes an error
-envelope) or `noUnwind` (no error channel; terminates). `AsyncJob` catches a
-worker's exception and the `*_poll` export returns it.
+body runs inside `guarded` / `guardedRequest` / `guardedPoll` (exception
+becomes an error envelope) or `noUnwind` (no error channel; terminates).
+`AsyncJob` catches a worker's exception and the `*_poll` export returns it.
+
+**Bad input.** Anything Lua passes fails as an `unexpectedError`, never a
+`CHECK`: a request field, or a job or view id that is not live. `CHECK` is for
+states C++ itself guarantees.
 
 ## Writing a message
 

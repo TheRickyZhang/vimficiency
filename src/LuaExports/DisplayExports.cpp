@@ -42,7 +42,7 @@ extern "C" {
 VFByteSlice vf_sequence_display_lines(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::display::SequenceRequest>(
-      storage, request, request_len, [](const auto& req) {
+      storage, request, request_len, [](const vf::display::SequenceRequest& req) {
         vf::Lines msg;
         for (auto& line : VF::SequenceDisplay::lines(
                  req.seq(), {.tokenize = req.tokenize(), .sectionize = req.sectionize()})) {
@@ -55,7 +55,7 @@ VFByteSlice vf_sequence_display_lines(const char* request, size_t request_len) {
 VFByteSlice vf_sequence_display_inline(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::display::SequenceRequest>(
-      storage, request, request_len, [](const auto& req) {
+      storage, request, request_len, [](const vf::display::SequenceRequest& req) {
         return textMessage(VF::SequenceDisplay::inlineText(
             req.seq(), {.tokenize = req.tokenize(), .sectionize = false}));
       });
@@ -63,7 +63,7 @@ VFByteSlice vf_sequence_display_inline(const char* request, size_t request_len) 
 
 VFByteSlice vf_sequence_display_key_notation(const char* request, size_t request_len) {
   static string storage;
-  return guardedRequest<vf::Text>(storage, request, request_len, [](const auto& req) {
+  return guardedRequest<vf::Text>(storage, request, request_len, [](const vf::Text& req) {
     return textMessage(VF::SequenceDisplay::displayKeyNotation(req.text()));
   });
 }
@@ -71,7 +71,7 @@ VFByteSlice vf_sequence_display_key_notation(const char* request, size_t request
 VFByteSlice vf_sequence_display_typed_text(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::display::TypedTextRequest>(
-      storage, request, request_len, [](const auto& req) {
+      storage, request, request_len, [](const vf::display::TypedTextRequest& req) {
         return textMessage(req.key_notation()
             ? VF::SequenceDisplay::displayTypedText(req.text())
             : VF::SequenceDisplay::displayLiteralTypedText(req.text()));
@@ -81,7 +81,7 @@ VFByteSlice vf_sequence_display_typed_text(const char* request, size_t request_l
 VFByteSlice vf_sequence_display_typed_chunks(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::display::TypedChunksRequest>(
-      storage, request, request_len, [](const auto& req) {
+      storage, request, request_len, [](const vf::display::TypedChunksRequest& req) {
         vector<VF::SequenceDisplay::TypedChunk> typed;
         typed.reserve(req.chunks_size());
         for (const auto& chunk : req.chunks()) {
@@ -94,7 +94,7 @@ VFByteSlice vf_sequence_display_typed_chunks(const char* request, size_t request
 VFByteSlice vf_format_result_position(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::display::SessionResult>(
-      storage, request, request_len, [](const auto& req) {
+      storage, request, request_len, [](const vf::display::SessionResult& req) {
         return textMessage(VF::SessionView::formatPosition(sessionResult(req)));
       });
 }
@@ -102,7 +102,7 @@ VFByteSlice vf_format_result_position(const char* request, size_t request_len) {
 VFByteSlice vf_format_result_kind_suffix(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::display::SessionResult>(
-      storage, request, request_len, [](const auto& req) {
+      storage, request, request_len, [](const vf::display::SessionResult& req) {
         return textMessage(VF::SessionView::formatKindSuffix(sessionResult(req)));
       });
 }
@@ -110,7 +110,7 @@ VFByteSlice vf_format_result_kind_suffix(const char* request, size_t request_len
 VFByteSlice vf_format_result_message(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::display::ResultMessageRequest>(
-      storage, request, request_len, [](const auto& req) {
+      storage, request, request_len, [](const vf::display::ResultMessageRequest& req) {
         return textMessage(VF::SessionView::formatMessage(
             req.title(),
             sessionResult(req.result()),

@@ -28,7 +28,7 @@ local ACTIVE = { id = "fake-id", kind = "recall", started_mono_ns = vim.uv.hrtim
 
 --- Run `fn` with auto_suggest stubs installed. `spec` keys:
 ---   cfg     — config.auto_suggest value (default IDLE_CFG)
----   compute — analyze stub returning `result` or `nil, err` (default fake_result())
+---   compute — analyze stub returning `result`, or nil for a failed worker (default fake_result())
 ---   finish  — session_store.convert_to_finished stub (default no-op true)
 ---   active  — session_store.get_active stub (default returns ACTIVE)
 ---
@@ -78,7 +78,7 @@ test("fire_idle: no-op when window unresolved (queue too young)", function()
 end)
 
 test("fire_idle: compute and finish failures still count", function()
-  harness({ compute = function() return nil, "rejected" end }, function()
+  harness({ compute = function() return nil end }, function()
     assert_eq(fire_idle(), true,
       "compute failure must count as a fire so retries respect cooldown")
   end)
@@ -119,7 +119,7 @@ test("fire_idle: failures leave kind = 'recall'", function()
   for _, spec in ipairs({
     {
       label = "compute failure",
-      patch = { compute = function() return nil, "rejected" end },
+      patch = { compute = function() return nil end },
     },
     {
       label = "finish failure",

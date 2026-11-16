@@ -57,7 +57,7 @@ extern "C" {
 VFByteSlice vf_tokenize_movements(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::session::SequenceRequest>(
-      storage, request, request_len, [](const auto& req) -> ProtoResult {
+      storage, request, request_len, [](const vf::session::SequenceRequest& req) -> ProtoResult {
         auto motions = parseMovements(req.seq());
         if (!motions) return unexpectedError(formatMovementParseError(motions.error()));
 
@@ -75,7 +75,7 @@ VFByteSlice vf_tokenize_movements(const char* request, size_t request_len) {
 VFByteSlice vf_tokenize_sequence(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::session::SequenceRequest>(
-      storage, request, request_len, [](const auto& req) -> ProtoResult {
+      storage, request, request_len, [](const vf::session::SequenceRequest& req) -> ProtoResult {
         auto tokens = parseSequence(req.seq());
         if (!tokens) return unexpectedError(formatSequenceParseError(tokens.error()));
 
@@ -88,7 +88,7 @@ VFByteSlice vf_tokenize_sequence(const char* request, size_t request_len) {
 VFByteSlice vf_build_sequence(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::session::BuildSequenceRequest>(
-      storage, request, request_len, [](const auto& req) {
+      storage, request, request_len, [](const vf::session::BuildSequenceRequest& req) {
         vector<logic::KeyEvent> events;
         events.reserve(req.events_size());
         for (const auto& ev : req.events()) {
@@ -103,7 +103,8 @@ VFByteSlice vf_build_sequence(const char* request, size_t request_len) {
 VFByteSlice vf_compute_search_region(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::session::SearchRegionRequest>(
-      storage, request, request_len, [](const auto& req) -> ProtoResult {
+      storage, request, request_len,
+      [](const vf::session::SearchRegionRequest& req) -> ProtoResult {
         auto startLines = payload::linesFrom(req.start_lines());
         if (!startLines) return unexpected(startLines.error());
         auto endLines = payload::linesFrom(req.end_lines());
@@ -121,10 +122,11 @@ VFByteSlice vf_compute_search_region(const char* request, size_t request_len) {
 VFByteSlice vf_manual_evict_reason(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::session::ManualEvictRequest>(
-      storage, request, request_len, [](const auto& req) {
-        CHECK(req.max_search_lines() >= 0, "max_search_lines must be non-negative");
-        CHECK(req.manual_idle_timeout_seconds() >= 0,
-              "manual_idle_timeout_seconds must be non-negative");
+      storage, request, request_len, [](const vf::session::ManualEvictRequest& req) -> ProtoResult {
+        if (req.max_search_lines() < 0)
+          return unexpectedError("max_search_lines must be non-negative");
+        if (req.manual_idle_timeout_seconds() < 0)
+          return unexpectedError("manual_idle_timeout_seconds must be non-negative");
         vf::session::ManualEvict msg;
         msg.set_reason(static_cast<vf::session::ManualEvict::Reason>(logic::manualEvictReason(
             req.start_row(),

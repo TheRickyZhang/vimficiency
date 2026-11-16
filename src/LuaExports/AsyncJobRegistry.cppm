@@ -1,10 +1,6 @@
-module;
-#include "Utils/CheckMacro.h"
-
 export module vf.LuaExports.AsyncJobRegistry;
 
 import std.compat;
-export import vf.Utils.Debug;
 
 export {
 
@@ -21,10 +17,9 @@ class JobRegistry {
     jobs_.emplace(id, std::move(job));
     return id;
   }
-  inline JobT& get(int id) {
+  inline bool running(int id) const {
     auto it = jobs_.find(id);
-    CHECK(it != jobs_.end(), "job_id from Lua not present in registry");
-    return *it->second;
+    return it != jobs_.end() && !it->second->ready();
   }
   inline std::unique_ptr<JobT> take(int id) {
     auto it = jobs_.find(id);
@@ -32,6 +27,13 @@ class JobRegistry {
     auto job = std::move(it->second);
     jobs_.erase(it);
     return job;
+  }
+  // False when `id` is not live. Dropping the job joins its worker (see AsyncJob).
+  inline bool cancel(int id) {
+    const std::unique_ptr<JobT> job = take(id);
+    if (!job) return false;
+    job->cancel();
+    return true;
   }
 
  private:

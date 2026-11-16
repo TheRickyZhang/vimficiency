@@ -1,5 +1,4 @@
 #include "LuaExports/Api.h"
-#include "Utils/CheckMacro.h"
 #include "proto/common.pb.h"
 #include "proto/explore.pb.h"
 
@@ -15,7 +14,6 @@ import vf.Keyboard.Config;
 import vf.Optimizer.OptimizerParamOverrides;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
-import vf.Utils.Debug;
 
 using namespace std;
 using namespace VF::LuaExports;
@@ -126,7 +124,7 @@ extern "C" {
 VFByteSlice vf_explore_start_async(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::explore::StartRequest>(
-      storage, request, request_len, [](const auto& req) -> ProtoResult {
+      storage, request, request_len, [](const vf::explore::StartRequest& req) -> ProtoResult {
         auto inputs = logic::decodeSearchRequest(req.search());
         if (!inputs) return unexpected(inputs.error());
         CompositionOptimizerParams compositionParams =
@@ -153,11 +151,7 @@ VFByteSlice vf_explore_start_async(const char* request, size_t request_len) {
 // view_id, or returns the worker's failure.
 VFByteSlice vf_explore_poll(int job_id) {
   static string storage;
-  if (!g_jobs.get(job_id).ready()) return storePending(storage);
-  return guarded(storage, [&]() -> ProtoResult {
-    std::unique_ptr<ExploreJob> owned = g_jobs.take(job_id);
-    if (!owned->error().empty()) return unexpectedError(owned->error());
-    ExploreState& s = owned->state();
+  return guardedPoll(storage, g_jobs, job_id, [](ExploreState& s) {
     logic::SearchInputs& in = s.inputs;
     vf::explore::ViewHandle handle;
     handle.set_view_id(g_registry.create(
@@ -175,17 +169,8 @@ VFByteSlice vf_explore_poll(int job_id) {
   });
 }
 
-// Signals cancellation and frees the job; dropping it joins the worker on this
-// (main) thread before any job state is torn down (see AsyncJob). The flag is
-// polled between composition setup phases and per pop in every search loop,
-// so the join is bounded by one diff's precompute or one pop expansion.
 int vf_explore_cancel(int job_id) {
-  return noUnwind([&] {
-    std::unique_ptr<ExploreJob> owned = g_jobs.take(job_id);
-    if (!owned) return 0;
-    owned->cancel();
-    return 1;
-  });
+  return noUnwind([&] { return g_jobs.cancel(job_id) ? 1 : 0; });
 }
 
 int vf_explore_destroy(int view_id) {
@@ -194,72 +179,83 @@ int vf_explore_destroy(int view_id) {
 
 VFByteSlice vf_explore_state(int view_id) {
   static string storage;
-  return guarded(storage, [&] { return stateMessage(g_registry.get(view_id)); });
+  return guarded(storage, [&] { return g_registry.with(view_id, stateMessage); });
 }
 
 VFByteSlice vf_explore_recommendations(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::explore::RecommendationsRequest>(
-      storage, request, request_len, [](const auto& req) -> ProtoResult {
-        CHECK(req.max_count() >= 0, "max_count must be non-negative");
-        View& v = g_registry.get(req.view_id());
+      storage, request, request_len,
+      [](const vf::explore::RecommendationsRequest& req) -> ProtoResult {
+        if (req.max_count() < 0) return unexpectedError("max_count must be non-negative");
         auto overrides = logic::parseOverrides(req.optimizer_overrides());
         if (!overrides) return unexpected(overrides.error());
-        return recommendationsMessage(v.recommendations(
-            req.max_count(), &*overrides, suggestionSortMode(req.sort_mode())));
+        return g_registry.with(req.view_id(), [&](View& v) {
+          return recommendationsMessage(v.recommendations(
+              req.max_count(), &*overrides, suggestionSortMode(req.sort_mode())));
+        });
       });
 }
 
 VFByteSlice vf_explore_reconfigure_plan(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::explore::ReconfigurePlanRequest>(
-      storage, request, request_len, [](const auto& req) -> ProtoResult {
-        View& v = g_registry.get(req.view_id());
+      storage, request, request_len,
+      [](const vf::explore::ReconfigurePlanRequest& req) -> ProtoResult {
         auto overrides = logic::parseOverrides(req.optimizer_overrides());
         if (!overrides) return unexpected(overrides.error());
-        vf::explore::ReconfigurePlanResult msg;
-        msg.set_reset(v.reconfigurePlan(overrides->resolved(CompositionOptimizerParams{})));
-        return proto(msg);
+        return g_registry.with(req.view_id(), [&](View& v) {
+          vf::explore::ReconfigurePlanResult msg;
+          msg.set_reset(v.reconfigurePlan(overrides->resolved(CompositionOptimizerParams{})));
+          return proto(msg);
+        });
       });
 }
 
 VFByteSlice vf_explore_current_lines(int view_id) {
   static string storage;
   return guarded(storage, [&] {
-    vf::Lines msg;
-    for (const auto& line : g_registry.get(view_id).state().lines) msg.add_lines(line);
-    return proto(msg);
+    return g_registry.with(view_id, [](View& v) {
+      vf::Lines msg;
+      for (const auto& line : v.state().lines) msg.add_lines(line);
+      return proto(msg);
+    });
   });
 }
 
 VFByteSlice vf_explore_accept_snapshot(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::explore::SnapshotRequest>(
-      storage, request, request_len, [](const auto& req) -> ProtoResult {
-        View& v = g_registry.get(req.view_id());
+      storage, request, request_len, [](const vf::explore::SnapshotRequest& req) -> ProtoResult {
         auto liveLines = payload::linesFrom(req.lines());
         if (!liveLines) return unexpected(liveLines.error());
-        return outcomeMessage(v.acceptSnapshot(
-            *liveLines,
-            CursorPos(req.cursor().row(), req.cursor().col()),
-            req.raw_keys(),
-            req.insert_mode()));
+        return g_registry.with(req.view_id(), [&](View& v) {
+          return outcomeMessage(v.acceptSnapshot(
+              *liveLines,
+              CursorPos(req.cursor().row(), req.cursor().col()),
+              req.raw_keys(),
+              req.insert_mode()));
+        });
       });
 }
 
 VFByteSlice vf_explore_undo(int view_id) {
   static string storage;
-  return guarded(storage, [&] { return outcomeMessage(g_registry.get(view_id).undo()); });
+  return guarded(storage, [&] {
+    return g_registry.with(view_id, [](View& v) { return outcomeMessage(v.undo()); });
+  });
 }
 
 VFByteSlice vf_explore_redo(int view_id) {
   static string storage;
-  return guarded(storage, [&] { return outcomeMessage(g_registry.get(view_id).redo()); });
+  return guarded(storage, [&] {
+    return g_registry.with(view_id, [](View& v) { return outcomeMessage(v.redo()); });
+  });
 }
 
 VFByteSlice vf_explore_header_rows(int view_id) {
   static string storage;
-  return guarded(storage, [&] { return headerRowsMessage(g_registry.get(view_id)); });
+  return guarded(storage, [&] { return g_registry.with(view_id, headerRowsMessage); });
 }
 
 }  // extern "C"

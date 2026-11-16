@@ -82,9 +82,19 @@ end
 
 M.lib = load_lib()
 
--- lua-protobuf is compiled into the library, and so is the schema it encodes
--- and decodes with, so neither can drift from the C++ on the other side.
+--- The subset of lua-protobuf's `pb` module used here. Message and field types
+--- are fully qualified names, e.g. "vf.search.AnalyzeRequest".
+---@class VF.Pb
+---@field load fun(descriptor: string): ok: boolean, offset: integer
+---@field option fun(name: string)
+---@field encode fun(message: string, value: table): string
+---@field decode fun(message: string, bytes: string): table|nil, string|nil
+---@field field fun(message: string, field: string): name: string|nil, number: integer, type: string, default: any, label: "optional"|"repeated"|"required"|"packed"
+---@field type fun(type: string): name: string|nil, basename: string, kind: "message"|"enum"|"map"
+
+---@return VF.Pb
 local function load_pb()
+  ---@type VF.Pb
   local pb = assert(package.loadlib(M.lib_path, "luaopen_pb"))()
   local descriptor = M.lib.vf_proto_descriptor()
   assert(pb.load(ffi.string(descriptor.data, tonumber(descriptor.len))))

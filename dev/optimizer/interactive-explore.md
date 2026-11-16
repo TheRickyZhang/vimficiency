@@ -175,7 +175,7 @@ Tradeoffs and known scope holes:
   vs batch result shapes intentionally differ — frontier is interactive,
   batch is the end-to-end optimization output.
 - Visual-delete shortcuts (`v{motion}d`) stay in batch results only; see
-  `dev/architecture/todo.md` item 5 for the threshold to surface them
+  `dev/architecture/todo.md` item 8 for the threshold to surface them
   interactively.
 - The programmatic `View::applyEdit` accepts single Transform and Composition
   action tokens (insertion, text-object, J) from any planned-edit-target phase.

@@ -101,3 +101,29 @@ test("compute_result_for_active: includes capture key debug", function()
 
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
 end)
+
+test("compute_result_for_active_async: a failed poll reports nil and surfaces the error", function()
+  local buf = h.new_buf({ "hello world" })
+  local win = vim.api.nvim_get_current_win()
+  local active = fake_active(buf, win)
+  active.atoms = { { keys = "w", win = win, buf = buf } }
+  vim.api.nvim_win_set_cursor(win, { 1, 6 })
+
+  local done, notices = {}, {}
+  h.with_patch({
+    { ffi_optimizer, "analyze_start_async", function() return 1 end },
+    { ffi_optimizer, "analyze_poll", function() error("boom", 0) end },
+    { vim, "notify", function(msg, level) notices[#notices + 1] = { msg = msg, level = level } end },
+  }, function()
+    local end_state = compute.capture_end_state(active)
+    compute.compute_result_for_active_async(active, end_state, 0, function(result)
+      done[#done + 1] = { result = result }
+    end)
+    assert_true(vim.wait(1000, function() return #notices > 0 end, 5), "error was not surfaced")
+  end)
+
+  assert_eq(vim.inspect(done), vim.inspect({ { result = nil } }))
+  assert_eq(vim.inspect(notices), vim.inspect({ { msg = "boom", level = vim.log.levels.ERROR } }))
+
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+end)

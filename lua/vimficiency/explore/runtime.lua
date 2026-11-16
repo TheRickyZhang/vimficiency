@@ -69,7 +69,8 @@ function M.start(label, result, header_handlers)
       end
       activation.attach(view, layout, handlers.capture_key, handlers.install)
       state_mod.refresh_ui(view)
-    end)
+    end,
+    function() lifecycle.destroy(view) end)
 
   return view
 end

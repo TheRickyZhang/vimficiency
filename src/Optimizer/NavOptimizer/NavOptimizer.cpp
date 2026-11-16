@@ -4,6 +4,7 @@ module;
 module vf.Optimizer.NavOptimizer.NavOptimizer;
 
 import std.compat;
+import vf.Optimizer.NavOptimizer.BestPerPos;
 import vf.Optimizer.NavOptimizer.NavHeuristic;
 import vf.Optimizer.NavOptimizer.NavExplorer;
 import vf.Optimizer.SearchFrontier;
@@ -78,16 +79,17 @@ LandingNavResult NavOptimizer::optimize(
   double userEffort = userSequence.empty()
       ? numeric_limits<double>::max()
       : getEffort(userSequence, config);
+  const double maxEffort = userEffort * params.exploreFactor;
 
   NavExplorer explorer(lines, navContext, boundary, params, range, bufferIndex, lineOffset);
 
-  // Admission rules for enqueueRangeState: prune over-budget states, recognize goals.
-  const double maxEffort = userEffort * params.exploreFactor;
-  auto isInGoalRange = [&](const NavState& s) { return range.containsPos(s.getPos()); };
-
-  // Handles what a new NewState is after a specified motion type, based on the cost function
-  NavStateSpace states(
-      config, NavHeuristic::StateScorer{range, params.effortWeight, params.distanceWeight});
+  NavStateSpace states(config,
+    NavHeuristic::StateScorer{
+                       range,
+                       params.effortWeight,
+                       params.distanceWeight
+    }
+  );
 
   // Frontier and best-known cost per position, seeded with the start state.
   NavPriorityQueue pq;
@@ -96,17 +98,20 @@ LandingNavResult NavOptimizer::optimize(
   pq.push(initialState);
   costMap[initialState.getKey()] = initialState.getCost();
 
-  // Goal landings, recorded at pop time: the cheapest maxResultsPerEndPos per
-  // position. The search stops once maxResults are kept or every slot is full.
-  int rangeSize = lines.spanSize(range);
-  const int64_t landingLimit =
-      min<int64_t>(params.maxResults, int64_t{rangeSize} * params.maxResultsPerEndPos);
-  map<Pos, vector<LandingResult>> landingsByPos;
-  int landingCount = 0;
+  // Goal landings, recorded at pop time. Also manages landing stopping conditions
+  BestPerPos<LandingResult> landings(
+    params.maxResultsPerEndPos,
+    params.maxResults,
+    lines.spanSize(range)
+  );
 
   // Search accounting, reported via stats.finalizeRangeGoal.
   NavSearchStats stats;
   int totalPops = 0;
+
+  auto isInGoalRange = [&](const NavState& s) {
+    return range.containsPos(s.getPos());
+  };
 
   while (!pq.empty() && totalPops < params.maxNodesPopped) {
     if (control.cancelledOrPastDeadline(totalPops)) break;
@@ -119,20 +124,12 @@ LandingNavResult NavOptimizer::optimize(
 
     if (isGoal) {
       stats.incrementNodesExplored();
-      LandingResult landing(s.getSequence(), s.getRunningEffort().getEffort(), pos);
-      vector<LandingResult>& bucket = landingsByPos[stateKey];
-
-      if (ssize(bucket) < params.maxResultsPerEndPos) {
-        bucket.push_back(std::move(landing));
-        if (++landingCount >= landingLimit) {
-          debug("optimize: landing limit reached (", landingCount, " landings, ",
-                landingsByPos.size(), "/", rangeSize, " positions)");
-          break;
-        }
-      } else {
-        // The heuristic overestimates, so a later pop can be cheaper.
-        auto worst = ranges::max_element(bucket, {}, &LandingResult::getCost);
-        if (landing.getCost() < worst->getCost()) *worst = std::move(landing);
+      const double cost = s.getEffort();
+      landings.add(stateKey, cost, LandingResult(s.getSequence(), cost, pos));
+      if (landings.complete()) {
+        debug("optimize: landing limit reached (", landings.size(), " landings, ",
+              landings.positions(), "/", landings.getTotalPositions(), " positions)");
+        break;
       }
       continue;
     }
@@ -181,22 +178,17 @@ LandingNavResult NavOptimizer::optimize(
     }
   }
 
-  vector<LandingResult> results;
-  results.reserve(landingCount);
-  for (auto& [pos, bucket] : landingsByPos) {
-    ranges::move(bucket, back_inserter(results));
-  }
-  ranges::stable_sort(results, {}, &LandingResult::getCost);
-
   stats.finalizeRangeGoal(
-      landingCount,
-      static_cast<int>(landingsByPos.size()),
+      landings.size(),
+      landings.positions(),
       static_cast<int>(pq.size()),
-      rangeSize,
+      landings.getTotalPositions(),
       params.maxResults,
       params.maxNodesPopped,
       totalPops,
       pq.empty());
 
+  vector<LandingResult> results = landings.take();
+  ranges::stable_sort(results, {}, &LandingResult::getCost);
   return LandingNavResult(std::move(results), stats);
 }

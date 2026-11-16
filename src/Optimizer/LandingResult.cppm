@@ -8,9 +8,6 @@ export {
 
 // A Result that also carries the cursor position where the motion landed.
 // Returned by every NavOptimizer search (single-cursor and interval alike)
-// since they all share one impl. For interval goals the landing varies
-// across results; for the single-cursor convenience overload every result's
-// landing is the input `goalPos`.
 struct LandingResult : Result {
   LandingResult() = default;
   inline LandingResult(Sequence seq, double c, CursorPos p)

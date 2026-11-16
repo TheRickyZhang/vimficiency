@@ -1,19 +1,16 @@
-module;
-#include "Utils/CheckMacro.h"
-
 export module vf.LuaExports.ViewRegistry;
 
 import std.compat;
+import vf.LuaExports.Common;
 export import vf.Explore.Explore;
-export import vf.Utils.Debug;
 
 export {
 
 namespace VF::LuaExports {
 
 // Owns all live Explore views. Lua holds opaque integer handles handed out
-// by `create`; lookup misses are programmer bugs (stale handle, use-after-
-// destroy) and abort the process via CHECK.
+// by `create`; a handle that is not live (stale, used after destroy) is an
+// error for Lua to raise.
 class ViewRegistry {
  public:
   template <typename... Args>
@@ -25,10 +22,11 @@ class ViewRegistry {
 
   inline bool destroy(int id) { return views_.erase(id) > 0; }
 
-  inline Explore::View& get(int id) {
+  template <typename Body>
+  ProtoResult with(int id, Body body) {
     auto it = views_.find(id);
-    CHECK(it != views_.end(), "view_id from Lua not present in registry");
-    return it->second;
+    if (it == views_.end()) return unexpectedError("unknown view_id " + std::to_string(id));
+    return body(it->second);
   }
 
  private:

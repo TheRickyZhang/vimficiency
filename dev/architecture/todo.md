@@ -2,6 +2,8 @@
 
 Deferred improvements that are justified in principle but not worth the churn today. Each item lists a concrete **threshold** — the change in the codebase that tips the cost/benefit toward doing it. When you touch an area near one of these items, re-read the threshold and decide whether the condition has become true.
 
+Items are ordered by priority, highest first. Items that depend on each other are merged into one.
+
 Re-evaluate this file:
 - Whenever you add a new build-time flag or touch `CMakeLists.txt` / `src/BuildConfig.h.in`
 - Whenever you modify `.github/workflows/bench.yml`
@@ -12,7 +14,119 @@ Completed items should be deleted, not crossed out.
 
 ---
 
-## 0. Composition consumes only `plans.front()` — evaluate the tied set
+## 1. Stop blocking the Neovim main thread (top priority)
+
+**What.** Nothing vimficiency does should hold the main thread for more than
+0.2 s. Auto-suggest and Explore open already run their search on a C++ worker
+(`AsyncJob`, polled by `async/poller.lua`), but four paths still run a search or
+a thread join on the main thread:
+
+| path | main-thread work | bound |
+|---|---|---|
+| `:Vimfy finish`, `:Vimfy recall`, Watch's idle auto-finish (`session.lua` `finish_active` → `vf_analyze`) | full analyze search under `SearchControl::NEVER_STOP` | none |
+| Explore settings change that affects the plan (`explore/state.lua` `reconfigure_plan` → `View::computePlan`) | full composition search under `NEVER_STOP` | none |
+| every accepted key, undo, redo and restore in Explore (`explore/state.lua` `fetch` → `vf_explore_recommendations`) | one Nav or Transform search for the current phase | natural search caps |
+| cancelling a live worker (`vf_analyze_cancel`, `vf_explore_cancel`) | `~AsyncJob` joins the worker | the worker's next cancel check |
+
+The cancel flag is polled per pop in the Composition and Nav loops, and between
+composition setup phases. `VimDiff::calculate` and one diff's Transform
+precompute are uninterruptible, so a join waits for whichever is running.
+`compute_deadline_ms` does not abort setup either, so a worker can outlive its
+deadline and lengthen that join.
+
+Fixes, in order:
+
+1. Route `finish_active` through `compute_result_for_active_async`. Finish,
+   recall and Watch then share auto-suggest's worker path.
+2. Give `reconfigure_plan` the start/poll shape Explore open uses.
+3. Do not join at cancel. Hand the cancelled job to a reaper so the worker
+   finishes in the background; the job must own everything it touches.
+4. Measure the recommendations path with `vim.g.vimficiency_explore_slow_ms`
+   lowered. If it trips, give those searches a deadline or make them async with
+   a stale list shown meanwhile.
+
+The audit should also cover what this pass skipped: the per-atom capture path
+(`capture/atom_stream.lua`, `capture/buffer_history.lua` `on_lines`) on large
+buffers, and the `VimOptions::shiftwidth` no-reconfigure invariant in
+`AsyncJob.cppm` once more than one worker kind can be live.
+
+**Status (2026-11-15).** Found by reading the code; nothing was timed. Which
+paths exceed 0.2 s in practice is unmeasured, and the two `poller.cancel` sites
+in `capture/auto_suggest.lua` were not traced to their triggers.
+
+**Threshold.** None; do this next. Done when no FFI call reachable from a
+keymap, autocmd or timer runs a search or a join.
+
+---
+
+## 2. Replace the optimizer-params X-macros with C++26 reflection (key priority)
+
+**What.** `src/Optimizer/OptimizerParamFields.h` is the single source of truth
+for every optimizer param field, expanded five ways: struct members, `with*`
+setters, the per-struct `Field` enum, the override patch ops in
+`OptimizerParamOverrides.cpp`, and the defaults wire format in
+`vf_get_optimizer_defaults`. With P2996 static reflection all five collapse
+onto the plain struct definitions: iterate
+`nonstatic_data_members_of(^^Params)`, match `identifier_of(m)` against the
+override key, assign through `p.[:m:]`, and pick the parser/type tag from the
+member type. The `Field` enum and presence bitset become a bitset sized by the
+member count, and the `with*` setters can go too if designated init reaches
+base-class fields by then. This is the highest-value reflection site in the
+repo: it is pure boilerplate keyed on member names, and every new param today
+means touching a macro row plus trusting the lint to catch missed consumers.
+
+**Why deferred (2026-11-13).** Local GCC 16.2 compiles P2996 with
+`-std=c++26 -freflection`, but the project is C++23 and the flag has to apply
+to the whole module graph. The documented from-source floor (`dev/decisions.md`:
+GCC 16+ / Clang 19+libc++) and the Clang-only fuzzing tree
+(`dev/tests/fuzzing.md`) have no `<meta>`; Clang 23 locally ships none. A
+`#if __cpp_reflection` fallback would mean keeping both implementations.
+
+**Threshold.** Clang ships `<meta>` in a release and the macOS/Emscripten
+toolchains the CI matrix uses pick it up, so the project can move to
+`-std=c++26` everywhere. Then do this item first; it is the proof case for
+retiring X-macros elsewhere.
+
+---
+
+## 3. Generate the Lua types from the FFI schema (high priority)
+
+**What.** Every FFI request and result is a protobuf message
+(`src/LuaExports/proto/`, see `dev/lua/ffi-payloads.md`), but the LuaLS classes
+in `lua/vimficiency/types.lua` that describe the same shapes are still
+hand-written. A field renamed in the schema shows up as a nil at the Lua use
+site, caught only by a Lua test through the real library.
+
+1. Generate the LuaLS classes from the descriptor with a C++ build tool, into
+   a committed file that CI regenerates and diffs. The Lua lint then flags
+   reads of fields that no longer exist.
+2. Hash that generated file into the library next to the `Api.def` hash and
+   check it in `ffi/core.lua`, so Lua code written against another schema
+   fails at load.
+
+The lite runtime has no descriptor reflection, so the tool needs either the
+full runtime or to run as a `protoc` plugin.
+
+Step 2 is a fork. The `Api.def` hash no longer changes when a message does, so
+a Lua/library pair with different schemas loads today: a request field the
+library lacks raises in `core.encode`, a result field it lacks reads as nil.
+
+- **Lock (now):** the hash in step 2 rejects any mismatch.
+- **Evolve (later):** allow mismatches under protobuf's compatibility rules,
+  once users run prebuilt libraries that lag a plugin-manager Lua update. Needs
+  add-only fields with `reserved` numbers, Lua that tolerates a missing newer
+  field, a policy for `core.encode` on a field the library does not know, and a
+  CI run of current Lua against an older released library.
+
+**Why not done yet (2026-11-15).** The migration to protobuf landed first; the
+generator is separable and needs the build decision above.
+
+**Threshold.** Before the next release that changes a message, or the first
+bug traced to `types.lua` disagreeing with the schema.
+
+---
+
+## 4. Composition consumes only `plans.front()` — evaluate the tied set
 
 **What.** `CompositionSearchContext.cpp:77` takes the planner's single best
 plan. Since the shared concave count model and the to-boundary oracle chunks
@@ -47,80 +161,7 @@ counts.
 
 ---
 
-## 1. Move the CI bench workflow onto `CMakePresets.json`
-
-**What.** Replace the ad-hoc `-D` flags in `bench.yml` (e.g. `-DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_TRACK_STATES=ON ...`) with named presets (`release-track`, `release-bench`, etc.) defined in `CMakePresets.json`. Preset names are validated against the file, so a typo fails loudly at `cmake --preset` time rather than being silently accepted as an unused cache variable.
-
-**Why deferred.** Today the workflow has two real configurations (release-no-tracking, release-tracking) and three CMake options (`VIMF_DEBUG`, `VIMF_TRACK_STATES`, `VIMF_LEGACY_VIM`). `BuildConfig.h` + the `static_assert` in `vimfy_explore` + the `jq`-based validation step already give layered protection. Presets would add a second config file, a learning curve for contributors, and wouldn't meaningfully harden the current setup further.
-
-**Threshold to revisit.**
-- The CMake option list grows past ~5 build-time flags, **or**
-- A third distinct build configuration appears (e.g. a separate ASan build, a profiling build, or a per-architecture matrix), **or**
-- The workflow grows a third `cmake -B ...` invocation pattern.
-
-Any of those makes the "one preset per config" structure pay for itself.
-
----
-
-## 2. Unify `VIMF_DEBUG` through `BuildConfig.h` and fix the source-side name
-
-**What.** `CMakeLists.txt` defines the macro `VIMF_DEBUG`, but `src/Utils/Debug.cppm` checks `#ifdef VIMFICIENCY_DEBUG` (different spelling). `DEBUG_ENABLED` is therefore always `false`, regardless of how the option is set. Route `VIMF_DEBUG` through `BuildConfig.h.in` (same pattern as `VIMF_TRACK_STATES`) and change `Debug.cppm` to read it with `#if VIMF_DEBUG`.
-
-**Why deferred.** Fixing the wiring flips `DEBUG_ENABLED` from `false` to `true` for local developer builds (the option defaults `ON`). `AnalyzeExports.cpp:117` and every `debug(...)` call site would start producing output. Not a bug per se — that was the original intent — but it's a behavior change that deserves its own PR and a tour of the call sites, not a hidden side effect of the track-states fix.
-
-**Threshold to revisit.** The next time someone actually needs `debug()` output to work locally, or the next time someone adds a new `#ifdef VIMFICIENCY_*` check (bundle the cleanup so the whole class goes away at once).
-
----
-
-## 3. Unify `VIMF_LEGACY_VIM` through `BuildConfig.h` and fix the source-side name
-
-**What.** Same class of bug as item 2. `CMakeLists.txt` defines `VIMF_LEGACY_VIM`, `src/VimCore/VimOptions.cppm` checks `VIMFICIENCY_LEGACY_VIM`. The option has never actually flipped Vim-default behavior — passing `-DVIMF_LEGACY_VIM=ON` today is a no-op.
-
-**Why deferred.** Fixing the wiring would retroactively enable legacy-Vim option defaults (`startofline`, `joinspaces`, `Y`-yanks-line) for anyone who has ever set the flag expecting it to work. Low risk today because no current workflow sets it, but it deserves a directed audit of the `VimOptions.cppm` blocks + test coverage for both branches.
-
-**Threshold to revisit.**
-- A user or test case actually needs legacy-Vim defaults (right now it's pure latent infrastructure), **or**
-- Bundle with item 2 — one PR that migrates both flags through `BuildConfig.h` is simpler than two.
-
----
-
-## 4. Migrate `VIMF_DEBUG` / `VIMF_LEGACY_VIM` into `BuildConfig.h.in`
-
-**What.** Both flags are still surfaced via `target_compile_definitions(... $<$<BOOL:${VIMF_DEBUG}>:VIMF_DEBUG>)` rather than `#cmakedefine01` in `BuildConfig.h.in`. The `target_compile_definitions` form uses `#ifdef` in source, which is the same "typo silently takes the disabled branch" footgun that caused the original track-states bug.
-
-**Why deferred.** Entangled with items 2 and 3 — moving the flag into `BuildConfig.h.in` requires changing the source-side checks at the same time, and those changes carry real behavior deltas (see 2, 3). Do all three together.
-
-**Threshold to revisit.** Do this as part of item 2 and/or item 3.
-
----
-
-## 5. Re-introduce visual-delete shortcuts to TransformFrontier
-
-**What.** `tryVisualDelete` is still invoked by the batch TransformOptimizer
-(`TransformOptimizer.cpp` in the `PureDeletion` finalization block) but the
-TransformFrontier comment at the `emitReplaceCharAction` call site
-explicitly skips it because visual-delete sequences are multi-token
-structural macros (`v{motion}d`) that don't fit the single-action invariant
-the rest of the frontier now enforces.
-
-**Why deferred.** The frontier contract is "one immediately executable Vim
-action per recommendation, and Explore re-derives phase from observed
-state". `v)hd` is three structural tokens; supporting it in the frontier
-requires a continuation/macro abstraction Explore doesn't have today.
-Composition's text-object lane already covers the most common cases that
-visual-delete used to surface.
-
-**Threshold to revisit.** Either (a) Explore gains a `Macro` phase that can
-track a multi-step structural token across `acceptSnapshot` calls, or
-(b) a benchmark / activity-log case demonstrates that a real session is
-losing ground because the visual-delete shortcut isn't surfaced
-interactively. Pointer to the current skip site:
-`src/Optimizer/TransformOptimizer/TransformFrontier.cpp` ("Visual deletion
-is a multi-token structural macro" comment).
-
----
-
-## 6. Rebalance diff generation against composition search
+## 5. Rebalance diff generation against composition search
 
 **What.** A three-step investigation, in order:
 
@@ -190,6 +231,23 @@ one; equal regret means exactness can be dropped and the `N` factor disappears.
 
 ---
 
+## 6. Share Transform search states across start positions
+
+**What.** `TransformStateKey` includes `startIndex`, so every start searches its
+own copy of the state space. Ten starts with no solution explore the same dead
+end ten times. Keying states without the start, with per-start paths joined onto
+shared completions, would remove that duplication.
+
+**Why deferred (2026-11-13).** `startWorkFactor` bounds the waste: a start goes
+inactive after 8x the nodes the hardest solved start needed (see
+`dev/optimizer/transform-optimizer.md`). Sharing is a redesign of the search,
+not a stop rule.
+
+**Threshold.** A real region loses a start's result to `startWorkFactor`, or
+Transform time dominates a profiled session.
+
+---
+
 ## 7. Make the optimizer mapping-aware
 
 **What.** Capture (via `CmdAtom`, since 2026-11-10) records the *resolved*
@@ -221,33 +279,29 @@ are routinely worse for users who lean on custom mappings. Pointer:
 
 ---
 
-## 8. Replace the optimizer-params X-macros with C++26 reflection (key priority)
+## 8. Re-introduce visual-delete shortcuts to TransformFrontier
 
-**What.** `src/Optimizer/OptimizerParamFields.h` is the single source of truth
-for every optimizer param field, expanded five ways: struct members, `with*`
-setters, the per-struct `Field` enum, the override patch ops in
-`OptimizerParamOverrides.cpp`, and the defaults wire format in
-`vf_get_optimizer_defaults`. With P2996 static reflection all five collapse
-onto the plain struct definitions: iterate
-`nonstatic_data_members_of(^^Params)`, match `identifier_of(m)` against the
-override key, assign through `p.[:m:]`, and pick the parser/type tag from the
-member type. The `Field` enum and presence bitset become a bitset sized by the
-member count, and the `with*` setters can go too if designated init reaches
-base-class fields by then. This is the highest-value reflection site in the
-repo: it is pure boilerplate keyed on member names, and every new param today
-means touching a macro row plus trusting the lint to catch missed consumers.
+**What.** `tryVisualDelete` is still invoked by the batch TransformOptimizer
+(`TransformOptimizer.cpp` in the `PureDeletion` finalization block) but the
+TransformFrontier comment at the `emitReplaceCharAction` call site
+explicitly skips it because visual-delete sequences are multi-token
+structural macros (`v{motion}d`) that don't fit the single-action invariant
+the rest of the frontier now enforces.
 
-**Why deferred (2026-11-13).** Local GCC 16.2 compiles P2996 with
-`-std=c++26 -freflection`, but the project is C++23 and the flag has to apply
-to the whole module graph. The documented from-source floor (`dev/decisions.md`:
-GCC 16+ / Clang 19+libc++) and the Clang-only fuzzing tree
-(`dev/tests/fuzzing.md`) have no `<meta>`; Clang 23 locally ships none. A
-`#if __cpp_reflection` fallback would mean keeping both implementations.
+**Why deferred.** The frontier contract is "one immediately executable Vim
+action per recommendation, and Explore re-derives phase from observed
+state". `v)hd` is three structural tokens; supporting it in the frontier
+requires a continuation/macro abstraction Explore doesn't have today.
+Composition's text-object lane already covers the most common cases that
+visual-delete used to surface.
 
-**Threshold.** Clang ships `<meta>` in a release and the macOS/Emscripten
-toolchains the CI matrix uses pick it up, so the project can move to
-`-std=c++26` everywhere. Then do this item first; it is the proof case for
-retiring X-macros elsewhere.
+**Threshold to revisit.** Either (a) Explore gains a `Macro` phase that can
+track a multi-step structural token across `acceptSnapshot` calls, or
+(b) a benchmark / activity-log case demonstrates that a real session is
+losing ground because the visual-delete shortcut isn't surfaced
+interactively. Pointer to the current skip site:
+`src/Optimizer/TransformOptimizer/TransformFrontier.cpp` ("Visual deletion
+is a multi-token structural macro" comment).
 
 ---
 
@@ -278,49 +332,48 @@ or the next change to recall's window scoping.
 
 ---
 
-## 10. Share Transform search states across start positions
+## 10. Route `VIMF_DEBUG` / `VIMF_LEGACY_VIM` through `BuildConfig.h`
 
-**What.** `TransformStateKey` includes `startIndex`, so every start searches its
-own copy of the state space. Ten starts with no solution explore the same dead
-end ten times. Keying states without the start, with per-start paths joined onto
-shared completions, would remove that duplication.
+**What.** Both flags are wired with the wrong name, so neither has ever worked:
 
-**Why deferred (2026-11-13).** `startWorkFactor` bounds the waste: a start goes
-inactive after 8x the nodes the hardest solved start needed (see
-`dev/optimizer/transform-optimizer.md`). Sharing is a redesign of the search,
-not a stop rule.
+| CMake defines | source checks | effect today |
+|---|---|---|
+| `VIMF_DEBUG` | `#ifdef VIMFICIENCY_DEBUG` in `src/Utils/Debug.cppm` | `DEBUG_ENABLED` is always `false` |
+| `VIMF_LEGACY_VIM` | `VIMFICIENCY_LEGACY_VIM` in `src/VimCore/VimOptions.cppm` | `-DVIMF_LEGACY_VIM=ON` is a no-op |
 
-**Threshold.** A real region loses a start's result to `startWorkFactor`, or
-Transform time dominates a profiled session.
+Both are surfaced via `target_compile_definitions(... $<$<BOOL:${VIMF_DEBUG}>:VIMF_DEBUG>)`
+and read with `#ifdef`, the same "typo silently takes the disabled branch"
+footgun that caused the original track-states bug. Move both to `#cmakedefine01`
+in `BuildConfig.h.in` (the `VIMF_TRACK_STATES` pattern) and read them with
+`#if VIMF_DEBUG` / `#if VIMF_LEGACY_VIM`, in one PR.
 
----
+**Why deferred.** Fixing the wiring changes behavior, which deserves its own PR
+rather than riding along with another fix:
 
-## 11. Generate the Lua types from the FFI schema (high priority)
+- `VIMF_DEBUG` defaults `ON`, so `DEBUG_ENABLED` flips to `true` for local
+  developer builds and every `debug(...)` call site starts producing output.
+  That was the original intent, but the call sites need a tour first.
+- `VIMF_LEGACY_VIM` would retroactively enable legacy-Vim defaults
+  (`startofline`, `joinspaces`, `Y`-yanks-line) for anyone who set the flag
+  expecting it to work. No current workflow sets it; it needs an audit of the
+  `VimOptions.cppm` blocks and test coverage for both branches.
 
-**What.** Every FFI request and result is a protobuf message
-(`src/LuaExports/proto/`, see `dev/lua/ffi-payloads.md`), but the LuaLS classes
-in `lua/vimficiency/types.lua` that describe the same shapes are still
-hand-written. A field renamed in the schema shows up as a nil at the Lua use
-site, caught only by a Lua test through the real library.
-
-1. Generate the LuaLS classes from the descriptor with a C++ build tool, into
-   a committed file that CI regenerates and diffs. The Lua lint then flags
-   reads of fields that no longer exist.
-2. Hash that generated file into the library next to the `Api.def` hash and
-   check it in `ffi/core.lua`, so Lua code written against another schema
-   fails at load.
-
-The lite runtime has no descriptor reflection, so the tool needs either the
-full runtime or to run as a `protoc` plugin.
-
-**Why not done yet (2026-11-15).** The migration to protobuf landed first; the
-generator is separable and needs the build decision above.
-
-**Threshold.** Before the next release that changes a message, or the first
-bug traced to `types.lua` disagreeing with the schema.
+**Threshold to revisit.**
+- Someone needs `debug()` output to work locally, **or**
+- A user or test case needs legacy-Vim defaults, **or**
+- Someone adds a new `#ifdef VIMFICIENCY_*` check (bundle the cleanup so the whole class goes away at once).
 
 ---
 
-## Noted alternative: item 1 vs. the current approach
+## 11. Move the CI bench workflow onto `CMakePresets.json`
 
-The defense layers chosen for the track-states fix (`BuildConfig.h` + `static_assert` + workflow `jq` check + differentiated dashboard message) are cheaper and more localized than `CMakePresets.json`. Item 1 becomes the better path only when configuration count or CI complexity makes per-flag discipline hard to maintain — otherwise the current three-layer defense subsumes what presets would give us.
+**What.** Replace the ad-hoc `-D` flags in `bench.yml` (e.g. `-DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_TRACK_STATES=ON ...`) with named presets (`release-track`, `release-bench`, etc.) defined in `CMakePresets.json`. Preset names are validated against the file, so a typo fails loudly at `cmake --preset` time rather than being silently accepted as an unused cache variable.
+
+**Why deferred.** Today the workflow has two real configurations (release-no-tracking, release-tracking) and three CMake options (`VIMF_DEBUG`, `VIMF_TRACK_STATES`, `VIMF_LEGACY_VIM`). `BuildConfig.h` + the `static_assert` in `vimfy_explore` + the `jq`-based validation step + the differentiated dashboard message already give layered protection, and are cheaper and more localized than presets. Presets would add a second config file, a learning curve for contributors, and wouldn't meaningfully harden the current setup further.
+
+**Threshold to revisit.**
+- The CMake option list grows past ~5 build-time flags, **or**
+- A third distinct build configuration appears (e.g. a separate ASan build, a profiling build, or a per-architecture matrix), **or**
+- The workflow grows a third `cmake -B ...` invocation pattern.
+
+Any of those makes the "one preset per config" structure pay for itself.

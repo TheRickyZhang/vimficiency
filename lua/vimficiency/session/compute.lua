@@ -11,7 +11,7 @@ local util = require("vimficiency.util")
 ---@class (exact) VF.SessionCompute
 ---@field capture_end_state               fun(active: VF.Session.Active): VF.BufferState
 ---@field compute_result_for_active       fun(active: VF.Session.Active, end_state: VF.BufferState): VF.Session.Result
----@field compute_result_for_active_async fun(active: VF.Session.Active, end_state: VF.BufferState, deadline_ms: integer, on_done: fun(result: VF.Session.Result|nil, err: string|nil)): VF.Async.PollHandle
+---@field compute_result_for_active_async fun(active: VF.Session.Active, end_state: VF.BufferState, deadline_ms: integer, on_done: fun(result: VF.Session.Result|nil)): VF.Async.PollHandle
 ---@field manual_should_evict             fun(session: VF.Session.Active, cursor_row: integer, now_ns: integer): string|nil
 local M = {}
 
@@ -271,13 +271,14 @@ function M.compute_result_for_active(active, end_state)
 end
 
 -- Async variant for auto_suggest: the analyze search runs on a C++ worker thread
--- so the main thread never blocks on it. `on_done(result, err)` is invoked on
--- the main thread once the worker finishes; `err` is a worker-side failure.
--- Slicing/start failures raise synchronously instead.
+-- so the main thread never blocks on it. `on_done(result)` is invoked on the
+-- main thread once the worker finishes; `result` is nil when the worker failed,
+-- and that failure raises from the poll tick. Slicing/start failures raise
+-- synchronously instead.
 ---@param active VF.Session.Active
 ---@param end_state VF.BufferState
 ---@param deadline_ms integer
----@param on_done fun(result: VF.Session.Result|nil, err: string|nil)
+---@param on_done fun(result: VF.Session.Result|nil)
 ---@return VF.Async.PollHandle
 function M.compute_result_for_active_async(active, end_state, deadline_ms, on_done)
   local input = build_analyze_input(active, end_state)
@@ -287,20 +288,13 @@ function M.compute_result_for_active_async(active, end_state, deadline_ms, on_do
     input.request, input.results_calculated, deadline_ms)
 
   return poller.start(
-    function()
-      local poll_ok, payload = pcall(ffi_optimizer.analyze_poll, job_id)
-      if not poll_ok then return { err = payload } end
-      return payload
-    end,
+    function() return ffi_optimizer.analyze_poll(job_id) end,
     function() ffi_optimizer.analyze_cancel(job_id) end,
     function(payload)
-      if payload.err then
-        on_done(nil, "FFI error: " .. tostring(payload.err))
-        return
-      end
       local analyze_ms = (vim.uv.hrtime() - analyze_t0) / 1e6
-      on_done(build_result(input, payload, analyze_ms), nil)
-    end)
+      on_done(build_result(input, payload, analyze_ms))
+    end,
+    function() on_done(nil) end)
 end
 
 ---@param session VF.Session.Active

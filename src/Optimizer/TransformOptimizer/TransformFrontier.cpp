@@ -258,7 +258,7 @@ void enumerateDepth1DeletionStructurals(
 
   // Visual deletion is a multi-token structural macro. Frontier does not
   // surface it; the full TransformOptimizer batch still emits `v{motion}d`
-  // shortcuts. See `dev/architecture/todo.md` item 5 for the re-introduction
+  // shortcuts. See `dev/architecture/todo.md` item 8 for the re-introduction
   // threshold.
   emitReplaceCharAction(query, params, emitter);
 }

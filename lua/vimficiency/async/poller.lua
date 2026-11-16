@@ -15,15 +15,18 @@ local POLL_INTERVAL_MS = 25
 
 --- Polls a pending worker job on a uv timer and resolves it on the main thread.
 --- Shared by the explore (View) and suggest (analyze) async paths — they differ
---- only in the injected `poll_fn`/`cancel_fn`. `poll_fn()` returns a non-nil
---- value once the worker finishes, or nil while still computing; `on_ready` is
---- called exactly once with that value. `cancel_fn()` signals the worker to
---- stop and is invoked by `M.cancel` only if the job has not finished.
+--- only in the injected callbacks. `poll_fn()` returns a non-nil value once the
+--- worker finishes, or nil while still computing; `on_ready` is called exactly
+--- once with that value. A `poll_fn()` that raises ends the job instead:
+--- `on_error` releases what the caller tied to it, then the error surfaces at
+--- `util.entry`. `cancel_fn()` signals the worker to stop and is invoked by
+--- `M.cancel` only if the job has not finished.
 ---@param poll_fn fun(): any
 ---@param cancel_fn fun()
 ---@param on_ready fun(value: any)
+---@param on_error fun()
 ---@return VF.Async.PollHandle
-function M.start(poll_fn, cancel_fn, on_ready)
+function M.start(poll_fn, cancel_fn, on_ready, on_error)
   local timer = assert(vim.uv.new_timer())
   local handle = { done = false, cancelled = false, cancel_fn = cancel_fn }
 
@@ -37,13 +40,14 @@ function M.start(poll_fn, cancel_fn, on_ready)
 
   timer:start(0, POLL_INTERVAL_MS, vim.schedule_wrap(util.entry(function()
     -- Guard against an already-queued tick firing after we resolved/cancelled:
-    -- polling a taken job would abort in C++ (registry get on a freed id).
+    -- polling a taken job raises (its id is no longer live).
     if handle.done or handle.cancelled then return end
     local ok, value = pcall(poll_fn)
     if not ok then
       -- A failed poll must stop the timer, or the error repeats every tick.
       handle.done = true
       close_timer()
+      on_error()
       error(value, 0)
     end
     if value == nil then return end

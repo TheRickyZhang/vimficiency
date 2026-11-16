@@ -49,8 +49,12 @@ end
 ---@return VF.Optimizer.Result[] results, number user_cost, string debug, VF.Diff.Region[] diffs
 function M.analyze(req, results_calculated)
   ---@type VF.Optimizer.AnalyzeResult
-  local result = core.call(lib.vf_analyze, "vf.search.AnalyzeRequest",
-    { search = req, results_calculated = results_calculated }, "vf.search.AnalyzeResult")
+  local result = core.call(
+    lib.vf_analyze,
+    "vf.search.AnalyzeRequest",
+    { search = req, results_calculated = results_calculated },
+    "vf.search.AnalyzeResult"
+  )
   return result.results, result.user_cost, result.dbg, result.diffs
 end
 

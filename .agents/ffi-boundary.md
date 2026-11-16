@@ -49,9 +49,9 @@ C++ code behind the boundary keeps its normal camelCase.
 - Job and view ids alone cross as plain `int` parameters.
 - Encode requests only through `ffi/core.encode` (or `core.call`): it rejects
   a field the message does not have, which `pb.encode` would silently drop.
-- Every export body runs inside `guarded` / `guardedRequest` (returns
-  `VFByteSlice`) or `noUnwind` (no error channel); an exception must never
-  unwind into LuaJIT.
+- Every export body runs inside `guarded` / `guardedRequest` / `guardedPoll`
+  (returns `VFByteSlice`) or `noUnwind` (no error channel); an exception must
+  never unwind into LuaJIT.
 - Buffer content and key sequences are `bytes` fields; do not assume UTF-8 or
   null-termination on the C++ side.
 - Never send a number as text: `tostring(n)` on hrtime-scale numbers emits
@@ -65,7 +65,8 @@ C++ code behind the boundary keeps its normal camelCase.
 - Do not branch on optional fields that the API contract guarantees are
   present. Trust the contract; fix it if it is wrong.
 - This applies in both directions: C++ should not silently accept malformed
-  input from Lua either.
+  input from Lua either. It returns an `unexpectedError` for a bad request
+  field or an id that is not live; it never `CHECK`s on Lua's input.
 
 ## React to Neovim, do not predict it
 
