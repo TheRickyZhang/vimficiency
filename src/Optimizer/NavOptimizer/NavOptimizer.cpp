@@ -83,7 +83,7 @@ LandingNavResult NavOptimizer::optimize(
 
   NavExplorer explorer(lines, navContext, boundary, params, range, bufferIndex, lineOffset);
 
-  NavStateSpace states(config,
+  NavStateFactory states(config,
     NavHeuristic::StateScorer{
                        range,
                        params.effortWeight,

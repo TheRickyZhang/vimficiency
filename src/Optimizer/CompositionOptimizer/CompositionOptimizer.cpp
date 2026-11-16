@@ -223,7 +223,7 @@ optimizeImpl(
   using Entry = QueueEntry<Trace>;
   std::priority_queue<Entry, vector<Entry>, std::greater<Entry>> pq;
 
-  CompositionStateSpace states(
+  CompositionStateFactory states(
       config, [&](const CompositionState& state) { return ctx.heuristic(state); });
 
   CompositionState startingState = states.initial(initialPos);

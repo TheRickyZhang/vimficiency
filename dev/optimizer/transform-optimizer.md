@@ -43,7 +43,7 @@ The A* search tracks visited states in an `unordered_map<TransformStateKey, doub
 - Computed when an editor snapshot is constructed
 - Refreshed by `TransformSimulator` after buffer mutations (`afterDeletion`, `afterLinewiseDeletion`, `afterJoin`, and counted variants)
 
-`TransformState` wraps that editor snapshot with A* path/ranking data: sequence, running effort, cached effort, cost, dot-repeat context, and `startIndex`. Queue-ready states are created through `TransformStateSpace`, which records the editor snapshot, command effort, and heuristic cost together. This keeps pure editor simulation separate from ranked search states and avoids half-valid states with stale cost or repeat metadata.
+`TransformState` wraps that editor snapshot with A* path/ranking data: sequence, running effort, cached effort, cost, dot-repeat context, and `startIndex`. Queue-ready states are created through `TransformStateFactory`, which records the editor snapshot, command effort, and heuristic cost together. This keeps pure editor simulation separate from ranked search states and avoids half-valid states with stale cost or repeat metadata.
 
 `TransformStateKey` stores `(linesHash, lineCount, line, col, mode, startIndex)` instead of the full `Lines` object. Both the hash function and equality operator use only these scalar fields — no buffer copying or content comparison.
 
@@ -55,7 +55,7 @@ The same pattern applies to `SuffixKey` in the suffix cache (see below).
 
 Every start state has `targetCol == col`, but callers may enter a result from a clamped cursor (`col < targetCol`). Each `Result` therefore records an `EntryCurswant` class.
 
-Every edit writes curswant, so only a path's first command can read the caller's value. `TransformStateSpace` applies one rule as commands are appended:
+Every edit writes curswant, so only a path's first command can read the caller's value. `TransformStateFactory` applies one rule as commands are appended:
 
 - First command: take that command's class.
 - Any command after a `Followed` state: the path becomes `Required`.

@@ -48,11 +48,11 @@ struct CompositionStateKeyHash {
   }
 };
 
-// Ranked composition search state. CompositionStateSpace is the public
+// Ranked composition search state. CompositionStateFactory is the public
 // creation and transition boundary, so cost stays tied to semantic state.
 class CompositionState {
   template<class CostFn>
-  friend class CompositionStateSpace;
+  friend class CompositionStateFactory;
 
   CursorPos pos;
   Mode mode;
@@ -112,7 +112,7 @@ private:
 };
 
 template<class CostFn>
-class CompositionStateSpace {
+class CompositionStateFactory {
   const Config& config;
   CostFn computeCost;
 
@@ -121,7 +121,7 @@ class CompositionStateSpace {
   }
 
 public:
-  inline CompositionStateSpace(const Config& config, CostFn computeCost)
+  inline CompositionStateFactory(const Config& config, CostFn computeCost)
       : config(config), computeCost(std::move(computeCost)) {}
 
   [[nodiscard]] inline CompositionState initial(CursorPos pos) const {
@@ -152,6 +152,6 @@ public:
 };
 
 template<class CostFn>
-CompositionStateSpace(const Config&, CostFn) -> CompositionStateSpace<CostFn>;
+CompositionStateFactory(const Config&, CostFn) -> CompositionStateFactory<CostFn>;
 
 }  // export

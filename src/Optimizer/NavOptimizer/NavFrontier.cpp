@@ -36,7 +36,7 @@ vector<Suggestion> rankNavFrontier(
   RunningEffort acceptedEffort(globalSequenceToKeys().tokenize(query.seq), config);
   const double acceptedCost = acceptedEffort.getEffort();
 
-  NavStateSpace states(
+  NavStateFactory states(
       config, NavHeuristic::StateScorer{motionRange, params.effortWeight, params.distanceWeight});
   NavState base = states.initial(query.cursor, acceptedEffort);
 

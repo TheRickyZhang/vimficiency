@@ -401,7 +401,7 @@ GoalStates ChangeGoalHandler::emitEditGoal(
                        typedVariants.normalTyped.sequence,
                        typedVariants.normalTyped.effort);
 
-  TransformStateSpace states(config, effortWeight);
+  TransformStateFactory states(config, effortWeight);
   TransformState normalState = states.afterCommandWithLastEdit(
       base, postCompletionState, normalSeq.seq.view(), normalEffort, 0.0,
       DotRepeat{string(sourceCmd.base.seq.view()), sourceCmd.count},

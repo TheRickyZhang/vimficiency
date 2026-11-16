@@ -146,7 +146,7 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
 
   const double startPriority =
       distanceWeight * textDistanceEstimate(effectiveLines, leftColOffset, rightColOffset);
-  TransformStateSpace states(config, effortWeight);
+  TransformStateFactory states(config, effortWeight);
   int startIndex = 0;
   for (int line = 0; line <= initialLines.lastLine(); line++) {
     for (int col = 0; col < initialLines[line].effectiveSize(); col++) {

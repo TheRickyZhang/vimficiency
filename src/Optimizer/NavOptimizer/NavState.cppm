@@ -10,11 +10,11 @@ export import vf.Types.Sequence;
 
 export {
 
-// Ranked navigation search state. NavStateSpace is the only construction and
+// Ranked navigation search state. NavStateFactory is the only construction and
 // transition path, so effort and cost are updated together.
 class NavState {
   template<class CostFn>
-  friend class NavStateSpace;
+  friend class NavStateFactory;
 
   // Visible, core editor state
   CursorPos pos;
@@ -62,7 +62,7 @@ private:
 };
 
 template<class CostFn>
-class NavStateSpace {
+class NavStateFactory {
   const Config& config;
   CostFn computeCost;
 
@@ -71,7 +71,7 @@ class NavStateSpace {
   }
 
 public:
-  inline NavStateSpace(const Config& config, CostFn computeCost)
+  inline NavStateFactory(const Config& config, CostFn computeCost)
       : config(config), computeCost(std::move(computeCost)) {}
 
   [[nodiscard]] inline NavState initial(CursorPos pos) const {
@@ -111,6 +111,6 @@ public:
 };
 
 template<class CostFn>
-NavStateSpace(const Config&, CostFn) -> NavStateSpace<CostFn>;
+NavStateFactory(const Config&, CostFn) -> NavStateFactory<CostFn>;
 
 }  // export

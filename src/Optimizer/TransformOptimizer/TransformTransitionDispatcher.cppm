@@ -104,7 +104,7 @@ struct TransformTransitionDispatcher {
   const std::vector<char>& startActive;
   const EffortBank& bank;
   const TransformBoundary& transformBoundary;
-  const TransformStateSpace& states;
+  const TransformStateFactory& states;
   double distanceWeight;
   int leftColOffset;
   int rightColOffset;

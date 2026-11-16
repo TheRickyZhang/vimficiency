@@ -244,9 +244,9 @@ public:
 
 // Queue-ready search state. It wraps a TransformEditorState with sequence,
 // effort, cost, and dot-repeat metadata; callers advance it through
-// TransformStateSpace so those fields stay synchronized.
+// TransformStateFactory so those fields stay synchronized.
 class TransformState {
-  friend class TransformStateSpace;
+  friend class TransformStateFactory;
 
   TransformEditorState editor;
   int startIndex;                 // Which starting position this search is for
@@ -299,7 +299,7 @@ public:
 
 // Couples an editor snapshot with command effort and heuristic cost to create
 // queue-ready TransformState values.
-class TransformStateSpace {
+class TransformStateFactory {
   const Config& config;
   double effortWeight;
 
@@ -340,7 +340,7 @@ class TransformStateSpace {
   }
 
 public:
-  inline TransformStateSpace(const Config& config, double effortWeight)
+  inline TransformStateFactory(const Config& config, double effortWeight)
       : config(config), effortWeight(effortWeight) {}
 
   [[nodiscard]] inline TransformState initial(

@@ -164,7 +164,7 @@ TEST(CompositionTraceExport, ExportExample) {
   auto scoreState = [&](const CompositionState& state) {
     return ctx.heuristic(state);
   };
-  CompositionStateSpace states(config, scoreState);
+  CompositionStateFactory states(config, scoreState);
 
   vector<NodeRec> nodes;
   vector<NavCallRec> navCalls;
