@@ -20,14 +20,11 @@
 ---@field capture_view               fun(buf: integer, win: integer): VF.ViewState
 ---@field capture_state              fun(buf: integer, win: integer): VF.BufferState
 ---@field check_state_inconsistencies fun(start_state: VF.ViewState, end_state: VF.ViewState)
----@field compute_search_region      fun(start_row: integer, end_row: integer, start_lines: string[], end_lines: string[], padding: integer): integer, integer
 local M = {}
 
 local v  = vim.api
 local uv = vim.uv
 local fs = vim.fs
-
-local ffi_session = require("vimficiency.ffi.session")
 
 --------------------------------------------------------------------------------
 -- Shared scratch-window chrome
@@ -459,25 +456,6 @@ function M.check_state_inconsistencies(start_state, end_state)
   if end_state.window_height ~= start_state.window_height then
     vim.notify("window height changed during session")
   end
-end
-
---- Compute the search region that covers cursor positions and changed lines
---- Returns (region_start, region_end) as 0-indexed line numbers
----@param start_row integer 0-indexed start cursor row
----@param end_row integer 0-indexed end cursor row
----@param start_lines string[] Buffer lines at session start
----@param end_lines string[] Buffer lines at session end
----@param padding integer Number of lines to add above/below
----@return integer region_start 0-indexed first line of region
----@return integer region_end 0-indexed last line of region
-function M.compute_search_region(start_row, end_row, start_lines, end_lines, padding)
-  return ffi_session.compute_search_region(
-    start_lines,
-    end_lines,
-    start_row,
-    end_row,
-    padding
-  )
 end
 
 return M

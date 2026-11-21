@@ -8,7 +8,7 @@ local LISTENER_NAME = "recall_capture"
 ---@param atom VF.Atom
 ---@param decision VF.Atom.Decision
 local function recall_listener(atom, decision)
-  if not atom_stream.in_live_file_buffer(atom) then return end
+  if not atom_stream.in_live_file_buffer(atom.buf, atom.win) then return end
   if decision == "record" then
     session_store.ingest_recall_atom(atom)
   elseif decision == "abort" then

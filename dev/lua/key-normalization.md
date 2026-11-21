@@ -23,7 +23,8 @@ key.
 
 ## Call sites
 
-- `capture/atom_stream.lua` — CmdAtom `keys` and `lhs`.
+- `capture/atom_stream.lua` — CmdAtom `keys` and `lhs`, and the pressed-key
+  inputs (`vim.on_key` `typed`, `getchar` results, keys fed as typed).
 - `explore/handlers.lua` — Explore's own `vim.on_key` stream, before
   `explore_accept_snapshot`.
 

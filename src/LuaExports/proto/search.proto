@@ -18,9 +18,30 @@ message SearchRequest {
   bool has_lines_below = 8;
   int32 window_height = 9;
   int32 scroll_amount = 10;
+  // Resolved keys: bound the search.
   bytes user_seq = 11;
+  // Physical keys: cost the user.
+  bytes user_typed = 13;
   // `scope:key=value` lines; empty for none.
   bytes optimizer_overrides = 12;
+}
+
+// A session over its whole buffers. `vf_build_search_request` cuts it to the
+// rows a search needs: both cursors and every changed line, plus `padding`.
+message BuildSearchRequest {
+  repeated bytes initial_lines = 1;
+  repeated bytes goal_lines = 2;
+  int32 start_row = 3;
+  int32 start_col = 4;
+  int32 end_row = 5;
+  int32 end_col = 6;
+  int32 window_height = 7;
+  int32 scroll_amount = 8;
+  bytes user_seq = 9;
+  bytes user_typed = 12;
+  int32 padding = 10;
+  // A taller region is an error.
+  int32 max_search_lines = 11;
 }
 
 message AnalyzeRequest {

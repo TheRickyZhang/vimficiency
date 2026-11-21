@@ -3,11 +3,7 @@ module vf.LuaExports.Logic;
 import std.compat;
 import vf.LuaExports.Common;
 import vf.LuaExports.Payload;
-import vf.Boundary.NavBoundary;
 import vf.Optimizer.OptimizerParamOverrides;
-import vf.Types.CursorPos;
-import vf.Types.Lines;
-import vf.Types.NavContext;
 import vf.Interpreter.SequenceParser;
 
 using namespace std;
@@ -33,21 +29,6 @@ bool endsWithOperatorEdit(const string& sequence) {
   if (!parsed || parsed->empty()) return false;
   const TokenKind kind = parsed->back().kind;
   return kind == TokenKind::Change || kind == TokenKind::Delete;
-}
-
-pair<int, int> findDiffRange(const Lines& a, const Lines& b) {
-  int firstDiff = -1;
-  int lastDiff = -1;
-  const int maxLen = max(ssize(a), ssize(b));
-  for (int i = 0; i < maxLen; ++i) {
-    const string* lhs = i < ssize(a) ? &a[i] : nullptr;
-    const string* rhs = i < ssize(b) ? &b[i] : nullptr;
-    if (!lhs || !rhs || *lhs != *rhs) {
-      if (firstDiff < 0) firstDiff = i;
-      lastDiff = i;
-    }
-  }
-  return {firstDiff, lastDiff};
 }
 
 }  // namespace
@@ -90,24 +71,45 @@ string buildKeySequence(span<const KeyEvent> events) {
   return out;
 }
 
-pair<int, int> computeSearchRegion(
-    int startRow,
-    int endRow,
-    const Lines& startLines,
-    const Lines& endLines,
-    int padding) {
-  int minRow = min(startRow, endRow);
-  int maxRow = max(startRow, endRow);
-  const auto [firstDiff, lastDiff] = findDiffRange(startLines, endLines);
-  if (firstDiff >= 0) {
-    minRow = min(minRow, firstDiff);
-    maxRow = max(maxRow, lastDiff);
-  }
+namespace {
 
-  const int bufferLen = max(ssize(startLines), ssize(endLines));
-  const int regionStart = max(0, minRow - padding);
-  const int regionEnd = min(bufferLen - 1, maxRow + padding);
-  return {regionStart, regionEnd};
+// `<...>` names and single characters.
+vector<string_view> notationTokens(string_view keys) {
+  vector<string_view> tokens;
+  while (!keys.empty()) {
+    size_t size = 1;
+    if (keys.front() == '<') {
+      const size_t close = keys.find_first_of("<>", 1);
+      if (close != string_view::npos && keys[close] == '>') size = close + 1;
+    } else {
+      while (size < keys.size() && (keys[size] & 0xC0) == 0x80) size++;
+    }
+    tokens.push_back(keys.substr(0, size));
+    keys.remove_prefix(size);
+  }
+  return tokens;
+}
+
+}  // namespace
+
+string typedKeys(span<const KeyInput> inputs) {
+  deque<string_view> fed;
+  string out;
+  for (const KeyInput& input : inputs) {
+    for (const string_view token : notationTokens(input.keys)) {
+      if (input.fed) {
+        fed.push_back(token);
+      } else if (!fed.empty() && fed.front() == token) {
+        fed.pop_front();
+      } else {
+        // Fed keys sit at the front of typeahead, so a read that is not the
+        // next one means the rest were consumed without being reported.
+        fed.clear();
+        out += token;
+      }
+    }
+  }
+  return out;
 }
 
 int manualEvictReason(

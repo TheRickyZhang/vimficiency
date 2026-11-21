@@ -168,9 +168,19 @@ return {
   },
 
   stats = {
-    desc = "Show lifetime session stats (efficiency, motions, beats)",
-    usage = "stats",
-    run = function() require("vimficiency.stats").open() end,
+    desc = "Show lifetime stats (efficiency, motions, beats, journal); `refresh` only scores the journal",
+    usage = "stats [refresh]",
+    complete = { { "refresh" } },
+    run = function(args)
+      local stats = require("vimficiency.stats")
+      if args[1] == nil then
+        stats.open()
+      elseif args[1] == "refresh" then
+        stats.refresh()
+      else
+        error("Usage: Vimfy stats [refresh]", 0)
+      end
+    end,
   },
 
 

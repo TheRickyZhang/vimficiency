@@ -21,7 +21,9 @@ double install is loud. `setup()` raises when `##CmdAtom` is absent.
 
 - `type` — `operator | insert | motion | normal | visual | jump | scroll | excmd | mouse | mapping`.
 - `keys` — replayable sequence. `nil` is a Lua callback, `""` an unexpressible resolution.
-- `lhs`, `count` — as typed; `count` drives synthetic-count stripping.
+  Keys that embed a callback (`keynorm.has_callback`) are treated as `nil`.
+- `lhs`, `count` — the mapping side as typed; `count` drives synthetic-count
+  stripping.
 - `changed`, `moved` — whether the action touched text / cursor.
 
 `reg` and `undoseq` are never read.
@@ -50,6 +52,27 @@ general way to verify such an atom — `;` after flash's `f` would need the
 previous find, and every mapping would need its own state — so the choice is
 the user's. No-effect callbacks stay `skip` either way.
 
+An operator over such a mapping does arrive with `keys`, but they hold the
+callback instead of keys: `d<K_LUA>538<NL>e` for flash's `dfe` (a function ref
+only this Neovim can run), `c<Cmd>lua MiniAi…<NL>` for mini.ai's `ci(`.
+`dispatch` drops them to `nil` so they take the same `lhs` path; `excmd` atoms
+are left alone because they are never replayable.
+
+A mapped move inside a selection (`j`→`gj` after `V`) arrives twice: once
+alone as a `mapping` atom with nil keys, then within the Visual atom's keys.
+`dispatch` treats the first as a no-op when the latest mapping ran in Visual
+mode, so it is a `skip`. A burst that mixes a normal-mode Lua mapping with a
+later Visual one can still misjudge it.
+
+The recorded `lhs` is only as good as Neovim's (see "Pressed keys" for its
+gaps), so a lossy atom's `keys` can miss a count or a Visual `v`. Its `typed`
+does not.
+
+A Lua Insert-mode mapping that inserts through the API (nvim-ts-autotag's `>`)
+leaves its text out of a non-nil `keys`, so the atom is recorded, not lossy,
+and replay drops that text. Only the play view's user pane replays `keys`, so
+this is accepted until Neovim marks such atoms.
+
 `skip` is a measured no-effect fact, not a tolerance: it is what lets `:w`,
 `:noh`, and `:Vimfy` commands pass through a live session. `abort` means the
 recording can no longer be replayed to the end state, so every listener drops
@@ -59,6 +82,53 @@ recall listener removes the buffer's active recall records
 one-line description (`describe_abort`) naming the ex command, mouse token, or
 mapping `lhs` and whether it changed text or moved the cursor; the
 named-session listener surfaces it in the drop notice.
+
+## Pressed keys
+
+`atom.typed` is what the user physically pressed for the atom, where
+`atom.keys` is what ran. The user is costed by `typed`; replay, state and the
+search bound use `keys` (`dev/decisions.md`).
+
+Neovim has no single source of them (measured on 0.13-dev-2069).
+`vim.on_key`'s `typed` is exact for every key the main loop reads, but skips
+keys a plugin reads with `getchar()` (flash's target, mini.ai's `iw`). CmdAtom
+`lhs` is a rebuilt label that drops counts and Visual prefixes, and later
+mappings overwrite it.
+
+So `atom_stream` records what Neovim read as typed, in order:
+
+- `on_key`'s `typed`
+- what `vim.fn.getchar`/`getcharstr` return, through wrappers (peeks with
+  `getchar(1)` excluded)
+- keys passed to `vim.api.nvim_feedkeys`/`vim.fn.feedkeys` with the `t` flag,
+  marked as fed
+
+A plugin that feeds keys as typed makes Neovim read them again. which-key
+does it for every trigger (`d`, `c`, `y`, `g`, `z`, `"`, `v`): it reads the
+next key with `getcharstr` and re-feeds it with `"mit"`. With no fed keys, the
+reads are the answer. Otherwise `logic::typedKeys` cancels each read against
+the next fed key. A read that doesn't match means the fed keys were consumed
+unreported, so the rest are dropped.
+
+The wrappers are installed on the first listener and never removed, since
+unwrapping could drop a later plugin's wrapper around ours. They only record
+while the autocmd exists. Under the real config (flash, mini.ai, mini.pairs,
+mini.surround, which-key) 43 of 43 probed sequences came out exact.
+
+Known gaps, all Neovim's:
+
+- A burst is delivered after all its keys were read, so its first atom carries
+  the whole burst and the rest carry `""`. With a key held down, a key can also
+  be read while the previous atoms are still being delivered and land one atom
+  early. Totals are conserved, so sum `typed` over a run; never compare it atom
+  by atom.
+- An expr mapping that calls `getchar()` gets no `typed` from `on_key`, so its
+  own keys are lost (mini.ai's `i` without which-key in front: `yiw` records
+  `yw`). Neovim clears `on_key`'s buffer inside the nested `getchar()`.
+- Vimscript `getchar()`/`feedkeys()` callers, and Lua that saved the function
+  before the wrappers went in, are not seen.
+- Keys that end in no atom (an operator cancelled with `<Esc>`) count toward
+  the next one. Terminal-mode keys are ignored, since nothing would bound them.
 
 ## Deferred delivery
 
@@ -97,7 +167,7 @@ its start, because every mark in the burst is taken after it.
 ## Journal
 
 `capture/journal.lua` (`config.journal.enabled`, off by default) appends every
-in-scope atom to `stdpath('data')/vimficiency/journal/<timestamp>-<pid>.jsonl`,
+in-scope atom to `stdpath('data')/vimficiency/journal/<timestamp>-<pid>.vfj`,
 one file per `setup()`. It shares recall's scope (`atom_stream.in_live_file_buffer`)
 but keeps `skip` and `abort` atoms, with their decision, so a reader can cut
 sessions itself.
@@ -109,26 +179,64 @@ atom in a buffer, after a reload or unload (the reseed), and every
 `snapshot_every` atoms; the last is only a checkpoint that bounds how far back a
 reader must scan.
 
-One JSON object per line, each with `rec` and `ms` (monotonic milliseconds since
-the header). Rows and line indexes are 0-indexed.
+The file is protobuf (`proto/journal.proto`): one single-record `vf.journal.File`
+appended per record, so the whole file decodes as one `File`. It is binary
+because the protos are `LITE_RUNTIME`, which has no JSON, and both Lua and C++
+have to read it. Rows and line indexes are 0-indexed.
+
+Every record has `ms` (monotonic milliseconds since the header) and `tick`.
 
 - `header` — `version`, `started_wall_epoch`. A second header in one file is a
   restart: discard all buffer state.
 - `snapshot` — `buf`, `bufname`, `filetype`, `lines` (the whole text).
 - `delta` — `buf`, `first`, `old_count`, `lines`: replace `old_count` lines at
   `first` with `lines`. Applies to the text built so far for `buf`.
-- `atom` — `buf`, `win`, `keys`, `decision`, `lossy`, `abort_reason` (abort
-  only), and the post-atom view: `row`, `col`, `top_row`, `bottom_row`,
-  `window_height`, `scroll_amount`.
+- `resync` — `buf`, `win`, `view`: the state of a window that no atom accounts
+  for, taken in Normal mode once the event queue drains. Written when a window
+  or buffer is entered, or the cursor or text changed with no atom behind it.
+- `atom` — `buf`, `win`, `keys`, `typed`, `decision`, `lossy`, `abort_reason`
+  (abort only), `mode`, and the post-atom `view`.
 
-The text at an atom is the snapshot plus every delta written before that atom's
-line. A session from atom `i` to atom `j` starts at atom `i-1`'s text and cursor
-and ends at atom `j`'s. Deferred delivery applies here too: inside a burst every
-atom carries the burst's final cursor, and the first carries the whole delta.
+The text at an atom is the snapshot plus every delta written before it. Records
+written in one drain of the event queue share a `tick`: deferred delivery means
+every atom of a tick carries the tick's final cursor and the first carries the
+whole delta. Only the last state of a tick is real, so a reader never splits one.
 
-Nothing reads the journal yet, and the raw event fields that `VF.Atom` drops
-(`type`, `lhs`, `count`, `changed`, `moved`) are not in it. Files are never
-rotated or pruned.
+The raw event fields that `VF.Atom` drops (`type`, `lhs`, `count`, `changed`,
+`moved`) are not in the journal. Files are never rotated or pruned.
+
+### Sampling
+
+`:Vimfy stats` scores the journal through `vimfy_journal` (`src/Journal/`), run
+by `stats/sampling.lua`. It is a separate process because a failed `CHECK` in a
+search aborts; there that costs one window, recorded as `crashed` and skipped
+on the next run.
+
+`Replay` rebuilds the text at every atom and `WindowCutter` cuts back-to-back
+windows of `journal.sampling.window_sizes` recorded atoms, one series per size.
+A window only grows across ticks the journal vouches for end to end, and
+anything else ends every open window:
+
+- a `resync`, a header, or text the deltas cannot explain
+- an `abort` atom that shows in the text or cursor (saving a modified buffer is
+  an `abort` that does not, because it bumps `changedtick`)
+- an atom of another buffer or window, or a state outside Normal mode
+- a pause longer than `idle_gap_ms`
+
+`Evaluate` runs each window through the same `sliceSearch` / `searchInputs` /
+`analyze` path as a live session (`src/Optimizer/Analyze.cppm`), costing the
+window's pressed keys against the best sequence found. Nothing is replayed,
+since the journal holds the real state at both ends.
+
+Results go to `<journal>.samples`, a `vf.journal.SampleFile` appended the same
+way. A file whose stored `SampleParams` differ from the request is recomputed,
+so history is always scored under the current effort model and config. The
+journal's last tick is never cut, which keeps the windows of a growing journal a
+prefix of its later windows and lets a rerun resume by count.
+
+The normalized effort shown is `Σ min(best, user) / Σ user` over scored windows.
+Windows that end where they started score a best of 0; `too_large`,
+`no_result`, `unsupported` and `crashed` windows are counted but carry no cost.
 
 ## Testing
 
@@ -137,3 +245,6 @@ rotated or pruned.
 `run.sh` phase. The pure decision table is tested through `atom_stream._classify`.
 `tests/lua/capture/journal.lua` drives the journal listener directly and checks
 that replaying the file rebuilds the buffer at every atom.
+`tests/Unit/Journal/` covers replay, each cut rule, evaluation and resume;
+`tests/lua/stats/sampling.lua` runs the real `vimfy_journal` over a journal
+written in the test.

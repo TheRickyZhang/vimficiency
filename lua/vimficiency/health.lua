@@ -21,6 +21,15 @@ function M.check()
     core.version_string(), core.lib_path))
   vim.health.ok("ABI hash matches src/LuaExports/Api.def")
 
+  local scorer = vim.fs.joinpath(vim.fs.dirname(core.lib_path), "vimfy_journal")
+  if vim.fn.executable(scorer) == 1 then
+    vim.health.ok("journal scorer found at " .. scorer)
+  else
+    vim.health.warn("journal scorer not found at " .. scorer .. "; `:Vimfy stats` cannot score the journal", {
+      "Run `:Lazy build vimficiency`, or `./scripts/install.sh` in the plugin directory",
+    })
+  end
+
   if vim.fn.exists(":Vimfy") == 2 then
     vim.health.ok("setup() has run; `:Vimfy` is defined")
   else

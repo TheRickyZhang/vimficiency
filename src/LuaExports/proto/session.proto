@@ -37,18 +37,16 @@ message BuildSequenceRequest {
   repeated KeyEvent events = 1;
 }
 
-message SearchRegionRequest {
-  repeated bytes start_lines = 1;
-  repeated bytes end_lines = 2;
-  int32 start_row = 3;
-  int32 end_row = 4;
-  int32 padding = 5;
+message KeyInput {
+  // Key notation.
+  bytes keys = 1;
+  // Fed by a plugin as if typed (`nvim_feedkeys` mode "t"); otherwise read as typed.
+  bool fed = 2;
 }
 
-// Inclusive row range.
-message SearchRegion {
-  int32 region_start = 1;
-  int32 region_end = 2;
+// What Neovim read as typed for one CmdAtom, in order. See `logic::typedKeys`.
+message TypedKeysRequest {
+  repeated KeyInput inputs = 1;
 }
 
 message ManualEvictRequest {

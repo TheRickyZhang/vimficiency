@@ -15,22 +15,13 @@ function M.build_sequence(key_seq)
     { events = events }, "vf.Text").text
 end
 
----@param start_lines string[]
----@param end_lines string[]
----@param start_row integer
----@param end_row integer
----@param padding integer
----@return integer
----@return integer
-function M.compute_search_region(start_lines, end_lines, start_row, end_row, padding)
-  local region = core.call(lib.vf_compute_search_region, "vf.session.SearchRegionRequest", {
-    start_lines = start_lines,
-    end_lines = end_lines,
-    start_row = start_row,
-    end_row = end_row,
-    padding = padding,
-  }, "vf.session.SearchRegion")
-  return region.region_start, region.region_end
+--- The keys pressed for an atom, from what Neovim read as typed, when some of
+--- it was fed by a plugin rather than pressed.
+---@param inputs { keys: string, fed: boolean }[]  in order, key notation
+---@return string
+function M.typed_keys(inputs)
+  return core.call(lib.vf_typed_keys, "vf.session.TypedKeysRequest",
+    { inputs = inputs }, "vf.Text").text
 end
 
 ---@param start_row integer

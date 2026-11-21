@@ -25,6 +25,7 @@ VFByteSlice vf_debug_config();                                      // vf.Text
 VFByteSlice vf_get_warnings();                                      // vf.Text
 
 // vf.search (AnalyzeExports.cpp)
+VFByteSlice vf_build_search_request(const char* request, size_t request_len); // BuildSearchRequest -> SearchRequest
 VFByteSlice vf_analyze(const char* request, size_t request_len);              // AnalyzeRequest -> AnalyzeResult
 VFByteSlice vf_analyze_start_async(const char* request, size_t request_len);  // AnalyzeRequest -> vf.JobHandle
 VFByteSlice vf_analyze_poll(int job_id);                                      // AnalyzeResult
@@ -35,7 +36,7 @@ VFByteSlice vf_get_optimizer_defaults();                                      //
 VFByteSlice vf_tokenize_movements(const char* request, size_t request_len);     // SequenceRequest -> Tokens
 VFByteSlice vf_tokenize_sequence(const char* request, size_t request_len);      // SequenceRequest -> Tokens
 VFByteSlice vf_build_sequence(const char* request, size_t request_len);         // BuildSequenceRequest -> vf.Text
-VFByteSlice vf_compute_search_region(const char* request, size_t request_len);  // SearchRegionRequest -> SearchRegion
+VFByteSlice vf_typed_keys(const char* request, size_t request_len);             // TypedKeysRequest -> vf.Text
 VFByteSlice vf_manual_evict_reason(const char* request, size_t request_len);    // ManualEvictRequest -> ManualEvict
 
 // vf.display (DisplayExports.cpp)

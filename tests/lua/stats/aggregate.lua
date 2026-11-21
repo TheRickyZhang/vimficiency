@@ -48,6 +48,15 @@ test("aggregate: beats clamp at 100 and increment the dev counter", function()
   assert_eq(s.beats_count, 1)
 end)
 
+test("aggregate: a session without a solution is counted, never scored", function()
+  local failed = rec({ user_cost = 10.0 })
+  failed.best_opt_cost = nil
+  local s = stats.aggregate({ failed, rec({ user_cost = 10.0, best_opt_cost = 5.0 }) })
+  assert_eq(s.no_solution_count, 1)
+  assert_true(math.abs(s.efficiency_score - 50) < 1e-6,
+    "only the solved session scores; got " .. tostring(s.efficiency_score))
+end)
+
 test("aggregate: by_type counts across mixed session types", function()
   local s = stats.aggregate({
     rec({ type = "mark" }),    rec({ type = "mark" }),

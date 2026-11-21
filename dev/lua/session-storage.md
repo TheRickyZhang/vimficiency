@@ -45,7 +45,8 @@ the file's only clock), and
 `disk.decode` rejects any `version` other than the current one, including
 unversioned files, and strips it before validating; there is no migration.
 Bump `FORMAT_VERSION` on any change that old files cannot satisfy. All fields
-are required except the debug-only `capture_debug` and `analyze_ms`, and
+are required except the debug-only `capture_debug` and `analyze_ms`,
+`user_typed` (the pressed keys behind `user_cost`; `user_seq` is what ran), and
 `optimizer_overrides` and `results_calculated`, which complete the replayable
 `VF.SearchRequest` and are absent from files saved before 0.3.0.
 

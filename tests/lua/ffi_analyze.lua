@@ -18,7 +18,8 @@ local function find_result_ending_with(results, suffix)
   return nil
 end
 
--- Cursor at (0,0) in a 40-line window unless `overrides` says otherwise.
+-- Cursor at (0,0) in a 40-line window unless `overrides` says otherwise. The
+-- keys were pressed as they ran unless `user_typed` is given.
 ---@param initial_lines string[]
 ---@param goal_lines string[]
 ---@param overrides table
@@ -36,6 +37,7 @@ local function request(initial_lines, goal_lines, overrides)
     optimizer_overrides = "",
   }
   for k, val in pairs(overrides) do req[k] = val end
+  req.user_typed = overrides.user_typed or req.user_seq
   return req
 end
 
@@ -64,6 +66,19 @@ test("ffi.analyze: typed text with whitespace survives the boundary", function()
   assert_true(user_cost > 0, "user cost must cross as a positive number")
   assert_true(type(dbg) == "string", "debug text must always be present")
   assert_eq(#diffs, 1, "one planned region; got " .. vim.inspect(diffs))
+end)
+
+test("ffi.analyze: the user is costed by the keys pressed, not the keys that ran", function()
+  local line = "one two three four"
+  local function user_cost(user_typed)
+    local _, cost = ffi_lib.analyze(request({ line }, { line }, {
+      end_col = 14,
+      user_seq = "www",
+      user_typed = user_typed,
+    }), 5)
+    return cost
+  end
+  assert_true(user_cost("t") < user_cost("www"), "one pressed key costs less than the three that ran")
 end)
 
 test("ffi.analyze: identical buffers plan no diff regions", function()

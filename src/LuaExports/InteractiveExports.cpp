@@ -11,6 +11,7 @@ import vf.LuaExports.AsyncJob;
 import vf.LuaExports.AsyncJobRegistry;
 import vf.Explore.Explore;
 import vf.Keyboard.Config;
+import vf.Optimizer.Analyze;
 import vf.Optimizer.OptimizerParamOverrides;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
@@ -108,7 +109,7 @@ Proto headerRowsMessage(const View& v) {
 // constructed from the precomputed plan only once `vf_explore_poll` observes
 // `ready()`.
 struct ExploreState {
-  logic::SearchInputs inputs;
+  SearchInputs inputs;
   CompositionOptimizerParams compositionParams;
   Config config;
   CompositionTraceResult trace;
@@ -152,7 +153,7 @@ VFByteSlice vf_explore_start_async(const char* request, size_t request_len) {
 VFByteSlice vf_explore_poll(int job_id) {
   static string storage;
   return guardedPoll(storage, g_jobs, job_id, [](ExploreState& s) {
-    logic::SearchInputs& in = s.inputs;
+    SearchInputs& in = s.inputs;
     vf::explore::ViewHandle handle;
     handle.set_view_id(g_registry.create(
         std::move(in.initialLines),

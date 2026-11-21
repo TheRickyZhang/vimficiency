@@ -42,9 +42,10 @@ https://therickyzhang.github.io/vimficiency/docs/how-it-works/
 ## Installation
 
 vimficiency ships a native library (`libvimficiency.{so,dylib}`) that the
-Lua side loads via LuaJIT FFI. `scripts/install.sh` installs it as the plugin
-manager's build step: it downloads the prebuilt for your platform when the
-checkout is on a release tag, and otherwise builds from source. Every snippet
+Lua side loads via LuaJIT FFI, and a small scorer (`vimfy_journal`) behind
+`:Vimfy stats`. `scripts/install.sh` installs both as the plugin manager's
+build step: it downloads the prebuilts for your platform when the checkout is
+on a release tag, and otherwise builds from source. Every snippet
 below pins the latest release so you get the prebuilt; drop the pin to follow
 `main`, which builds from source and needs the compiler from Requirements.
 
@@ -98,11 +99,12 @@ git checkout "$(git describe --tags --abbrev=0)"
 ./scripts/install.sh
 ```
 
-Or configure CMake yourself; this builds only the library, in Release:
+Or configure CMake yourself; this builds only the library and the journal
+scorer `:Vimfy stats` runs, in Release:
 
 ```bash
 cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF
-cmake --build build -j --target vimficiency
+cmake --build build -j --target vimficiency vimfy_journal
 ```
 
 Then either place the plugin on your `runtimepath` or point at the library

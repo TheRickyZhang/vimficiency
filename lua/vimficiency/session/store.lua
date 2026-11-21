@@ -131,10 +131,11 @@ end
 ---@field diffs VF.Diff.Region[]       # Optimizer character-level diff regions for column highlighting
 ---@field window_height integer        # Captured window height for page/scroll semantics
 ---@field scroll_amount integer        # Captured 'scroll' option for Ctrl-D/U semantics
----@field user_seq string              # What the user typed (keytrans string), mouse events stripped
+---@field user_seq string              # What ran: the user's keys after mappings (keytrans string). Replayed and bounds the search
+---@field user_typed string|nil        # What the user pressed (keytrans string), mouse events stripped. Behind user_cost. Absent on files saved before it existed
 ---@field optimizer_overrides string|nil # Encoded overrides the analyze ran with; with results_calculated, completes the replayable request. Absent on files saved before 0.3.0
 ---@field results_calculated integer|nil # Result count the analyze was asked for
----@field user_cost number             # Effort cost of user's sequence
+---@field user_cost number             # Effort of the keys the user pressed
 ---@field optimal_results VF.Optimizer.Result[] # Top N results from optimizer (seq + cost)
 ---@field capture_debug table|nil      # Per-atom key boundaries behind user_seq, persisted only for debugging
 ---@field key_count integer            # Captured key events at finish (authoritative; user_seq is bytes, not keys)

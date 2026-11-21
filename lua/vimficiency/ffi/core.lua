@@ -141,6 +141,14 @@ function M.encode(message, value)
   return pb.encode(message, value)
 end
 
+--- Decodes a bare serialized `message`, as stored in a file.
+---@param message string
+---@param bytes string
+---@return table
+function M.decode_message(message, bytes)
+  return assert(pb.decode(message, bytes))
+end
+
 --- Decodes a `vf.Envelope` (C++ `storeResult` / `storePending`) and the
 --- `message` inside it. Returns the C++ error instead of raising it, and
 --- nothing while an async job is still pending.

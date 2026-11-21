@@ -21,6 +21,7 @@ title: "Commands reference"
 | `:Vimfy rm <filename>`                     | Delete a saved result from disk.                     |
 | `:Vimfy list`                              | Open the interactive session picker (see below).     |
 | `:Vimfy stats`                             | Show lifetime session stats (see below).             |
+| `:Vimfy stats refresh`                     | Score the journal now, without opening the stats.    |
 | `:Vimfy suggest <on\|off\|toggle>`         | Runtime toggle for auto-suggest (works with zero config). |
 | `:Vimfy config`                            | Show the current configuration.                      |
 | `:Vimfy reload`                            | Rebuild the C++ library (needs restart).             |
@@ -136,6 +137,9 @@ Sections:
   beat doesn't inflate the average). Aggregated as a geometric mean.
   The 30-day block below the score is a sparkline of the daily
   geometric mean (▁ = 0, █ = 100; blanks = no sessions that day).
+- **Journal** — normalized effort over everything you typed, not only
+  finished sessions. Needs the [journal](09-configuration.md) turned on.
+  See below.
 - **Motions** — for every motion molecule that appears at least ten
   times combined across your sequences and the optimizer's best
   suggestions, the ratio `your_proportion / optimizer_proportion`. Two
@@ -150,6 +154,31 @@ Sections:
   interesting-to-study, not ground truth**: many are cost-model
   artifacts or unexplored regions, so they are *not* fed back into
   training without manual review.
+
+### The Journal section
+
+The journal is cut into back-to-back runs of 4, 8 and 16 commands, and each
+run is scored as if you had ended a session there. A run's score is the
+effort of the best sequence found over the effort of what you typed.
+
+- **Score** — total best effort over total typed effort, × 100, for runs of
+  8 commands. Longer runs weigh more, and a run that ends where it started
+  counts as all waste.
+- **30-day chart** — the same number per day.
+- **By run length** — the score at each run length. Longer runs give the
+  optimizer more to merge, so they usually score lower.
+- **Movement only / With edits** — the 8-command runs split by whether the
+  text changed.
+- **Not scored** — runs left out of the score: the changed region was too
+  large, the search found nothing, or the search failed.
+
+A run is dropped, not scored, when the journal cannot account for everything
+in it: you switched buffer or window, an ex command or mouse click changed
+something, or you paused for more than 30 seconds.
+
+Opening the stats scores whatever the journal has gained since last time, and
+shows `Scoring the journal…` until that finishes. `:Vimfy stats refresh` does
+the same in the background, which helps after a long stretch of editing.
 
 ### Where the data lives
 
@@ -177,6 +206,7 @@ Works on:
 - Every alias plus saved filenames for `play`, `view`, and `explore`.
 - Saved filenames for `rm` and `fetch`.
 - `on` / `off` / `toggle` for `suggest`.
+- `refresh` for `stats`.
 
 ## Scratch output buffer keys
 

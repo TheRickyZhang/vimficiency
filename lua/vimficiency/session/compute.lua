@@ -15,11 +15,6 @@ local util = require("vimficiency.util")
 ---@field manual_should_evict             fun(session: VF.Session.Active, cursor_row: integer, now_ns: integer): string|nil
 local M = {}
 
-local APPROXIMATE_MOTION_CONVERSIONS = {
-  ["gj"] = "j",
-  ["gk"] = "k",
-}
-
 -- Diagnostic probe for a slow optimizer run. On any analyze over the threshold,
 -- dump the exact slice for offline replay and surface the timing. analyze_ms is
 -- a main-thread stall on the sync (explicit-finish) path, but worker wall-time
@@ -45,16 +40,6 @@ local function log_slow_fire(active, result)
         vim.fn.fnamemodify(path, ":~")), vim.log.levels.WARN)
     end)
   end)
-end
-
----@param keyseq string
----@return string
-local function apply_motion_conversions(keyseq)
-  local result = keyseq
-  for from, to in pairs(APPROXIMATE_MOTION_CONVERSIONS) do
-    result = result:gsub(vim.pesc(from), to)
-  end
-  return result
 end
 
 --- Per-atom key boundaries behind `user_seq` (pre motion-conversion), which the
@@ -86,18 +71,6 @@ local function buf_display_name(buf)
   return string.format("'%s' (buf %d)%s", name, buf, suffix)
 end
 
----@param lines string[]
----@param region_start integer
----@param region_end integer
----@return string[]
-local function slice_lines(lines, region_start, region_end)
-  local sliced = {}
-  for i = region_start + 1, math.min(region_end + 1, #lines) do
-    table.insert(sliced, lines[i])
-  end
-  return sliced
-end
-
 -- Raises when the captured buffer is not the current one.
 ---@param active VF.Session.Active
 ---@return VF.BufferState end_state
@@ -125,8 +98,8 @@ function M.capture_end_state(active)
   return end_state
 end
 
--- Slice both snapshots to the search region and marshal the keystroke stream
--- into the bundle consumed by both the sync and async analyze paths.
+-- Marshal both snapshots and the keystroke stream into the bundle consumed by
+-- both the sync and async analyze paths. C++ cuts them to the search region.
 ---@param active VF.Session.Active
 ---@param end_state VF.BufferState
 ---@return table input
@@ -135,46 +108,32 @@ local function build_analyze_input(active, end_state)
   local initial_lines = active.kind == "recall"
     and buffer_history.lines_at(active.buf, active.start_seq)
     or (start_state --[[@as VF.BufferState]]).lines
-  local goal_lines = end_state.lines
-
-  local start_search, end_search = util.compute_search_region(
-    start_state.row, end_state.row,
-    initial_lines, goal_lines,
-    config.SLICE_PADDING
-  )
-
-  if end_search - start_search > config.MAX_SEARCH_LINES then
-    error("search range exceeds MAX_SEARCH_LINES", 0)
-  end
-
-  local initial_slice = slice_lines(initial_lines, start_search, end_search)
-  local goal_slice = slice_lines(goal_lines, start_search, end_search)
 
   -- Snapshot: a recall record keeps accumulating atoms while the async worker
   -- runs, and capture_debug must describe the atoms user_seq was built from.
   -- CmdAtom already resolves mappings and operator-pending duplication, so the
   -- replayable sequence is just each atom's keys concatenated — no reduction.
   local atom_seq = vim.list_extend({}, active.atoms)
-  local raw_parts = {}
-  for _, atom in ipairs(atom_seq) do raw_parts[#raw_parts + 1] = atom.keys end
-  local keyseq_raw = table.concat(raw_parts)
-  local keyseq_str = apply_motion_conversions(keyseq_raw)
+  local raw_parts, typed_parts = {}, {}
+  for i, atom in ipairs(atom_seq) do
+    raw_parts[i] = atom.keys
+    typed_parts[i] = atom.typed
+  end
 
-  ---@type VF.SearchRequest
-  local request = {
-    initial_lines = initial_slice,
-    goal_lines = goal_slice,
-    start_row = start_state.row - start_search,
+  local request = ffi_optimizer.build_search_request({
+    initial_lines = initial_lines,
+    goal_lines = end_state.lines,
+    start_row = start_state.row,
     start_col = start_state.col,
-    end_row = end_state.row - start_search,
+    end_row = end_state.row,
     end_col = end_state.col,
-    has_lines_above = start_search > 0,
-    has_lines_below = end_search < math.max(#initial_lines, #goal_lines) - 1,
     window_height = start_state.window_height,
     scroll_amount = start_state.scroll_amount,
-    user_seq = keyseq_str,
-    optimizer_overrides = ffi_optimizer.encode_optimizer_overrides({ shared = config.optimizer }),
-  }
+    user_seq = table.concat(raw_parts),
+    user_typed = table.concat(typed_parts),
+  }, config.SLICE_PADDING, config.MAX_SEARCH_LINES)
+  request.optimizer_overrides =
+    ffi_optimizer.encode_optimizer_overrides({ shared = config.optimizer })
 
   return {
     active = active,
@@ -237,6 +196,7 @@ local function build_result(input, analyze, analyze_ms)
     window_height = request.window_height,
     scroll_amount = request.scroll_amount,
     user_seq = request.user_seq,
+    user_typed = request.user_typed,
     optimizer_overrides = request.optimizer_overrides,
     results_calculated = input.results_calculated,
     user_cost = analyze.user_cost,

@@ -239,15 +239,44 @@ test("validate_auto_suggest: all three triggers coexist", function()
   end)
 end)
 
+---@param overrides table
+---@return table
+local function journal_block(overrides)
+  return vim.tbl_deep_extend("force", vim.deepcopy(config._defaults.journal), overrides)
+end
+
 test("validate journal: off by default, rejects non-table and bad cadence", function()
   assert_eq(config._defaults.journal.enabled, false)
   assert_error(function() validate.normalize_journal(true) end,
     "journal must be a table", "boolean shorthand must error")
-  assert_error(function() validate.normalize_journal({ enabled = true, snapshot_every = 0 }) end,
+  assert_error(function() validate.normalize_journal(journal_block({ snapshot_every = 0 })) end,
     "journal.snapshot_every", "zero cadence must error")
-  assert_error(function() validate.normalize_journal({ enabled = true, snapshot_every = 5, dir = "x" }) end,
+  assert_error(function() validate.normalize_journal(journal_block({ dir = "x" })) end,
     "unknown key", "unknown sub-key must error")
-  assert_eq(validate.normalize_journal({ enabled = true, snapshot_every = 5 }).snapshot_every, 5)
+  assert_eq(validate.normalize_journal(journal_block({ snapshot_every = 5 })).snapshot_every, 5)
+end)
+
+test("validate journal.sampling: sizes are positive integers, deadline may be zero", function()
+  local function sampling(overrides)
+    return journal_block({ sampling = overrides })
+  end
+  assert_error(function() validate.normalize_journal(sampling({ window_sizes = {} })) end,
+    "non-empty list", "no sizes must error")
+  assert_error(function() validate.normalize_journal(sampling({ window_sizes = { 4, 0 } })) end,
+    "window_sizes[2]", "zero size must error")
+  assert_error(function() validate.normalize_journal(sampling({ window_sizes = 8 })) end,
+    "non-empty list", "scalar must error")
+  assert_error(function() validate.normalize_journal(sampling({ deadline_ms = -1 })) end,
+    "deadline_ms", "negative deadline must error")
+  assert_error(function() validate.normalize_journal(sampling({ idle_gap_ms = 0 })) end,
+    "idle_gap_ms", "zero gap must error")
+  assert_error(function() validate.normalize_journal(sampling({ sizes = { 4 } })) end,
+    "unknown key", "unknown sampling key must error")
+
+  local ok = validate.normalize_journal(sampling({ window_sizes = { 6 }, deadline_ms = 0 }))
+  assert_eq(ok.sampling.window_sizes, { 6 })
+  assert_eq(ok.sampling.deadline_ms, 0)
+  assert_eq(ok.sampling.idle_gap_ms, 30000)
 end)
 
 test("validate lossy_mappings: three modes, anything else errors", function()

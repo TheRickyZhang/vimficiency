@@ -40,17 +40,19 @@ NavBoundary subsetBoundary(subset, subsetFirst, subsetLast,
 
 ### 1. Lua → C++ (FFI Boundary)
 
-**File**: `lua/vimficiency/session/compute.lua` (`analyze`), through `util.compute_search_region`
+**File**: `lua/vimficiency/session/compute.lua` (`build_analyze_input`), through `ffi_optimizer.build_search_request`
 
 ```lua
-local start_search, end_search = util.compute_search_region(
-  start_state.row, end_state.row, initial_lines, goal_lines, config.SLICE_PADDING)
+local request = ffi_optimizer.build_search_request({
+  initial_lines = initial_lines, goal_lines = goal_lines, ...
+}, config.SLICE_PADDING, config.MAX_SEARCH_LINES)
 ```
 
-- The region itself is computed in C++ (`vf_compute_search_region`): the span covering both cursor rows and every changed line, plus `SLICE_PADDING` (configurable, default 5) lines above and below
+- Lua sends the whole buffers; C++ (`vf_build_search_request`, `src/Optimizer/Analyze.cppm`) does the rest and returns the sliced `SearchRequest`
+- `computeSearchRegion`: the span covering both cursor rows and every changed line, plus `SLICE_PADDING` (configurable, default 5) lines above and below
 - A region taller than `MAX_SEARCH_LINES` is rejected before any search runs
-- Positions converted to slice-relative coordinates before FFI call
-- Boundary flags (`has_lines_above`, `has_lines_below`) passed to C++
+- `sliceSearch` converts positions to slice-relative coordinates and sets the boundary flags (`has_lines_above`, `has_lines_below`)
+- The journal sampler (`src/Journal/Evaluate.cpp`) calls the same two functions, so a sampled window is sliced exactly like a live session
 
 ### 2. NavOptimizer
 

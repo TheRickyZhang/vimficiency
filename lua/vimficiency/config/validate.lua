@@ -154,14 +154,29 @@ end
 
 --- `merged` is the user block already laid over the defaults.
 ---@param merged any
----@return { enabled: boolean, snapshot_every: integer }
+---@return { enabled: boolean, snapshot_every: integer, sampling: { window_sizes: integer[], deadline_ms: integer, idle_gap_ms: integer } }
 function M.normalize_journal(merged)
   expect_table("journal", merged)
-  expect_exact_keys("journal", merged, { enabled = true, snapshot_every = true })
+  expect_exact_keys("journal", merged, { enabled = true, snapshot_every = true, sampling = true })
   if type(merged.enabled) ~= "boolean" then
     error("journal.enabled must be a boolean", 0)
   end
   expect_positive_integer("journal.snapshot_every", merged.snapshot_every)
+
+  local sampling = merged.sampling
+  expect_table("journal.sampling", sampling)
+  expect_exact_keys("journal.sampling", sampling,
+    { window_sizes = true, deadline_ms = true, idle_gap_ms = true })
+  if not vim.islist(sampling.window_sizes) or #sampling.window_sizes == 0 then
+    error("journal.sampling.window_sizes must be a non-empty list", 0)
+  end
+  for i, size in ipairs(sampling.window_sizes) do
+    expect_positive_integer(string.format("journal.sampling.window_sizes[%d]", i), size)
+  end
+  if sampling.deadline_ms ~= 0 then
+    expect_positive_integer("journal.sampling.deadline_ms", sampling.deadline_ms)
+  end
+  expect_positive_integer("journal.sampling.idle_gap_ms", sampling.idle_gap_ms)
   return merged
 end
 

@@ -148,7 +148,7 @@ vimfy_test_modules(vimfy_unit_tests ${VIMFY_UNIT_TEST_MODULES})
 target_link_libraries(vimfy_unit_tests
   PRIVATE
     test_utils
-    vimfy_lua_common
+    vimfy_journal_lib
     GTest::gtest
     nlohmann_json::nlohmann_json
 )

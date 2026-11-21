@@ -15,6 +15,7 @@ Top-level modules are the plugin entry and cross-cutting infrastructure:
 | `explore.lua` | Interactive result exploration view. Required as `vimficiency.explore`. |
 | `play.lua` | Play-screen settings and modal wiring. Required as `vimficiency.play`. |
 | `stats.lua` | Stats aggregation and display. Required as `vimficiency.stats`. |
+| `stats/sampling.lua` | Runs `vimfy_journal` over the journal and reduces its samples for the stats Journal section. See `dev/lua/atom-stream.md` § Sampling. |
 | `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, run) per `:Vimfy` verb. Depends on the domain modules; only `init.lua` depends on it. |
 | `dev_reload.lua` | `:Vimfy reload`: cmake rebuild, then hot-reload the `.so` and every Lua module. |
 | `config.lua` | Shared configuration constants (Lua-side only). |
@@ -76,7 +77,7 @@ Subdirectories hold supporting modules for each domain:
 | `capture/key_tracking.lua` | Legacy `vim.on_key()` capture, now used only by interactive Explore's frontier replay. |
 | `capture/recall.lua` | Rolling recall-ring capture driven by atom events. |
 | `capture/buffer_history.lua` | Per-buffer shadow copy plus the lines replaced between marks; rebuilds a recall record's start text on demand. |
-| `capture/journal.lua` | Opt-in JSONL journal of every atom plus buffer snapshots and line deltas (`config.journal`). See `dev/lua/atom-stream.md` § Journal. |
+| `capture/journal.lua` | Opt-in protobuf journal of every atom plus buffer snapshots and line deltas (`config.journal`). See `dev/lua/atom-stream.md` § Journal. |
 | `capture/end_trigger.lua` | Idle/command-count auto-end triggers (Watch / Suggest). |
 | `capture/auto_suggest.lua` | Idle-trigger auto-suggest (runs optimizer on a recall window). |
 
@@ -191,7 +192,9 @@ Capture (manual sessions, recall, Watch/Suggest triggers) runs off Neovim's
 `CmdAtom` autocmd (0.13-dev / nightly). The event fires once per atomic user
 action, AFTER it runs, carrying the resolved post-mapping `keys`, the `lhs`
 that produced it, the count, and whether the buffer changed or the cursor
-moved. `atom_stream.lua` normalizes each event into a `VF.Atom`, classifies it
+moved. `atom_stream.lua` normalizes each event into a `VF.Atom`, adds the keys
+physically pressed for it (`typed`, from `vim.on_key` plus wrappers around
+`getchar`/`feedkeys`), classifies it
 (record / skip / abort), and fans it out to named subscribers; buffer
 and window scoping is each subscriber's job. See `dev/lua/atom-stream.md` for
 the full design (admission policy, synthetic-count stripping, recall
@@ -207,7 +210,7 @@ migration.
 `key_tracking.lua` (the former `vim.on_key` layer) survives only for
 interactive Explore's frontier replay, which still consumes raw key events.
 
-**Approximate motion conversions** (in session/compute.lua):
+**Approximate motion conversions** (C++ `sliceSearch`, `src/Optimizer/Analyze.cppm`):
 - `gj` → `j`, `gk` → `k` (screen-line motions unsupported by optimizer)
 
 ## FFI Interface (ffi/)
@@ -215,6 +218,8 @@ interactive Explore's frontier replay, which still consumes raw key events.
 `ffi/core.lua` loads `libvimficiency.so` via LuaJIT FFI. Domain wrappers expose:
 
 ```lua
+ffi_optimizer.build_search_request(span, padding, max_search_lines) → VF.SearchRequest
+  -- span: whole buffers and cursors; C++ picks the region, slices, and converts motions
 ffi_optimizer.analyze(request, results_calculated) → VF.Optimizer.Result[], user_cost, debug_str, VF.Diff.Region[]
   -- request: VF.SearchRequest (types.lua), the same record explore_start_async takes
 ffi_config.apply_globals(user_config)  -- Push the C++ process globals (cost model, Vim options)
@@ -222,7 +227,7 @@ ffi_sequence.tokenize_sequence(seq) → VF.Sequence.Token[]  -- {text, kind} tok
 ffi_sequence.tokenize_movements(seq) → VF.Sequence.Token[]   -- all kind="motion"
 ```
 
-**Position indexing:** C++ uses 0-indexed rows/cols. Neovim uses 1-indexed rows. Conversion happens before calls cross the FFI boundary, primarily in `session/compute.lua`.
+**Position indexing:** C++ uses 0-indexed rows/cols. Neovim uses 1-indexed rows. Conversion happens before calls cross the FFI boundary, at state capture (`util.capture_view`).
 
 ## Configuration (config.lua)
 

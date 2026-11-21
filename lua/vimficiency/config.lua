@@ -39,6 +39,15 @@ local fields = {
   journal = {
     enabled = false,
     snapshot_every = 500, -- atoms per buffer between full-text snapshots
+    -- How `:Vimfy stats` scores the journal. Changing any of these rescores it
+    -- from the start.
+    sampling = {
+      -- Each size cuts the journal into back-to-back runs of that many recorded
+      -- atoms, and every run is scored like a session. The middle size is charted.
+      window_sizes = { 4, 8, 16 },
+      deadline_ms = 2000, -- search budget per run; 0 = run to the natural caps
+      idle_gap_ms = 30000, -- a pause this long between commands ends a run
+    },
   },
 
   -- Session features

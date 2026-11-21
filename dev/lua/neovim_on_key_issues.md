@@ -5,6 +5,12 @@ resolved unit per command and has none of these problems. Explore still runs its
 own `vim.on_key` listener (`explore/key_capture.lua`) and reduces the raw events
 with `capture/key_tracking.lua`, so the hazards below still apply there.
 
+Capture has an `on_key` listener too, but reads only the `typed` argument, to
+know which keys were pressed (`atom-stream.md`, "Pressed keys"). The first two
+hazards are about `key` and do not touch it. The third did not show on
+0.13-dev-2069: a two-key LHS typed 120 ms apart arrived as one `typed` event.
+A which-key popup reading the rest of the LHS was not measured.
+
 ## Operator-pending duplication
 
 Completing an operator re-evaluates the motion key: `cw` arrives as `c, w, w`,

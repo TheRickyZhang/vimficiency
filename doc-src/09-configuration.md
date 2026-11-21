@@ -78,10 +78,16 @@ require('vimficiency').setup({ journal = { enabled = true } })
 |-------|---------|---------|
 | `journal.enabled` | `false` | Record every command, the cursor after it, and every text change. |
 | `journal.snapshot_every` | `500` | Commands per buffer between full-text snapshots. Text changes are recorded exactly either way; a lower value only makes a file quicker to read from the middle. |
+| `journal.sampling.window_sizes` | `{ 4, 8, 16 }` | Run lengths, in commands, that [`:Vimfy stats`](11-commands.md) scores. The middle one is charted. |
+| `journal.sampling.deadline_ms` | `2000` | Search budget per run. `0` lets every search run to its natural caps. |
+| `journal.sampling.idle_gap_ms` | `30000` | A pause this long between commands ends a run, so one run never spans a break. |
 
 Each Neovim instance writes its own file under
-`stdpath('data')/vimficiency/journal/`. Files are never pruned, and no command
-reads them yet.
+`stdpath('data')/vimficiency/journal/`, and `:Vimfy stats` keeps its scores in
+a `.samples` file beside each one. Files are never pruned.
+
+Changing a sampling field, the keyboard, or an effort weight rescores the whole
+journal on the next `:Vimfy stats`.
 
 ## Idle end-detection
 

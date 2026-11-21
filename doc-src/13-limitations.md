@@ -30,8 +30,15 @@ title: "Known limitations"
   `"allow"` records silently, and `"drop"` ends the session with a warning that
   names the mapping (see [Configuration](09-configuration.md)). Mappings whose
   RHS is a key sequence are fine — they are captured as the resolved
-  post-mapping keys. Type the underlying keys directly when you want a specific
-  motion audited.
+  post-mapping keys. Either way your cost counts the keys you pressed, not
+  what they expanded to, while replay and suggestions use the resolved keys.
+  Type the underlying keys directly when you want a specific motion audited.
+
+- **Some recorded keys are inaccurate** until Neovim reports them per command.
+  Text a Lua Insert-mode mapping inserts (nvim-ts-autotag's `>`) is missing
+  from the replayed keys, so the play view's user pane can end differently.
+  Your cost can be off by a key when commands arrive in one burst, or when a
+  Vimscript plugin reads keys with `getchar()`.
 
 - **Recall only records actions in normal file buffers** (`&buftype == ""`).
   Actions in help, quickfix, terminal, prompt, or scratch buffers are skipped —

@@ -10,7 +10,6 @@ import vf.Optimizer.CompositionOptimizer.CompositionSearchContext;
 import vf.Optimizer.CompositionOptimizer.CompositionNavParams;
 import vf.Optimizer.CompositionOptimizer.CompositionStrategies;
 import vf.Optimizer.CompositionOptimizer.EditSequenceSpan;
-import vf.Optimizer.BuildTypedCommands;
 import vf.Optimizer.DiffPlanner.MyersDiff;
 import vf.Optimizer.SearchControl;
 import vf.Optimizer.SearchFrontier;
@@ -130,31 +129,6 @@ struct QueueEntry {
     return state > other.state;
   }
 };
-
-std::optional<Result> buildWholeBufferRewriteFallback(
-    const Config& config, const Lines& initialLines, const Lines& goalLines,
-    CursorPos goalPos, const NavContext& navigationContext) {
-  Sequence seq("gg0VGc");
-  KeyedSequence typed;
-  if (!leadingWhitespace(initialLines.front()).empty()) {
-    typed += KeyedSequence::CtrlU;
-  }
-  typed += buildTypedCommands(goalLines);
-  seq.append(typed.seq.view());
-
-  CursorPos exitPos = typedCommandsExitCursor(CursorPos(0, 0), goalLines);
-  if (exitPos != goalPos) {
-    NavOptimizer nav(config);
-    LandingNavResult navResult = nav.optimize(
-        goalLines, exitPos, goalPos,
-        NavOptimizerParams{}.withMaxResults(1), "", NavBoundary(),
-        navigationContext);
-    if (navResult.getResults().empty()) return std::nullopt;
-    seq.append(navResult.getResults()[0].getSequence().view());
-  }
-
-  return Result(seq, getEffort(seq.view(), config));
-}
 
 // Returns the results plus a parallel vector of per-result edit spans, which
 // is empty under NoTrace.
@@ -553,12 +527,6 @@ CompositionResult CompositionOptimizer::optimize(
                      std::chrono::steady_clock::now() - loopT0).count()
               << " ms\n";
   }
-  if (out.first.empty()) {
-    if (auto fallback = buildWholeBufferRewriteFallback(
-            config, initialLines, goalLines, goalPos, navigationContext)) {
-      out.first.push_back(std::move(*fallback));
-    }
-  }
   return buildCompositionResult(std::move(out.first), initialLines, goalPos, ctx);
 }
 
@@ -587,13 +555,6 @@ CompositionTraceResult CompositionOptimizer::optimizeWithEditSpans(
   auto out = optimizeImpl<EditSpanTrace>(
       config, initialLines, initialPos, goalLines, goalPos,
       params, userSequence, boundary, navigationContext, ctx, trace);
-  if (out.first.empty()) {
-    if (auto fallback = buildWholeBufferRewriteFallback(
-            config, initialLines, goalLines, goalPos, navigationContext)) {
-      out.first.push_back(std::move(*fallback));
-      out.second.emplace_back(static_cast<size_t>(ctx.totalEdits()));
-    }
-  }
   CompositionTraceResult result;
   result.editSpansByResult = std::move(out.second);
   result.result = buildCompositionResult(

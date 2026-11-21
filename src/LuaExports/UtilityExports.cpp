@@ -100,21 +100,17 @@ VFByteSlice vf_build_sequence(const char* request, size_t request_len) {
       });
 }
 
-VFByteSlice vf_compute_search_region(const char* request, size_t request_len) {
+VFByteSlice vf_typed_keys(const char* request, size_t request_len) {
   static string storage;
-  return guardedRequest<vf::session::SearchRegionRequest>(
-      storage, request, request_len,
-      [](const vf::session::SearchRegionRequest& req) -> ProtoResult {
-        auto startLines = payload::linesFrom(req.start_lines());
-        if (!startLines) return unexpected(startLines.error());
-        auto endLines = payload::linesFrom(req.end_lines());
-        if (!endLines) return unexpected(endLines.error());
-
-        const auto [regionStart, regionEnd] = logic::computeSearchRegion(
-            req.start_row(), req.end_row(), *startLines, *endLines, req.padding());
-        vf::session::SearchRegion msg;
-        msg.set_region_start(regionStart);
-        msg.set_region_end(regionEnd);
+  return guardedRequest<vf::session::TypedKeysRequest>(
+      storage, request, request_len, [](const vf::session::TypedKeysRequest& req) {
+        vector<logic::KeyInput> inputs;
+        inputs.reserve(req.inputs_size());
+        for (const auto& input : req.inputs()) {
+          inputs.push_back({.keys = input.keys(), .fed = input.fed()});
+        }
+        vf::Text msg;
+        msg.set_text(logic::typedKeys(inputs));
         return proto(msg);
       });
 }

@@ -81,6 +81,6 @@ TEST_F(CompositionSearchControlTest, PastDeadlineFinishesSetupThenStopsBeforeFir
       << "a deadline must not abort setup; the plan is still produced";
   EXPECT_EQ(res.getStats().totalPops(), 0)
       << "an already-passed deadline must bail before any pop";
-  EXPECT_FALSE(res.getResults().empty())
-      << "best-so-far at zero pops is the whole-buffer rewrite fallback";
+  EXPECT_TRUE(res.getResults().empty())
+      << "no pops means no solution";
 }

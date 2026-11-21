@@ -28,13 +28,11 @@ The comment beside each export names its request and result messages. The
 ## Lua to C++: requests
 
 ```lua
-return core.call(lib.vf_compute_search_region, "vf.session.SearchRegionRequest", {
-  start_lines = start_lines,
-  end_lines = end_lines,
-  start_row = start_row,
-  end_row = end_row,
-  padding = padding,
-}, "vf.session.SearchRegion")
+return core.call(lib.vf_build_search_request, "vf.search.BuildSearchRequest",
+  vim.tbl_extend("error", span, {
+    padding = padding,
+    max_search_lines = max_search_lines,
+  }), "vf.search.SearchRequest")
 ```
 
 `core.call` encodes the table, calls the export, and unwraps the result. The

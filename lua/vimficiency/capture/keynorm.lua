@@ -14,6 +14,19 @@ function M.normalize(input)
   end))
 end
 
+-- K_SPECIAL KS_EXTRA KE_LUA; it has no key notation.
+local K_LUA = "\128\253g"
+local K_COMMAND = vim.keycode("<Cmd>")
+
+--- True when resolved keys call into this Neovim instead of naming keys: a
+--- Lua-callback mapping resolves to a function ref (`d<K_LUA>538<NL>e` for
+--- flash.nvim's `dfe`), an expr mapping to a `<Cmd>` (mini.ai's `ci(`).
+---@param raw string  raw CmdAtom `keys`
+---@return boolean
+function M.has_callback(raw)
+  return raw:find(K_LUA, 1, true) ~= nil or raw:find(K_COMMAND, 1, true) ~= nil
+end
+
 --- True for any mouse event token (clicks, drags, releases, wheel, move).
 --- These arrive as `<...>` names that the C++ tokenizer does not recognize,
 --- so they would otherwise be costed character-by-character.
@@ -25,6 +38,15 @@ function M.is_mouse(normalized)
     or normalized:find("ScrollWheel") ~= nil
     or normalized:find("Drag") ~= nil
     or normalized:find("Release") ~= nil
+end
+
+--- Drops mouse event tokens, which are not keys.
+---@param normalized string  output of `M.normalize`
+---@return string
+function M.without_mouse(normalized)
+  return (normalized:gsub("<[^<>]+>", function(token)
+    if M.is_mouse(token) then return "" end
+  end))
 end
 
 return M

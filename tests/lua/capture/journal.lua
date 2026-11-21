@@ -4,61 +4,72 @@
 local journal        = require("vimficiency.capture.journal")
 local session_store  = require("vimficiency.session.store")
 local config         = require("vimficiency.config")
+local ffi_core       = require("vimficiency.ffi.core")
 local h              = require("_helpers")
 
 ---@param path string
----@return table[]
+---@return table[]  # `vf.journal.Record`
 local function read_records(path)
-  local records = {}
-  for _, line in ipairs(vim.fn.readfile(path)) do
-    records[#records + 1] = vim.json.decode(line)
-  end
-  return records
+  local fh = assert(io.open(path, "rb"))
+  local bytes = fh:read("*a")
+  fh:close()
+  return ffi_core.decode_message("vf.journal.File", bytes).records
 end
 
---- Text of `buf` at each of its atom records, rebuilt from the journal.
+---@param records table[]
+---@return string[]
+local function kinds(records)
+  local out = {}
+  for _, r in ipairs(records) do out[#out + 1] = r.body end
+  return out
+end
+
+--- Text of `buf` at each of its `kind` records, rebuilt from the journal.
 ---@param records table[]
 ---@param buf integer
+---@param kind "atom"|"resync"
 ---@return string[][]
-local function replay(records, buf)
-  local text, at_atoms = nil, {}
+local function replay(records, buf, kind)
+  local text, at = nil, {}
   for _, r in ipairs(records) do
-    if r.buf == buf then
-      if r.rec == "snapshot" then
-        text = r.lines
-      elseif r.rec == "delta" then
-        local tail = vim.list_slice(text, r.first + r.old_count + 1)
-        text = vim.list_slice(text, 1, r.first)
-        vim.list_extend(text, r.lines)
+    local body = r[r.body]
+    if body.buf == buf then
+      if r.body == "snapshot" then
+        text = body.lines
+      elseif r.body == "delta" then
+        local tail = vim.list_slice(text, body.first + body.old_count + 1)
+        text = vim.list_slice(text, 1, body.first)
+        vim.list_extend(text, body.lines)
         vim.list_extend(text, tail)
-      elseif r.rec == "atom" then
-        at_atoms[#at_atoms + 1] = vim.deepcopy(text)
+      elseif r.body == kind then
+        at[#at + 1] = vim.deepcopy(text)
       end
     end
   end
-  return at_atoms
+  return at
 end
 
+--- Runs `fn` against an open journal on a fresh buffer. Callbacks an earlier
+--- test scheduled are drained first so none lands in this journal.
 ---@param fn fun(buf: integer, atom: VF.Atom)
----@return table[] records
+---@return table[] records, integer buf
 local function with_journal(fn)
   h.use_temp_data_home()
+  local buf = h.new_buf({ "one", "two", "three" })
+  vim.wait(5, function() return false end)
   journal.start()
   local path = assert(journal.path())
-  local buf = h.new_buf({ "one", "two", "three" })
   local ok, err = pcall(fn, buf,
-    { keys = "x", buf = buf, win = vim.api.nvim_get_current_win(), lossy = false })
+    { keys = "x", typed = "x", buf = buf, win = vim.api.nvim_get_current_win(), lossy = false })
   journal.stop()
   vim.api.nvim_buf_delete(buf, { force = true })
   if not ok then error(err, 0) end
-  return read_records(path)
+  return read_records(path), buf
 end
 
 test("journal: snapshot plus deltas rebuild the text at every atom", function()
   local expected = {}
-  local buf_id
-  local records = with_journal(function(buf, atom)
-    buf_id = buf
+  local records, buf_id = with_journal(function(buf, atom)
     local function step(decision)
       journal._for_test.listener(atom, decision)
       expected[#expected + 1] = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
@@ -74,21 +85,35 @@ test("journal: snapshot plus deltas rebuild the text at every atom", function()
     step("record")
   end)
 
-  assert_eq(records[1].rec, "header")
-  assert_eq(replay(records, buf_id), expected)
+  assert_eq(records[1].body, "header")
+  assert_eq(records[1].header.version, 3)
+  assert_eq(replay(records, buf_id, "atom"), expected)
 
   local decisions = {}
   for _, r in ipairs(records) do
-    if r.rec == "atom" then decisions[#decisions + 1] = r.decision end
+    if r.body == "atom" then decisions[#decisions + 1] = r.atom.decision end
   end
   assert_eq(decisions, { "record", "record", "skip", "abort", "record" })
 end)
 
+test("journal: an atom carries its keys, mode and the cursor after it", function()
+  local records = with_journal(function(_, atom)
+    vim.api.nvim_win_set_cursor(0, { 2, 1 })
+    atom.keys = "jl"
+    atom.typed = "<Space>m"
+    journal._for_test.listener(atom, "record")
+  end)
+  local atom = records[#records].atom
+  assert_eq(atom.keys, "jl")
+  assert_eq(atom.typed, "<Space>m")
+  assert_eq(atom.mode, "n")
+  assert_eq({ atom.view.row, atom.view.col }, { 1, 1 })
+  assert_eq(atom.lossy, false)
+end)
+
 test("journal: recall marking first still yields every delta once", function()
   local expected = {}
-  local buf_id
-  local records = with_journal(function(buf, atom)
-    buf_id = buf
+  local records, buf_id = with_journal(function(buf, atom)
     for i = 1, 4 do
       vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "edit " .. i })
       session_store.ingest_recall_atom(atom)
@@ -96,7 +121,7 @@ test("journal: recall marking first still yields every delta once", function()
       expected[#expected + 1] = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     end
   end)
-  assert_eq(replay(records, buf_id), expected)
+  assert_eq(replay(records, buf_id, "atom"), expected)
 end)
 
 test("journal: a full snapshot recurs every snapshot_every atoms", function()
@@ -104,9 +129,8 @@ test("journal: a full snapshot recurs every snapshot_every atoms", function()
     local records = with_journal(function(_, atom)
       for _ = 1, 5 do journal._for_test.listener(atom, "record") end
     end)
-    local kinds = {}
-    for _, r in ipairs(records) do kinds[#kinds + 1] = r.rec end
-    assert_eq(kinds, { "header", "snapshot", "atom", "atom", "snapshot", "atom", "atom", "snapshot", "atom" })
+    assert_eq(kinds(records),
+      { "header", "snapshot", "atom", "atom", "snapshot", "atom", "atom", "snapshot", "atom" })
   end)
 end)
 
@@ -114,11 +138,12 @@ test("journal: a reload resnapshots instead of emitting a delta", function()
   local path = vim.fn.tempname()
   vim.fn.writefile({ "on disk" }, path)
   h.use_temp_data_home()
-  journal.start()
-  local journal_path = assert(journal.path())
   vim.cmd("edit " .. vim.fn.fnameescape(path))
   local buf = vim.api.nvim_get_current_buf()
-  local atom = { keys = "x", buf = buf, win = vim.api.nvim_get_current_win(), lossy = false }
+  vim.wait(5, function() return false end)
+  journal.start()
+  local journal_path = assert(journal.path())
+  local atom = { keys = "x", typed = "x", buf = buf, win = vim.api.nvim_get_current_win(), lossy = false }
 
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "unsaved" })
   journal._for_test.listener(atom, "record")
@@ -126,7 +151,71 @@ test("journal: a reload resnapshots instead of emitting a delta", function()
   journal._for_test.listener(atom, "record")
   journal.stop()
 
-  assert_eq(replay(read_records(journal_path), buf), { { "unsaved" }, { "on disk" } })
+  assert_eq(replay(read_records(journal_path), buf, "atom"), { { "unsaved" }, { "on disk" } })
   vim.api.nvim_buf_delete(buf, { force = true })
   vim.fn.delete(path)
+end)
+
+test("journal: a resync records the state before the first atom", function()
+  local records, buf_id = with_journal(function(buf, atom)
+    vim.api.nvim_win_set_cursor(0, { 3, 2 })
+    journal._for_test.resync()
+    vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "ONE" })
+    journal._for_test.listener(atom, "record")
+  end)
+  assert_eq(kinds(records), { "header", "snapshot", "resync", "delta", "atom" })
+  assert_eq(replay(records, buf_id, "resync"), { { "one", "two", "three" } })
+  assert_eq({ records[3].resync.view.row, records[3].resync.view.col }, { 2, 2 })
+end)
+
+test("journal: a resync repeats only once the state has moved on", function()
+  local records, buf_id = with_journal(function(buf)
+    journal._for_test.resync()
+    journal._for_test.resync()
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    journal._for_test.resync()
+    vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "changed with no atom" })
+    journal._for_test.resync()
+  end)
+  assert_eq(kinds(records), { "header", "snapshot", "resync", "resync", "delta", "resync" })
+  assert_eq(replay(records, buf_id, "resync")[3], { "changed with no atom", "two", "three" })
+end)
+
+test("journal: no resync outside a file buffer", function()
+  local records = with_journal(function()
+    local scratch = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(scratch)
+    journal._for_test.resync()
+    vim.api.nvim_buf_delete(scratch, { force = true })
+  end)
+  assert_eq(kinds(records), { "header" })
+end)
+
+test("journal: entering a buffer resyncs once the event queue drains", function()
+  local entered
+  local records = with_journal(function()
+    entered = h.new_buf({ "second buffer" })
+    vim.wait(20, function() return false end)
+    vim.api.nvim_buf_delete(entered, { force = true })
+  end)
+  local resyncs = {}
+  for _, r in ipairs(records) do
+    if r.body == "resync" then resyncs[#resyncs + 1] = r.resync.buf end
+  end
+  assert_true(h.list_contains(resyncs, entered), "the entered buffer has a resync")
+end)
+
+test("journal: records share a tick until the event queue drains", function()
+  local records = with_journal(function(_, atom)
+    journal._for_test.listener(atom, "record")
+    journal._for_test.listener(atom, "record")
+    journal._for_test.close_tick()
+    journal._for_test.listener(atom, "record")
+  end)
+  local ticks = {}
+  for _, r in ipairs(records) do
+    if r.body == "atom" then ticks[#ticks + 1] = r.tick end
+  end
+  assert_eq(ticks[1], ticks[2])
+  assert_true(ticks[3] > ticks[2], "a closed tick is not reused")
 end)

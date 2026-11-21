@@ -19,7 +19,8 @@
 ---@field has_lines_below boolean
 ---@field window_height integer
 ---@field scroll_amount integer
----@field user_seq string
+---@field user_seq string                   # Resolved keys; bound the search
+---@field user_typed? string                # Pressed keys; cost the user. Only analyze reads them
 ---@field optimizer_overrides string        # `ffi/optimizer.encode_optimizer_overrides` output; "" for none
 
 ---@class VF.Optimizer.Result

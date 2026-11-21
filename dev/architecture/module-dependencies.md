@@ -22,6 +22,7 @@ the few remaining `#include "..."` lines are X-macro `.inc`/`.h` fragments.
 - `Explore`: Interactive exploration adapter built on optimizer frontiers and VimCore replay.
 - `LuaExports`: C ABI adapter layer for LuaJIT, grouped by exported API domain.
 - `Wasm`: C ABI adapter for the docs site's planner module (Emscripten build only; excluded from `vimfy_core`). See `dev/web/how-it-works-site.md`.
+- `Journal`: The `vimfy_journal` tool: replays the capture journal, cuts it into windows and scores them (excluded from `vimfy_core`). See `dev/lua/atom-stream.md` § Sampling.
 
 ## Allowed Dependencies
 
@@ -37,6 +38,7 @@ the few remaining `#include "..."` lines are X-macro `.inc`/`.h` fragments.
 - `Explore` -> `Types`, `Keyboard`, `Effort`, `Boundary`, `VimCore`, `Interpreter`, `Optimizer`
 - `LuaExports` -> `Types`, `Keyboard`, `Boundary`, `Interpreter`, `VimCore`, `Optimizer`, `Explore`, `Utils`
 - `Wasm` -> `Types`, `Keyboard`, `Effort`, `Boundary`, `Optimizer` (DiffPlanner only), `Utils`
+- `Journal` -> `Types`, `Keyboard`, `Effort`, `Optimizer`, `Utils`, `LuaExports` (config and override decoding only)
 
 ## Placement Rules
 
@@ -47,7 +49,8 @@ the few remaining `#include "..."` lines are X-macro `.inc`/`.h` fragments.
 - Keep foundational buffer/cursor types out of `Interpreter`; lower layers (`VimCore`, `Boundary`, `Optimizer`) share them via `Types`.
 - `Sequence` follows split ownership:
   type declaration in `Types`, formatting/parsing-aware stream implementation in a higher layer (`Interpreter`) to keep `Types` dependency-free.
-- Keep `Explore`, `LuaExports`, and `Wasm` as edge layers: they may compose lower-level modules, but lower-level modules must not include them.
+- Keep `Explore`, `LuaExports`, `Wasm`, and `Journal` as edge layers: they may compose lower-level modules, but lower-level modules must not include them.
+- What a session search is built from lives in `Optimizer/Analyze` (region, slice, cursor clamping, optimizer choice), so every edge layer that scores a session shares it.
 
 ## Enforcement
 
@@ -57,4 +60,4 @@ Run dependency lint locally:
 ./scripts/lint-module-deps.sh
 ```
 
-CI runs the same lint before build/tests. The lint reads `import vf.<Dir>...` lines (and any remaining quoted includes) and currently enforces the core domain modules; `Explore`, `LuaExports`, and the root FFI entrypoint are documented edge layers rather than linted core modules.
+CI runs the same lint before build/tests. The lint reads `import vf.<Dir>...` lines (and any remaining quoted includes) and currently enforces the core domain modules; `Explore`, `LuaExports`, `Journal`, and the root FFI entrypoint are documented edge layers rather than linted core modules.

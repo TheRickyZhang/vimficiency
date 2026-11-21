@@ -100,7 +100,7 @@ end)
 test("recall records rebuild their own start text", function()
   local buf = h.new_buf({ "a" })
   local win = vim.api.nvim_get_current_win()
-  local atom = { keys = "x", buf = buf, win = win, lossy = false }
+  local atom = { keys = "x", typed = "x", buf = buf, win = win, lossy = false }
 
   session_store.ingest_recall_atom(atom)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "b", "b2" })
@@ -134,7 +134,7 @@ test("reload drops the buffer's recall records and reseeds on the next atom", fu
   vim.cmd("edit!")
   assert_eq(session_store.summarize(id), nil)
 
-  local atom = { keys = "x", buf = buf, win = win, lossy = false }
+  local atom = { keys = "x", typed = "x", buf = buf, win = win, lossy = false }
   session_store.ingest_recall_atom(atom)
   session_store.ingest_recall_atom(atom)
   local rec = assert(session_store.get_active("1"))

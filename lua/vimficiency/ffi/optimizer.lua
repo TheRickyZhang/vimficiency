@@ -23,6 +23,8 @@ function M.encode_optimizer_overrides(overrides)
       end
     end
   end
+  -- A stored encoding is compared with a later one of the same overrides.
+  table.sort(lines)
   return table.concat(lines, "\n")
 end
 
@@ -42,6 +44,34 @@ function M.get_optimizer_defaults()
     end
   end
   return optimizer_defaults_cache
+end
+
+--- A session over its whole buffers; rows and columns are 0-indexed.
+---@class VF.Optimizer.SessionSpan
+---@field initial_lines string[]
+---@field goal_lines string[]
+---@field start_row integer
+---@field start_col integer
+---@field end_row integer
+---@field end_col integer
+---@field window_height integer
+---@field scroll_amount integer
+---@field user_seq string
+---@field user_typed string
+
+--- Cuts `span` to the rows a search needs. Raises when that region is taller
+--- than `max_search_lines`.
+---@param span VF.Optimizer.SessionSpan
+---@param padding integer
+---@param max_search_lines integer
+---@return VF.SearchRequest
+function M.build_search_request(span, padding, max_search_lines)
+  local request = vim.tbl_extend("error", span, {
+    padding = padding,
+    max_search_lines = max_search_lines,
+  })
+  return core.call(lib.vf_build_search_request, "vf.search.BuildSearchRequest",
+    request, "vf.search.SearchRequest")
 end
 
 ---@param req VF.SearchRequest

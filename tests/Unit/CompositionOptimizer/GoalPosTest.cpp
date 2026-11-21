@@ -255,7 +255,7 @@ TEST_F(CompositionOptimizerGoalPosTest, ClampedColumn_LinewiseDeleteThenMoreStil
   }
 }
 
-TEST_F(CompositionOptimizerGoalPosTest, WholeBufferRewriteClearsVisualChangeIndent) {
+TEST_F(CompositionOptimizerGoalPosTest, SplitIndentedLineReachesGoal) {
   Lines initial = {" db"};
   Lines goal = {" ", "db"};
   CursorPos initialPos(0, 0);
@@ -270,7 +270,7 @@ TEST_F(CompositionOptimizerGoalPosTest, WholeBufferRewriteClearsVisualChangeInde
 
   for (size_t i = 0; i < results.size(); i++) {
     verifyGoalReached(results[i], initial, initialPos, goal, goalPos,
-                      "WholeBufferRewriteClearsVisualChangeIndent result " +
+                      "SplitIndentedLineReachesGoal result " +
                           to_string(i));
   }
 }

@@ -267,11 +267,11 @@ FetchContent_MakeAvailable(fast_float)
 file(GLOB_RECURSE VIMFY_CORE_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
 )
-list(FILTER VIMFY_CORE_SOURCES EXCLUDE REGEX [[/src/(LuaExports/|Wasm/|lua_exports\.cpp$|main\.cpp$)]])
+list(FILTER VIMFY_CORE_SOURCES EXCLUDE REGEX [[/src/(LuaExports/|Journal/|Wasm/|lua_exports\.cpp$|main\.cpp$)]])
 file(GLOB_RECURSE VIMFY_CORE_MODULES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm
 )
-list(FILTER VIMFY_CORE_MODULES EXCLUDE REGEX [[/src/(LuaExports/|Wasm/)]])
+list(FILTER VIMFY_CORE_MODULES EXCLUDE REGEX [[/src/(LuaExports/|Journal/|Wasm/)]])
 
 add_library(vimfy_core STATIC ${VIMFY_CORE_SOURCES})
 target_sources(vimfy_core PUBLIC
@@ -402,6 +402,7 @@ file(GLOB VIMFY_LUA_COMMON_MODULES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LuaExports/*.cppm
 )
 add_library(vimfy_lua_common STATIC
+    src/LuaExports/ConfigState.cpp
     src/LuaExports/Envelope.cpp
     src/LuaExports/Logic.cpp
 )
@@ -448,6 +449,28 @@ target_sources(vimficiency PRIVATE $<TARGET_OBJECTS:vimfy_pb>)
 if(APPLE)
   target_link_options(vimficiency PRIVATE LINKER:-undefined,dynamic_lookup)
 endif()
+
+# Journal sampling (src/Journal/): replays capture journals and scores windows
+# of them. Outside vimfy_core because it reads the protobuf journal and applies
+# the editor's config. `:Vimfy stats` runs the executable, so scripts/install.sh
+# builds it alongside the shared library.
+file(GLOB VIMFY_JOURNAL_MODULES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Journal/*.cppm
+)
+file(GLOB VIMFY_JOURNAL_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Journal/*.cpp
+)
+list(FILTER VIMFY_JOURNAL_SOURCES EXCLUDE REGEX [[/main\.cpp$]])
+add_library(vimfy_journal_lib STATIC ${VIMFY_JOURNAL_SOURCES})
+target_sources(vimfy_journal_lib PUBLIC
+    FILE_SET CXX_MODULES BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src FILES ${VIMFY_JOURNAL_MODULES}
+)
+vimfy_enable_modules(vimfy_journal_lib)
+target_link_libraries(vimfy_journal_lib PUBLIC vimfy_lua_common)
+
+add_executable(vimfy_journal src/Journal/main.cpp)
+vimfy_enable_modules(vimfy_journal)
+target_link_libraries(vimfy_journal PRIVATE vimfy_journal_lib)
 
 # CLI for independent testing
 add_executable(vimficiency_cli src/main.cpp)

@@ -3,11 +3,23 @@
 -- Reads the append-only JSONL log from stats.log.read_all(), reduces
 -- on-demand. No aggregate cache in v1 — the log is the source of truth;
 -- add a cache only when stats-open time becomes a felt problem.
+--
+-- The Journal section is scored by a separate process (stats/sampling.lua),
+-- so the float opens at once and fills that section in when it finishes.
 
 local v = vim.api
+local config = require("vimficiency.config")
+local journal = require("vimficiency.capture.journal")
 local log = require("vimficiency.stats.log")
 local ffi_sequence = require("vimficiency.ffi.sequence")
+local sampling = require("vimficiency.stats.sampling")
 local util = require("vimficiency.util")
+
+--- What the Journal section shows. `by_size` is set only when "ready".
+---@class VF.Stats.JournalView
+---@field state "off"|"loading"|"ready"|"failed"
+---@field by_size? table<integer, VF.StatsSampling.SizeSummary>
+---@field err? string
 
 local M = {}
 
@@ -85,6 +97,7 @@ function M.aggregate(records)
     efficiency_by_day = {},            -- epoch_day (floor(sec/86400)) -> score
     motion_ratios = {},                -- text -> { user_count, opt_count, ratio }
     beats_count = 0,
+    no_solution_count = 0,
     user_token_total = 0,
     opt_token_total = 0,
   }
@@ -105,6 +118,7 @@ function M.aggregate(records)
     end
     summary.total_keys = summary.total_keys + (rec.key_count or 0)
     if rec.beats then summary.beats_count = summary.beats_count + 1 end
+    if rec.best_opt_cost == nil then summary.no_solution_count = summary.no_solution_count + 1 end
     if type(rec.analyze_ms) == "number" then
       analyze_samples[#analyze_samples + 1] = rec.analyze_ms
     end
@@ -213,16 +227,16 @@ local function chart_cell(score, row_from_bottom)
   return SPARK_LEVELS[row_eighths]
 end
 
----@param summary table
+---@param score_by_day table<integer, number>  epoch day -> 0..100
 ---@return string[]  lines — CHART_ROWS data lines + baseline + x-axis label
-local function render_30day_chart(summary)
+local function render_30day_chart(score_by_day)
   local today = math.floor(os.time() / 86400)
   local out = {}
   for i = 1, CHART_ROWS do
     local row_from_bottom = CHART_ROWS - i
     local cells = {}
     for d = CHART_DAYS - 1, 0, -1 do
-      cells[#cells + 1] = chart_cell(summary.efficiency_by_day[today - d], row_from_bottom)
+      cells[#cells + 1] = chart_cell(score_by_day[today - d], row_from_bottom)
     end
     out[#out + 1] = "    " .. CHART_Y_LABELS[i] .. " ┤" .. table.concat(cells, "")
   end
@@ -274,10 +288,88 @@ local function format_ratio(r)
   return string.format("%5.2f×", r)
 end
 
+--- The window size the Journal section charts: the middle configured one.
+---@return integer
+local function charted_window_size()
+  local sizes = vim.list_extend({}, config.journal.sampling.window_sizes)
+  table.sort(sizes)
+  return sizes[math.ceil(#sizes / 2)]
+end
+
+---@param totals VF.StatsSampling.Totals
+---@return string
+local function format_normalized(totals)
+  local score = sampling.normalized(totals)
+  if not score then return "—" end
+  return string.format("%.1f", score)
+end
+
+---@param journal_view VF.Stats.JournalView
+---@param push fun(line: string)
+local function push_journal(journal_view, push)
+  if journal_view.state == "off" then
+    push("    No journal recorded. Set journal = { enabled = true } to start one.")
+    return
+  end
+  if journal_view.state == "loading" then
+    push("    Scoring the journal…")
+    return
+  end
+  if journal_view.state == "failed" then
+    push("    Could not score the journal: " .. journal_view.err)
+    return
+  end
+
+  local by_size = journal_view.by_size --[[@as table<integer, VF.StatsSampling.SizeSummary>]]
+  local charted = charted_window_size()
+  local summary = by_size[charted]
+  if not summary or summary.all.windows == 0 then
+    push(string.format("    No scored runs of %d commands yet.", charted))
+    return
+  end
+
+  push(string.format("    Score:    %s / 100  (%d runs of %d commands)",
+    format_normalized(summary.all), summary.all.windows, charted))
+  push(string.format("    30-day normalized effort, runs of %d commands:", charted))
+  local score_by_day = {}
+  for day, totals in pairs(summary.by_day) do
+    score_by_day[day] = sampling.normalized(totals)
+  end
+  for _, line in ipairs(render_30day_chart(score_by_day)) do
+    push(line)
+  end
+
+  local sizes = vim.tbl_keys(by_size)
+  table.sort(sizes)
+  local per_size = {}
+  for _, size in ipairs(sizes) do
+    per_size[#per_size + 1] = string.format("%d → %s", size, format_normalized(by_size[size].all))
+  end
+  push("    By run length:  " .. table.concat(per_size, "   "))
+  push(string.format("    Movement only:  %s (%d runs)   With edits: %s (%d runs)",
+    format_normalized(summary.nav), summary.nav.windows,
+    format_normalized(summary.edit), summary.edit.windows))
+
+  local unscored = {}
+  for _, outcome in ipairs({ "too_large", "no_result", "unsupported", "crashed" }) do
+    local count = summary.unscored[outcome]
+    if count then
+      unscored[#unscored + 1] = string.format("%d %s", count, (outcome:gsub("_", " ")))
+    end
+  end
+  if #unscored > 0 then
+    push("    Not scored:     " .. table.concat(unscored, " · "))
+  end
+  if summary.deadline_hit > 0 then
+    push(string.format("    Search cut short by the deadline: %d runs", summary.deadline_hit))
+  end
+end
+
 ---@param summary table
+---@param journal_view VF.Stats.JournalView
 ---@return string[] lines
 ---@return integer[] title_rows  0-indexed rows that should render as section titles
-function M.build_lines(summary)
+function M.build_lines(summary, journal_view)
   local L = {}
   local title_rows = {}
   local function push(s) L[#L + 1] = s end
@@ -299,10 +391,18 @@ function M.build_lines(summary)
   -- Efficiency
   push_title("  Efficiency")
   push(string.format("    Score:    %s", format_score(summary.efficiency_score)))
+  if summary.no_solution_count > 0 then
+    push(string.format("    No solution: %d sessions (not scored)", summary.no_solution_count))
+  end
   push("    30-day efficiency:")
-  for _, line in ipairs(render_30day_chart(summary)) do
+  for _, line in ipairs(render_30day_chart(summary.efficiency_by_day)) do
     push(line)
   end
+  push("")
+
+  -- Journal
+  push_title("  Journal")
+  push_journal(journal_view, push)
   push("")
 
   -- Motions
@@ -354,36 +454,61 @@ v.nvim_set_hl(0, "VimficiencyStatsSectionTitle",
   { link = "Title", default = true })
 local stats_ns = v.nvim_create_namespace("vimfy_stats")
 
+local WIDTH = 72
+
+---@param line_count integer
+---@return table  # float geometry that centers `line_count` lines
+local function geometry(line_count)
+  local height = math.min(line_count, vim.o.lines - 4)
+  return {
+    relative = "editor",
+    row = math.floor((vim.o.lines - height) / 2),
+    col = math.floor((vim.o.columns - WIDTH) / 2),
+    width = WIDTH,
+    height = height,
+  }
+end
+
+---@param err string|nil  from `sampling.refresh`
+---@return VF.Stats.JournalView
+local function scored_journal_view(err)
+  if err then return { state = "failed", err = err } end
+  return { state = "ready", by_size = sampling.aggregate(sampling.read_samples()) }
+end
+
 function M.open()
-  local records = log.read_all()
-  local summary = M.aggregate(records)
-  local lines, title_rows = M.build_lines(summary)
+  local summary = M.aggregate(log.read_all())
+  local has_journal = vim.uv.fs_stat(journal.dir()) ~= nil
 
   local buf = v.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "vimficiency_stats"
-  v.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  for _, row in ipairs(title_rows) do
-    v.nvim_buf_set_extmark(buf, stats_ns, row, 0, {
-      end_row = row + 1, end_col = 0,
-      hl_group = "VimficiencyStatsSectionTitle",
-      hl_eol = true,
-    })
-  end
-  vim.bo[buf].modifiable = false
 
-  local width = 72
-  local height = math.min(#lines, vim.o.lines - 4)
-  local row = math.floor((vim.o.lines - height) / 2)
-  local col = math.floor((vim.o.columns - width) / 2)
-  local win = v.nvim_open_win(buf, true, {
-    relative = "editor", row = row, col = col,
-    width = width, height = height,
+  ---@param journal_view VF.Stats.JournalView
+  ---@return integer line_count
+  local function render(journal_view)
+    local lines, title_rows = M.build_lines(summary, journal_view)
+    vim.bo[buf].modifiable = true
+    v.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    v.nvim_buf_clear_namespace(buf, stats_ns, 0, -1)
+    for _, row in ipairs(title_rows) do
+      v.nvim_buf_set_extmark(buf, stats_ns, row, 0, {
+        end_row = row + 1, end_col = 0,
+        hl_group = "VimficiencyStatsSectionTitle",
+        hl_eol = true,
+      })
+    end
+    vim.bo[buf].modifiable = false
+    return #lines
+  end
+
+  local line_count = render({ state = has_journal and "loading" or "off" })
+  local win = v.nvim_open_win(buf, true, vim.tbl_extend("error", geometry(line_count), {
     border = "rounded", style = "minimal",
     title = " Vimfy Stats ", title_pos = "center",
-  })
+  }))
   util.configure_scratch_window(win)
 
   local function close()
@@ -391,6 +516,23 @@ function M.open()
   end
   vim.keymap.set("n", "q",     close, { buffer = buf, nowait = true, silent = true })
   vim.keymap.set("n", "<Esc>", close, { buffer = buf, nowait = true, silent = true })
+
+  if not has_journal then return end
+  sampling.refresh(function(err)
+    if not v.nvim_win_is_valid(win) then return end
+    v.nvim_win_set_config(win, geometry(render(scored_journal_view(err))))
+  end)
+end
+
+--- Scores the journal without opening the float.
+function M.refresh()
+  sampling.refresh(function(err)
+    if err then
+      vim.notify("vimfy: could not score the journal: " .. err, vim.log.levels.ERROR)
+    else
+      vim.notify("vimfy: journal scored")
+    end
+  end)
 end
 
 return M

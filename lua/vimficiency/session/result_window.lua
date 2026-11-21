@@ -21,6 +21,9 @@ local function build_header_lines(result)
   lines[#lines + 1] = string.format("you   %s   (%.0f)",
     sequence_display.inline(result.user_seq), result.user_cost)
   local recs = result.optimal_results
+  if #recs == 0 then
+    lines[#lines + 1] = "No solution found"
+  end
   for i = 1, math.min(MAX_HEADER_RECS, #recs) do
     lines[#lines + 1] = string.format("%d.    %s   (%.0f)",
       i, sequence_display.inline(recs[i].seq), recs[i].cost)

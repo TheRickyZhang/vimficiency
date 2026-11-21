@@ -162,6 +162,14 @@ to deeper docs when needed.
 - Two read-only surfaces were added to core for the widgets: `TilingCost::cover` (chunk backpointers on `Arrival`) and `VimDiff::trace` (tables, path, blocks). `VimDiffTraceExport` now dumps the trace instead of re-running a naive DP; the committed animation traces still render, regenerating would need the scene adjusted (`anim/dp-walkthrough/README.md`).
 - Fixed on the way: the Guide sidebar was empty because `autogenerate: { directory: '.' }` never matched the glob loader's root-relative file paths. See `dev/web/how-it-works-site.md`.
 
+## The user is costed by the keys pressed, the search runs on the keys that ran (2026-11-20)
+- Every atom carries both: `keys` (resolved, after mappings) and `typed` (pressed). `user_cost` and the journal samples are the effort of `typed`. Replay, the start and end states, and the search bound (`exploreFactor` × user effort) use `keys`, because the optimizer does not know the user's mappings.
+- Before this, `keys` did both jobs, so a two-key mapping was charged as its whole expansion and `j`→`gj` needed a costing special case.
+- A mapping that beats the optimizer's best is real, not an artifact; the normalized score is capped at 100.
+- `typed` comes from `vim.on_key` plus wrappers around `vim.fn.getchar`/`getcharstr` and the feedkeys functions (`logic::typedKeys` cancels keys plugins fed as typed). Neovim has no complete source: `on_key` skips `getchar()` input and CmdAtom `lhs` is a rebuilt label. An `lhs`-based merge was tried first and replaced: it guessed alignments and double counted which-key's re-fed keys. `dev/lua/atom-stream.md` has the measurements.
+- Wrapping global functions is deliberate: flash, mini.ai, mini.surround and which-key all look up `vim.fn.getcharstr` at call time.
+- Sequences shown to the user are still `keys`. The optimizer suggesting a user's own mappings stays open (`dev/architecture/todo.md` item 7).
+
 ## FFI boundary: protobuf both ways (2026-11-15)
 - Every request and result is a message from `src/LuaExports/proto/`; `Api.def` keeps one struct (`VFByteSlice`) and plain ints for ids. See `dev/lua/ffi-payloads.md`.
 - This replaced typed C structs in and a hand-written msgpack writer out. Result shapes existed twice (writer calls and LuaLS classes) with nothing tying them together, and struct inputs needed a keep-alive rule for every borrowed pointer.
