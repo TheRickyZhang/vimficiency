@@ -33,10 +33,11 @@ local util = require("vimficiency.util")
 --------------------------------------------------------------------------------
 
 --- One completed user action: the replayable keys plus the scope they fired in.
---- The event's other fields (`type`, `lhs`, `count`, `changed`, `moved`) are
---- consumed by `classify`, `describe_abort` and `strip_synthetic_count` and not forwarded.
+--- The event's other fields (`lhs`, `count`, `changed`, `moved`) are consumed by
+--- `classify`, `describe_abort` and `strip_synthetic_count` and not forwarded.
 ---@class VF.Atom
 ---@field keys         string        # Replayable post-mapping sequence (notation); "" when unavailable. Feed this to the simulator/optimizer.
+---@field kind         string        # The event's `type`: operator, insert, motion, normal, visual, jump, scroll, excmd, mouse or mapping.
 ---@field typed        string        # Physical keys pressed since the previous atom (notation). Cost the user by these; never replay them. Atoms delivered together cannot be told apart, so an earlier one carries the keys of a later one, which gets "".
 ---@field buf          integer       # Buffer the atom fired for (`ev.buf`).
 ---@field win          integer       # Focused window at atom time.
@@ -232,6 +233,7 @@ local function dispatch(ev)
   ---@type VF.Atom
   local atom = {
     keys  = keys_norm,
+    kind  = d.type,
     typed = take_pressed(),
     buf   = ev.buf,
     win   = vim.api.nvim_get_current_win(),

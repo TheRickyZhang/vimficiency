@@ -159,6 +159,7 @@ local function listener(atom, decision)
     buf = buf,
     win = atom.win,
     keys = atom.keys,
+    kind = atom.kind,
     typed = atom.typed,
     decision = decision,
     lossy = atom.lossy,

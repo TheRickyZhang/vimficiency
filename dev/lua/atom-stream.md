@@ -20,6 +20,7 @@ double install is loud. `setup()` raises when `##CmdAtom` is absent.
 ## Event fields consumed
 
 - `type` — `operator | insert | motion | normal | visual | jump | scroll | excmd | mouse | mapping`.
+  Forwarded as `VF.Atom.kind`; journals and finished sessions keep it per command.
 - `keys` — replayable sequence. `nil` is a Lua callback, `""` an unexpressible resolution.
   Keys that embed a callback (`keynorm.has_callback`) are treated as `nil`.
 - `lhs`, `count` — the mapping side as typed; `count` drives synthetic-count
@@ -194,8 +195,8 @@ Every record has `ms` (monotonic milliseconds since the header) and `tick`.
 - `resync` — `buf`, `win`, `view`: the state of a window that no atom accounts
   for, taken in Normal mode once the event queue drains. Written when a window
   or buffer is entered, or the cursor or text changed with no atom behind it.
-- `atom` — `buf`, `win`, `keys`, `typed`, `decision`, `lossy`, `abort_reason`
-  (abort only), `mode`, and the post-atom `view`.
+- `atom` — `buf`, `win`, `keys`, `kind` (empty in older journals), `typed`,
+  `decision`, `lossy`, `abort_reason` (abort only), `mode`, and the post-atom `view`.
 
 The text at an atom is the snapshot plus every delta written before it. Records
 written in one drain of the event queue share a `tick`: deferred delivery means

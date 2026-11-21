@@ -59,6 +59,9 @@ message Atom {
   int32 win = 2;
   // Resolved keys: what ran, after mappings.
   bytes keys = 3;
+  // CmdAtom's `type` (operator, insert, motion, ...); kept as text so a type
+  // Neovim adds later is recorded, not rejected. Empty in older journals.
+  string kind = 10;
   // Physical keys pressed since the previous atom. Atoms delivered together
   // cannot be told apart, so an earlier one carries the keys of a later one.
   bytes typed = 9;

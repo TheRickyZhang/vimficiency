@@ -69,7 +69,7 @@ test("recall listener: drops an atom whose window no longer shows its buffer", f
   vim.api.nvim_win_set_buf(win, shown)
 
   local before = #session_store.summarize_all()
-  recall._for_test.listener({ keys = "x", typed = "x", buf = other, win = win, lossy = false }, "record")
+  recall._for_test.listener({ keys = "x", kind = "operator", typed = "x", buf = other, win = win, lossy = false }, "record")
   assert_eq(#session_store.summarize_all(), before, "a buffer/window mismatch must not record")
 
   pcall(vim.api.nvim_buf_delete, shown, { force = true })

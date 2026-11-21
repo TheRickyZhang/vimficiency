@@ -42,17 +42,12 @@ local function log_slow_fire(active, result)
   end)
 end
 
---- Per-atom key boundaries behind `user_seq` (pre motion-conversion), which the
---- concatenation loses. Persisted only for debugging.
 ---@param atom_seq VF.Atom[]
----@return table
-local function build_capture_debug(atom_seq)
-  local atom_keys = {}
-  for i, atom in ipairs(atom_seq) do atom_keys[i] = atom.keys end
-  return {
-    version = 3,
-    atom_keys = #atom_keys > 0 and atom_keys or disk.empty_array(),
-  }
+---@return VF.Session.Command[]
+local function build_commands(atom_seq)
+  local commands = {}
+  for i, atom in ipairs(atom_seq) do commands[i] = { keys = atom.keys, kind = atom.kind } end
+  return #commands > 0 and commands or disk.empty_array()
 end
 
 ---@param buf integer
@@ -110,7 +105,7 @@ local function build_analyze_input(active, end_state)
     or (start_state --[[@as VF.BufferState]]).lines
 
   -- Snapshot: a recall record keeps accumulating atoms while the async worker
-  -- runs, and capture_debug must describe the atoms user_seq was built from.
+  -- runs, and `commands` must describe the atoms user_seq was built from.
   -- CmdAtom already resolves mappings and operator-pending duplication, so the
   -- replayable sequence is just each atom's keys concatenated — no reduction.
   local atom_seq = vim.list_extend({}, active.atoms)
@@ -202,7 +197,7 @@ local function build_result(input, analyze, analyze_ms)
     user_cost = analyze.user_cost,
     optimal_results = optimal_results,
     unbeaten = analyze.unbeaten,
-    capture_debug = build_capture_debug(input.atom_seq),
+    commands = build_commands(input.atom_seq),
     key_count = #input.atom_seq,
     finished_wall_epoch = os.time(),
     analyze_ms = analyze_ms,

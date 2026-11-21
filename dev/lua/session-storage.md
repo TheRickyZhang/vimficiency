@@ -45,10 +45,14 @@ the file's only clock), and
 `disk.decode` rejects any `version` other than the current one, including
 unversioned files, and strips it before validating; there is no migration.
 Bump `FORMAT_VERSION` on any change that old files cannot satisfy. All fields
-are required except the debug-only `capture_debug` and `analyze_ms`,
-`user_typed` (the pressed keys behind `user_cost`; `user_seq` is what ran), and
-`optimizer_overrides` and `results_calculated`, which complete the replayable
-`VF.SearchRequest` and are absent from files saved before 0.3.0.
+are required except these:
+- `analyze_ms`, debug-only.
+- `user_typed`, the pressed keys behind `user_cost` (`user_seq` is what ran).
+- `optimizer_overrides` and `results_calculated`, which complete the replayable
+  `VF.SearchRequest` and are absent from files saved before 0.3.0.
+- `commands`, the `{keys, kind}` atoms `user_seq` concatenates, and `unbeaten`,
+  both absent from older files. Older files may carry a debug `capture_debug`
+  instead of `commands`.
 
 The persisted clock is wall time because `hrtime` values from another boot are
 not comparable; the workspace keeps its own `*_mono_ns` stamps on the record

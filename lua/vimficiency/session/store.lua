@@ -116,6 +116,10 @@ end
 ---@field finish_alias     string        # Literal alias passed to finish (`a`, `3s`, ...); the default filename for `:Vimfy save`
 ---@field result           VF.Session.Result
 
+---@class VF.Session.Command
+---@field keys string  # The atom's replayable keys
+---@field kind string  # CmdAtom `type` (`VF.Atom.kind`)
+
 --- VF.Session.Result: data for a completed session, ready for simulate().
 ---@class VF.Session.Result
 ---@field lines string[]               # Trimmed buffer lines used for optimization
@@ -138,7 +142,7 @@ end
 ---@field user_cost number             # Effort of the keys the user pressed
 ---@field optimal_results VF.Optimizer.Result[] # Top N results from optimizer (seq + cost)
 ---@field unbeaten boolean|nil          # No results because no modeled sequence came close to the user's keys. Absent on files saved before it existed
----@field capture_debug table|nil      # Per-atom key boundaries behind user_seq, persisted only for debugging
+---@field commands VF.Session.Command[]|nil # The atoms user_seq concatenates, one per Neovim command. Absent on files saved before it existed
 ---@field key_count integer            # Captured key events at finish (authoritative; user_seq is bytes, not keys)
 ---@field finished_wall_epoch integer  # os.time() at finish. Wall clock because it is saved to disk; monotonic values do not survive a reboot
 ---@field analyze_ms number|nil        # Wall-time of the optimizer analyze() FFI call only (ms); running-model telemetry

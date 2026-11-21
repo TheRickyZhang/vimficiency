@@ -91,7 +91,7 @@ local REQUIRED_FIELDS = {
 }
 
 local OPTIONAL_FIELDS = {
-  { key = "capture_debug", kind = "table" },
+  { key = "commands",      kind = "table" },
   { key = "user_typed",    kind = "string" },
   { key = "analyze_ms",    kind = "number" },
   { key = "optimizer_overrides", kind = "string" },

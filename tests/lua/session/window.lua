@@ -80,8 +80,8 @@ test("compute_result_for_active: includes capture key debug", function()
   -- One atom per command: CmdAtom has already resolved operator-pending, so the
   -- replayable `keys` are just concatenated (no reduction, no mode tracking).
   active.atoms = {
-    { keys = "cwW2<Esc>", win = win, buf = buf },
-    { keys = "dl",        win = win, buf = buf },
+    { keys = "cwW2<Esc>", kind = "operator", win = win, buf = buf },
+    { keys = "dl",        kind = "operator", win = win, buf = buf },
   }
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "cout << W2 << endl;" })
 
@@ -97,7 +97,10 @@ test("compute_result_for_active: includes capture key debug", function()
 
   assert_eq(result.user_cost, 9.0, "the analyze stub must be the one compute calls")
   assert_eq(result.user_seq, "cwW2<Esc>dl")
-  assert_eq(vim.inspect(result.capture_debug.atom_keys), vim.inspect({ "cwW2<Esc>", "dl" }))
+  assert_eq(result.commands, {
+    { keys = "cwW2<Esc>", kind = "operator" },
+    { keys = "dl", kind = "operator" },
+  })
 
   pcall(vim.api.nvim_buf_delete, buf, { force = true })
 end)

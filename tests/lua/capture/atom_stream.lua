@@ -184,6 +184,14 @@ local function run_cases()
     eq(captured[1].atom.win, win, "atom.win")
   end)
 
+  check("an atom carries the event's type as its kind", function()
+    for typed, kind in pairs({ dw = "operator", w = "motion", ["ifoo<Esc>"] = "insert" }) do
+      reset_buf(); feed(typed)
+      eq(#captured, 1, typed .. ": one atom")
+      eq(captured[1].atom.kind, kind, typed .. ": kind")
+    end
+  end)
+
   check("synthetic count=1 is stripped; genuine counts kept", function()
     reset_buf(); feed("ifoo<Esc>");  eq(recorded_keys(), "ifoo<Esc>", "no synthetic 1i")
     reset_buf(); feed("2ifoo<Esc>"); eq(recorded_keys(), "2ifoo<Esc>", "genuine count kept")

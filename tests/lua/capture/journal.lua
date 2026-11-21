@@ -60,7 +60,7 @@ local function with_journal(fn)
   journal.start()
   local path = assert(journal.path())
   local ok, err = pcall(fn, buf,
-    { keys = "x", typed = "x", buf = buf, win = vim.api.nvim_get_current_win(), lossy = false })
+    { keys = "x", kind = "operator", typed = "x", buf = buf, win = vim.api.nvim_get_current_win(), lossy = false })
   journal.stop()
   vim.api.nvim_buf_delete(buf, { force = true })
   if not ok then error(err, 0) end
@@ -96,15 +96,17 @@ test("journal: snapshot plus deltas rebuild the text at every atom", function()
   assert_eq(decisions, { "record", "record", "skip", "abort", "record" })
 end)
 
-test("journal: an atom carries its keys, mode and the cursor after it", function()
+test("journal: an atom carries its keys, kind, mode and the cursor after it", function()
   local records = with_journal(function(_, atom)
     vim.api.nvim_win_set_cursor(0, { 2, 1 })
     atom.keys = "jl"
+    atom.kind = "motion"
     atom.typed = "<Space>m"
     journal._for_test.listener(atom, "record")
   end)
   local atom = records[#records].atom
   assert_eq(atom.keys, "jl")
+  assert_eq(atom.kind, "motion")
   assert_eq(atom.typed, "<Space>m")
   assert_eq(atom.mode, "n")
   assert_eq({ atom.view.row, atom.view.col }, { 1, 1 })
