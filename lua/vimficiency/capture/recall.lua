@@ -6,18 +6,9 @@ local M = {}
 local LISTENER_NAME = "recall_capture"
 
 ---@param atom VF.Atom
----@return boolean
-local function in_live_file_buffer(atom)
-  return vim.api.nvim_buf_is_valid(atom.buf)
-    and vim.bo[atom.buf].buftype == ""
-    and vim.api.nvim_win_is_valid(atom.win)
-    and vim.api.nvim_win_get_buf(atom.win) == atom.buf
-end
-
----@param atom VF.Atom
 ---@param decision VF.Atom.Decision
 local function recall_listener(atom, decision)
-  if not in_live_file_buffer(atom) then return end
+  if not atom_stream.in_live_file_buffer(atom) then return end
   if decision == "record" then
     session_store.ingest_recall_atom(atom)
   elseif decision == "abort" then

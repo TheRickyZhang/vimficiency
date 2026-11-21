@@ -76,6 +76,7 @@ Subdirectories hold supporting modules for each domain:
 | `capture/key_tracking.lua` | Legacy `vim.on_key()` capture, now used only by interactive Explore's frontier replay. |
 | `capture/recall.lua` | Rolling recall-ring capture driven by atom events. |
 | `capture/buffer_history.lua` | Per-buffer shadow copy plus the lines replaced between marks; rebuilds a recall record's start text on demand. |
+| `capture/journal.lua` | Opt-in JSONL journal of every atom plus buffer snapshots and line deltas (`config.journal`). See `dev/lua/atom-stream.md` § Journal. |
 | `capture/end_trigger.lua` | Idle/command-count auto-end triggers (Watch / Suggest). |
 | `capture/auto_suggest.lua` | Idle-trigger auto-suggest (runs optimizer on a recall window). |
 

@@ -239,6 +239,17 @@ test("validate_auto_suggest: all three triggers coexist", function()
   end)
 end)
 
+test("validate journal: off by default, rejects non-table and bad cadence", function()
+  assert_eq(config._defaults.journal.enabled, false)
+  assert_error(function() validate.normalize_journal(true) end,
+    "journal must be a table", "boolean shorthand must error")
+  assert_error(function() validate.normalize_journal({ enabled = true, snapshot_every = 0 }) end,
+    "journal.snapshot_every", "zero cadence must error")
+  assert_error(function() validate.normalize_journal({ enabled = true, snapshot_every = 5, dir = "x" }) end,
+    "unknown key", "unknown sub-key must error")
+  assert_eq(validate.normalize_journal({ enabled = true, snapshot_every = 5 }).snapshot_every, 5)
+end)
+
 test("validate lossy_mappings: three modes, anything else errors", function()
   for _, mode in ipairs({ "drop", "warn", "allow" }) do
     assert_eq(validate.normalize_lossy_mappings(mode), mode)

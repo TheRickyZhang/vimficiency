@@ -1,7 +1,8 @@
 # Atom stream (`capture/atom_stream.lua`)
 
 Read before changing capture, the admission rule, recall start marks, or any
-listener (`capture/recall.lua`, `session.lua`, `capture/end_trigger.lua`).
+listener (`capture/recall.lua`, `capture/journal.lua`, `session.lua`,
+`capture/end_trigger.lua`).
 `key_tracking.lua` is Explore-only; see `neovim_on_key_issues.md`.
 
 ## Model
@@ -93,8 +94,46 @@ drops that buffer's active recall records.
 A record whose start falls inside a burst still gets the burst's final text as
 its start, because every mark in the burst is taken after it.
 
+## Journal
+
+`capture/journal.lua` (`config.journal.enabled`, off by default) appends every
+in-scope atom to `stdpath('data')/vimficiency/journal/<timestamp>-<pid>.jsonl`,
+one file per `setup()`. It shares recall's scope (`atom_stream.in_live_file_buffer`)
+but keeps `skip` and `abort` atoms, with their decision, so a reader can cut
+sessions itself.
+
+Buffer text is exact, not replayed from keys: the journal is the
+`buffer_history` observer, so it receives the seed text and every folded delta
+whichever listener's `mark` produced them. A snapshot is written on the first
+atom in a buffer, after a reload or unload (the reseed), and every
+`snapshot_every` atoms; the last is only a checkpoint that bounds how far back a
+reader must scan.
+
+One JSON object per line, each with `rec` and `ms` (monotonic milliseconds since
+the header). Rows and line indexes are 0-indexed.
+
+- `header` — `version`, `started_wall_epoch`. A second header in one file is a
+  restart: discard all buffer state.
+- `snapshot` — `buf`, `bufname`, `filetype`, `lines` (the whole text).
+- `delta` — `buf`, `first`, `old_count`, `lines`: replace `old_count` lines at
+  `first` with `lines`. Applies to the text built so far for `buf`.
+- `atom` — `buf`, `win`, `keys`, `decision`, `lossy`, `abort_reason` (abort
+  only), and the post-atom view: `row`, `col`, `top_row`, `bottom_row`,
+  `window_height`, `scroll_amount`.
+
+The text at an atom is the snapshot plus every delta written before that atom's
+line. A session from atom `i` to atom `j` starts at atom `i-1`'s text and cursor
+and ends at atom `j`'s. Deferred delivery applies here too: inside a burst every
+atom carries the burst's final cursor, and the first carries the whole delta.
+
+Nothing reads the journal yet, and the raw event fields that `VF.Atom` drops
+(`type`, `lhs`, `count`, `changed`, `moved`) are not in it. Files are never
+rotated or pruned.
+
 ## Testing
 
 `nvim -l` never flushes `CmdAtom`, so the live wiring test
 (`tests/lua/capture/atom_stream.lua`) is a standalone async script run as its own
 `run.sh` phase. The pure decision table is tested through `atom_stream._classify`.
+`tests/lua/capture/journal.lua` drives the journal listener directly and checks
+that replaying the file rebuilds the buffer at every atom.

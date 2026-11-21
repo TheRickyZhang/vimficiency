@@ -3,6 +3,7 @@ local atom_stream = require("vimficiency.capture.atom_stream")
 local auto_suggest = require("vimficiency.capture.auto_suggest")
 local subcommands = require("vimficiency.subcommands")
 local recall_capture = require("vimficiency.capture.recall")
+local journal = require("vimficiency.capture.journal")
 local ffi_config = require("vimficiency.ffi.config")
 local util = require("vimficiency.util")
 
@@ -101,6 +102,7 @@ function M.setup(user_config)
   user_config = user_config or {}
   -- A repeated setup() must not keep triggers armed by the previous config.
   auto_suggest.disable()
+  journal.stop()
   config.reset()
 
   -- Stash config so reload can re-run `setup()` with the same values.
@@ -147,6 +149,7 @@ function M.setup(user_config)
 
   -- Capture: recall always listens; auto-suggest only if the user configured a trigger.
   recall_capture.start_continuous_capture()
+  if config.journal.enabled then journal.start() end
 
   auto_suggest.enable_configured()
 end
@@ -168,6 +171,8 @@ function M.shutdown()
   local dropped_active = 0
   local ok_drop, n = pcall(session_store.teardown_active)
   if ok_drop then dropped_active = n or 0 end
+
+  journal.stop()
 
   -- Tear down the CmdAtom capture and every subscriber last.
   atom_stream.shutdown()

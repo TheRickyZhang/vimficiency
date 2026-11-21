@@ -11,6 +11,7 @@
 ---@field lines_at          fun(buf: integer, seq: integer): string[]
 ---@field trim              fun(buf: integer, seq: integer)
 ---@field set_reset_handler fun(handler: fun(buf: integer))
+---@field set_observer      fun(observer: VF.BufferHistory.Observer|nil)
 ---@field shutdown          fun()
 local M = {}
 
@@ -39,6 +40,15 @@ local states = {}
 
 ---@type fun(buf: integer)
 local reset_handler = function() end
+
+--- Sees every text a mark establishes: the seed, then each folded delta in order.
+---@class VF.BufferHistory.Observer
+---@field on_seed  fun(buf: integer, lines: string[])  # `lines` is the live shadow; consume before returning
+---@field on_delta fun(buf: integer, first: integer, old_count: integer, new_lines: string[])
+
+---@type VF.BufferHistory.Observer
+local NO_OBSERVER = { on_seed = function() end, on_delta = function() end }
+local observer = NO_OBSERVER
 
 --- Replace `lines[first + 1 .. first + old_count]` with `replacement`, in place.
 ---@param lines string[]
@@ -114,6 +124,7 @@ local function sync(state, buf)
     new_count = #new_lines,
   }
   splice(shadow, first, old_last - first, new_lines)
+  observer.on_delta(buf, first, old_last - first, new_lines)
 end
 
 local guarded_widen_pending = util.entry(widen_pending)
@@ -154,6 +165,7 @@ function M.mark(buf)
     sync(state, buf)
   else
     state.shadow = v.nvim_buf_get_lines(buf, 0, -1, false)
+    observer.on_seed(buf, state.shadow)
   end
   return state.base_seq + #state.deltas
 end
@@ -188,6 +200,11 @@ end
 ---@param handler fun(buf: integer)
 function M.set_reset_handler(handler)
   reset_handler = handler
+end
+
+---@param new_observer VF.BufferHistory.Observer|nil
+function M.set_observer(new_observer)
+  observer = new_observer or NO_OBSERVER
 end
 
 function M.shutdown()

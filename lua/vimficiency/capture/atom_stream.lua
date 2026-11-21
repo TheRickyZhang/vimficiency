@@ -15,6 +15,7 @@
 ---@field add_listener    fun(name: string, listener: fun(atom: VF.Atom, decision: VF.Atom.Decision)): boolean
 ---@field remove_listener fun(name: string)
 ---@field shutdown        fun()
+---@field in_live_file_buffer fun(atom: VF.Atom): boolean
 --- Test-only: exercise the decision table without driving real input, and
 --- assert that sessions and shutdown detach their listeners.
 ---@field _classify       fun(atom_type: string, keys_raw: string|nil, keys_norm: string, changed: boolean, moved: boolean): VF.Atom.Decision
@@ -198,6 +199,16 @@ function M.shutdown()
   end
   listener_by_name = {}
   listener_count = 0
+end
+
+--- Scope shared by the whole-stream listeners (recall, journal).
+---@param atom VF.Atom
+---@return boolean
+function M.in_live_file_buffer(atom)
+  return vim.api.nvim_buf_is_valid(atom.buf)
+    and vim.bo[atom.buf].buftype == ""
+    and vim.api.nvim_win_is_valid(atom.win)
+    and vim.api.nvim_win_get_buf(atom.win) == atom.buf
 end
 
 M._classify = classify

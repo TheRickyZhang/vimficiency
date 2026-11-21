@@ -35,6 +35,12 @@ local fields = {
   -- plain Vim.
   lossy_mappings = "warn",
 
+  -- Off by default: the journal writes the text of every edited buffer to disk.
+  journal = {
+    enabled = false,
+    snapshot_every = 500, -- atoms per buffer between full-text snapshots
+  },
+
   -- Session features
   auto_suggest = {
     cooldown_ms = 5000,
@@ -117,6 +123,7 @@ function fields.apply(user_config)
   merged.watch = validate.normalize_watch(user_config.watch)
   merged.auto_suggest = validate.normalize_auto_suggest(user_config.auto_suggest, fields._defaults.auto_suggest)
   merged.lossy_mappings = validate.normalize_lossy_mappings(merged.lossy_mappings)
+  merged.journal = validate.normalize_journal(merged.journal)
 
   for name, value in pairs(merged) do
     if fields._defaults[name] ~= nil then

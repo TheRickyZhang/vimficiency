@@ -64,6 +64,25 @@ the lifetime of in-progress sessions.
 | `MANUAL_IDLE_TIMEOUT_SECONDS` | `300` | A manual (`start`/`finish`) session left idle this long is auto-ended with a warning. |
 | `lossy_mappings` | `"warn"` | A key mapped to a Lua function (flash.nvim's `f`, a `vim.keymap.set` callback) that moves the cursor or edits text cannot be captured as replayable keys. `"drop"`: a session spanning it ends, and the warning names the mapping. `"warn"`: the keys you typed are recorded instead, with a once-per-session notice. `"allow"`: recorded silently. Replay is faithful only when the function did what those keys do in plain Vim. |
 
+## Journal
+
+The journal continuously records everything Vimfy captures, so sessions can be
+cut from it later. It is off by default because it writes the text of every
+buffer you edit to disk, unencrypted.
+
+```lua
+require('vimficiency').setup({ journal = { enabled = true } })
+```
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `journal.enabled` | `false` | Record every command, the cursor after it, and every text change. |
+| `journal.snapshot_every` | `500` | Commands per buffer between full-text snapshots. Text changes are recorded exactly either way; a lower value only makes a file quicker to read from the middle. |
+
+Each Neovim instance writes its own file under
+`stdpath('data')/vimficiency/journal/`. Files are never pruned, and no command
+reads them yet.
+
 ## Idle end-detection
 
 Two features auto-fire on command idleness: [Watch](04-watch.md)

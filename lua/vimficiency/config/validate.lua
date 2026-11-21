@@ -152,7 +152,20 @@ function M.normalize_auto_suggest(raw, defaults)
   return merged
 end
 
-local LOSSY_MAPPINGS_MODES = { drop = true, warn = true, allow = true }
+--- `merged` is the user block already laid over the defaults.
+---@param merged any
+---@return { enabled: boolean, snapshot_every: integer }
+function M.normalize_journal(merged)
+  expect_table("journal", merged)
+  expect_exact_keys("journal", merged, { enabled = true, snapshot_every = true })
+  if type(merged.enabled) ~= "boolean" then
+    error("journal.enabled must be a boolean", 0)
+  end
+  expect_positive_integer("journal.snapshot_every", merged.snapshot_every)
+  return merged
+end
+
+local LOSSY_MAPPINGS_MODES ={ drop = true, warn = true, allow = true }
 
 ---@param raw any
 ---@return "drop"|"warn"|"allow"
