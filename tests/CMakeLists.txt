@@ -311,6 +311,7 @@ vimfy_test_modules(vimfy_debug)
 target_link_libraries(vimfy_debug
   PRIVATE
     test_utils
+    vimfy_journal_lib
     GTest::gtest_main
     nlohmann_json::nlohmann_json
 )

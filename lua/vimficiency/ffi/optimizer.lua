@@ -76,7 +76,7 @@ end
 
 ---@param req VF.SearchRequest
 ---@param results_calculated integer
----@return VF.Optimizer.Result[] results, number user_cost, string debug, VF.Diff.Region[] diffs
+---@return VF.Optimizer.Result[] results, number user_cost, string debug, VF.Diff.Region[] diffs, boolean unbeaten
 function M.analyze(req, results_calculated)
   ---@type VF.Optimizer.AnalyzeResult
   local result = core.call(
@@ -85,7 +85,7 @@ function M.analyze(req, results_calculated)
     { search = req, results_calculated = results_calculated },
     "vf.search.AnalyzeResult"
   )
-  return result.results, result.user_cost, result.dbg, result.diffs
+  return result.results, result.user_cost, result.dbg, result.diffs, result.unbeaten
 end
 
 --- `vf.search.AnalyzeResult` (src/LuaExports/proto/search.proto).
@@ -94,6 +94,7 @@ end
 ---@field user_cost number
 ---@field dbg string
 ---@field diffs VF.Diff.Region[]   # The planner's regions the search ran against; empty for pure navigation
+---@field unbeaten boolean         # `results` is empty because no modeled sequence comes close to the user's keys
 
 --- Kicks off `analyze` on a C++ worker thread and returns a job id immediately.
 --- `deadline_ms` 0 = run to natural caps. Poll with `analyze_poll` until it

@@ -57,6 +57,16 @@ test("aggregate: a session without a solution is counted, never scored", functio
     "only the solved session scores; got " .. tostring(s.efficiency_score))
 end)
 
+test("aggregate: an unbeaten session scores 100 and is not a failure", function()
+  local unbeaten = rec({ user_cost = 10.0, unbeaten = true })
+  unbeaten.best_opt_cost = nil
+  local s = stats.aggregate({ unbeaten })
+  assert_eq(s.unbeaten_count, 1)
+  assert_eq(s.no_solution_count, 0)
+  assert_true(math.abs(s.efficiency_score - 100) < 1e-6,
+    "unbeaten scores 100; got " .. tostring(s.efficiency_score))
+end)
+
 test("aggregate: by_type counts across mixed session types", function()
   local s = stats.aggregate({
     rec({ type = "mark" }),    rec({ type = "mark" }),

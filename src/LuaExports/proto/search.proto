@@ -77,6 +77,9 @@ message AnalyzeResult {
   // The planner's regions the search ran against; empty for pure navigation.
   repeated DiffRegion diffs = 3;
   bytes dbg = 4;
+  // `results` is empty because no modeled sequence comes within
+  // exploreFactor × user_cost; the user's keys beat the model.
+  bool unbeaten = 5;
 }
 
 message ParamDefault {

@@ -252,6 +252,7 @@ CompositionSearchStats CompositionSearchContext::getStats(int resultsFound,
                         stopReason);
   stats.setDebugSummary(0, statesSkipped);
   stats.setNodeBreakdown(navNodesExplored, editNodesExplored);
+  stats.setStatesOverEffortCap(statesOverEffortCap);
 
   return stats;
 }

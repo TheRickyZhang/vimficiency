@@ -84,6 +84,7 @@ vf::journal::Sample::Outcome outcomeOf(Outcome outcome) {
     case Outcome::TooLarge:    return vf::journal::Sample::too_large;
     case Outcome::NoResult:    return vf::journal::Sample::no_result;
     case Outcome::Unsupported: return vf::journal::Sample::unsupported;
+    case Outcome::Unbeaten:    return vf::journal::Sample::unbeaten;
   }
   return vf::journal::Sample::scored;
 }

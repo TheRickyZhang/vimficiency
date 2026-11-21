@@ -137,6 +137,7 @@ end
 ---@field results_calculated integer|nil # Result count the analyze was asked for
 ---@field user_cost number             # Effort of the keys the user pressed
 ---@field optimal_results VF.Optimizer.Result[] # Top N results from optimizer (seq + cost)
+---@field unbeaten boolean|nil          # No results because no modeled sequence came close to the user's keys. Absent on files saved before it existed
 ---@field capture_debug table|nil      # Per-atom key boundaries behind user_seq, persisted only for debugging
 ---@field key_count integer            # Captured key events at finish (authoritative; user_seq is bytes, not keys)
 ---@field finished_wall_epoch integer  # os.time() at finish. Wall clock because it is saved to disk; monotonic values do not survive a reboot

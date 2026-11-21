@@ -48,6 +48,7 @@ Proto runAnalyze(const SearchInputs& in, int resultsCalculated,
     out->set_cost(result.getCost());
   }
   msg.set_user_cost(analyzed.userCost);
+  msg.set_unbeaten(analyzed.unbeaten);
   // Both spans share begin (the common prefix is identical in both buffers).
   for (const DiffState& d : analyzed.diffs) {
     vf::search::DiffRegion* region = msg.add_diffs();

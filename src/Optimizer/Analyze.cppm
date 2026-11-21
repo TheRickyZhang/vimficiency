@@ -57,6 +57,10 @@ struct AnalyzeOutput {
   // The planner's regions the search ran against; empty for pure navigation.
   std::vector<DiffState> diffs;
   double userCost = 0;
+  // No result, though the search drained its queue and dropped states only
+  // for exceeding exploreFactor × the user's effort: the user's keys beat every
+  // modeled sequence. A drained search with no such drops is a model gap instead.
+  bool unbeaten = false;
 };
 
 // Boundary for a sliced buffer. The slice is the whole edit region, so there is

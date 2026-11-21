@@ -341,3 +341,7 @@ Explore used the character diff range to classify `Transform`, so moving away fr
 ## Explore partial edit states leaked into undo history
 
 Explore treated delete-prefix replacement intermediates as undo checkpoints. In `w x i m <Esc>`, this made the first undo land at `w x` instead of the pre-edit `w` checkpoint, so history split one Vim change into two user-visible steps. History now skips both `Insert` and partial edit-span states; canceling insert from such a partial state mutates back to `Transform` without touching undo/redo.
+
+## Composition dead-ended with the cursor inside a diff region
+
+Composition's motion search targeted the whole diff region, the same mistake Explore made above. A cursor inside the region but past the solved starts had no edit, and NavOptimizer returned only the empty landing, because it never expands a start already in its goal. The search ended with no result. The whole-buffer fallback hid this until it was removed. Motions now target the solved starts, split at the cursor.

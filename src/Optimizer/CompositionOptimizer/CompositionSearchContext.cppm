@@ -88,6 +88,7 @@ struct CompositionSearchContext {
   int nodesProcessed = 0;
   int totalPops = 0;  // Hard budget: all queue pops, including stale.
   int statesSkipped = 0;
+  int statesOverEffortCap = 0;
 
   // Sub-optimizer aggregate stats
   int navNodesExplored = 0;

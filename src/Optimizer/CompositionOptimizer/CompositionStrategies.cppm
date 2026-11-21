@@ -40,7 +40,7 @@ namespace CompositionStrategies {
 // [beginCol, endCol) on `targetLine`.
 //
 // `structural` is the single Vim action that enters Insert at the right
-// position (one of `i a I A o`). `insertCmd` is `structural` + typed
+// position (one of `o O i a I A`). `insertCmd` is `structural` + typed
 // payload + trailing `<Esc>` — the full batch-optimizer transition.
 // CompositionFrontier emits `structural` only; CompositionOptimizer (batch
 // A*) uses `insertCmd`.
@@ -78,15 +78,26 @@ struct TypedInsertion {
   CursorPos exitCursor;
 };
 
-// `o` from `fromLine`; `body` is the insert minus its boundary newline.
-inline TypedInsertion typedInsertionBelow(const Lines& lines, int fromLine,
-                                          std::string_view body) {
-  std::string_view sourceIndent = VimOptions::autoindent()
-      ? leadingWhitespace(lines[fromLine])
-      : std::string_view{};
+inline std::string_view openedLineAutoindent(const Lines& lines, int fromLine) {
+  return VimOptions::autoindent() ? leadingWhitespace(lines[fromLine])
+                                  : std::string_view{};
+}
+
+// Where `o` (`below`) or `O` from `fromLine` leaves the cursor: on the opened
+// line, past its autoindent.
+inline CursorPos openedLineEntry(const Lines& lines, int fromLine, bool below) {
+  return CursorPos(below ? fromLine + 1 : fromLine,
+                   static_cast<int>(openedLineAutoindent(lines, fromLine).size()));
+}
+
+// `o`/`O` from `fromLine`, opening `newLine`; autoindent copies `fromLine`.
+// `body` is the insert minus its boundary newline.
+inline TypedInsertion typedInsertionOnOpenedLine(const Lines& lines, int fromLine,
+                                                 int newLine, std::string_view body) {
+  std::string_view sourceIndent = openedLineAutoindent(lines, fromLine);
   Lines insertLines = Lines::unflatten(std::string(body));
   return {buildTypedCommands(insertLines, sourceIndent),
-          typedCommandsExitCursor(CursorPos(fromLine + 1, 0), insertLines)};
+          typedCommandsExitCursor(CursorPos(newLine, 0), insertLines)};
 }
 
 // `i a I A` at `insertPos`: the structural only picks the entry, the payload
@@ -101,19 +112,19 @@ inline TypedInsertion typedInsertionAt(const Lines& lines, CursorPos insertPos,
 }
 
 // Trailing `\n` at col 0 of a later line: the line is wholly new content, so
-// `o` is the only entry.
-inline bool opensLineBelowOnly(const DiffState& diff) {
+// opening a line (`o`/`O`) is the only entry.
+inline bool opensLineOnly(const DiffState& diff) {
   return diff.isNewLineInsertion() && diff.beginPos.col == 0 &&
          diff.beginPos.line > 0;
 }
 
 // The single payload for a pure insertion once Insert has been entered: the
-// `o` form when it is the only entry, else the column form (a leading-`\n`
-// append is typed as `<CR>...` from the column, not via `o`).
+// `o` form when opening a line is the only entry, else the column form (a
+// leading-`\n` append is typed as `<CR>...` from the column).
 inline TypedInsertion typedInsertion(const DiffState& diff, const Lines& lines) {
-  if (opensLineBelowOnly(diff)) {
-    return typedInsertionBelow(lines, diff.beginPos.line - 1,
-                               diff.insertedTextBody());
+  if (opensLineOnly(diff)) {
+    return typedInsertionOnOpenedLine(lines, diff.beginPos.line - 1,
+                                      diff.beginPos.line, diff.insertedTextBody());
   }
   return typedInsertionAt(lines, diff.beginPos, diff.insertedLines());
 }
@@ -126,27 +137,31 @@ void enumerateInsertions(const DiffState& diff, const Lines& lines, OnStrategy&&
   const CursorPos insertPos = diff.beginPos;
   const std::string& ins = diff.insertedText;
 
-  // `o` opens a new line below and types the body. A new-line insertion reaches it
-  // in two equivalent anchorings: a *trailing* `\n` at col 0 of a later line
-  // (insert "X\n" before it), or a *leading* `\n` at the end of a line (insert
-  // "\nX" after it) — the latter is also the only form for an end-of-buffer
-  // append. Either way `o` runs from the line above the new line and the body is
-  // the insert minus that one boundary newline.
-  const bool trailingNl = opensLineBelowOnly(diff);
+  // Opening a line types the body on a new line: `o` from the line above it or
+  // `O` from the line below it. A new-line insertion reaches them in two
+  // equivalent anchorings: a *trailing* `\n` at col 0 of a line (insert "X\n"
+  // before it), or a *leading* `\n` at the end of a line (insert "\nX" after
+  // it) — the latter is also the only form for an end-of-buffer append. The
+  // body is the insert minus that one boundary newline. Autoindent copies the
+  // line the command runs from, so `o` and `O` can differ in payload.
+  const bool trailingNl = diff.isNewLineInsertion() && insertPos.col == 0;
   const bool leadingNl = !ins.empty() && ins.front() == '\n' &&
                          insertPos.col == lines[insertPos.line].effectiveSize();
   if (trailingNl || leadingNl) {
-    const int oFromLine = trailingNl ? insertPos.line - 1 : insertPos.line;
-    const int oFromLineEnd = lines[oFromLine].effectiveSize();
+    const int newLine = trailingNl ? insertPos.line : insertPos.line + 1;
     std::string_view body = trailingNl ? diff.insertedTextBody()
                                        : std::string_view(ins).substr(1);
-    TypedInsertion below = typedInsertionBelow(lines, oFromLine, body);
-    cb(Insertion{oFromLine, 0, oFromLineEnd, "o", "o" + below.typed.seq.str(),
-                 below.exitCursor});
-    if (trailingNl) return;
+    auto openFrom = [&](int fromLine, std::string_view command) {
+      TypedInsertion opened = typedInsertionOnOpenedLine(lines, fromLine, newLine, body);
+      cb(Insertion{fromLine, 0, lines[fromLine].effectiveSize(), std::string(command),
+                   std::string(command) + opened.typed.seq.str(), opened.exitCursor});
+    };
+    if (newLine > 0) openFrom(newLine - 1, "o");
+    if (newLine <= lines.lastLine()) openFrom(newLine, "O");
+    if (opensLineOnly(diff)) return;
   }
 
-  // I/A/i/a family.
+  // i/a/I/A family; lowercase first so it wins exact-cost ties.
   const int line = insertPos.line;
   const int fnb = VimCore::firstNonBlankColInLine(lines[line]);
   const int lineLen = lines.getSize(line);
@@ -154,6 +169,17 @@ void enumerateInsertions(const DiffState& diff, const Lines& lines, OnStrategy&&
   TypedInsertion at = typedInsertionAt(lines, insertPos, diff.insertedLines());
   const std::string escaped = at.typed.seq.str();
 
+  // `i` needs the cursor on the insert column, which is unreachable one past
+  // a non-empty line.
+  if (insertPos.col < lineEnd) {
+    cb(Insertion{line, insertPos.col, insertPos.col + 1,
+                 "i", "i" + escaped, at.exitCursor});
+  }
+  // `a` from the character before the insert point (col 0 on an empty line).
+  if (insertPos.col > 0 || lineLen == 0) {
+    const int aCol = std::max(insertPos.col - 1, 0);
+    cb(Insertion{line, aCol, aCol + 1, "a", "a" + escaped, at.exitCursor});
+  }
   // `I` lands at the first non-blank, or past the indent (col == size) on an
   // all-whitespace line.
   const int iCol = VimCore::isBlankLine(lines[line]) ? lineLen : fnb;
@@ -162,17 +188,6 @@ void enumerateInsertions(const DiffState& diff, const Lines& lines, OnStrategy&&
   }
   if (insertPos.col == lineLen) {
     cb(Insertion{line, 0, lineEnd, "A", "A" + escaped, at.exitCursor});
-  }
-  // `a` from the character before the insert point (col 0 on an empty line).
-  if (insertPos.col > 0 || lineLen == 0) {
-    const int aCol = std::max(insertPos.col - 1, 0);
-    cb(Insertion{line, aCol, aCol + 1, "a", "a" + escaped, at.exitCursor});
-  }
-  // `i` needs the cursor on the insert column, which is unreachable one past
-  // a non-empty line.
-  if (insertPos.col < lineEnd) {
-    cb(Insertion{line, insertPos.col, insertPos.col + 1,
-                 "i", "i" + escaped, at.exitCursor});
   }
 }
 

@@ -52,6 +52,7 @@ function M.build_record(kind, result)
     user_seq      = result.user_seq,
     best_opt_seq  = best_seq,
     beats         = beats or false,
+    unbeaten      = result.unbeaten or false,
     analyze_ms    = result.analyze_ms,
   }
 end

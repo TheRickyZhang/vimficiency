@@ -22,7 +22,8 @@ local function build_header_lines(result)
     sequence_display.inline(result.user_seq), result.user_cost)
   local recs = result.optimal_results
   if #recs == 0 then
-    lines[#lines + 1] = "No solution found"
+    lines[#lines + 1] = result.unbeaten and "Unbeaten: nothing modeled comes close to your keys"
+      or "No solution found"
   end
   for i = 1, math.min(MAX_HEADER_RECS, #recs) do
     lines[#lines + 1] = string.format("%d.    %s   (%.0f)",

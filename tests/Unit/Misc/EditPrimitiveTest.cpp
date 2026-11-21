@@ -61,6 +61,18 @@ TEST_F(EditPrimitiveTest, ForwardSentenceDeleteIncludesLineEndCloser) {
       *oracle, {"MM ~ ~", "o 0", "S!)", "~   -]"}, {0, 2}, "d)");
 }
 
+TEST_F(EditPrimitiveTest, OpenLineAutoindentsFromCurrentLine) {
+  OracleReplay::expectModelMatchesOracle(*oracle, {"  a", "c"}, {0, 0}, "ob<Esc>");
+  OracleReplay::expectModelMatchesOracle(*oracle, {"a", "  c"}, {1, 0}, "Ob<Esc>");
+  OracleReplay::expectModelMatchesOracle(*oracle, {"  a", "    c"}, {1, 2}, "Ob<Esc>");
+  OracleReplay::expectModelMatchesOracle(*oracle, {"  a"}, {0, 0}, "Ox<CR>y<Esc>");
+}
+
+TEST_F(EditPrimitiveTest, OpenLineEscStripsUnusedAutoindent) {
+  OracleReplay::expectModelMatchesOracle(*oracle, {"  a"}, {0, 0}, "O<Esc>");
+  OracleReplay::expectModelMatchesOracle(*oracle, {"  a"}, {0, 0}, "o<Esc>");
+}
+
 TEST_F(EditPrimitiveTest, BuildTypedCommands_MatchesOracle_CC) {
   Lines initialLines = {"        deep indent"};
   Lines goalLines = {"    less"};

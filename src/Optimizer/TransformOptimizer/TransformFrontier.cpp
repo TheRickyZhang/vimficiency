@@ -315,9 +315,11 @@ vector<Suggestion> rankTransformFrontier(
     const double insertDistance = textDistanceEstimate(query.diff.insertedLines());
     CompositionStrategies::enumerateInsertions(
         query.diff, query.lines, [&](const CompositionStrategies::Insertion& s) {
-          // `o` leaves the cursor on the opened line, not at the diff anchor.
-          const CursorPos landing = s.structural == "o"
-              ? CursorPos(s.targetLine + 1, 0)
+          // `o`/`O` leave the cursor on the opened line, not at the diff anchor.
+          const bool opensLine = s.structural == "o" || s.structural == "O";
+          const CursorPos landing = opensLine
+              ? CompositionStrategies::openedLineEntry(query.lines, s.targetLine,
+                                                       s.structural == "o")
               : editGoalPos;
           appendInsertionStrategy(emitter, query.cursor, s.targetLine, s.beginCol,
                                   s.endCol, s.structural, landing, insertDistance);

@@ -70,7 +70,7 @@ Sample evaluate(const Window& window, const EvaluateParams& params, const Config
   sample.deadlineHit = ended >= deadline;
 
   if (analyzed.results.empty()) {
-    sample.outcome = Outcome::NoResult;
+    sample.outcome = analyzed.unbeaten ? Outcome::Unbeaten : Outcome::NoResult;
     return sample;
   }
   sample.bestCost = analyzed.results.front().getCost();

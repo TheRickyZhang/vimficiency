@@ -255,6 +255,25 @@ TEST_F(CompositionOptimizerGoalPosTest, ClampedColumn_LinewiseDeleteThenMoreStil
   }
 }
 
+TEST_F(CompositionOptimizerGoalPosTest, CursorInsideRegionMovesToSolvedStart) {
+  // The cursor starts inside the region `␣↵~` but the edit is only solved from (0, 1).
+  Lines initial = {"~ ", "~"};
+  Lines goal = {"~", " "};
+  CursorPos initialPos(1, 0);
+  CursorPos goalPos(1, 0);
+
+  CompositionResult res = opt.optimize(
+      initial, initialPos, goal, goalPos,
+      CompositionOptimizerParams{}.withMaxResults(5));
+  const auto& results = res.getResults();
+  ASSERT_FALSE(results.empty());
+
+  for (size_t i = 0; i < results.size(); i++) {
+    verifyGoalReached(results[i], initial, initialPos, goal, goalPos,
+                      "CursorInsideRegion result " + to_string(i));
+  }
+}
+
 TEST_F(CompositionOptimizerGoalPosTest, SplitIndentedLineReachesGoal) {
   Lines initial = {" db"};
   Lines goal = {" ", "db"};

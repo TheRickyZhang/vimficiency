@@ -490,13 +490,12 @@ void insertText(Lines& lines, CursorPos& pos, std::string_view text);
 // addSpace=false: simple concatenation (gJ)
 void joinLineRange(Lines& lines, CursorPos& pos, int lineCount, bool addSpace);
 
-// o - open new line below current, pos moves to new line col 0
+// o/O - open a line below/above the current one, autoindented from the current
+// line; pos moves to the end of that indent. Returns the indent length (Vim's
+// `did_ai`, stripped by an immediate <Esc>).
 // Precondition: lines not empty
-void openLineBelow(Lines& lines, CursorPos& pos);
-
-// O - open new line above current, pos moves to new line col 0
-// Precondition: lines not empty
-void openLineAbove(Lines& lines, CursorPos& pos);
+int openLineBelow(Lines& lines, CursorPos& pos);
+int openLineAbove(Lines& lines, CursorPos& pos);
 
 } // namespace VimCore
 

@@ -114,6 +114,17 @@ test("sampling.aggregate: unscored windows are counted by outcome and carry no c
   assert_eq(sampling.normalized(summary.all), 50)
 end)
 
+test("sampling.aggregate: an unbeaten window scores as optimal and is counted", function()
+  local summary = sampling.aggregate({
+    sample({ outcome = "unbeaten", user_cost = 10, best_cost = 0 }),
+    sample({ user_cost = 10, best_cost = 5 }),
+  })[8]
+  assert_eq(summary.unbeaten, 1)
+  assert_eq(summary.unscored, {})
+  assert_eq(summary.all.windows, 2)
+  assert_eq(sampling.normalized(summary.all), 75)
+end)
+
 test("sampling.aggregate: sizes and days are kept apart", function()
   local by_size = sampling.aggregate({
     sample({ window_size = 4, user_cost = 10, best_cost = 10, wall_epoch = 3 * DAY + 5 }),

@@ -21,6 +21,7 @@ enum class Outcome : uint8_t {
   TooLarge,     // the changed region is taller than maxSearchLines
   NoResult,     // the search found no sequence
   Unsupported,  // a line holds a newline or NUL byte
+  Unbeaten,     // no modeled sequence comes within exploreFactor × the user's effort
 };
 
 // How one window's keys compare with the best sequence found for the same

@@ -98,6 +98,7 @@ function M.aggregate(records)
     motion_ratios = {},                -- text -> { user_count, opt_count, ratio }
     beats_count = 0,
     no_solution_count = 0,
+    unbeaten_count = 0,
     user_token_total = 0,
     opt_token_total = 0,
   }
@@ -118,7 +119,11 @@ function M.aggregate(records)
     end
     summary.total_keys = summary.total_keys + (rec.key_count or 0)
     if rec.beats then summary.beats_count = summary.beats_count + 1 end
-    if rec.best_opt_cost == nil then summary.no_solution_count = summary.no_solution_count + 1 end
+    if rec.unbeaten then
+      summary.unbeaten_count = summary.unbeaten_count + 1
+    elseif rec.best_opt_cost == nil then
+      summary.no_solution_count = summary.no_solution_count + 1
+    end
     if type(rec.analyze_ms) == "number" then
       analyze_samples[#analyze_samples + 1] = rec.analyze_ms
     end
@@ -126,7 +131,7 @@ function M.aggregate(records)
     -- Efficiency: capped ratio × 100. Beats clamp at 100 so an optimizer
     -- miss doesn't inflate the lifetime score past "as good as optimal".
     local uc = rec.user_cost
-    local oc = rec.best_opt_cost
+    local oc = rec.unbeaten and uc or rec.best_opt_cost
     if uc and oc and uc > 0 then
       local ratio = oc / uc
       if ratio > 1 then ratio = 1 end
@@ -360,6 +365,9 @@ local function push_journal(journal_view, push)
   if #unscored > 0 then
     push("    Not scored:     " .. table.concat(unscored, " · "))
   end
+  if summary.unbeaten > 0 then
+    push(string.format("    Unbeaten (scored 100): %d runs", summary.unbeaten))
+  end
   if summary.deadline_hit > 0 then
     push(string.format("    Search cut short by the deadline: %d runs", summary.deadline_hit))
   end
@@ -391,6 +399,9 @@ function M.build_lines(summary, journal_view)
   -- Efficiency
   push_title("  Efficiency")
   push(string.format("    Score:    %s", format_score(summary.efficiency_score)))
+  if summary.unbeaten_count > 0 then
+    push(string.format("    Unbeaten (scored 100): %d sessions", summary.unbeaten_count))
+  end
   if summary.no_solution_count > 0 then
     push(string.format("    No solution: %d sessions (not scored)", summary.no_solution_count))
   end

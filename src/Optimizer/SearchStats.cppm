@@ -244,16 +244,20 @@ class CompositionSearchStats : public BaseSearchStats {
 public:
   inline int navNodesExplored() const { return navNodesExplored_; }
   inline int editNodesExplored() const { return editNodesExplored_; }
+  // States dropped for costing more than exploreFactor × the user's effort.
+  inline int statesOverEffortCap() const { return statesOverEffortCap_; }
 
   inline void setNodeBreakdown(int navNodesExploredValue, int editNodesExploredValue) {
     navNodesExplored_ = navNodesExploredValue;
     editNodesExplored_ = editNodesExploredValue;
   }
+  inline void setStatesOverEffortCap(int value) { statesOverEffortCap_ = value; }
 
   inline void accumulateFrom(const CompositionSearchStats& other) {
     BaseSearchStats::accumulateFrom(other);
     navNodesExplored_ += other.navNodesExplored_;
     editNodesExplored_ += other.editNodesExplored_;
+    statesOverEffortCap_ += other.statesOverEffortCap_;
   }
 
   inline friend std::ostream& operator<<(std::ostream& os, const CompositionSearchStats& s) {
@@ -268,6 +272,7 @@ public:
 private:
   int navNodesExplored_ = 0;
   int editNodesExplored_ = 0;
+  int statesOverEffortCap_ = 0;
 };
 
 }  // export

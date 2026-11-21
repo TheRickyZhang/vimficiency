@@ -67,6 +67,8 @@ After deletion, cursor column is clamped differently:
 
 **`cc`/`S`:** Clears the line content but **keeps the line**. Enters Insert mode at col 0. With `autoindent` enabled, Neovim automatically inserts indentation matching the cleared line. Curswant on entry has no effect.
 
+**`o`/`O`:** The opened line copies the indent of the line the cursor is on: the line above for `o`, the line below for `O`. An immediate `<Esc>` strips that indent (`did_ai`), exactly like the autoindent `<CR>` inserts.
+
 ### Autoindent Implications for the Optimizer
 
 When converting `dd` to `cc` in the optimizer:

@@ -201,6 +201,7 @@ local function build_result(input, analyze, analyze_ms)
     results_calculated = input.results_calculated,
     user_cost = analyze.user_cost,
     optimal_results = optimal_results,
+    unbeaten = analyze.unbeaten,
     capture_debug = build_capture_debug(input.atom_seq),
     key_count = #input.atom_seq,
     finished_wall_epoch = os.time(),
@@ -220,13 +221,13 @@ function M.compute_result_for_active(active, end_state)
 
   -- Timestamp and call analyze()
   local analyze_t0 = vim.uv.hrtime()
-  local results, user_cost, dbg, diffs =
+  local results, user_cost, dbg, diffs, unbeaten =
     ffi_optimizer.analyze(input.request, input.results_calculated)
   local analyze_ms = (vim.uv.hrtime() - analyze_t0) / 1e6
 
   -- Save to corresponding file name, preserve cost, results, and debug info
   return build_result(input,
-    { results = results, user_cost = user_cost, dbg = dbg, diffs = diffs },
+    { results = results, user_cost = user_cost, dbg = dbg, diffs = diffs, unbeaten = unbeaten },
     analyze_ms)
 end
 

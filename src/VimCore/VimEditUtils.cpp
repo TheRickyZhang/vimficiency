@@ -596,21 +596,31 @@ void joinLineRange(Lines& lines, CursorPos& pos, int count, bool insertSpace) {
   pos.setCol(std::min(col, lines[pos.line].lastCol()));
 }
 
-void openLineBelow(Lines& lines, CursorPos& pos) {
+namespace {
+
+int openLineAt(Lines& lines, CursorPos& pos, int newLine) {
   assert(!lines.empty());
   assert(pos.line >= 0 && pos.line < static_cast<int>(lines.size()));
 
-  lines.insert(lines.begin() + pos.line + 1, "");
-  pos = CursorPos(pos.line + 1, 0);
+  std::string indent;
+  if constexpr (VimOptions::autoindent()) {
+    indent = std::string(leadingIndent(lines[pos.line]));
+  }
+  const int indentLen = static_cast<int>(indent.size());
+  lines.insert(lines.begin() + newLine, std::move(indent));
+  pos.line = newLine;
+  pos.setCol(indentLen);
+  return indentLen;
 }
 
-void openLineAbove(Lines& lines, CursorPos& pos) {
-  assert(!lines.empty());
-  assert(pos.line >= 0 && pos.line < static_cast<int>(lines.size()));
+}  // namespace
 
-  lines.insert(lines.begin() + pos.line, "");
-  pos.setCol(0);
-  // pos.line stays the same (now points to the new empty line)
+int openLineBelow(Lines& lines, CursorPos& pos) {
+  return openLineAt(lines, pos, pos.line + 1);
+}
+
+int openLineAbove(Lines& lines, CursorPos& pos) {
+  return openLineAt(lines, pos, pos.line);
 }
 
 } // namespace VimCore

@@ -116,6 +116,15 @@ TEST(JournalEvaluateTest, ALineHoldingANewlineIsNotSearched) {
   EXPECT_EQ(sample.outcome, Outcome::Unsupported);
 }
 
+TEST(JournalEvaluateTest, APasteNothingModeledComesCloseToIsUnbeaten) {
+  Lines goal = TEXT;
+  goal.insert(goal.begin() + 2, "a long line of text the optimizer can only type out in full");
+  const Sample sample = evaluate(window(state(TEXT, 1, 0), state(goal, 2, 0), "p"));
+
+  EXPECT_EQ(sample.outcome, Outcome::Unbeaten);
+  EXPECT_GT(sample.userCost, 0);
+}
+
 TEST(JournalEvaluateTest, ACursorPastTheEndOfItsLineIsClamped) {
   const Sample sample = evaluate(window(state(TEXT, 0, 99), state(TEXT, 0, 15), "$"));
 

@@ -26,6 +26,10 @@
 - By abstracting away direct edit commands into planned edit transitions over diffs, our search alternates between call types:
   - Intra-transform: refer to TransformResult to apply the current planned edit
   - Inter-transform: move from one transform end to the next transform start (`NavOptimizer::optimize` with a `CharInterval` goal)
+- The motion goal is the edit's solved start positions, not the whole diff region, split at the cursor. NavOptimizer never expands a start that already lies in its goal, so a cursor inside the region but past the solved starts would otherwise dead-end. Solved starts have so far always formed one run from the region's beginning (112/112 journal regions, uniform keyboard), but nothing guarantees it.
+  - Trip wire: a gap between solved starts. Landings in the gap dead-end and use up nav result slots, so a real start past the gap can be missed.
+  - If that shows up, give NavOptimizer a goal set rather than one interval. A hull interval plus excluded positions keeps its heuristic and directional pruning unchanged; a union of ranges would rewrite both.
+  - `JournalNoResult.StartDistribution` in `tests/Debug/JournalNoResult.cpp` measures the run shape over a journal directory.
 - Nav can land with `col < targetCol`, while Transform results are computed with `targetCol == col`. Each `Result` carries an `EntryCurswant` class, set when its first command is explored:
   - `Ignored`: the first command does not read curswant (charwise edits, joins, changes).
   - `Followed`: a lone `dd`-style delete; it lands at `min(entry curswant, lastCol)` and resets curswant there.
@@ -140,20 +144,24 @@ J plan efforts are included in `computeSuffixEditCosts()` alongside regular tran
 - We perform a similar movement search, but augmented with the option of using o/O if we need a new line, and I/A in place of a final $/^ movement, and i/a otherwise.
 - Each strategy defines a range of valid cursor positions from which its mode-entry command produces the correct edit:
   - `o`: any column on the line above (new-line insertions, whether anchored as a trailing `\n` at col 0 or a leading `\n` at end-of-line)
+  - `O`: any column on the line below the new line (same anchorings; the only line-open entry above line 0)
+  - `i`: exact insertion column only
+  - `a`: the column before the insert point (col 0 on an empty line)
   - `I`: any column on the target line, when the insert point is where `I` lands (first non-blank, or past the indent on an all-whitespace line)
   - `A`: any column on the target line (appends at end-of-line)
-  - `a`: the column before the insert point (col 0 on an empty line)
-  - `i`: exact insertion column only
+- Strategies are enumerated in that order, so on an exact cost tie the lowercase entry wins (`Analyze` sorts stably).
+- Line-open entries only apply when the planner anchors the insert at a line boundary. A new line sharing the next line's indent may be anchored mid-line instead (`"b\n    "` at col 4 rather than `"    b\n"` at col 0), which rules out `o`/`O`.
 - The mode-entry command determines the actual insert position independent of where in the range we land, so the final cursor position after typing + Esc is always `transformResult.goalPos`.
 - When navigating to the valid range, the `NavBoundary` must use the full subset extent, not the target range (see `dev/optimizer/buffer-slicing.md` § Boundary vs Target Range).
 
 ### Autoindent in Pure Insertions
 
-For `o`/`A`/`I`/`i` with multi-line insertions, `buildTypedCommands` (from `src/Optimizer/BuildTypedCommands.cppm`) applies autoindent strip/backspace/clear logic (see `dev/optimizer/transform-optimizer.md` § Autoindent Handling):
+For `o`/`O`/`A`/`I`/`i` with multi-line insertions, `buildTypedCommands` (from `src/Optimizer/BuildTypedCommands.cppm`) applies autoindent strip/backspace/clear logic (see `dev/optimizer/transform-optimizer.md` § Autoindent Handling):
 
 | Command | Source indent | Line prefix |
 |---------|--------------|-------------|
-| `o` | `leadingWhitespace(currentLines[targetLine])` | (empty) |
+| `o` | `leadingWhitespace(currentLines[targetLine])` (the line above) | (empty) |
+| `O` | `leadingWhitespace(currentLines[targetLine])` (the line below) | (empty) |
 | `A` | (empty) | current line |
 | `I` | (empty) | text before first non-blank |
 | `i` | (empty) | text before cursor |

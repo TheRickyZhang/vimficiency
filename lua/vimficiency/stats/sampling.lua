@@ -24,7 +24,7 @@ local journal = require("vimficiency.capture.journal")
 ---@field last_atom integer
 ---@field atom_count integer
 ---@field wall_epoch integer
----@field outcome "scored"|"too_large"|"no_result"|"crashed"|"unsupported"
+---@field outcome "scored"|"too_large"|"no_result"|"crashed"|"unsupported"|"unbeaten"
 ---@field user_cost number
 ---@field best_cost number
 ---@field nav_only boolean
@@ -44,6 +44,7 @@ local journal = require("vimficiency.capture.journal")
 ---@field edit VF.StatsSampling.Totals
 ---@field by_day table<integer, VF.StatsSampling.Totals>  # keyed by floor(epoch / 86400)
 ---@field unscored table<string, integer>                 # outcome -> windows
+---@field unbeaten integer                                # scored windows no modeled sequence came close to
 ---@field deadline_hit integer
 
 -- Each crash costs one window: the next run records it and steps past it.
@@ -184,7 +185,9 @@ local function add(totals, sample)
   totals.user_cost = totals.user_cost + sample.user_cost
   -- A search that found nothing cheaper than the user's keys says they were
   -- optimal, not better than optimal.
-  totals.best_cost = totals.best_cost + math.min(sample.best_cost, sample.user_cost)
+  local best = sample.outcome == "unbeaten" and sample.user_cost
+    or math.min(sample.best_cost, sample.user_cost)
+  totals.best_cost = totals.best_cost + best
 end
 
 --- Totals per window size. Only scored windows carry cost; the rest are
@@ -202,14 +205,16 @@ function M.aggregate(samples)
         edit = new_totals(),
         by_day = {},
         unscored = {},
+        unbeaten = 0,
         deadline_hit = 0,
       }
       by_size[sample.window_size] = summary
     end
 
-    if sample.outcome ~= "scored" then
+    if sample.outcome ~= "scored" and sample.outcome ~= "unbeaten" then
       summary.unscored[sample.outcome] = (summary.unscored[sample.outcome] or 0) + 1
     elseif sample.user_cost > 0 then
+      if sample.outcome == "unbeaten" then summary.unbeaten = summary.unbeaten + 1 end
       local day = math.floor(sample.wall_epoch / 86400)
       summary.by_day[day] = summary.by_day[day] or new_totals()
       add(summary.all, sample)

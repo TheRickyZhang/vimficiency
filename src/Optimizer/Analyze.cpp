@@ -10,6 +10,7 @@ import vf.Optimizer.NavOptimizer.NavOptimizer;
 import vf.Optimizer.OptimizerParamOverrides;
 import vf.Optimizer.Result;
 import vf.Optimizer.SearchControl;
+import vf.Optimizer.SearchStats;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
 import vf.Types.NavContext;
@@ -146,12 +147,16 @@ AnalyzeOutput analyze(const SearchInputs& in, int resultsCalculated,
         in.userSeq, in.boundary, in.navContext, control);
     out.results = composed.getResults();
     out.diffs = composed.getDiffs();
+    const CompositionSearchStats& stats = composed.getStats();
+    out.unbeaten = out.results.empty() &&
+                   stats.stopReason() == SearchStopReason::FullyExplored &&
+                   stats.statesOverEffortCap() > 0;
   }
 
   out.userCost = getEffort(in.userTyped, config);
 
   erase_if(out.results, [](const Result& r) { return r.getSequence().empty(); });
-  sort(out.results.begin(), out.results.end(), [](const Result& a, const Result& b) {
+  stable_sort(out.results.begin(), out.results.end(), [](const Result& a, const Result& b) {
     return a.getCost() < b.getCost();
   });
   return out;

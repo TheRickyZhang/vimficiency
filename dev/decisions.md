@@ -170,6 +170,10 @@ to deeper docs when needed.
 - Wrapping global functions is deliberate: flash, mini.ai, mini.surround and which-key all look up `vim.fn.getcharstr` at call time.
 - Sequences shown to the user are still `keys`. The optimizer suggesting a user's own mappings stays open (`dev/architecture/todo.md` item 7).
 
+## An empty search can mean the user won (2026-11-21)
+- With no whole-buffer fallback, a search can end empty. When the queue drained and the only drops were states over `exploreFactor` × user effort, no modeled sequence comes close to the user's keys (typically `p`, `u`, `:s`). That is `unbeaten`: scored 100 and counted apart, in sessions and journal samples alike.
+- An empty search with no effort-cap drops is a model gap (such as the pure-newline deletion) and counts as failed. A gap masked by cap drops would be misread as unbeaten; telling them apart needs an uncapped rerun, which is not worth its cost.
+
 ## FFI boundary: protobuf both ways (2026-11-15)
 - Every request and result is a message from `src/LuaExports/proto/`; `Api.def` keeps one struct (`VFByteSlice`) and plain ints for ids. See `dev/lua/ffi-payloads.md`.
 - This replaced typed C structs in and a hand-written msgpack writer out. Result shapes existed twice (writer calls and LuaLS classes) with nothing tying them together, and struct inputs needed a keep-alive rule for every borrowed pointer.

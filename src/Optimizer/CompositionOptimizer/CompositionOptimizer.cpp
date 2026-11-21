@@ -164,6 +164,10 @@ optimizeImpl(
   };
   auto enqueueState = [&](CompositionState&& newState,
                           typename Trace::State traceState) {
+    if (newState.getEffort() > ctx.maxEffort) {
+      ctx.statesOverEffortCap++;
+      return;
+    }
     if (Search::admitRangeState(newState, ctx.costMap, ctx.maxEffort, isTerminal)) {
       pq.push(Entry{std::move(newState), traceState});
     }
@@ -408,15 +412,27 @@ optimizeImpl(
             + ")-[" + to_string(nextEdit.endPos.line) + "," +
             to_string(nextEdit.endPos.col) + ")");
 
-      // Toward the next edit's diff range.
-      exploreMotionsToInterval(
-          current, pos, nextEdit.beginPos.line, nextEdit.editEndLine() - 1,
-          currentLines, nextEdit.origCharCount(), false,
-          [&](const Lines& subset, int beginLine) -> CharInterval {
-            CursorPos localBegin(nextEdit.beginPos.line - beginLine, nextEdit.beginPos.col);
-            CursorPos localEnd(nextEdit.endPos.line - beginLine, nextEdit.endPos.col);
-            return CharInterval(CharRange(localBegin, localEnd), subset);
-          });
+      // Toward the starts the edit was solved from, split at the cursor: they
+      // can have gaps, and the nav search never leaves a start inside its goal.
+      const vector<CursorPos>& starts = transformResult.startPositions();
+      auto exploreToStarts = [&](auto first, auto last) {
+        if (first == last) return;
+        const CursorPos& firstStart = *first;
+        const CursorPos& lastStart = *(last - 1);
+        exploreMotionsToInterval(
+            current, pos, firstStart.line, lastStart.line,
+            currentLines, static_cast<int>(last - first), false,
+            [&](const Lines&, int beginLine) -> CharInterval {
+              return CharInterval(CursorPos(firstStart.line - beginLine, firstStart.col),
+                                  CursorPos(lastStart.line - beginLine, lastStart.col));
+            });
+      };
+      auto before = partition_point(starts.begin(), starts.end(),
+                                    [&](const CursorPos& s) { return s < pos; });
+      auto after = partition_point(before, starts.end(),
+                                   [&](const CursorPos& s) { return s <= pos; });
+      exploreToStarts(starts.begin(), before);
+      exploreToStarts(after, starts.end());
     }
   }
 

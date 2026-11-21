@@ -127,6 +127,9 @@ message Sample {
     crashed = 3;
     // A line holds a newline or NUL byte.
     unsupported = 4;
+    // The search ran to completion without finding any modeled sequence
+    // within exploreFactor × user_cost; scores as 100%.
+    unbeaten = 5;
   }
   int32 window_size = 1;
   int32 first_atom = 2;

@@ -235,7 +235,9 @@ journal's last tick is never cut, which keeps the windows of a growing journal a
 prefix of its later windows and lets a rerun resume by count.
 
 The normalized effort shown is `Σ min(best, user) / Σ user` over scored windows.
-Windows that end where they started score a best of 0; `too_large`,
+Windows that end where they started score a best of 0. `unbeaten` windows
+(`AnalyzeOutput::unbeaten`: the search drained with only effort-cap drops, as
+after `p`, `u` or `:s`) score `best = user` and are counted apart. `too_large`,
 `no_result`, `unsupported` and `crashed` windows are counted but carry no cost.
 
 ## Testing

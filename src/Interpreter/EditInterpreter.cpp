@@ -548,15 +548,13 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
         VimCore::linewiseChangeWithAutoindent(lines, pos, mode, pos.line, pos.line, lines[pos.line]);
         return;
 
-      case hash("o"):
-        VimCore::openLineBelow(lines, pos);
+      case hash("o"): case hash("O"): {
+        const int autoindentLen = e == "o" ? VimCore::openLineBelow(lines, pos)
+                                           : VimCore::openLineAbove(lines, pos);
+        if (pendingAutoindentLen != nullptr) *pendingAutoindentLen = autoindentLen;
         mode = Mode::Insert;
         return;
-
-      case hash("O"):
-        VimCore::openLineAbove(lines, pos);
-        mode = Mode::Insert;
-        return;
+      }
 
       case hash("s"):
         if (pos.col + count > m) {
