@@ -174,6 +174,12 @@ to deeper docs when needed.
 - With no whole-buffer fallback, a search can end empty. When the queue drained and the only drops were states over `exploreFactor` × user effort, no modeled sequence comes close to the user's keys (typically `p`, `u`, `:s`). That is `unbeaten`: scored 100 and counted apart, in sessions and journal samples alike.
 - An empty search with no effort-cap drops is a model gap (such as the pure-newline deletion) and counts as failed. A gap masked by cap drops would be misread as unbeaten; telling them apart needs an uncapped rerun, which is not worth its cost.
 
+## Scores carry a stamp; only equal stamps compare (2026-11-21)
+- A stamp is the plugin version plus every scoring setting. It replaced `SAMPLER_VERSION`: a separate scoring version would answer the same question as the plugin version and depend on someone remembering to bump it. File-format versions stay separate, since old files must stay readable whatever the plugin version.
+- Journal samples are rescored under a new stamp; sessions cannot be (no buffer text), so stats show one stamp's sessions at a time instead of hiding older ones.
+- Session records carry a hashed stamp id, with the full stamp written once per log. A stamp record per change was rejected: with several Neovims appending, the last stamp written may be another process's.
+- Sessions and journal runs share one score, `Σ w·min(best/user, 1) / Σ w` with `w` the user's effort by default, reduced in C++ (`src/Stats/`). It replaced the sessions' geometric mean, which let many tiny sessions outweigh the long ones and disagreed with the journal's ratio of sums.
+
 ## FFI boundary: protobuf both ways (2026-11-15)
 - Every request and result is a message from `src/LuaExports/proto/`; `Api.def` keeps one struct (`VFByteSlice`) and plain ints for ids. See `dev/lua/ffi-payloads.md`.
 - This replaced typed C structs in and a hand-written msgpack writer out. Result shapes existed twice (writer calls and LuaLS classes) with nothing tying them together, and struct inputs needed a keep-alive rule for every borrowed pointer.

@@ -81,6 +81,7 @@ void WindowCutter::closeGroup(vector<Window>& out) {
         }
         window.lastAtom = event.atomIndex;
         window.atomCount++;
+        window.commands.push_back({event.keys, event.atomKind});
         window.keys += event.keys;
         window.typed += event.typed;
         window.lossy |= event.lossy;

@@ -267,11 +267,11 @@ FetchContent_MakeAvailable(fast_float)
 file(GLOB_RECURSE VIMFY_CORE_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
 )
-list(FILTER VIMFY_CORE_SOURCES EXCLUDE REGEX [[/src/(LuaExports/|Journal/|Wasm/|lua_exports\.cpp$|main\.cpp$)]])
+list(FILTER VIMFY_CORE_SOURCES EXCLUDE REGEX [[/src/(LuaExports/|Journal/|Stats/|Wasm/|lua_exports\.cpp$|main\.cpp$)]])
 file(GLOB_RECURSE VIMFY_CORE_MODULES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm
 )
-list(FILTER VIMFY_CORE_MODULES EXCLUDE REGEX [[/src/(LuaExports/|Journal/|Wasm/)]])
+list(FILTER VIMFY_CORE_MODULES EXCLUDE REGEX [[/src/(LuaExports/|Journal/|Stats/|Wasm/)]])
 
 add_library(vimfy_core STATIC ${VIMFY_CORE_SOURCES})
 target_sources(vimfy_core PUBLIC
@@ -412,6 +412,21 @@ target_sources(vimfy_lua_common PUBLIC
 vimfy_enable_modules(vimfy_lua_common)
 target_link_libraries(vimfy_lua_common PUBLIC vimfy_core vimfy_proto)
 
+# `:Vimfy stats` (src/Stats/): the session log and the reduction of it and the
+# journal samples. Outside vimfy_core because it reads protobuf files.
+file(GLOB VIMFY_STATS_MODULES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Stats/*.cppm
+)
+file(GLOB VIMFY_STATS_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Stats/*.cpp
+)
+add_library(vimfy_stats_lib STATIC ${VIMFY_STATS_SOURCES})
+target_sources(vimfy_stats_lib PUBLIC
+    FILE_SET CXX_MODULES BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src FILES ${VIMFY_STATS_MODULES}
+)
+vimfy_enable_modules(vimfy_stats_lib)
+target_link_libraries(vimfy_stats_lib PUBLIC vimfy_lua_common)
+
 # SHARED library for Neovim/Lua direct usage
 file(GLOB VIMFY_LUA_EXPORT_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LuaExports/*Exports.cpp
@@ -422,7 +437,7 @@ add_library(vimficiency SHARED
     ${VIMFY_LUA_EXPORT_SOURCES}
 )
 vimfy_enable_modules(vimficiency)
-target_link_libraries(vimficiency PRIVATE vimfy_lua_common)
+target_link_libraries(vimficiency PRIVATE vimfy_lua_common vimfy_stats_lib)
 
 # Lua has no protobuf decoder, so starwing/lua-protobuf's C module ships inside
 # the shared library and ffi/core.lua opens it with package.loadlib. Only the

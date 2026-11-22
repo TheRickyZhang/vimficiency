@@ -60,6 +60,7 @@ local atom_stream = require("vimficiency.capture.atom_stream")
 local buffer_history = require("vimficiency.capture.buffer_history")
 local util = require("vimficiency.util")
 local config = require("vimficiency.config")
+local stats_log = require("vimficiency.stats.log")
 
 --------------------------------------------------------------------------------
 -- Types
@@ -476,9 +477,7 @@ function M.convert_to_finished(id, result, finish_alias, kind)
   finished_sessions[id] = finished
   last_finished_id = id
 
-  -- Deferred require: log → … → store would cycle at load time.
-  local stats_log = require("vimficiency.stats.log")
-  stats_log.append(stats_log.build_record(finished.kind, result))
+  stats_log.append(finished.kind, result)
 
   return true
 end

@@ -39,6 +39,10 @@ VFByteSlice vf_build_sequence(const char* request, size_t request_len);         
 VFByteSlice vf_typed_keys(const char* request, size_t request_len);             // TypedKeysRequest -> vf.Text
 VFByteSlice vf_manual_evict_reason(const char* request, size_t request_len);    // ManualEvictRequest -> ManualEvict
 
+// vf.stats (StatsExports.cpp)
+VFByteSlice vf_append_session(const char* request, size_t request_len);  // AppendSessionRequest -> vf.Empty
+VFByteSlice vf_stats_summary(const char* request, size_t request_len);   // SummaryRequest -> Summary
+
 // vf.display (DisplayExports.cpp)
 VFByteSlice vf_sequence_display_lines(const char* request, size_t request_len);         // SequenceRequest -> vf.Lines
 VFByteSlice vf_sequence_display_inline(const char* request, size_t request_len);        // SequenceRequest -> vf.Text

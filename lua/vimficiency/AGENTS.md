@@ -14,8 +14,8 @@ Top-level modules are the plugin entry and cross-cutting infrastructure:
 | `simulate.lua` | Side-by-side animation of motion sequences. Required as `vimficiency.simulate`. |
 | `explore.lua` | Interactive result exploration view. Required as `vimficiency.explore`. |
 | `play.lua` | Play-screen settings and modal wiring. Required as `vimficiency.play`. |
-| `stats.lua` | Stats aggregation and display. Required as `vimficiency.stats`. |
-| `stats/sampling.lua` | Runs `vimfy_journal` over the journal and reduces its samples for the stats Journal section. See `dev/lua/atom-stream.md` § Sampling. |
+| `stats.lua` | Draws the `:Vimfy stats` float from the summary `src/Stats/` reduces (`vf_stats_summary`). Required as `vimficiency.stats`. |
+| `stats/sampling.lua` | Runs `vimfy_journal` over the journal in the background. See `dev/lua/atom-stream.md` § Sampling. |
 | `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, run) per `:Vimfy` verb. Depends on the domain modules; only `init.lua` depends on it. |
 | `dev_reload.lua` | `:Vimfy reload`: cmake rebuild, then hot-reload the `.so` and every Lua module. |
 | `config.lua` | Shared configuration constants (Lua-side only). |

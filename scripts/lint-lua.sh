@@ -46,7 +46,6 @@ declare -A PCALL_CEILING=(
   [lua/vimficiency/settings_profile.lua]=1
   [lua/vimficiency/simulate.lua]=1
   [lua/vimficiency/simulate/windows.lua]=1
-  [lua/vimficiency/stats/log.lua]=1
   [lua/vimficiency/stats.lua]=1
   [lua/vimficiency/util.lua]=3
 )

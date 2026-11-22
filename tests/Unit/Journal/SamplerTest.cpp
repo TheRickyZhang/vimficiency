@@ -2,9 +2,12 @@
 
 #include "Unit/Journal/JournalBuilder.h"
 
+#include "BuildConfig.h"
+
 import std.compat;
-import vf.Journal.Replay;
 import vf.Journal.Sampler;
+import vf.LuaExports.RecordFile;
+import vf.LuaExports.Samples;
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -36,9 +39,9 @@ protected:
     fs::remove_all(dir);
     fs::create_directories(dir);
     params.add_window_sizes(2);
-    params.set_slice_padding(2);
-    params.set_max_search_lines(50);
-    params.set_results_calculated(3);
+    params.mutable_stamp()->set_slice_padding(2);
+    params.mutable_stamp()->set_max_search_lines(50);
+    params.mutable_stamp()->set_results_calculated(3);
     params.set_idle_gap_ms(30000);
   }
 
@@ -56,7 +59,7 @@ protected:
     string_view rest = bytes;
     string_view entry;
     vector<vf::journal::SampleRecord> out;
-    while (Journal::nextRecord(rest, entry)) {
+    while (nextRecord(rest, entry)) {
       EXPECT_TRUE(out.emplace_back().ParseFromArray(entry.data(), entry.size()));
     }
     EXPECT_TRUE(rest.empty());
@@ -89,7 +92,8 @@ TEST_F(JournalSamplerTest, WritesParamsThenSamplesThenTheJournalSize) {
   const vector<vf::journal::SampleRecord> written = records();
   ASSERT_EQ(written.size(), 4u);
   ASSERT_TRUE(written[0].has_params());
-  EXPECT_EQ(written[0].params().sampler_version(), Journal::SAMPLER_VERSION);
+  EXPECT_EQ(written[0].params().stamp().plugin_version(), VIMF_VERSION);
+  EXPECT_EQ(written[0].params().samples_format(), SAMPLES_FORMAT);
   EXPECT_EQ(written[0].params().window_sizes(0), 2);
 
   const vf::journal::Sample& first = written[1].sample();
@@ -102,6 +106,10 @@ TEST_F(JournalSamplerTest, WritesParamsThenSamplesThenTheJournalSize) {
   EXPECT_TRUE(first.nav_only());
   EXPECT_GT(first.user_cost(), 0);
   EXPECT_GT(first.best_cost(), 0);
+  EXPECT_FALSE(first.best_seq().empty());
+  ASSERT_EQ(first.commands_size(), 2);
+  EXPECT_EQ(first.commands(1).keys(), "l");
+  EXPECT_EQ(first.commands(1).kind(), "motion");
 
   EXPECT_EQ(written[2].sample().first_atom(), 2);
   EXPECT_EQ(written[3].journal_size(), ssize(journal));

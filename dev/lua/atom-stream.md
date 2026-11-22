@@ -203,15 +203,18 @@ written in one drain of the event queue share a `tick`: deferred delivery means
 every atom of a tick carries the tick's final cursor and the first carries the
 whole delta. Only the last state of a tick is real, so a reader never splits one.
 
-The raw event fields that `VF.Atom` drops (`type`, `lhs`, `count`, `changed`,
-`moved`) are not in the journal. Files are never rotated or pruned.
+The raw event fields that `VF.Atom` drops (`lhs`, `count`, `changed`, `moved`)
+are not in the journal. Files are never rotated or pruned.
 
 ### Sampling
 
-`:Vimfy stats` scores the journal through `vimfy_journal` (`src/Journal/`), run
-by `stats/sampling.lua`. It is a separate process because a failed `CHECK` in a
-search aborts; there that costs one window, recorded as `crashed` and skipped
-on the next run.
+The journal is scored by `vimfy_journal` (`src/Journal/`), which
+`stats/sampling.lua` runs in the background at the lowest priority: once
+`STARTUP_DELAY_MS` after setup, then on `CursorHold` when the `.vfj` files have
+grown, at most every `RUN_INTERVAL_MS` (`journal.sampling.auto` turns it off).
+It is a separate process, not a thread, because a failed `CHECK` in a search
+aborts; there that costs one window, recorded as `crashed` and skipped on the
+next run. Stats never start or wait for a run.
 
 `Replay` rebuilds the text at every atom and `WindowCutter` cuts back-to-back
 windows of `journal.sampling.window_sizes` recorded atoms, one series per size.
@@ -230,13 +233,21 @@ window's pressed keys against the best sequence found. Nothing is replayed,
 since the journal holds the real state at both ends.
 
 Results go to `<journal>.samples`, a `vf.journal.SampleFile` appended the same
-way. A file whose stored `SampleParams` differ from the request is recomputed,
-so history is always scored under the current effort model and config. The
-journal's last tick is never cut, which keeps the windows of a growing journal a
-prefix of its later windows and lets a rerun resume by count.
+way. Each sample keeps the window's commands (`{keys, kind}`) and the best
+sequence found. The journal's last tick is never cut, which keeps the windows of
+a growing journal a prefix of its later windows and lets a rerun resume by count.
 
-The normalized effort shown is `Σ min(best, user) / Σ user` over scored windows.
-Windows that end where they started score a best of 0. `unbeaten` windows
+A samples file is current when its stored `SampleParams` equal the request's,
+completed by `stampSampleParams` (`src/LuaExports/Samples.cppm`): the stamp of
+`dev/lua/session-storage.md` § The session log, plus `SAMPLES_FORMAT`. Bump
+that when a sample gains content, so older files are redone. The sampler
+recomputes a file that is not current. `:Vimfy stats` reads samples through
+`vf_stats_summary` (`src/Stats/`), which skips such files until then, so two
+scorings never mix. It also reports the journal bytes the current samples cover,
+shown as progress.
+
+Windows are scored like sessions (`dev/lua/session-storage.md` § The session
+log). Windows that end where they started score a best of 0. `unbeaten` windows
 (`AnalyzeOutput::unbeaten`: the search drained with only effort-cap drops, as
 after `p`, `u` or `:s`) score `best = user` and are counted apart. `too_large`,
 `no_result`, `unsupported` and `crashed` windows are counted but carry no cost.

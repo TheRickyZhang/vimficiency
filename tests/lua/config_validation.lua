@@ -279,6 +279,15 @@ test("validate journal.sampling: sizes are positive integers, deadline may be ze
   assert_eq(ok.sampling.idle_gap_ms, 30000)
 end)
 
+test("validate stats: weight is effort by default, or uniform", function()
+  assert_eq(config._defaults.stats.weight, "effort")
+  assert_eq(validate.normalize_stats({ weight = "uniform" }).weight, "uniform")
+  assert_error(function() validate.normalize_stats({ weight = "mean" }) end,
+    "stats.weight", "unknown weighting must error")
+  assert_error(function() validate.normalize_stats({ weight = "effort", chart = true }) end,
+    "unknown key", "unknown sub-key must error")
+end)
+
 test("validate lossy_mappings: three modes, anything else errors", function()
   for _, mode in ipairs({ "drop", "warn", "allow" }) do
     assert_eq(validate.normalize_lossy_mappings(mode), mode)

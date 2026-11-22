@@ -54,16 +54,12 @@ struct Event {
   // Atom only.
   int atomIndex = 0;  // among the journal's atom records
   std::string keys;
+  // CmdAtom's `type`; empty in journals older than it.
+  std::string atomKind;
   std::string typed;
   Decision decision = Decision::Record;
   bool lossy = false;
 };
-
-// The payload of the next entry of a file of appended single-record messages
-// (`vf.journal.File`, `vf.journal.SampleFile`), advancing `in` past it. False
-// at the end, which includes a truncated entry: a file still being written
-// ends mid-record.
-bool nextRecord(std::string_view& in, std::string_view& record);
 
 // Rebuilds buffer text from a journal's snapshots and deltas and yields its
 // other records in order. `bytes` must outlive the replay.

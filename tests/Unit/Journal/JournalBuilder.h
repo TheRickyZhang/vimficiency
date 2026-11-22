@@ -13,6 +13,7 @@ struct JournalAtomOptions {
   bool lossy = false;
   // Empty: the keys were typed as they ran.
   std::string typed;
+  std::string kind = "motion";
 };
 
 // Journal bytes as capture/journal.lua writes them: one single-record
@@ -69,6 +70,7 @@ public:
     atom->set_buf(options.buf);
     atom->set_win(options.win);
     atom->set_keys(keys);
+    atom->set_kind(options.kind);
     atom->set_typed(options.typed.empty() ? keys : options.typed);
     atom->set_decision(options.decision);
     atom->set_lossy(options.lossy);

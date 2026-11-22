@@ -11,6 +11,8 @@ import vf.Journal.Replay;
 import vf.Journal.Windows;
 import vf.LuaExports.Common;
 import vf.LuaExports.Logic;
+import vf.LuaExports.RecordFile;
+import vf.LuaExports.Samples;
 import vf.Utils.Debug;
 
 using namespace std;
@@ -91,7 +93,6 @@ vf::journal::Sample::Outcome outcomeOf(Outcome outcome) {
 
 int sampleJournal(const fs::path& journal, const vf::journal::SampleParams& params,
                   const EvaluateParams& evaluateParams) {
-  const string bytes = readFile(journal);
   fs::path samplesPath = journal;
   samplesPath.replace_extension(".samples");
   fs::path progressPath = journal;
@@ -99,15 +100,15 @@ int sampleJournal(const fs::path& journal, const vf::journal::SampleParams& para
   g_progress_path = progressPath.string();
 
   Existing existing = readSamples(samplesPath, params.SerializeAsString());
+  if (existing.current && existing.journalSize == int64_t(fs::file_size(journal))) return 0;
   if (!existing.current) {
     fs::remove(samplesPath);
     fs::remove(progressPath);
     existing = {};
-  } else if (existing.journalSize == ssize(bytes)) {
-    return 0;
   } else {
     fs::resize_file(samplesPath, existing.wholeBytes);
   }
+  const string bytes = readFile(journal);
 
   ofstream out(samplesPath, ios::binary | ios::app);
   vf::journal::SampleRecord record;
@@ -151,6 +152,11 @@ int sampleJournal(const fs::path& journal, const vf::journal::SampleParams& para
       sample.set_atom_count(window.atomCount);
       sample.set_wall_epoch(window.wallEpoch);
       sample.set_lossy(window.lossy);
+      for (const Command& command : window.commands) {
+        vf::stats::Command& out = *sample.add_commands();
+        out.set_keys(command.keys);
+        out.set_kind(command.kind);
+      }
       sample.set_outcome(vf::journal::Sample::crashed);
       g_evaluating = 1;
       ofstream(progressPath, ios::binary | ios::trunc) << sample.SerializeAsString();
@@ -164,6 +170,7 @@ int sampleJournal(const fs::path& journal, const vf::journal::SampleParams& para
       sample.set_outcome(outcomeOf(scored.outcome));
       sample.set_user_cost(scored.userCost);
       sample.set_best_cost(scored.bestCost);
+      sample.set_best_seq(scored.bestSeq);
       sample.set_nav_only(scored.navOnly);
       sample.set_net_zero(scored.netZero);
       sample.set_deadline_hit(scored.deadlineHit);
@@ -196,21 +203,22 @@ SampleRun sampleJournals(string_view requestBytes) {
     return {.error = "malformed vf.journal.SampleRequest"};
   }
   vf::journal::SampleParams params = request.params();
-  params.set_sampler_version(SAMPLER_VERSION);
+  stampSampleParams(params);
+  const vf::stats::Stamp& stamp = params.stamp();
 
   if (params.window_sizes().empty() ||
       ranges::any_of(params.window_sizes(), [](int size) { return size < 1; })) {
     return {.error = "window_sizes must be positive"};
   }
-  const auto applied = applyConfig(params.config().SerializeAsString());
+  const auto applied = applyConfig(stamp.config().SerializeAsString());
   if (!applied) return {.error = applied.error().message};
-  auto overrides = parseOverrides(params.optimizer_overrides());
+  auto overrides = parseOverrides(stamp.optimizer_overrides());
   if (!overrides) return {.error = overrides.error().message};
 
   const EvaluateParams evaluateParams{
-      .slicePadding = params.slice_padding(),
-      .maxSearchLines = params.max_search_lines(),
-      .resultsCalculated = params.results_calculated(),
+      .slicePadding = stamp.slice_padding(),
+      .maxSearchLines = stamp.max_search_lines(),
+      .resultsCalculated = stamp.results_calculated(),
       .deadlineMs = params.deadline_ms(),
       .overrides = std::move(*overrides),
   };

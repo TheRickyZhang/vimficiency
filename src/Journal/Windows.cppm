@@ -19,6 +19,11 @@ struct WindowState {
   int64_t ms = 0;
 };
 
+struct Command {
+  std::string keys;
+  std::string kind;
+};
+
 // Consecutive recorded atoms of one window and the states on either side.
 struct Window {
   // The atom count it was cut for. `atomCount` exceeds it when the atoms that
@@ -30,6 +35,8 @@ struct Window {
   int64_t wallEpoch = 0;
   WindowState start;
   WindowState end;
+  // `keys` split back into its atoms.
+  std::vector<Command> commands;
   std::string keys;
   std::string typed;
   bool lossy = false;

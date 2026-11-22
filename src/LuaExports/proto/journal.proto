@@ -4,7 +4,7 @@ syntax = "proto3";
 
 package vf.journal;
 
-import "config.proto";
+import "stats.proto";
 
 option optimize_for = LITE_RUNTIME;
 
@@ -97,19 +97,16 @@ message File {
 // Everything a sample's value depends on. A samples file whose stored params
 // differ from the requested ones is recomputed.
 message SampleParams {
+  reserved 2, 3, 4, 7, 8, 9;
   // Window sizes, in recorded atoms.
   repeated int32 window_sizes = 1;
-  int32 slice_padding = 2;
-  int32 max_search_lines = 3;
-  int32 results_calculated = 4;
   // Per-window search budget; 0 runs to the natural caps.
   int32 deadline_ms = 5;
   // A pause this long between commands ends a run.
   int32 idle_gap_ms = 6;
-  bytes optimizer_overrides = 7;
-  vf.config.Config config = 8;
-  // Set by vimfy_journal: bumped whenever it would cut or score differently.
-  int32 sampler_version = 9;
+  vf.stats.Stamp stamp = 10;
+  // Filled by the C++ that writes or reads samples (`SAMPLES_FORMAT`).
+  int32 samples_format = 11;
 }
 
 message SampleRequest {
@@ -149,6 +146,9 @@ message Sample {
   bool deadline_hit = 11;
   bool lossy = 12;
   double analyze_ms = 13;
+  repeated vf.stats.Command commands = 14;
+  // Scored only.
+  bytes best_seq = 15;
 }
 
 message SampleRecord {

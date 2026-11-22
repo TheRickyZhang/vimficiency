@@ -30,6 +30,7 @@ struct Sample {
   Outcome outcome = Outcome::Scored;
   double userCost = 0;
   double bestCost = 0;
+  std::string bestSeq;
   // The text is the same at both ends.
   bool navOnly = false;
   // The text and the cursor are the same at both ends, so the best sequence is

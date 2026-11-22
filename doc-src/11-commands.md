@@ -131,29 +131,36 @@ Opens a read-only float summarizing your lifetime activity. Close with
 Sections:
 
 - **Lifetime** — total finished sessions, broken down by type (mark /
-  watch / recall / suggest), and total captured commands.
-- **Efficiency** — a score out of 100, defined per session as
-  `min(best_optimizer_cost / user_cost, 1) × 100` (capped at 100 so a
-  beat doesn't inflate the average). Aggregated as a geometric mean.
-  The 30-day block below the score is a sparkline of the daily
-  geometric mean (▁ = 0, █ = 100; blanks = no sessions that day).
-- **Journal** — normalized effort over everything you typed, not only
+  watch / recall / suggest), and the commands recorded in them.
+- **Efficiency** — a score out of 100: the best effort found over the
+  effort you spent, `min(best / yours, 1)`, averaged over sessions. By
+  default each session counts by the effort you spent on it, so long
+  sessions count more; set `stats.weight = "uniform"` to count each once
+  (see [configuration](09-configuration.md)). Sessions with no solution
+  are counted but not scored. The 30-day block below is the daily score
+  in local time (▁ = 0, █ = 100; blanks = no sessions that day).
+- **Journal** — the same score over everything you typed, not only
   finished sessions. Needs the [journal](09-configuration.md) turned on.
   See below.
-- **Motions** — for every motion molecule that appears at least ten
-  times combined across your sequences and the optimizer's best
-  suggestions, the ratio `your_proportion / optimizer_proportion`. Two
-  lists: what you use *more* than the optimizer (potential inefficient
-  habits) and what you use *less* (candidates to practice). Only the
-  trailing character of `f`/`F`/`t`/`T`/`r`/`R` is collapsed to `_` —
-  everything else is reported as-is, since further grouping hides
-  signal.
+- **Commands** — for every command that appears at least ten times
+  combined across your scored sessions and journal runs and the
+  optimizer's best sequences for them, the ratio
+  `your_share / optimizer_share`. Two lists: what you use *more* than
+  the optimizer (potential inefficient habits) and what you use *less*
+  (candidates to practice). The target of `f`/`F`/`t`/`T`/`r`/`R` is
+  collapsed to `_`, an insert counts its entry command and editing keys
+  such as `<BS>` (typed characters are only totalled), and `ce`/`cw`
+  share a row, as do `cE`/`cW`, with your split shown.
 - **Dev — Optimizer beats queued** — count of finished sessions where
   your sequence came in cheaper than the optimizer's best result.
-  These are flagged (`beats: true`) on their log lines. **Beats are
-  interesting-to-study, not ground truth**: many are cost-model
-  artifacts or unexplored regions, so they are *not* fed back into
-  training without manual review.
+  **Beats are interesting-to-study, not ground truth**: many are
+  cost-model artifacts or unexplored regions, so they are *not* fed back
+  into training without manual review. Optimizer time covers the last
+  30 days.
+
+Scores are only compared under one scoring: the plugin version and the
+settings a score depends on. Sessions scored otherwise are counted, and
+`<Tab>` switches to them.
 
 ### The Journal section
 
@@ -161,9 +168,8 @@ The journal is cut into back-to-back runs of 4, 8 and 16 commands, and each
 run is scored as if you had ended a session there. A run's score is the
 effort of the best sequence found over the effort of what you typed.
 
-- **Score** — total best effort over total typed effort, × 100, for runs of
-  8 commands. Longer runs weigh more, and a run that ends where it started
-  counts as all waste.
+- **Score** — the Efficiency score, for runs of 8 commands. A run that ends
+  where it started counts as all waste.
 - **30-day chart** — the same number per day.
 - **By run length** — the score at each run length. Longer runs give the
   optimizer more to merge, so they usually score lower.
@@ -176,23 +182,31 @@ A run is dropped, not scored, when the journal cannot account for everything
 in it: you switched buffer or window, an ex command or mouse click changed
 something, or you paused for more than 30 seconds.
 
-Opening the stats scores whatever the journal has gained since last time, and
-shows `Scoring the journal…` until that finishes. `:Vimfy stats refresh` does
-the same in the background, which helps after a long stretch of editing.
+The journal is scored in the background at low priority: once shortly after
+startup, then whenever Neovim is idle and the journal has grown, at most every
+five minutes. Opening the stats never waits for it. The section shows what is
+scored so far and how much of the journal that covers, and redraws when a run
+in progress finishes.
+
+After a settings change, the journal is rescored under the new settings. Until
+that finishes, runs scored under the old settings are left out, never mixed in.
+`:Vimfy stats refresh` scores right away, which is also how to score with
+`journal.sampling.auto = false`.
 
 ### Where the data lives
 
-Every finished session (mark, watch, recall, suggest) appends one JSON
-object to `stdpath("data")/vimficiency/sessions.jsonl`. The file is
-append-only, one record per line. Stats read the whole log on demand —
-no aggregate cache in v1, so changing the efficiency formula or adding
-new buckets only requires re-reducing, not a migration. A trailing
-malformed line (e.g. a crash mid-write) is silently skipped on read.
+Every finished session (mark, watch, recall, suggest) is appended to
+`stdpath("data")/vimficiency/sessions.vfs`, with your keys, its cost and the
+single best sequence found.
 
-Per-record schema (version `v: 1`): `finish_epoch` (the same `os.time()` stamp as the saved result's `finished_wall_epoch`), `type`,
-`kind`, `key_count`, `user_cost`, `best_opt_cost`, `user_seq`,
-`best_opt_seq`, `beats`. Only the single lowest-cost optimal result is
-stored; Top-N alternatives are not retained at log-write time.
+Each session is stamped with the plugin version and every setting its score
+depends on: keyboard, effort weights and optimizer overrides. Scores only
+compare under the same stamp, so the Efficiency section shows one stamp at a
+time, the current one first. `<Tab>` in the stats window steps through older
+stamps. Lifetime counts include every stamp.
+
+The JSON log of earlier versions, `sessions.jsonl`, predates stamps. It is
+moved to `legacy/sessions.v1.jsonl` and no longer read.
 
 ## Tab completion
 

@@ -4,10 +4,6 @@ import std.compat;
 
 export namespace Journal {
 
-// Bump whenever windows would be cut or scored differently, so samples made
-// by an older build are recomputed.
-inline constexpr int SAMPLER_VERSION = 2;
-
 struct SampleRun {
   int journals = 0;
   int evaluated = 0;

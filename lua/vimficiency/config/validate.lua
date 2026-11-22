@@ -154,7 +154,7 @@ end
 
 --- `merged` is the user block already laid over the defaults.
 ---@param merged any
----@return { enabled: boolean, snapshot_every: integer, sampling: { window_sizes: integer[], deadline_ms: integer, idle_gap_ms: integer } }
+---@return { enabled: boolean, snapshot_every: integer, sampling: { auto: boolean, window_sizes: integer[], deadline_ms: integer, idle_gap_ms: integer } }
 function M.normalize_journal(merged)
   expect_table("journal", merged)
   expect_exact_keys("journal", merged, { enabled = true, snapshot_every = true, sampling = true })
@@ -166,7 +166,10 @@ function M.normalize_journal(merged)
   local sampling = merged.sampling
   expect_table("journal.sampling", sampling)
   expect_exact_keys("journal.sampling", sampling,
-    { window_sizes = true, deadline_ms = true, idle_gap_ms = true })
+    { auto = true, window_sizes = true, deadline_ms = true, idle_gap_ms = true })
+  if type(sampling.auto) ~= "boolean" then
+    error("journal.sampling.auto must be a boolean", 0)
+  end
   if not vim.islist(sampling.window_sizes) or #sampling.window_sizes == 0 then
     error("journal.sampling.window_sizes must be a non-empty list", 0)
   end
@@ -177,6 +180,18 @@ function M.normalize_journal(merged)
     expect_positive_integer("journal.sampling.deadline_ms", sampling.deadline_ms)
   end
   expect_positive_integer("journal.sampling.idle_gap_ms", sampling.idle_gap_ms)
+  return merged
+end
+
+--- `merged` is the user block already laid over the defaults.
+---@param merged any
+---@return { weight: "effort"|"uniform" }
+function M.normalize_stats(merged)
+  expect_table("stats", merged)
+  expect_exact_keys("stats", merged, { weight = true })
+  if merged.weight ~= "effort" and merged.weight ~= "uniform" then
+    error("stats.weight must be \"effort\" or \"uniform\", got " .. vim.inspect(merged.weight), 0)
+  end
   return merged
 end
 

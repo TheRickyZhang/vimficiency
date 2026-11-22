@@ -4,6 +4,7 @@ module;
 module vf.Journal.Replay;
 
 import std.compat;
+import vf.LuaExports.RecordFile;
 import vf.Types.Lines;
 
 using namespace std;
@@ -11,20 +12,6 @@ using namespace std;
 namespace Journal {
 
 namespace {
-
-// Field 1 (`File.records`), length-delimited.
-constexpr char RECORDS_TAG = 0x0A;
-
-bool readVarint(string_view& in, uint64_t& out) {
-  out = 0;
-  for (int shift = 0; shift < 64 && !in.empty(); shift += 7) {
-    const uint8_t byte = in.front();
-    in.remove_prefix(1);
-    out |= uint64_t(byte & 0x7F) << shift;
-    if (!(byte & 0x80)) return true;
-  }
-  return false;
-}
 
 // Neovim's empty buffer is one empty line.
 void keepOneLine(Lines& lines) {
@@ -103,17 +90,6 @@ Decision decisionOf(vf::journal::Atom::Decision decision) {
 
 }  // namespace
 
-bool nextRecord(string_view& in, string_view& record) {
-  string_view at = in;
-  if (at.empty() || at.front() != RECORDS_TAG) return false;
-  at.remove_prefix(1);
-  uint64_t size = 0;
-  if (!readVarint(at, size) || size > at.size()) return false;
-  record = at.substr(0, size);
-  in = at.substr(size);
-  return true;
-}
-
 bool Replay::next(Event& out) {
   string_view bytes;
   vf::journal::Record record;
@@ -152,6 +128,7 @@ bool Replay::next(Event& out) {
         out = stateEvent(buffers, EventKind::Atom, record, atom.buf(), atom.win(), atom.view());
         out.atomIndex = atoms++;
         out.keys = atom.keys();
+        out.atomKind = atom.kind();
         out.typed = atom.typed();
         out.decision = decisionOf(atom.decision());
         out.lossy = atom.lossy();

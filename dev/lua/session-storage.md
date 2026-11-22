@@ -56,9 +56,44 @@ are required except these:
 
 The persisted clock is wall time because `hrtime` values from another boot are
 not comparable; the workspace keeps its own `*_mono_ns` stamps on the record
-instead. The stats log (`stats/log.lua`) copies this value into its
-`finish_epoch` rather than reading the clock again, so a saved file and its log
-row always agree.
+instead. The session log (`stats/log.lua`) copies this value into its
+`finished_wall_epoch` rather than reading the clock again, so a saved file and
+its log record always agree.
+
+### The session log
+
+`sessions.vfs` is a `vf.stats.SessionLog` (`src/LuaExports/proto/stats.proto`),
+appended through `vf_append_session` and read only by `vf_stats_summary`
+(`src/Stats/Summary.cpp`). Each session is logged under the stamp it was scored
+with: the plugin version plus every setting a score depends on
+(`stats_log.stamp()`, which the journal sampler sends too).
+
+- A record carries the stamp's id, an FNV-1a hash of the serialized stamp. The
+  full stamp is written once, before the first session under it, so concurrent
+  Neovims need no ordering. A duplicate stamp record from a race is harmless.
+- Lua never sees the id (LuaJIT has no 64-bit integers). The summary groups
+  sessions by stamp, the current stamp's group first, and reduces one group
+  (`shown_group`), labelled with its version and a short id.
+- Sessions are never rescored: they keep no buffer text. Stats show one group at
+  a time, so scores made under different stamps never mix.
+- The unstamped v1 `sessions.jsonl` is moved to `legacy/sessions.v1.jsonl` on
+  the next append and not read.
+
+`vf_stats_summary` (`src/LuaExports/proto/summary.proto`) reduces the shown
+group and the current journal samples into everything the float draws;
+`stats.lua` only renders it.
+
+- A score is `Σ w·min(best/user, 1) / Σ w` over scored spans, with `w` the
+  user's effort by default (`stats.weight = "effort"`, so it equals
+  `Σ min(best, user) / Σ user`) or 1 (`"uniform"`). `unbeaten` spans score
+  `best = user`; `no_result` spans are counted, never scored.
+- Days are local (`localtime_r`), so the 30-day charts break at local midnight.
+  Dev timing covers sessions of the last 30 days.
+- Command tables count each stored command (`Stats::countKeys`): a parser token
+  with `f`/`t`/`r` targets collapsed to `_`, an unparsed command as itself, and
+  an insert split into its entry command, editing keys such as `<BS>`, and a
+  typed-character count. `ce`/`cw` and `cE`/`cW` share a row. They cover scored
+  sessions and the journal runs of the charted size.
 
 `diffs` is the planner's own partition (half-open, 0-indexed spans per side), so
 the viewer highlights exactly the regions the search ran against; `disk.validate`

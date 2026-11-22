@@ -74,6 +74,7 @@ Sample evaluate(const Window& window, const EvaluateParams& params, const Config
     return sample;
   }
   sample.bestCost = analyzed.results.front().getCost();
+  sample.bestSeq = analyzed.results.front().getSequence().view();
   return sample;
 }
 

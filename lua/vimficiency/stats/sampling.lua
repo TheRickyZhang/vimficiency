@@ -1,58 +1,48 @@
 -- Scores the capture journal for `:Vimfy stats`. The scoring is `vimfy_journal`
--- (src/Journal/), a separate process; this module runs it and reads the
--- `vf.journal.SampleFile` it leaves beside each journal.
+-- (src/Journal/), a separate low-priority process run in the background; this
+-- module starts it, and src/Stats/ reads the `vf.journal.SampleFile` it leaves
+-- beside each journal. Stats never wait for it: they show what is scored so far.
 
 ---@class (exact) VF.StatsSampling
---- Running the sampler
----@field refresh      fun(on_done: fun(err: string|nil))
---- Reading what it wrote
----@field read_samples fun(): VF.StatsSampling.Sample[]
----@field aggregate    fun(samples: VF.StatsSampling.Sample[]): table<integer, VF.StatsSampling.SizeSummary>
----@field normalized   fun(totals: VF.StatsSampling.Totals): number|nil
+---@field refresh          fun(on_done: fun(err: string|nil))
+---@field start_background fun()
+---@field stop_background  fun()
+---@field running          fun(): boolean
+---@field when_done        fun(on_done: fun(err: string|nil)): boolean
+---@field last_error       fun(): string|nil
+---@field params           fun(): table
+---@field _for_test        { maybe_run: fun() }
 local M = {}
 
 local config = require("vimficiency.config")
-local ffi_config = require("vimficiency.ffi.config")
 local ffi_core = require("vimficiency.ffi.core")
-local ffi_optimizer = require("vimficiency.ffi.optimizer")
 local journal = require("vimficiency.capture.journal")
-
---- `vf.journal.Sample` (src/LuaExports/proto/journal.proto).
----@class VF.StatsSampling.Sample
----@field window_size integer
----@field first_atom integer
----@field last_atom integer
----@field atom_count integer
----@field wall_epoch integer
----@field outcome "scored"|"too_large"|"no_result"|"crashed"|"unsupported"|"unbeaten"
----@field user_cost number
----@field best_cost number
----@field nav_only boolean
----@field net_zero boolean
----@field deadline_hit boolean
----@field lossy boolean
----@field analyze_ms number
-
----@class VF.StatsSampling.Totals
----@field windows integer
----@field user_cost number
----@field best_cost number
-
----@class VF.StatsSampling.SizeSummary
----@field all VF.StatsSampling.Totals
----@field nav VF.StatsSampling.Totals     # text unchanged
----@field edit VF.StatsSampling.Totals
----@field by_day table<integer, VF.StatsSampling.Totals>  # keyed by floor(epoch / 86400)
----@field unscored table<string, integer>                 # outcome -> windows
----@field unbeaten integer                                # scored windows no modeled sequence came close to
----@field deadline_hit integer
+local stats_log = require("vimficiency.stats.log")
 
 -- Each crash costs one window: the next run records it and steps past it.
 local MAX_CRASHES = 20
 
+-- Background runs: the first lets startup settle; later ones wait for Neovim to
+-- go idle with new journal content, at most once per interval.
+local STARTUP_DELAY_MS = 30 * 1000
+local RUN_INTERVAL_MS = 5 * 60 * 1000
+local LOWEST_PRIORITY = 19
+
+local LOCKED = "another Neovim is sampling the journal"
+
 --- Callbacks of the refresh in flight; nil when none is.
 ---@type (fun(err: string|nil))[]|nil
 local waiters = nil
+
+local background = {
+  armed = false,
+  ---@type integer|nil  journal bytes when the last background run started
+  journal_bytes = nil,
+  last_run_ms = -math.huge,
+  ---@type string|nil
+  err = nil,
+}
+local AUGROUP = "VimficiencyJournalSampling"
 
 ---@param path string
 ---@return string|nil
@@ -91,22 +81,16 @@ local function acquire_lock()
   return false
 end
 
----@return string  # serialized `vf.journal.SampleRequest`
-local function encode_request()
+--- `vf.journal.SampleParams`: what samples are made, and read back, under.
+---@return table
+function M.params()
   local sampling = config.journal.sampling
-  return ffi_core.encode("vf.journal.SampleRequest", {
-    journal_dir = journal.dir(),
-    params = {
-      window_sizes = sampling.window_sizes,
-      slice_padding = config.SLICE_PADDING,
-      max_search_lines = config.MAX_SEARCH_LINES,
-      results_calculated = config.RESULTS_CALCULATED,
-      deadline_ms = sampling.deadline_ms,
-      idle_gap_ms = sampling.idle_gap_ms,
-      optimizer_overrides = ffi_optimizer.encode_optimizer_overrides({ shared = config.optimizer }),
-      config = ffi_config.applied_globals(),
-    },
-  })
+  return {
+    window_sizes = sampling.window_sizes,
+    deadline_ms = sampling.deadline_ms,
+    idle_gap_ms = sampling.idle_gap_ms,
+    stamp = stats_log.stamp(),
+  }
 end
 
 ---@param err string|nil
@@ -120,7 +104,7 @@ end
 ---@param request string
 ---@param crashes integer
 local function spawn(request, crashes)
-  vim.system({ tool_path() }, { stdin = request, text = true }, vim.schedule_wrap(function(result)
+  local proc = vim.system({ tool_path() }, { stdin = request, text = true }, vim.schedule_wrap(function(result)
     if result.signal == 0 then
       finish(result.code ~= 0 and vim.trim(result.stderr):gsub("%s*\n%s*", " ") or nil)
     elseif crashes < MAX_CRASHES then
@@ -129,6 +113,8 @@ local function spawn(request, crashes)
       finish(string.format("vimfy_journal died %d times (signal %d)", crashes + 1, result.signal))
     end
   end))
+  -- Scoring is never urgent; the editor's own work comes first.
+  vim.uv.os_setpriority(proc.pid, LOWEST_PRIORITY)
 end
 
 --- Brings every journal's samples up to date, then calls `on_done` on the main
@@ -149,90 +135,73 @@ function M.refresh(on_done)
     return
   end
   if not acquire_lock() then
-    on_done("another Neovim is sampling the journal")
+    on_done(LOCKED)
     return
   end
   waiters = { on_done }
-  spawn(encode_request(), 0)
+  spawn(ffi_core.encode("vf.journal.SampleRequest",
+    { journal_dir = journal.dir(), params = M.params() }), 0)
 end
 
---- Every sample on disk. Call after a refresh: a samples file still being
---- written can end mid-record.
----@return VF.StatsSampling.Sample[]
-function M.read_samples()
-  local samples = {}
-  local dir = journal.dir()
-  for name in vim.fs.dir(dir) do
-    if name:match("%.samples$") then
-      local bytes = read_file(vim.fs.joinpath(dir, name)) --[[@as string]]
-      for _, record in ipairs(ffi_core.decode_message("vf.journal.SampleFile", bytes).records) do
-        if record.body == "sample" then samples[#samples + 1] = record.sample end
-      end
+---@return boolean
+function M.running()
+  return waiters ~= nil
+end
+
+--- Calls `on_done` when the run in flight finishes; false when none is.
+---@param on_done fun(err: string|nil)
+---@return boolean
+function M.when_done(on_done)
+  if not waiters then return false end
+  waiters[#waiters + 1] = on_done
+  return true
+end
+
+--- Why the last background run failed; nil once one succeeds.
+---@return string|nil
+function M.last_error()
+  return background.err
+end
+
+---@return integer
+local function journal_bytes()
+  local total = 0
+  for name, type in vim.fs.dir(journal.dir()) do
+    if type == "file" and name:match("%.vfj$") then
+      total = total + vim.uv.fs_stat(vim.fs.joinpath(journal.dir(), name)).size
     end
   end
-  return samples
+  return total
 end
 
----@return VF.StatsSampling.Totals
-local function new_totals()
-  return { windows = 0, user_cost = 0, best_cost = 0 }
+local function maybe_run()
+  if not background.armed or waiters or not vim.uv.fs_stat(journal.dir()) then return end
+  if vim.uv.now() - background.last_run_ms < RUN_INTERVAL_MS then return end
+  local bytes = journal_bytes()
+  if bytes == background.journal_bytes then return end
+  background.journal_bytes = bytes
+  background.last_run_ms = vim.uv.now()
+  M.refresh(function(err)
+    -- Another Neovim scoring the same journal is doing this run's work.
+    if err ~= LOCKED then background.err = err end
+  end)
 end
 
----@param totals VF.StatsSampling.Totals
----@param sample VF.StatsSampling.Sample
-local function add(totals, sample)
-  totals.windows = totals.windows + 1
-  totals.user_cost = totals.user_cost + sample.user_cost
-  -- A search that found nothing cheaper than the user's keys says they were
-  -- optimal, not better than optimal.
-  local best = sample.outcome == "unbeaten" and sample.user_cost
-    or math.min(sample.best_cost, sample.user_cost)
-  totals.best_cost = totals.best_cost + best
+--- Scores new journal content in the background: once shortly after startup,
+--- then whenever Neovim goes idle with more of it.
+function M.start_background()
+  M.stop_background()
+  if not config.journal.sampling.auto then return end
+  background.armed = true
+  vim.api.nvim_create_autocmd("CursorHold", { group = AUGROUP, callback = maybe_run })
+  vim.defer_fn(maybe_run, STARTUP_DELAY_MS)
 end
 
---- Totals per window size. Only scored windows carry cost; the rest are
---- counted by outcome.
----@param samples VF.StatsSampling.Sample[]
----@return table<integer, VF.StatsSampling.SizeSummary>
-function M.aggregate(samples)
-  local by_size = {}
-  for _, sample in ipairs(samples) do
-    local summary = by_size[sample.window_size]
-    if not summary then
-      summary = {
-        all = new_totals(),
-        nav = new_totals(),
-        edit = new_totals(),
-        by_day = {},
-        unscored = {},
-        unbeaten = 0,
-        deadline_hit = 0,
-      }
-      by_size[sample.window_size] = summary
-    end
-
-    if sample.outcome ~= "scored" and sample.outcome ~= "unbeaten" then
-      summary.unscored[sample.outcome] = (summary.unscored[sample.outcome] or 0) + 1
-    elseif sample.user_cost > 0 then
-      if sample.outcome == "unbeaten" then summary.unbeaten = summary.unbeaten + 1 end
-      local day = math.floor(sample.wall_epoch / 86400)
-      summary.by_day[day] = summary.by_day[day] or new_totals()
-      add(summary.all, sample)
-      add(sample.nav_only and summary.nav or summary.edit, sample)
-      add(summary.by_day[day], sample)
-      if sample.deadline_hit then summary.deadline_hit = summary.deadline_hit + 1 end
-    end
-  end
-  return by_size
+function M.stop_background()
+  background.armed = false
+  vim.api.nvim_create_augroup(AUGROUP, { clear = true })
 end
 
---- Best effort as a percentage of the effort spent: 100 is optimal. Totals are
---- summed before dividing, so long windows weigh more than short ones.
----@param totals VF.StatsSampling.Totals
----@return number|nil  # nil without any scored window
-function M.normalized(totals)
-  if totals.user_cost <= 0 then return nil end
-  return 100 * totals.best_cost / totals.user_cost
-end
+M._for_test = { maybe_run = maybe_run }
 
 return M

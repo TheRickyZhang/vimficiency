@@ -149,6 +149,7 @@ target_link_libraries(vimfy_unit_tests
   PRIVATE
     test_utils
     vimfy_journal_lib
+    vimfy_stats_lib
     GTest::gtest
     nlohmann_json::nlohmann_json
 )

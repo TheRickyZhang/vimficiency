@@ -39,15 +39,25 @@ local fields = {
   journal = {
     enabled = false,
     snapshot_every = 500, -- atoms per buffer between full-text snapshots
-    -- How `:Vimfy stats` scores the journal. Changing any of these rescores it
-    -- from the start.
+    -- How `:Vimfy stats` scores the journal. Changing any of these but `auto`
+    -- rescores it from the start.
     sampling = {
+      -- Score new journal content in the background, at low priority. When off,
+      -- only `:Vimfy stats refresh` scores it.
+      auto = true,
       -- Each size cuts the journal into back-to-back runs of that many recorded
       -- atoms, and every run is scored like a session. The middle size is charted.
       window_sizes = { 4, 8, 16 },
       deadline_ms = 2000, -- search budget per run; 0 = run to the natural caps
       idle_gap_ms = 30000, -- a pause this long between commands ends a run
     },
+  },
+
+  stats = {
+    -- How a score averages sessions and journal runs: "effort" weighs each by
+    -- the effort you spent on it, so long ones count more; "uniform" counts
+    -- each once.
+    weight = "effort",
   },
 
   -- Session features
@@ -133,6 +143,7 @@ function fields.apply(user_config)
   merged.auto_suggest = validate.normalize_auto_suggest(user_config.auto_suggest, fields._defaults.auto_suggest)
   merged.lossy_mappings = validate.normalize_lossy_mappings(merged.lossy_mappings)
   merged.journal = validate.normalize_journal(merged.journal)
+  merged.stats = validate.normalize_stats(merged.stats)
 
   for name, value in pairs(merged) do
     if fields._defaults[name] ~= nil then
