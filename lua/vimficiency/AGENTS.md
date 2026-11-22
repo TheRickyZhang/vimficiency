@@ -14,7 +14,8 @@ Top-level modules are the plugin entry and cross-cutting infrastructure:
 | `simulate.lua` | Side-by-side animation of motion sequences. Required as `vimficiency.simulate`. |
 | `explore.lua` | Interactive result exploration view. Required as `vimficiency.explore`. |
 | `play.lua` | Play-screen settings and modal wiring. Required as `vimficiency.play`. |
-| `stats.lua` | Draws the `:Vimfy stats` float from the summary `src/Stats/` reduces (`vf_stats_summary`). Required as `vimficiency.stats`. |
+| `stats.lua` | Builds the `:Vimfy stats` requests (`vf_stats_summary`, `vf_stats_runs`) and draws the stats pages with their drill targets. Required as `vimficiency.stats`. |
+| `stats/view.lua` | The `:Vimfy stats` tab: header, two stat columns at the top level, stats beside the run list once narrowed; drill/sort/weight/length/page keys, and `<CR>` on a journal run replays it. |
 | `stats/sampling.lua` | Runs `vimfy_journal` over the journal in the background. See `dev/lua/atom-stream.md` § Sampling. |
 | `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, run) per `:Vimfy` verb. Depends on the domain modules; only `init.lua` depends on it. |
 | `dev_reload.lua` | `:Vimfy reload`: cmake rebuild, then hot-reload the `.so` and every Lua module. |
@@ -68,6 +69,7 @@ Subdirectories hold supporting modules for each domain:
 | `ffi/sequence.lua` | Sequence tokenization, formatting, and movement simulation. |
 | `ffi/display.lua` | C++ sequence-display and session-report formatter wrappers. |
 | `ffi/explore.lua` | Explore-state and recommendation wrappers. |
+| `ffi/stats.lua` | Session log, stats summary, run list and single-run lookup. |
 
 ### `capture/` — observation and triggers
 
@@ -114,7 +116,8 @@ field. Past the constructor nothing re-checks shape, type, or handle validity.
   real alternative path: `compute.capture_end_state` and `build_analyze_input`
   (finish drops the record, suggest stays silent), `archive.resolve_alias` and
   `disk.load` (disk fallback keyed on `is_missing`), `ffi/sequence.tokenize_*`
-  (`simulate/tokenize.lua` falls back to a coarser tokenizer).
+  (`simulate/tokenize.lua` falls back to a coarser tokenizer), `ffi/stats.run`
+  (the stats view warns that the run is not available).
 - **Handle validity is checked once, at event entry.** Helpers take handles as
   valid. The kept exceptions are cross-event: a user can close a window between
   the event that created it and the one that renders into it (`explore/render/
@@ -247,12 +250,15 @@ Terminology: **step** means the small replay unit, usually one parsed token.
 Interactive Explore's larger state-machine units are **phases** (`Navigate`,
 `Transform`, `Insert`, `Completed`).
 
-`simulate_compare(lines, row, col, sequences)`:
+`simulate_compare(lines, row, col, pool, opts)`:
 - Precomputes replay snapshots asynchronously by driving Neovim itself as the
   oracle (`nvim_feedkeys` into a hidden probe window), then opens a new tab
   with side-by-side windows
 - Replay opens paused; `<Left>`/`<Right>` step, `<CR>` toggles auto-play, `q`
   closes the whole replay tab
+- `opts.filetype` highlights the visible panes (treesitter when a parser
+  exists, else 'syntax'), never the probe; 'filetype' itself stays unset so no
+  ftplugin or LSP client runs
 - `:Vimfy focus <N>` / `:Vimfy escape` toggle the single-buffer view
 - Uses virtual header lines above each replay buffer for progress, mode, and a
   wrapped/highlighted sequence display

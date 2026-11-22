@@ -212,5 +212,49 @@ return function(ctx)
       run_one()
     end,
   },
+  {
+    name = "simulate highlights only the visible panes, with treesitter when the filetype has a parser",
+    run = function(next)
+      local ts_start = vim.treesitter.start
+      local started = {}
+      ---@diagnostic disable-next-line: duplicate-set-field
+      vim.treesitter.start = function(buf, lang)
+        started[#started + 1] = buf
+        ts_start(buf, lang)
+      end
+      with_replay({ "w", "e" }, { "local x = 1" }, function()
+        local panes = { get_window(1).buf, get_window(2).buf }
+        assert_eq(started, panes, "treesitter started on the panes, never the probe")
+        for _, buf in ipairs(panes) do
+          assert_true(vim.treesitter.highlighter.active[buf] ~= nil, "treesitter highlights pane " .. buf)
+          assert_eq(vim.bo[buf].filetype, "", "no FileType, so no ftplugin or LSP")
+        end
+      end, function(ok, err)
+        vim.treesitter.start = ts_start
+        next(ok, err)
+      end, { filetype = "lua" })
+    end,
+  },
+  {
+    name = "simulate falls back to 'syntax' for a filetype without a parser",
+    run = function(next)
+      with_replay({ "w" }, { "all: build" }, function()
+        local buf = get_window(1).buf
+        assert_eq(vim.bo[buf].syntax, "make", "syntax set")
+        assert_eq(vim.bo[buf].filetype, "", "filetype left unset")
+        assert_true(vim.treesitter.highlighter.active[buf] == nil, "no treesitter")
+      end, next, { filetype = "make" })
+    end,
+  },
+  {
+    name = "simulate without a filetype leaves the panes unhighlighted",
+    run = function(next)
+      with_replay({ "w" }, { "all: build" }, function()
+        local buf = get_window(1).buf
+        assert_eq(vim.bo[buf].syntax, "", "no syntax")
+        assert_true(vim.treesitter.highlighter.active[buf] == nil, "no treesitter")
+      end, next)
+    end,
+  },
   }
 end

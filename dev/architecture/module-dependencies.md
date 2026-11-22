@@ -22,8 +22,8 @@ the few remaining `#include "..."` lines are X-macro `.inc`/`.h` fragments.
 - `Explore`: Interactive exploration adapter built on optimizer frontiers and VimCore replay.
 - `LuaExports`: C ABI adapter layer for LuaJIT, grouped by exported API domain.
 - `Wasm`: C ABI adapter for the docs site's planner module (Emscripten build only; excluded from `vimfy_core`). See `dev/web/how-it-works-site.md`.
-- `Journal`: The `vimfy_journal` tool: replays the capture journal, cuts it into windows and scores them (excluded from `vimfy_core`). See `dev/lua/atom-stream.md` § Sampling.
-- `Stats`: The session log and the reduction of it and the journal samples into what `:Vimfy stats` shows (`vimfy_stats_lib`, excluded from `vimfy_core` because it reads protobuf files). See `dev/lua/session-storage.md` § The session log.
+- `Journal`: The `vimfy_journal` tool: replays the capture journal, cuts it into windows and scores them; the shared library also links it to cut one sampled run again (`vf_stats_run`). Excluded from `vimfy_core`. See `dev/lua/atom-stream.md` § Sampling.
+- `Stats`: The session log, the journal rollups, and the filtering and reduction of them and the journal samples into what `:Vimfy stats` shows and lists (`vimfy_stats_lib`, excluded from `vimfy_core` because it reads protobuf files). See `dev/lua/session-storage.md` § The session log.
 
 ## Allowed Dependencies
 
@@ -37,10 +37,10 @@ the few remaining `#include "..."` lines are X-macro `.inc`/`.h` fragments.
 - `Boundary` -> `Types`, `Utils`
 - `Optimizer` -> `Types`, `Utils`, `Keyboard`, `VimCore`, `Boundary`, `Interpreter`, `Effort`
 - `Explore` -> `Types`, `Keyboard`, `Effort`, `Boundary`, `VimCore`, `Interpreter`, `Optimizer`
-- `LuaExports` -> `Types`, `Keyboard`, `Boundary`, `Interpreter`, `VimCore`, `Optimizer`, `Explore`, `Utils`
+- `LuaExports` -> `Types`, `Keyboard`, `Boundary`, `Interpreter`, `VimCore`, `Optimizer`, `Explore`, `Utils`, `Stats` and `Journal` (`StatsExports.cpp` only: `Stats` and `Journal` import the `vimfy_lua_common` modules, never the `*Exports.cpp` entry points, so there is no build cycle)
 - `Wasm` -> `Types`, `Keyboard`, `Effort`, `Boundary`, `Optimizer` (DiffPlanner only), `Utils`
-- `Journal` -> `Types`, `Keyboard`, `Effort`, `Optimizer`, `Utils`, `LuaExports` (config and override decoding, `RecordFile` framing and `Samples` params only)
-- `Stats` -> `Interpreter` (`SequenceParser` only), `LuaExports` (`RecordFile` framing and `Samples` params only)
+- `Journal` -> `Types`, `Keyboard`, `Effort`, `Optimizer`, `Utils`, `LuaExports` (config and override decoding, `RecordFile` framing and `Samples` params only), `Stats` (`Rollup` and `Run` only)
+- `Stats` -> `Interpreter` (`SequenceParser` and `SequenceDisplay` only), `LuaExports` (`RecordFile` framing and `Samples` params only)
 
 ## Placement Rules
 

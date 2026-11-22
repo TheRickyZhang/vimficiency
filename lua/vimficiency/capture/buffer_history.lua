@@ -135,9 +135,9 @@ local guarded_reset = util.entry(reset)
 local function attach(buf)
   ---@type VF.BufferHistory.State
   local state = { shadow = nil, pending = nil, deltas = {}, base_seq = 0, dead = false }
-  states[buf] = state
 
-  v.nvim_buf_attach(buf, false, {
+  -- Unattached, the shadow would never see another change.
+  local attached = v.nvim_buf_attach(buf, false, {
     on_lines = function(_, _, _, first, last, new_last)
       if state.dead then return true end
       guarded_widen_pending(state, first, last, new_last)
@@ -152,6 +152,8 @@ local function attach(buf)
       guarded_reset(state, buf)
     end,
   })
+  assert(attached, "vimfy buffer_history: cannot attach to unloaded buffer " .. buf)
+  states[buf] = state
   return state
 end
 

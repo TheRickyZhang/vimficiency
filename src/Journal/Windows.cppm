@@ -12,6 +12,7 @@ struct WindowState {
   int win = 0;
   SharedLines lines;
   int textVersion = 0;
+  std::string filetype;
   int row = 0;
   int col = 0;
   int windowHeight = 0;

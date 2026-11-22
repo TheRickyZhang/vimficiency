@@ -154,14 +154,16 @@ end
 
 --- `merged` is the user block already laid over the defaults.
 ---@param merged any
----@return { enabled: boolean, snapshot_every: integer, sampling: { auto: boolean, window_sizes: integer[], deadline_ms: integer, idle_gap_ms: integer } }
+---@return { enabled: boolean, snapshot_every: integer, keep_days: integer, sampling: { auto: boolean, window_sizes: integer[], deadline_ms: integer, idle_gap_ms: integer } }
 function M.normalize_journal(merged)
   expect_table("journal", merged)
-  expect_exact_keys("journal", merged, { enabled = true, snapshot_every = true, sampling = true })
+  expect_exact_keys("journal", merged,
+    { enabled = true, snapshot_every = true, keep_days = true, sampling = true })
   if type(merged.enabled) ~= "boolean" then
     error("journal.enabled must be a boolean", 0)
   end
   expect_positive_integer("journal.snapshot_every", merged.snapshot_every)
+  expect_positive_integer("journal.keep_days", merged.keep_days)
 
   local sampling = merged.sampling
   expect_table("journal.sampling", sampling)

@@ -15,6 +15,20 @@ function M.decorate(win)
   })
 end
 
+--- Highlights `buf` as `filetype` without setting 'filetype', whose FileType
+--- event would run ftplugins and attach LSP clients to a scratch pane.
+---@param buf integer
+---@param filetype string
+local function highlight(buf, filetype)
+  if filetype == "" then return end
+  local lang = vim.treesitter.language.get_lang(filetype) --[[@as string]]
+  if vim.treesitter.language.add(lang) then
+    vim.treesitter.start(buf, lang)
+  else
+    vim.bo[buf].syntax = filetype
+  end
+end
+
 ---@param ctx table
 ---@param lines string[]
 ---@param label string
@@ -27,6 +41,7 @@ function M.create_buffer(ctx, lines, label)
   v.nvim_set_option_value("swapfile", false, { buf = buf })
   v.nvim_set_option_value("modifiable", true, { buf = buf })
   v.nvim_buf_set_lines(buf, 0, -1, true, lines)
+  highlight(buf, ctx.state.filetype)
 
   util.set_buffer_keymaps(buf, ctx.actions.keymaps)
 

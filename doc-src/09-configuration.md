@@ -78,23 +78,26 @@ require('vimficiency').setup({ journal = { enabled = true } })
 |-------|---------|---------|
 | `journal.enabled` | `false` | Record every command, the cursor after it, and every text change. |
 | `journal.snapshot_every` | `500` | Commands per buffer between full-text snapshots. Text changes are recorded exactly either way; a lower value only makes a file quicker to read from the middle. |
+| `journal.keep_days` | `90` | Once a file has gone this many days unchanged and is fully scored, its scores are kept as daily totals and the file is deleted. |
 | `journal.sampling.auto` | `true` | Score new journal content in the background, at low priority. When off, only `:Vimfy stats refresh` scores it. |
-| `journal.sampling.window_sizes` | `{ 4, 8, 16 }` | Run lengths, in commands, that [`:Vimfy stats`](11-commands.md) scores. The middle one is charted. |
+| `journal.sampling.window_sizes` | `{ 4, 8, 16 }` | Run lengths, in commands, that [`:Vimfy stats`](11-commands.md) scores. The middle one is charted until `l` switches it. |
 | `journal.sampling.deadline_ms` | `2000` | Search budget per run. `0` lets every search run to its natural caps. |
 | `journal.sampling.idle_gap_ms` | `30000` | A pause this long between commands ends a run, so one run never spans a break. |
 
 Each Neovim instance writes its own file under
 `stdpath('data')/vimficiency/journal/`, and `:Vimfy stats` keeps its scores in
-a `.samples` file beside each one. Files are never pruned.
+a `.samples` file beside each one. After `keep_days`, both are replaced by
+daily totals in `rollup.vfr`.
 
 Changing a sampling field other than `auto`, the keyboard, or an effort weight
-rescores the whole journal in the background.
+rescores the whole journal in the background. Days already rolled up cannot be
+rescored, so they drop out of the current scores.
 
 ## Stats
 
 | Field | Default | Meaning |
 |-------|---------|---------|
-| `stats.weight` | `"effort"` | How [`:Vimfy stats`](11-commands.md) averages sessions and journal runs into a score. `"effort"` counts each by the effort you spent on it, so long ones count more; `"uniform"` counts each once. |
+| `stats.weight` | `"effort"` | How [`:Vimfy stats`](11-commands.md) averages sessions and journal runs into a score. `"effort"` counts each by the effort you spent on it, so long ones count more; `"uniform"` counts each once. The stats tab opens with this weight; `w` there switches it for that tab only. |
 
 ## Idle end-detection
 

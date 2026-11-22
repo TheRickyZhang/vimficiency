@@ -3,6 +3,9 @@
 
 local config = require("vimficiency.config")
 local ffi_core = require("vimficiency.ffi.core")
+local ffi_stats = require("vimficiency.ffi.stats")
+local journal = require("vimficiency.capture.journal")
+local sampling = require("vimficiency.stats.sampling")
 local stats = require("vimficiency.stats")
 local stats_log = require("vimficiency.stats.log")
 local h = require("_helpers")
@@ -31,7 +34,7 @@ test("stats.log: sessions round-trip under the current stamp", function()
   finish("dw", 10)
   finish("de", 20)
 
-  local sessions = stats.summary(1).sessions
+  local sessions = stats.summary({ shown = 1, weight = "effort", filter = {}, charted_size = 0 }).sessions
   assert_eq(sessions.groups, 1)
   assert_eq(sessions.sessions, 2)
   assert_true(sessions.current)
@@ -60,12 +63,12 @@ test("stats.log: another stamp's sessions form their own group", function()
   finish("old", 1)
   h.with_patch({ { config, "RESULTS_CALCULATED", config.RESULTS_CALCULATED + 1 } }, function()
     finish("new", 2)
-    local current = stats.summary(1).sessions
+    local current = stats.summary({ shown = 1, weight = "effort", filter = {}, charted_size = 0 }).sessions
     assert_eq(current.groups, 2)
     assert_true(current.current)
     assert_eq(current.sessions, 1)
     assert_eq(current.other_sessions, 1)
-    local older = stats.summary(2).sessions
+    local older = stats.summary({ shown = 2, weight = "effort", filter = {}, charted_size = 0 }).sessions
     assert_true(not older.current)
     assert_true(current.label ~= older.label, "labels tell stamps apart")
   end)
@@ -77,7 +80,7 @@ test("stats.log: a truncated last record is not read", function()
   local fh = assert(io.open(stats_log.path(), "ab"))
   fh:write("\10\100partial")
   fh:close()
-  assert_eq(stats.summary(1).sessions.sessions, 1)
+  assert_eq(stats.summary({ shown = 1, weight = "effort", filter = {}, charted_size = 0 }).sessions.sessions, 1)
 end)
 
 test("stats.log: the unstamped v1 log moves to legacy and is not read", function()
@@ -87,9 +90,39 @@ test("stats.log: the unstamped v1 log moves to legacy and is not read", function
   vim.fn.writefile({ '{"v":1,"user_seq":"old"}' }, dir .. "/sessions.jsonl")
 
   finish("new", 1)
-  assert_eq(stats.summary(1).lifetime.sessions, 1)
+  assert_eq(stats.summary({ shown = 1, weight = "effort", filter = {}, charted_size = 0 }).lifetime.sessions, 1)
   assert_true(vim.uv.fs_stat(dir .. "/sessions.jsonl") == nil, "v1 log moved away")
   assert_eq(vim.fn.readfile(dir .. "/legacy/sessions.v1.jsonl"), { '{"v":1,"user_seq":"old"}' })
+end)
+
+test("stats.log: a row's drill filter lists its sessions through ffi.stats.runs", function()
+  h.use_temp_data_home()
+  local now = os.time()
+  finish("dw", now - 60)
+  finish("de", now - 30)
+
+  local day = stats.summary({ shown = 1, weight = "effort", filter = {}, charted_size = 0 }).sessions.days[1]
+  local list = ffi_stats.runs({
+    scope = {
+      session_log = stats_log.path(),
+      stamp = stats_log.stamp(),
+      shown_group = 0,
+      journal_dir = journal.dir(),
+      sample_params = sampling.params(),
+      weight = "effort",
+      filter = day.drill,
+      charted_size = 0,
+    },
+    order = "newest",
+    offset = 0,
+    limit = 10,
+  })
+  assert_eq(day.drill.source, "sessions")
+  assert_eq(list.total, 2)
+  assert_eq(list.runs[1].id, { run = "session", session = 1 })
+  assert_eq(list.runs[1].user_keys, "de")
+  assert_eq(list.runs[1].outcome, "scored")
+  assert_eq(list.runs[2].wall_epoch, now - 60)
 end)
 
 test("stats.log: the lowest-cost result is the best, and beating it still scores", function()

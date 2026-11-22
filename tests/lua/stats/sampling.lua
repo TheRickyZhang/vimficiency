@@ -1,11 +1,14 @@
 -- The Journal section of `:Vimfy stats`, and end-to-end runs of the real
 -- `vimfy_journal` over a journal written here, read back through the summary.
 
-local config   = require("vimficiency.config")
-local journal  = require("vimficiency.capture.journal")
-local sampling = require("vimficiency.stats.sampling")
-local stats    = require("vimficiency.stats")
-local h        = require("_helpers")
+local config    = require("vimficiency.config")
+local journal   = require("vimficiency.capture.journal")
+local ffi_stats = require("vimficiency.ffi.stats")
+local sampling  = require("vimficiency.stats.sampling")
+local stats     = require("vimficiency.stats")
+local stats_log = require("vimficiency.stats.log")
+local stats_view = require("vimficiency.stats.view")
+local h         = require("_helpers")
 
 ---@param lines string[]
 ---@param needle string
@@ -14,6 +17,20 @@ local function line_with(lines, needle)
   for _, line in ipairs(lines) do
     if line:find(needle, 1, true) then return line end
   end
+end
+
+--- The open stats view's pane `name` (header, overview, commands or runs).
+---@param name string
+---@return integer win
+---@return string[] lines
+local function stats_pane(name)
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    local buf = vim.api.nvim_win_get_buf(win)
+    if vim.api.nvim_buf_get_name(buf):match("^vimficiency://stats/%d+/" .. name .. "$") then
+      return win, vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    end
+  end
+  error("no stats pane " .. name)
 end
 
 --- Runs a refresh to completion.
@@ -25,16 +42,29 @@ local function refresh()
   return err
 end
 
+---@type VF.Stats.Scope
+local TOP = { shown = 1, weight = "effort", filter = {}, charted_size = 0 }
+
 ---@return VF.Stats.JournalSummary
 local function journal_summary()
-  return stats.summary(1).journal
+  return stats.summary(TOP).journal
+end
+
+--- The stats as the narrowed left pane shows them, every section on one page.
+---@param summary VF.Stats.Summary
+---@param background VF.Stats.Background
+---@return VF.Stats.Page
+local function page_of(summary, background)
+  return stats.build_pages(summary, background, "effort", false)[1]
 end
 
 --- Journals `count` single-`l` atoms over one line, one tick each, after a
 --- resync at the start of the line.
 ---@param count integer
-local function journal_moves(count)
+---@param filetype? string
+local function journal_moves(count, filetype)
   local buf = h.new_buf({ "alpha beta gamma delta epsilon", "second line" })
+  vim.bo[buf].filetype = filetype or ""
   vim.wait(5, function() return false end)
   journal.start()
   local atom = { keys = "l", typed = "l", kind = "motion", buf = buf, win = vim.api.nvim_get_current_win(), lossy = false }
@@ -54,15 +84,15 @@ end
 ---@return string[]
 local function lines_with_journal(fields, background)
   h.use_temp_data_home()
-  local summary = stats.summary(1)
+  local summary = stats.summary(TOP)
   summary.journal = vim.tbl_extend("force", summary.journal,
     { present = true, scored_bytes = 100, journal_bytes = 100 }, fields)
-  return (stats.build_lines(summary, background or { scoring = false }))
+  return page_of(summary, background or { scoring = false }).lines
 end
 
 test("stats journal section: shows progress and never waits for scoring", function()
   h.use_temp_data_home()
-  assert_true(line_with(stats.build_lines(stats.summary(1), { scoring = false }),
+  assert_true(line_with(page_of(stats.summary(TOP), { scoring = false }).lines,
     "journal = { enabled = true }") ~= nil)
   local lines = lines_with_journal({ scored_bytes = 25 }, { scoring = true })
   assert_true(line_with(lines,
@@ -76,7 +106,7 @@ test("stats journal section: shows progress and never waits for scoring", functi
   end)
 end)
 
-test("stats journal section: charts the middle size and lists every size", function()
+test("stats journal section: charts one size and lists every size on one line", function()
   local lines = lines_with_journal({
     charted_size = 8,
     sizes = {
@@ -87,16 +117,21 @@ test("stats journal section: charts the middle size and lists every size", funct
     score = { spans = 2, score = 75 },
     nav = { spans = 1, score = 100 },
     edit = { spans = 1, score = 50 },
-    days = { { days_ago = 0, score = 75 } },
-    unscored = { { outcome = "too_large", runs = 1 } },
+    days = { { days_ago = 0, score = 75, drill = { days = { first = 20000, last = 20000 } } } },
+    unscored = { { outcome = "too_large", runs = 1, drill = {} }, { outcome = "no_result", runs = 2, drill = {} } },
     deadline_hit = 1,
+    other_rollup_runs = 3,
   })
   assert_true(line_with(lines, "Score:    75.0 / 100  (2 runs of 8 commands)") ~= nil)
-  assert_true(line_with(lines, "30-day score, runs of 8 commands:") ~= nil)
-  assert_true(line_with(lines, "By run length:  4 → 90.0   8 → 75.0   16 → —") ~= nil)
-  assert_true(line_with(lines, "Movement only:  100.0 (1 run)   With edits: 50.0 (1 run)") ~= nil)
+  assert_true(line_with(lines, "    Run length: 4 (90.0) · [8] (75.0) · 16 (—)   l to switch") ~= nil)
+  assert_true(line_with(lines, "    Daily score") ~= nil)
+  assert_eq(line_with(lines, "By run length"), nil)
+  assert_true(line_with(lines, "Movement only:  100.0 (1 run)") ~= nil)
+  assert_true(line_with(lines, "With edits:     50.0 (1 run)") ~= nil)
   assert_true(line_with(lines, "Not scored:     1 too large") ~= nil)
+  assert_true(line_with(lines, "                2 no result") ~= nil)
   assert_true(line_with(lines, "Search cut short by the deadline: 1 run") ~= nil)
+  assert_true(line_with(lines, "Left out: 3 runs rolled up under other settings") ~= nil)
 end)
 
 test("sampling.refresh: nothing to do without a journal directory", function()
@@ -121,11 +156,231 @@ test("sampling.refresh: scores a journal written by this Neovim, once", function
     assert_eq(j.charted_size, 2)
     assert_eq(j.score.spans, 2)
     assert_eq(j.nav.spans, 2)
-    assert_eq(stats.summary(1).commands.runs, 2)
+    assert_eq(stats.summary(TOP).commands.runs, 2)
     assert_eq(vim.uv.fs_stat(journal.dir() .. "/sampling.lock"), nil)
 
     assert_eq(refresh(), nil)
     assert_eq(journal_summary().score.spans, 2)
+  end)
+end)
+
+test("ffi.stats.run: a listed journal run is cut again as it was scored", function()
+  h.use_temp_data_home()
+  journal_moves(6)
+
+  h.with_patch({ { config.journal.sampling, "window_sizes", { 2 } } }, function()
+    assert_eq(refresh(), nil)
+    local list = ffi_stats.runs({
+      scope = {
+        session_log = stats_log.path(),
+        stamp = stats_log.stamp(),
+        shown_group = 0,
+        journal_dir = journal.dir(),
+        sample_params = sampling.params(),
+        weight = "effort",
+        filter = { source = "journal" },
+        charted_size = 0,
+      },
+      order = "newest",
+      offset = 0,
+      limit = 10,
+    })
+    assert_eq(#list.runs, 2)
+    for _, row in ipairs(list.runs) do
+      local run = assert(ffi_stats.run({ id = row.id, journal_dir = journal.dir(), sample_params = sampling.params() }))
+      assert_eq(run.lines, { "alpha beta gamma delta epsilon", "second line" })
+      assert_eq(run.keys, row.user_keys)
+      assert_eq(run.keys, "ll")
+      assert_eq(run.typed, "ll")
+      assert_eq({ run.start_row, run.end_row, run.end_col - run.start_col }, { 0, 0, 2 })
+    end
+
+    local run, err = ffi_stats.run({
+      id = { run = "session", session = 0 }, journal_dir = journal.dir(), sample_params = sampling.params(),
+    })
+    assert_eq({ run, err }, { nil, "a session run has no journal window" })
+  end)
+end)
+
+test("stats view: narrows to the movement-only journal runs", function()
+  h.use_temp_data_home()
+  journal_moves(6)
+
+  h.with_patch({ { config.journal.sampling, "window_sizes", { 2 } } }, function()
+    assert_eq(refresh(), nil)
+    local targets = stats.build_pages(stats.summary(TOP), { scoring = false }, "effort", true)[1].targets
+    stats_view.open()
+    local runs
+    for _, kind in ipairs({ "nav", "edit" }) do
+      for _, t in ipairs(targets) do
+        if t.label == kind then
+          local overview = stats_pane("overview")
+          vim.api.nvim_set_current_win(overview)
+          vim.api.nvim_win_set_cursor(overview, { t.row + 1, 0 })
+          h.feed("<CR>")
+        end
+      end
+      local _, header = stats_pane("header")
+      assert_true(header[1]:find("Stats › " .. kind, 1, true) ~= nil, header[1])
+      _, runs = stats_pane("runs")
+      assert_eq(runs[#runs], kind == "nav" and "runs 1–2 of 2" or "no runs to list of 0")
+      if kind == "nav" then assert_true(runs[2]:find("   you: ll   best: ", 1, true) ~= nil, runs[2]) end
+      h.feed("<BS>")
+    end
+    vim.cmd("silent! tabonly")
+  end)
+end)
+
+--- Opens the stats view over a scored six-move journal, narrowed to its nav
+--- runs, and runs `fn` with the runs window and the rows it lists.
+---@param fn fun(runs_win: integer, rows: VF.Stats.RunRow[])
+local function in_nav_runs(fn)
+  h.use_temp_data_home()
+  journal_moves(6, "lua")
+  h.with_patch({ { config.journal.sampling, "window_sizes", { 2 } } }, function()
+    assert_eq(refresh(), nil)
+    local nav
+    for _, t in ipairs(stats.build_pages(stats.summary(TOP), { scoring = false }, "effort", true)[1].targets) do
+      if t.label == "nav" then nav = t end
+    end
+    stats_view.open()
+    local overview = stats_pane("overview")
+    vim.api.nvim_set_current_win(overview)
+    vim.api.nvim_win_set_cursor(overview, { nav.row + 1, 0 })
+    h.feed("<CR>")
+    local rows = stats.runs({ shown = 1, weight = "effort", filter = nav.drill, charted_size = 0 }, "worst", 0, 50).runs
+    assert_eq(#rows, 2)
+    local runs_win = stats_pane("runs")
+    vim.api.nvim_set_current_win(runs_win)
+    local ok, err = pcall(fn, runs_win, rows)
+    vim.cmd("silent! tabonly")
+    if not ok then error(err, 0) end
+  end)
+end
+
+---@param tokens VF.Sequence.Token[]
+---@return string
+local function token_text(tokens)
+  local parts = {}
+  for i, token in ipairs(tokens) do parts[i] = token.text end
+  return table.concat(parts)
+end
+
+test("stats view: <CR> on a journal run replays it, and q comes back to the same row", function()
+  local simulate = require("vimficiency.simulate")
+  in_nav_runs(function(runs_win, rows)
+    local stats_tab = vim.api.nvim_get_current_tabpage()
+    local tabs = #vim.api.nvim_list_tabpages()
+    local _, header = stats_pane("header")
+    local row = rows[2]
+    assert_true(row.best_seq ~= "", "the run has a best sequence")
+    local detail = assert(stats.run(row.id))
+
+    -- The column header, the blank line and the footer open nothing.
+    for _, line in ipairs({ 1, 4, 5 }) do
+      vim.api.nvim_win_set_cursor(runs_win, { line, 0 })
+      h.feed("<CR>")
+      vim.wait(50)
+      assert_eq(#vim.api.nvim_list_tabpages(), tabs, "row " .. line)
+    end
+
+    vim.api.nvim_win_set_cursor(runs_win, { 3, 0 })
+    h.silence_notify(function() h.feed("<CR>") end)
+    assert_true(vim.wait(5000, function() return #simulate._debug_get_windows() == 2 end), "replay opened")
+    assert_true(vim.api.nvim_get_current_tabpage() ~= stats_tab, "a replay tab")
+    local pool = simulate._debug_get_pool()
+    assert_eq(token_text(assert(pool.user).tokens), row.user_keys)
+    assert_eq(#pool.suggestions, 1)
+    assert_eq(token_text(pool.suggestions[1].tokens), row.best_seq)
+    assert_eq({ pool.user.cost, pool.suggestions[1].cost },
+      { string.format("%.2f", row.user_cost), string.format("%.2f", row.best_cost) })
+    assert_eq(detail.filetype, "lua")
+    for _, window in ipairs(simulate._debug_get_windows()) do
+      assert_eq(vim.api.nvim_buf_get_lines(window.buf, 0, -1, true), detail.lines)
+      assert_true(vim.treesitter.highlighter.active[window.buf] ~= nil, "highlighted as lua")
+    end
+
+    h.feed("q")
+    assert_eq(vim.api.nvim_get_current_tabpage(), stats_tab)
+    assert_eq(vim.api.nvim_get_current_win(), runs_win)
+    assert_eq(vim.api.nvim_win_get_cursor(runs_win), { 3, 0 })
+    assert_eq(#vim.api.nvim_list_tabpages(), tabs)
+    for _, name in ipairs({ "header", "overview", "runs" }) do stats_pane(name) end
+    assert_eq(select(2, stats_pane("header")), header)
+  end)
+end)
+
+test("stats view: <CR> on a run whose journal is gone warns and opens nothing", function()
+  in_nav_runs(function(runs_win)
+    for name in vim.fs.dir(journal.dir()) do
+      if name:match("%.vfj$") then vim.uv.fs_unlink(vim.fs.joinpath(journal.dir(), name)) end
+    end
+    local tabs = #vim.api.nvim_list_tabpages()
+    local warnings = {}
+    vim.api.nvim_win_set_cursor(runs_win, { 2, 0 })
+    h.with_patch({ { vim, "notify", function(msg, level)
+      if level == vim.log.levels.WARN then warnings[#warnings + 1] = msg end
+    end } }, function()
+      h.feed("<CR>")
+    end)
+    assert_eq(#warnings, 1)
+    assert_true(warnings[1]:find("^run not available: journal .* is gone$") ~= nil, warnings[1])
+    assert_eq(#vim.api.nvim_list_tabpages(), tabs)
+  end)
+end)
+
+test("stats view: l switches the charted run length and the narrowed runs follow", function()
+  h.use_temp_data_home()
+  journal_moves(6)
+
+  h.with_patch({ { config.journal.sampling, "window_sizes", { 2, 4 } } }, function()
+    assert_eq(refresh(), nil)
+    local targets = stats.build_pages(stats.summary(TOP), { scoring = false }, "effort", true)[1].targets
+    stats_view.open()
+    local overview_win, overview = stats_pane("overview")
+    assert_true(line_with(overview, "    Run length: [2] (") ~= nil)
+    for _, t in ipairs(targets) do
+      if t.label == "nav" then
+        vim.api.nvim_set_current_win(overview_win)
+        vim.api.nvim_win_set_cursor(overview_win, { t.row + 1, 0 })
+        h.feed("<CR>")
+      end
+    end
+    local _, runs = stats_pane("runs")
+    assert_eq(runs[#runs], "runs 1–2 of 2")
+
+    h.feed("l")
+    local _, header = stats_pane("header")
+    assert_true(header[1]:find("^ Stats › nav    scoring .* · runs of 4 · ") ~= nil, header[1])
+    _, runs = stats_pane("runs")
+    assert_eq(runs[#runs], "runs 1–1 of 1")
+    _, overview = stats_pane("overview")
+    assert_true(line_with(overview, " · [4] (") ~= nil)
+    vim.cmd("silent! tabonly")
+  end)
+end)
+
+test("sampling.refresh: an old journal is rolled up and deleted, and still counts", function()
+  h.use_temp_data_home()
+  journal_moves(6)
+  local path
+  for name in vim.fs.dir(journal.dir()) do
+    if name:match("%.vfj$") then path = vim.fs.joinpath(journal.dir(), name) end
+  end
+  local old = os.time() - (config.journal.keep_days + 1) * 86400
+  vim.uv.fs_utime(path, old, old)
+
+  h.with_patch({ { config.journal.sampling, "window_sizes", { 2 } } }, function()
+    assert_eq(refresh(), nil)
+
+    assert_eq(vim.uv.fs_stat(path), nil)
+    assert_eq(vim.uv.fs_stat((path:gsub("%.vfj$", ".samples"))), nil)
+    assert_true(vim.uv.fs_stat(journal.dir() .. "/rollup.vfr") ~= nil)
+    local j = journal_summary()
+    assert_eq(j.journal_bytes, 0)
+    assert_eq(j.score.spans, 2)
+    assert_eq(j.nav.spans, 2)
+    assert_eq(stats.summary(TOP).commands.runs, 2)
   end)
 end)
 
@@ -156,11 +411,18 @@ test("sampling background: scores new journal content, then waits out the interv
 
   sampling._for_test.maybe_run()
   assert_true(sampling.running(), "a run started")
+  stats_view.open()
+  local _, overview = stats_pane("overview")
+  assert_true(line_with(overview, "scoring in the background…") ~= nil)
   local done = false
   assert_true(sampling.when_done(function() done = true end))
   assert_true(vim.wait(30000, function() return done end), "run finished")
   assert_true(journal_summary().scored_bytes > 0)
   assert_eq(sampling.last_error(), nil)
+  -- The open view redrew in place.
+  _, overview = stats_pane("overview")
+  assert_eq(line_with(overview, "scoring in the background…"), nil)
+  vim.cmd("silent! tabonly")
 
   journal_moves(4)
   sampling._for_test.maybe_run()

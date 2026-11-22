@@ -1,7 +1,8 @@
 -- Scores the capture journal for `:Vimfy stats`. The scoring is `vimfy_journal`
 -- (src/Journal/), a separate low-priority process run in the background; this
 -- module starts it, and src/Stats/ reads the `vf.journal.SampleFile` it leaves
--- beside each journal. Stats never wait for it: they show what is scored so far.
+-- beside each journal and the rollups of the old journals it deletes. Stats
+-- never wait for it: they show what is scored so far.
 
 ---@class (exact) VF.StatsSampling
 ---@field refresh          fun(on_done: fun(err: string|nil))
@@ -140,7 +141,7 @@ function M.refresh(on_done)
   end
   waiters = { on_done }
   spawn(ffi_core.encode("vf.journal.SampleRequest",
-    { journal_dir = journal.dir(), params = M.params() }), 0)
+    { journal_dir = journal.dir(), params = M.params(), keep_days = config.journal.keep_days }), 0)
 end
 
 ---@return boolean

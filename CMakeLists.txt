@@ -437,7 +437,7 @@ add_library(vimficiency SHARED
     ${VIMFY_LUA_EXPORT_SOURCES}
 )
 vimfy_enable_modules(vimficiency)
-target_link_libraries(vimficiency PRIVATE vimfy_lua_common vimfy_stats_lib)
+target_link_libraries(vimficiency PRIVATE vimfy_lua_common vimfy_stats_lib vimfy_journal_lib)
 
 # Lua has no protobuf decoder, so starwing/lua-protobuf's C module ships inside
 # the shared library and ffi/core.lua opens it with package.loadlib. Only the
@@ -468,7 +468,8 @@ endif()
 # Journal sampling (src/Journal/): replays capture journals and scores windows
 # of them. Outside vimfy_core because it reads the protobuf journal and applies
 # the editor's config. `:Vimfy stats` runs the executable, so scripts/install.sh
-# builds it alongside the shared library.
+# builds it alongside the shared library, which links the library to cut a
+# journal run again (`vf_stats_run`).
 file(GLOB VIMFY_JOURNAL_MODULES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Journal/*.cppm
 )
@@ -481,7 +482,7 @@ target_sources(vimfy_journal_lib PUBLIC
     FILE_SET CXX_MODULES BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src FILES ${VIMFY_JOURNAL_MODULES}
 )
 vimfy_enable_modules(vimfy_journal_lib)
-target_link_libraries(vimfy_journal_lib PUBLIC vimfy_lua_common)
+target_link_libraries(vimfy_journal_lib PUBLIC vimfy_lua_common vimfy_stats_lib)
 
 add_executable(vimfy_journal src/Journal/main.cpp)
 vimfy_enable_modules(vimfy_journal)

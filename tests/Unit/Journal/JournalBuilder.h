@@ -38,9 +38,11 @@ public:
     return *this;
   }
 
-  JournalBuilder& snapshot(const std::vector<std::string>& lines, int buf = BUF) {
+  JournalBuilder& snapshot(const std::vector<std::string>& lines, int buf = BUF,
+                           const std::string& filetype = "") {
     vf::journal::Record record;
     record.mutable_snapshot()->set_buf(buf);
+    record.mutable_snapshot()->set_filetype(filetype);
     for (const std::string& line : lines) record.mutable_snapshot()->add_lines(line);
     return write(record);
   }

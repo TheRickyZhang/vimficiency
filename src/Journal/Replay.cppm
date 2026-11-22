@@ -9,6 +9,7 @@ struct BufferText {
   std::shared_ptr<Lines> lines;
   int version = 0;
   bool discontinuous = false;
+  std::string filetype;
 };
 
 }  // namespace Journal
@@ -44,6 +45,8 @@ struct Event {
   // A snapshot replaced text the deltas did not lead to, so what changed it
   // is unknown.
   bool discontinuous = false;
+  // As of `buf`'s last snapshot.
+  std::string filetype;
   int row = 0;
   int col = 0;
   int windowHeight = 0;

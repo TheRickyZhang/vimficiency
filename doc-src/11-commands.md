@@ -20,7 +20,7 @@ title: "Commands reference"
 | `:Vimfy view [<alias>\|<filename>]`         | View a finished result full-screen (no arg lists saved files). |
 | `:Vimfy rm <filename>`                     | Delete a saved result from disk.                     |
 | `:Vimfy list`                              | Open the interactive session picker (see below).     |
-| `:Vimfy stats`                             | Show lifetime session stats (see below).             |
+| `:Vimfy stats`                             | Open the stats tab (see below).                      |
 | `:Vimfy stats refresh`                     | Score the journal now, without opening the stats.    |
 | `:Vimfy suggest <on\|off\|toggle>`         | Runtime toggle for auto-suggest (works with zero config). |
 | `:Vimfy config`                            | Show the current configuration.                      |
@@ -125,20 +125,47 @@ Watch's idle trigger fire) and try again.
 
 ## Session stats (`:Vimfy stats`)
 
-Opens a read-only float summarizing your lifetime activity. Close with
-`q` or `<Esc>`.
+Opens a tab with a header over two panes, side by side, or stacked on a
+narrow screen:
+
+- **Header** — the current filter as breadcrumbs (`Stats › Nov 20 › cw (you
+  more)`), the scoring shown, the weight and the charted run length; once
+  narrowed, also the run order and the run-list page.
+- **Top level** — the stats in two columns: Sessions and Journal on the left,
+  the Commands tables and Dev on the right.
+- **Narrowed** (after `<CR>` on a row or chart day) — every section on the
+  left, computed over the current filter, and on the right one line per
+  session or journal run the filter selects: when, your effort → the best
+  found, the saving, then your keys and the best sequence. Typed text shows as
+  its length (`ciw⟨11⟩<Esc>`). Runs older than `journal.keep_days` are rolled
+  up: they count in the total but are not listed.
+
+Keys (`?` lists them); `<CR>` works on the stats and the run list, the rest
+in every pane:
+
+| Key           | Action                                                        |
+|---------------|---------------------------------------------------------------|
+| `<CR>`        | On a highlighted row or a day in a daily chart: narrow to its runs. |
+| `<CR>`        | On a journal run: replay it as `:Vimfy play` does, your keys beside the best sequence, highlighted as the file was. `q` there returns to the stats. On a session: show its full keys and costs (sessions keep no text to replay). |
+| `<BS>`        | Undo the last narrowing.                                      |
+| `s`           | Once narrowed, cycle the run order: worst first (your effort minus the best), newest, slowest search. |
+| `w`           | Switch the score weight between effort and uniform for this view. |
+| `l`           | Cycle the journal run length the stats chart and list.        |
+| `<Tab>`       | Show the next scoring's sessions (see below).                 |
+| `]` / `[`     | Once narrowed, next / previous page of runs.                  |
+| `q`           | Close the tab.                                                |
 
 Sections:
 
-- **Lifetime** — total finished sessions, broken down by type (mark /
-  watch / recall / suggest), and the commands recorded in them.
-- **Efficiency** — a score out of 100: the best effort found over the
-  effort you spent, `min(best / yours, 1)`, averaged over sessions. By
-  default each session counts by the effort you spent on it, so long
-  sessions count more; set `stats.weight = "uniform"` to count each once
-  (see [configuration](09-configuration.md)). Sessions with no solution
-  are counted but not scored. The 30-day block below is the daily score
-  in local time (▁ = 0, █ = 100; blanks = no sessions that day).
+- **Sessions** — total finished sessions, broken down by type (mark /
+  watch / recall / suggest), and the commands recorded in them. Then a score
+  out of 100: the best effort found over the effort you spent,
+  `min(best / yours, 1)`, averaged over sessions. By default each session
+  counts by the effort you spent on it, so long sessions count more; set
+  `stats.weight = "uniform"` to count each once (see
+  [configuration](09-configuration.md)). Sessions with no solution are
+  counted but not scored. The daily score below covers the last 30 days in
+  local time (▁ = 0, █ = 100; blanks = no sessions that day).
 - **Journal** — the same score over everything you typed, not only
   finished sessions. Needs the [journal](09-configuration.md) turned on.
   See below.
@@ -160,7 +187,8 @@ Sections:
 
 Scores are only compared under one scoring: the plugin version and the
 settings a score depends on. Sessions scored otherwise are counted, and
-`<Tab>` switches to them.
+`<Tab>` switches to them. The journal is only scored under the current
+scoring, so the Journal section is a note while another is shown.
 
 ### The Journal section
 
@@ -168,12 +196,13 @@ The journal is cut into back-to-back runs of 4, 8 and 16 commands, and each
 run is scored as if you had ended a session there. A run's score is the
 effort of the best sequence found over the effort of what you typed.
 
-- **Score** — the Efficiency score, for runs of 8 commands. A run that ends
-  where it started counts as all waste.
-- **30-day chart** — the same number per day.
-- **By run length** — the score at each run length. Longer runs give the
-  optimizer more to merge, so they usually score lower.
-- **Movement only / With edits** — the 8-command runs split by whether the
+- **Score** — the Sessions score, for runs of the charted length (8 commands
+  until `l` switches it). A run that ends where it started counts as all
+  waste.
+- **Run length** — the score at each run length, the charted one bracketed.
+  Longer runs give the optimizer more to merge, so they usually score lower.
+- **Daily score** — the charted length's score per day.
+- **Movement only / With edits** — the charted runs split by whether the
   text changed.
 - **Not scored** — runs left out of the score: the changed region was too
   large, the search found nothing, or the search failed.
@@ -201,9 +230,9 @@ single best sequence found.
 
 Each session is stamped with the plugin version and every setting its score
 depends on: keyboard, effort weights and optimizer overrides. Scores only
-compare under the same stamp, so the Efficiency section shows one stamp at a
-time, the current one first. `<Tab>` in the stats window steps through older
-stamps. Lifetime counts include every stamp.
+compare under the same stamp, so the Sessions score covers one stamp at a
+time, the current one first. `<Tab>` in the stats tab steps through older
+stamps. The session counts include every stamp.
 
 The JSON log of earlier versions, `sessions.jsonl`, predates stamps. It is
 moved to `legacy/sessions.v1.jsonl` and no longer read.

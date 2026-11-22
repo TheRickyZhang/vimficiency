@@ -39,6 +39,10 @@ local fields = {
   journal = {
     enabled = false,
     snapshot_every = 500, -- atoms per buffer between full-text snapshots
+    -- A journal file untouched this many days is reduced to daily totals once
+    -- scored, then deleted with its samples. Its runs then count only toward
+    -- the settings they were scored under.
+    keep_days = 90,
     -- How `:Vimfy stats` scores the journal. Changing any of these but `auto`
     -- rescores it from the start.
     sampling = {

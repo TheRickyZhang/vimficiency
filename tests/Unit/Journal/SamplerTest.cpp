@@ -3,11 +3,16 @@
 #include "Unit/Journal/JournalBuilder.h"
 
 #include "BuildConfig.h"
+#include "proto/summary.pb.h"
 
 import std.compat;
+import vf.Journal.Evaluate;
+import vf.Journal.Replay;
 import vf.Journal.Sampler;
+import vf.Journal.Windows;
 import vf.LuaExports.RecordFile;
 import vf.LuaExports.Samples;
+import vf.Optimizer.Analyze;
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -31,6 +36,28 @@ string journalOf(int atoms) {
   return j.bytes();
 }
 
+// Eight atoms moving over and deleting from rows 10 and 11 of twenty, so a
+// slice cuts rows off both ends. The filetype changes from cpp to lua in the
+// tick of atom 3. Atom 2 is a `gj`, which the search scores as `j`.
+string editedJournal() {
+  vector<string> lines;
+  for (int i = 0; i < 20; i++) lines.push_back(format("line {} of the text", i));
+  const JournalAtomOptions edit{.kind = "operator"};
+  JournalBuilder j;
+  j.header(5000).snapshot(lines, JournalBuilder::BUF, "cpp").resync(10, 0);
+  j.next().atom("l", 10, 1);
+  j.next().atom("gj", 11, 1);
+  lines[11].erase(1, 1);
+  j.next().delta(11, 1, {lines[11]}).atom("x", 11, 1, edit);
+  j.next().snapshot(lines, JournalBuilder::BUF, "lua").atom("k", 10, 1);
+  lines[10].erase(1, 1);
+  j.next().delta(10, 1, {lines[10]}).atom("x", 10, 1, edit);
+  j.next().atom("j", 11, 1);
+  j.next().atom("l", 11, 2);
+  j.next().atom("l", 11, 3);
+  return j.bytes();
+}
+
 class JournalSamplerTest : public testing::Test {
 protected:
   void SetUp() override {
@@ -51,6 +78,7 @@ protected:
     vf::journal::SampleRequest request;
     request.set_journal_dir(dir.string());
     *request.mutable_params() = params;
+    request.set_keep_days(keepDays);
     return Journal::sampleJournals(request.SerializeAsString());
   }
 
@@ -74,8 +102,29 @@ protected:
     return out;
   }
 
+  expected<vf::stats::RunDetail, string> detail(const vf::stats::RunId& id) {
+    vf::stats::RunRequest request;
+    *request.mutable_id() = id;
+    request.set_journal_dir(dir.string());
+    *request.mutable_sample_params() = params;
+    const expected<string, string> bytes = Journal::runDetail(request.SerializeAsString());
+    if (!bytes) return unexpected(bytes.error());
+    vf::stats::RunDetail out;
+    EXPECT_TRUE(out.ParseFromString(*bytes));
+    return out;
+  }
+
+  static vf::stats::RunId journalRun(const string& file, int size, int lastAtom) {
+    vf::stats::RunId id;
+    id.mutable_journal()->set_file(file);
+    id.mutable_journal()->set_window_size(size);
+    id.mutable_journal()->set_last_atom(lastAtom);
+    return id;
+  }
+
   fs::path dir;
   vf::journal::SampleParams params;
+  int keepDays = 90;
 };
 
 }  // namespace
@@ -205,4 +254,126 @@ TEST_F(JournalSamplerTest, RejectsAWindowSizeBelowOne) {
   params.set_window_sizes(0, 0);
 
   EXPECT_EQ(run().error, "window_sizes must be positive");
+}
+
+TEST_F(JournalSamplerTest, RejectsKeepDaysBelowOne) {
+  keepDays = 0;
+
+  EXPECT_EQ(run().error, "keep_days must be positive");
+}
+
+TEST_F(JournalSamplerTest, AnOldJournalIsScoredThenRolledUpAndDeleted) {
+  writeFile(dir / "a.vfj", journalOf(5));
+  writeFile(dir / "b.vfj", journalOf(5));
+  fs::last_write_time(dir / "a.vfj", fs::file_time_type::clock::now() - chrono::days(keepDays + 1));
+
+  const Journal::SampleRun result = run();
+  EXPECT_EQ(result.error, "");
+  EXPECT_EQ(result.evaluated, 4);
+  EXPECT_EQ(result.rolledUp, 1);
+  EXPECT_FALSE(fs::exists(dir / "a.vfj"));
+  EXPECT_FALSE(fs::exists(dir / "a.samples"));
+  EXPECT_TRUE(fs::exists(dir / "b.vfj"));
+  EXPECT_EQ(samples("b.samples").size(), 2u);
+
+  const string bytes = readFile(dir / "rollup.vfr");
+  string_view rest = bytes;
+  string_view entry;
+  ASSERT_TRUE(nextRecord(rest, entry));
+  EXPECT_TRUE(rest.empty());
+  vf::journal::Rollup rollup;
+  ASSERT_TRUE(rollup.ParseFromArray(entry.data(), entry.size()));
+  EXPECT_EQ(rollup.journal(), "a.vfj");
+  EXPECT_EQ(rollup.params().stamp().plugin_version(), VIMF_VERSION);
+  int runs = 0;
+  for (const vf::journal::RollupEntry& e : rollup.entries()) {
+    EXPECT_EQ(e.window_size(), 2);
+    runs += e.runs();
+  }
+  EXPECT_EQ(runs, 2);
+}
+
+TEST_F(JournalSamplerTest, EverySampledRunIsSlicedAgainAsItWasScored) {
+  params.add_window_sizes(3);
+  const string journal = editedJournal();
+  writeFile(dir / "a.vfj", journal);
+  ASSERT_EQ(run().error, "");
+
+  map<pair<int, int>, Journal::Window> windows;
+  Journal::Replay replay(journal);
+  Journal::WindowCutter cutter(
+      span<const int>(params.window_sizes().data(), params.window_sizes_size()),
+      params.idle_gap_ms());
+  Journal::Event event;
+  vector<Journal::Window> cut;
+  while (replay.next(event)) {
+    cut.clear();
+    cutter.push(event, cut);
+    for (Journal::Window& w : cut) windows.emplace(pair(w.size, w.lastAtom), std::move(w));
+  }
+  const Journal::EvaluateParams sliceParams{
+      .slicePadding = params.stamp().slice_padding(),
+      .maxSearchLines = params.stamp().max_search_lines(),
+  };
+
+  const vector<vf::journal::Sample> all = samples();
+  ASSERT_EQ(all.size(), 5u);
+  for (const vf::journal::Sample& sample : all) {
+    SCOPED_TRACE(format("size {}, last atom {}", sample.window_size(), sample.last_atom()));
+    const auto got = detail(journalRun("a.vfj", sample.window_size(), sample.last_atom()));
+    ASSERT_TRUE(got.has_value()) << got.error();
+
+    string typed;
+    string scored;
+    for (const vf::stats::Command& command : sample.commands()) {
+      typed += command.keys();
+      scored += command.keys() == "gj" ? "j" : command.keys();
+    }
+    EXPECT_EQ(got->keys(), scored);
+    EXPECT_EQ(got->typed(), typed);
+    EXPECT_EQ(got->filetype(), sample.first_atom() >= 4 ? "lua" : "cpp");
+
+    const Journal::WindowSlice sliced =
+        Journal::sliceWindow(windows.at({sample.window_size(), sample.last_atom()}), sliceParams);
+    ASSERT_EQ(sliced.outcome, Journal::Outcome::Scored);
+    const SearchInputs& in = sliced.inputs;
+    EXPECT_LT(got->lines_size(), 20);
+    ASSERT_EQ(got->lines_size(), ssize(in.initialLines));
+    for (int i = 0; i < got->lines_size(); i++) EXPECT_EQ(got->lines(i), string(in.initialLines[i]));
+    EXPECT_EQ(got->start_row(), in.initialPos.line);
+    EXPECT_EQ(got->start_col(), in.initialPos.col);
+    EXPECT_EQ(got->end_row(), in.goalPos.line);
+    EXPECT_EQ(got->end_col(), in.goalPos.col);
+    ASSERT_LT(got->end_row(), ssize(in.goalLines));
+    EXPECT_LT(got->end_col(), max<int>(1, ssize(in.goalLines[got->end_row()])));
+  }
+}
+
+TEST_F(JournalSamplerTest, ARunWithoutASliceIsAnError) {
+  writeFile(dir / "a.vfj", editedJournal());
+  params.mutable_stamp()->set_max_search_lines(1);
+
+  EXPECT_EQ(detail(journalRun("a.vfj", 2, 3)).error(), "a run that was too_large has no slice");
+}
+
+TEST_F(JournalSamplerTest, ARunTheJournalDoesNotHoldIsAnError) {
+  writeFile(dir / "a.vfj", journalOf(5));
+  ASSERT_TRUE(detail(journalRun("a.vfj", 2, 1)).has_value());
+
+  vf::stats::RunId session;
+  session.set_session(0);
+  EXPECT_EQ(detail(session).error(), "a session run has no journal window");
+  EXPECT_EQ(detail(journalRun("b.vfj", 2, 1)).error(),
+            format("journal {} is gone", (dir / "b.vfj").string()));
+  EXPECT_EQ(detail(journalRun("../a.vfj", 2, 1)).error(),
+            "journal file name '../a.vfj' holds a path separator");
+  const string path = (dir / "a.vfj").string();
+  EXPECT_EQ(detail(journalRun("a.vfj", 2, 2)).error(),
+            format("no window of 2 atoms ends at atom 2 of {}", path));
+  EXPECT_EQ(detail(journalRun("a.vfj", 2, 99)).error(),
+            format("no window of 2 atoms ends at atom 99 of {}", path));
+
+  params.set_window_sizes(0, 4);
+  EXPECT_EQ(detail(journalRun("a.vfj", 2, 1)).error(),
+            format("no window of 2 atoms ends at atom 1 of {}", path));
 }

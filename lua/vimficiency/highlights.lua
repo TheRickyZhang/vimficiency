@@ -46,6 +46,10 @@ M.VIEW_CONTEXT_DIM  = "VimficiencyViewContextDim"  -- faded out-of-slice/boundar
 M.VIEW_CURSOR_START = "VimficiencyViewCursorStart" -- start cursor cell (initial pane)
 M.VIEW_CURSOR_END   = "VimficiencyViewCursorEnd"   -- end cursor cell (final pane)
 
+-- Stats view (`:Vimfy stats`)
+M.STATS_SECTION_TITLE = "VimficiencyStatsSectionTitle" -- overview section titles
+M.STATS_DRILL         = "VimficiencyStatsDrill"        -- overview rows <CR> narrows to
+
 -- Shared settings modal
 M.SETTINGS_ACTION_ACTIVE = "VimficiencySettingsActionActive" -- selected action row
 M.SETTINGS_CURSOR_HIDDEN = "VimficiencySettingsCursorHidden" -- selected row only; no cursor cell
@@ -74,6 +78,9 @@ function M.refresh()
   v.nvim_set_hl(0, M.VIEW_CONTEXT_DIM,  { link = "Comment",    default = true })
   v.nvim_set_hl(0, M.VIEW_CURSOR_START, { link = "Search",     default = true })
   v.nvim_set_hl(0, M.VIEW_CURSOR_END,   { link = "IncSearch",  default = true })
+
+  v.nvim_set_hl(0, M.STATS_SECTION_TITLE, { link = "Title",      default = true })
+  v.nvim_set_hl(0, M.STATS_DRILL,         { link = "Identifier", default = true })
 
   v.nvim_set_hl(0, M.SETTINGS_ACTION_ACTIVE, { bold = true, default = true })
   -- `blend = 100` makes the cursor cell fully transparent. Combined with the

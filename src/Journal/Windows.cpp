@@ -16,6 +16,7 @@ WindowState stateAfter(const Event& event) {
       .win = event.win,
       .lines = event.lines,
       .textVersion = event.textVersion,
+      .filetype = event.filetype,
       .row = event.row,
       .col = event.col,
       .windowHeight = event.windowHeight,
@@ -45,7 +46,8 @@ void WindowCutter::push(const Event& event, vector<Window>& out) {
 
 void WindowCutter::closeGroup(vector<Window>& out) {
   const Event& last = group.back();
-  const bool clean = last.lines && last.normalMode;
+  // A cursor past the end of the text means the journal lost track of it.
+  const bool clean = last.lines && last.normalMode && last.row < ssize(*last.lines);
 
   // Whether the anchor, this group's recorded atoms and its last state are the
   // whole story of what happened.

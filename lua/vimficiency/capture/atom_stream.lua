@@ -301,7 +301,10 @@ function M.shutdown()
   listener_count = 0
 end
 
---- Scope shared by the whole-stream listeners (recall, journal).
+--- Scope shared by the whole-stream listeners (recall, journal). An atom
+--- delivered after its buffer left every window arrives in Neovim's temporary
+--- autocmd window, whose cursor is not the user's and whose buffer may already
+--- be unloaded.
 ---@param buf integer
 ---@param win integer
 ---@return boolean
@@ -310,6 +313,7 @@ function M.in_live_file_buffer(buf, win)
     and vim.bo[buf].buftype == ""
     and vim.api.nvim_win_is_valid(win)
     and vim.api.nvim_win_get_buf(win) == buf
+    and vim.fn.win_gettype(win) ~= "autocmd"
 end
 
 M._classify = classify

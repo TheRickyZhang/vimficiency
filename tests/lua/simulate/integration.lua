@@ -136,7 +136,7 @@ end
 ---@param lines string[]
 ---@param fn fun()
 ---@param next fun(ok: boolean, err: any)
----@param opts { start_row: integer?, start_col: integer?, user_seq: string? }?   0-indexed; default (0, 0)
+---@param opts { start_row: integer?, start_col: integer?, user_seq: string?, filetype: string? }?   0-indexed; default (0, 0)
 local function with_replay(sequences, lines, fn, next, opts)
   local prev_notify = vim.notify
   local prev_echo = vim.api.nvim_echo
@@ -167,7 +167,7 @@ local function with_replay(sequences, lines, fn, next, opts)
     {
       user = user_seq and { seq = user_seq } or nil,
       suggestions = suggestions,
-    })
+    }, { filetype = opts and opts.filetype or nil })
 
   local tries = 0
   local function finish(ok, err)

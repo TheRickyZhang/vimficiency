@@ -3,6 +3,7 @@ export module vf.Journal.Evaluate;
 import std.compat;
 import vf.Journal.Windows;
 import vf.Keyboard.Config;
+import vf.Optimizer.Analyze;
 import vf.Optimizer.OptimizerParamOverrides;
 
 export namespace Journal {
@@ -39,6 +40,16 @@ struct Sample {
   bool deadlineHit = false;
   double analyzeMs = 0;
 };
+
+struct WindowSlice {
+  // Scored, TooLarge or Unsupported; `inputs` is filled only when Scored.
+  Outcome outcome = Outcome::Scored;
+  SearchInputs inputs;
+};
+
+// The window cut down to the search a session over it would run. Only
+// `slicePadding`, `maxSearchLines` and `overrides` of `params` are read.
+WindowSlice sliceWindow(const Window& window, const EvaluateParams& params);
 
 // Runs the same search a session over the window would have.
 Sample evaluate(const Window& window, const EvaluateParams& params, const Config& config);

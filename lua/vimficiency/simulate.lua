@@ -53,6 +53,7 @@ local M = {}
 ---@field source_row integer?
 ---@field source_col integer?
 ---@field source_opts table?
+---@field filetype string   # "": no highlighting
 
 local multi_sim = {
   global_step = 0,
@@ -67,6 +68,7 @@ local multi_sim = {
   source_row = nil,
   source_col = nil,
   source_opts = nil,
+  filetype = "",
 }
 
 ---@class VF.Replay.FocusSavedEntry
@@ -153,6 +155,7 @@ local function cleanup_multi_sim()
   multi_sim.source_row = nil
   multi_sim.source_col = nil
   multi_sim.source_opts = nil
+  multi_sim.filetype = ""
   focus_state = nil
 end
 
@@ -243,6 +246,7 @@ ctx.ensure_states_for_ranks = ensure_states_for_ranks
 ---@field end_row integer?
 ---@field end_col integer?
 ---@field initial_window_count integer?
+---@field filetype string?   # highlights the visible panes only, never the precompute probe
 
 ---@class VF.Replay.PoolArg
 ---@field user { seq: string, cost: string? }?
@@ -283,6 +287,7 @@ function M.simulate_compare(lines, row, col, pool_arg, opts)
     end_row = opts.end_row,
     end_col = opts.end_col,
   }
+  multi_sim.filetype = opts.filetype or ""
   multi_sim.saved_win = v.nvim_get_current_win()
   multi_sim.saved_tab = v.nvim_get_current_tabpage()
   multi_sim.windows = {}

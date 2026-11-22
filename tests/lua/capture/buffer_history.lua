@@ -122,6 +122,22 @@ test("wiping a buffer drops its recall records", function()
   assert_eq(session_store.summarize(id), nil)
 end)
 
+test("mark refuses an unloaded buffer, and records it once loaded", function()
+  local path = vim.fn.tempname()
+  vim.fn.writefile({ "on disk" }, path)
+  local buf = vim.fn.bufadd(path)
+  assert_eq(pcall(buffer_history.mark, buf), false)
+
+  vim.fn.bufload(buf)
+  local seq = buffer_history.mark(buf)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "edited" })
+  buffer_history.mark(buf)
+  assert_eq(buffer_history.lines_at(buf, seq), { "on disk" })
+
+  vim.api.nvim_buf_delete(buf, { force = true })
+  vim.fn.delete(path)
+end)
+
 test("reload drops the buffer's recall records and reseeds on the next atom", function()
   local path = vim.fn.tempname()
   vim.fn.writefile({ "on disk" }, path)

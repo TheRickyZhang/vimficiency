@@ -171,7 +171,10 @@ its start, because every mark in the burst is taken after it.
 in-scope atom to `stdpath('data')/vimficiency/journal/<timestamp>-<pid>.vfj`,
 one file per `setup()`. It shares recall's scope (`atom_stream.in_live_file_buffer`)
 but keeps `skip` and `abort` atoms, with their decision, so a reader can cut
-sessions itself.
+sessions itself. That scope leaves out an atom delivered after its buffer left
+every window: it arrives in Neovim's temporary autocmd window, whose buffer may
+be unloaded. Marking an unloaded buffer would seed an empty shadow that
+`nvim_buf_attach` can never update, so `buffer_history` refuses it.
 
 Buffer text is exact, not replayed from keys: the journal is the
 `buffer_history` observer, so it receives the seed text and every folded delta
@@ -204,7 +207,8 @@ every atom of a tick carries the tick's final cursor and the first carries the
 whole delta. Only the last state of a tick is real, so a reader never splits one.
 
 The raw event fields that `VF.Atom` drops (`lhs`, `count`, `changed`, `moved`)
-are not in the journal. Files are never rotated or pruned.
+are not in the journal. Files are never rotated; the sampler deletes old ones
+once rolled up (§ Sampling).
 
 ### Sampling
 
@@ -225,6 +229,7 @@ anything else ends every open window:
 - an `abort` atom that shows in the text or cursor (saving a modified buffer is
   an `abort` that does not, because it bumps `changedtick`)
 - an atom of another buffer or window, or a state outside Normal mode
+- a cursor row past the end of the text, which only a capture bug leaves behind
 - a pause longer than `idle_gap_ms`
 
 `Evaluate` runs each window through the same `sliceSearch` / `searchInputs` /
@@ -242,9 +247,27 @@ completed by `stampSampleParams` (`src/LuaExports/Samples.cppm`): the stamp of
 `dev/lua/session-storage.md` § The session log, plus `SAMPLES_FORMAT`. Bump
 that when a sample gains content, so older files are redone. The sampler
 recomputes a file that is not current. `:Vimfy stats` reads samples through
-`vf_stats_summary` (`src/Stats/`), which skips such files until then, so two
-scorings never mix. It also reports the journal bytes the current samples cover,
+`vf_stats_summary` and `vf_stats_runs` (`src/Stats/`), which skip such files
+until then, so two scorings never mix. It also reports the journal bytes the current samples cover,
 shown as progress.
+
+The library keeps every samples file it has read in memory, as `Stats::Run`s
+(`src/Stats/JournalRuns.cppm`), and parses only what was appended since; a file
+that shrank or no longer starts with the same record is read again.
+
+At the end of a pass, a journal unmodified for `journal.keep_days` whose
+samples cover all of it under the current params is rolled up: its samples are
+reduced per local day, window size, nav/edit and outcome (`Stats::RunTotals`,
+`src/Stats/Rollup.cppm`) into a `vf.journal.Rollup` appended to `rollup.vfr`,
+then the journal and its samples are deleted. Rollups merge exactly, so the
+summary feeds them and samples through one reduction. They keep the params they
+were scored under and are never rescored: under other params they only count as
+`other_rollup_runs`.
+
+- The rollup names its journal, and a journal already rolled up is only deleted:
+  a pass that dies between the append and the deletion is finished by the next,
+  and the summary skips the journal meanwhile.
+- `keep_days` is not a param, so changing it rescores nothing.
 
 Windows are scored like sessions (`dev/lua/session-storage.md` § The session
 log). Windows that end where they started score a best of 0. `unbeaten` windows

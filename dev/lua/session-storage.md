@@ -63,8 +63,8 @@ its log record always agree.
 ### The session log
 
 `sessions.vfs` is a `vf.stats.SessionLog` (`src/LuaExports/proto/stats.proto`),
-appended through `vf_append_session` and read only by `vf_stats_summary`
-(`src/Stats/Summary.cpp`). Each session is logged under the stamp it was scored
+appended through `vf_append_session` and read only by `vf_stats_summary` and
+`vf_stats_runs` (`src/Stats/Summary.cpp`). Each session is logged under the stamp it was scored
 with: the plugin version plus every setting a score depends on
 (`stats_log.stamp()`, which the journal sampler sends too).
 
@@ -80,8 +80,11 @@ with: the plugin version plus every setting a score depends on
   the next append and not read.
 
 `vf_stats_summary` (`src/LuaExports/proto/summary.proto`) reduces the shown
-group and the current journal samples into everything the float draws;
-`stats.lua` only renders it.
+group and the current journal samples and rollups (`dev/lua/atom-stream.md`
+§ Sampling) into everything the stats view draws; `stats.lua` only renders it
+into pages, and `stats/view.lua` lays out the tab and maps its keys. The view
+holds the charted window size (`charted_size`, cycled by `l`) as a setting like
+the weight, not a filter.
 
 - A score is `Σ w·min(best/user, 1) / Σ w` over scored spans, with `w` the
   user's effort by default (`stats.weight = "effort"`, so it equals
@@ -94,6 +97,36 @@ group and the current journal samples into everything the float draws;
   an insert split into its entry command, editing keys such as `<BS>`, and a
   typed-character count. `ce`/`cw` and `cE`/`cW` share a row. They cover scored
   sessions and the journal runs of the charted size.
+
+Both exports narrow by one `vf.stats.Filter` (`src/Stats/Runs.cppm` applies it)
+and read the same scope, so a row's `drill` filter lists exactly the runs it
+counted. Lua copies `drill` verbatim and never builds a filter: `build_pages`
+returns each drillable row and daily chart column with its `drill`, and the
+view keeps a stack of them, the top one the current filter.
+
+- A field a source lacks leaves it out: a window size or nav/edit leaves
+  sessions out; commands leave rollups out, counted as
+  `rollup_runs_without_commands`.
+- The charted size is the filter's window size, else the request's
+  `charted_size`, else the middle one. No drill sets a window size, so a drill
+  made before `l` follows the switch. Window size 0 is the charted size
+  everywhere but the per-size scores.
+- Run rows carry `user_display`/`best_display` (`Stats::displayKeys`): each
+  stretch of typed characters as `⟨n⟩`, line breaks and every other key as the
+  sequence display renders them.
+- `vf_stats_runs` pages the shown group's sessions and the charted runs of the
+  current params, worst, newest or slowest first; ties go newest first, then by
+  id. Rolled-up runs count in `total` but have no rows.
+- A journal run's `RunId` is its file, window size and `last_atom`; a session's
+  is its index among the log's sessions.
+- `vf_stats_run` (`Journal::runDetail`) cuts a journal run's window again under
+  the request's `sample_params` and returns it sliced as its search saw it
+  (`Journal::sliceWindow`, shared with `evaluate`); `keys` are the sliced
+  `userSeq`, gj/gk approximated as in a session's `user_seq`. A session's id, a
+  run without a slice, a deleted journal, or params that no longer cut that
+  window are errors, which `ffi/stats.run` returns rather than raises.
+- `<CR>` on a journal run feeds the detail to `simulate.simulate_compare`
+  (`filetype` highlights only the visible panes); a session row echoes its keys.
 
 `diffs` is the planner's own partition (half-open, 0-indexed spans per side), so
 the viewer highlights exactly the regions the search ran against; `disk.validate`

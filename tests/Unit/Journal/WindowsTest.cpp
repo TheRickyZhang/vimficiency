@@ -265,6 +265,17 @@ TEST(JournalWindowsTest, ADiscontinuityEndsOpenWindows) {
   EXPECT_EQ(*windows[0].start.lines, (Lines{"reloaded text"}));
 }
 
+TEST(JournalWindowsTest, ACursorPastTheTextIsNoAnchor) {
+  JournalBuilder j = opened();
+  moveRight(j, 1);
+  j.next().snapshot({}).atom("l", 0, 2);
+  j.next().atom("j", 5, 2);
+  j.next().atom("j", 6, 2);
+  j.next().atom("j", 7, 2);
+
+  EXPECT_TRUE(cut(j.bytes(), {2}).empty());
+}
+
 TEST(JournalWindowsTest, AnIdleGapRestartsWindowsFromTheSameState) {
   JournalBuilder j = opened();
   moveRight(j, 1);

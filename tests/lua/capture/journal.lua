@@ -193,6 +193,21 @@ test("journal: no resync outside a file buffer", function()
   assert_eq(kinds(records), { "header" })
 end)
 
+test("journal: an atom delivered through the autocmd window is left out", function()
+  local records = with_journal(function()
+    local hidden = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_buf_set_lines(hidden, 0, -1, false, { "not in any window" })
+    vim.api.nvim_buf_call(hidden, function()
+      local win = vim.api.nvim_get_current_win()
+      assert_eq(vim.fn.win_gettype(win), "autocmd")
+      journal._for_test.listener(
+        { keys = "x", kind = "operator", typed = "x", buf = hidden, win = win, lossy = false }, "record")
+    end)
+    vim.api.nvim_buf_delete(hidden, { force = true })
+  end)
+  assert_eq(kinds(records), { "header" })
+end)
+
 test("journal: entering a buffer resyncs once the event queue drains", function()
   local entered
   local records = with_journal(function()

@@ -26,6 +26,7 @@ void applySnapshot(unordered_map<int, BufferText>& buffers, int& versions,
   keepOneLine(lines);
 
   BufferText& text = buffers[snapshot.buf()];
+  text.filetype = snapshot.filetype();
   if (text.lines && *text.lines == lines) return;
   if (text.lines) text.discontinuous = true;
   text.lines = make_shared<Lines>(std::move(lines));
@@ -75,6 +76,7 @@ Event stateEvent(unordered_map<int, BufferText>& buffers, EventKind kind,
     event.lines = text.lines;
     event.textVersion = text.version;
     event.discontinuous = text.discontinuous;
+    event.filetype = text.filetype;
     text.discontinuous = false;
   }
   return event;

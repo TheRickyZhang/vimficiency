@@ -23,16 +23,14 @@ bool supported(const Lines& lines) {
 
 }  // namespace
 
-Sample evaluate(const Window& window, const EvaluateParams& params, const Config& config) {
+WindowSlice sliceWindow(const Window& window, const EvaluateParams& params) {
   const Lines& initialLines = *window.start.lines;
   const Lines& goalLines = *window.end.lines;
-  Sample sample;
 
   const pair<int, int> region = computeSearchRegion(
       window.start.row, window.end.row, initialLines, goalLines, params.slicePadding);
   if (region.second - region.first > params.maxSearchLines) {
-    sample.outcome = Outcome::TooLarge;
-    return sample;
+    return {.outcome = Outcome::TooLarge};
   }
 
   SearchSlice slice = sliceSearch(
@@ -47,11 +45,18 @@ Sample evaluate(const Window& window, const EvaluateParams& params, const Config
       },
       window.keys, window.typed, region);
   if (!supported(slice.initialLines) || !supported(slice.goalLines)) {
-    sample.outcome = Outcome::Unsupported;
-    return sample;
+    return {.outcome = Outcome::Unsupported};
   }
+  return {.inputs = searchInputs(std::move(slice), params.overrides)};
+}
 
-  const SearchInputs in = searchInputs(std::move(slice), params.overrides);
+Sample evaluate(const Window& window, const EvaluateParams& params, const Config& config) {
+  Sample sample;
+  const WindowSlice sliced = sliceWindow(window, params);
+  sample.outcome = sliced.outcome;
+  if (sliced.outcome != Outcome::Scored) return sample;
+
+  const SearchInputs& in = sliced.inputs;
   sample.userCost = getEffort(in.userTyped, config);
   sample.navOnly = in.initialLines == in.goalLines;
   sample.netZero = sample.navOnly && in.initialPos.line == in.goalPos.line &&

@@ -112,6 +112,9 @@ message SampleParams {
 message SampleRequest {
   bytes journal_dir = 1;
   SampleParams params = 2;
+  // A journal untouched this many days is rolled up once fully scored, then
+  // deleted with its samples. Not a param: samples do not depend on it.
+  int32 keep_days = 3;
 }
 
 // One evaluated window: `atom_count` recorded atoms ending at journal atom
@@ -163,4 +166,49 @@ message SampleRecord {
 // Appended like `File`.
 message SampleFile {
   repeated SampleRecord records = 1;
+}
+
+// `Stats::CommandCounts`.
+message CommandCount {
+  bytes command = 1;
+  int32 count = 2;
+}
+
+message CommandTally {
+  repeated CommandCount commands = 1;
+  int64 typed_chars = 2;
+}
+
+// The samples of one local day, window size, nav/edit and outcome, reduced so
+// that entries merge exactly. Like the summary, it leaves out scored and
+// unbeaten samples with no user cost.
+message RollupEntry {
+  // Days since 1970-01-01, local time.
+  int64 day = 1;
+  int32 window_size = 2;
+  bool nav_only = 3;
+  Sample.Outcome outcome = 4;
+  int32 runs = 5;
+  // Σ w·min(best/user, 1) and Σ w, with w the user's effort or 1.
+  double effort_weighted = 6;
+  double effort_weights = 7;
+  double uniform_weighted = 8;
+  double uniform_weights = 9;
+  int32 deadline_hit = 10;
+  // Of `scored` samples only.
+  CommandTally user = 11;
+  CommandTally optimizer = 12;
+}
+
+// A journal's samples, kept after the journal and its samples are deleted.
+message Rollup {
+  // The journal's file name: a journal is rolled up once.
+  bytes journal = 1;
+  SampleParams params = 2;
+  repeated RollupEntry entries = 3;
+}
+
+// `rollup.vfr` in the journal directory, appended like `File`.
+message RollupFile {
+  repeated Rollup records = 1;
 }
