@@ -43,6 +43,12 @@ Counted motion emitters apply penalty at creation time:
 
 For full-edit mode (`ModePolicy<false>`), goal-conversion paths also preserve counted penalties when converting `d...` to change-prefixed forms.
 
+### CompositionOptimizer
+
+Composition re-types each sub-result's sequence to price the seams between them, which cannot recover a penalty. `Result::getPenalty()` carries it, and every transition adds it back, so `4dd` costs the same inside a composition as from the transform search alone.
+
+Join plans price `{n}J` with the transform explorer's `buildCountedEffort<CountClass::Join>` and carry the penalty on `JoinPlan::penalty`.
+
 ### VimDiff
 
 The diff planner's tiling oracle prices every counted chunk as digit keystrokes

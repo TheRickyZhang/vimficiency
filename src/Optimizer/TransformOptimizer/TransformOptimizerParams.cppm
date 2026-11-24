@@ -20,7 +20,8 @@ struct TransformOptimizerParams : OptimizerParamsBase {
     return TransformOptimizerParams{}
         .withMaxResults(maxResults)
         .withMaxNodesPopped(maxNodesPopped)
-        .withDistanceWeight(0.0);
+        .withDistanceWeight(0.0)
+        .withTypedWeight(0.0);
   }
 };
 

@@ -2,6 +2,8 @@ export module vf.Optimizer.TransformOptimizer.GoalHandlerTypes;
 
 import std.compat;
 export import vf.Boundary.TransformBoundary;
+export import vf.Effort.RunningEffort;
+export import vf.Keyboard.KeyedSequence;
 export import vf.Optimizer.TransformOptimizer.TransformState;
 export import vf.VimCore.VimEditUtils;
 

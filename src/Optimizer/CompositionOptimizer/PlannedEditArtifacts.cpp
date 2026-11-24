@@ -7,6 +7,7 @@ module vf.Optimizer.CompositionOptimizer.PlannedEditArtifacts;
 import std.compat;
 import vf.Effort.RunningEffort;
 import vf.Optimizer.BuildTypedCommands;
+import vf.Optimizer.TransformOptimizer.TransformExplorer;
 import vf.Utils.Debug;
 import vf.VimCore.VimEditUtils;
 
@@ -185,6 +186,42 @@ int commonSuffixLen(string_view a, string_view b, int prefixLen) {
   return count;
 }
 
+// Cheapest spelling of `numJoins` consecutive joins from one line: `JJJ`,
+// `J..`, or `4J`. All three leave the same text and cursor, so the count is
+// fixed by the group (lines joined = numJoins + 1) and only the spelling is
+// chosen. Returns the count penalty of the spelling appended.
+double appendJoins(Sequence& seq, bool useGJ, int numJoins,
+                   const CompositionOptimizerParams& params, const Config& config) {
+  if (numJoins == 0) return 0.0;
+  const KSId id = useGJ ? KSId::gJ : KSId::J;
+  const KeyedSequence& join = KeyedSequence::byId(id);
+  if (numJoins == 1) {
+    seq.append(join.seq.view());
+    return 0.0;
+  }
+
+  KeyedSequence repeated;
+  repeated.append(join, numJoins);
+  KeyedSequence dotted = join;
+  dotted.append(KeyedSequence::Period, numJoins - 1);
+  const double repeatedEffort = RunningEffort(repeated.keys, config).getEffort();
+  const double dottedEffort = RunningEffort(dotted.keys, config).getEffort();
+  const KeyedSequence& uncounted = dottedEffort < repeatedEffort ? dotted : repeated;
+
+  const int lineCount = numJoins + 1;
+  if (lineCount >= params.minPrefixCount && lineCount <= params.maxPrefixCount) {
+    RunningEffort counted = TransformExplorerDetail::buildCountedEffort<CountClass::Join>(
+        config, lineCount, id, lineCount);
+    if (counted.getEffort() < min(repeatedEffort, dottedEffort)) {
+      seq.append(to_string(lineCount));
+      seq.append(join.seq.view());
+      return counted.getPenalty();
+    }
+  }
+  seq.append(uncounted.seq.view());
+  return 0.0;
+}
+
 // Score a join simulation against a target line: characters retained without
 // a residual edit. Higher is better; an exact match scores the full target
 // length. J (addSpace=true) inserts a space between joined lines; gJ does
@@ -214,10 +251,9 @@ TransformResult computeTransformResultForDiff(
     full += buildTypedCommands(
         insertLines, "", diff.boundary.prefix(), diff.boundary.suffix());
     RunningEffort runningEffort(full.keys, config);
-    double effort = runningEffort.getEffort();
 
     vector<vector<Result>> insertResultsByStart(1);
-    insertResultsByStart[0].emplace_back(std::move(full.seq), effort);
+    insertResultsByStart[0].emplace_back(std::move(full.seq), runningEffort);
 
     CursorPos goalPos = typedCommandsExitCursor(
         diff.beginPos, insertLines, diff.boundary.suffix());
@@ -227,7 +263,7 @@ TransformResult computeTransformResultForDiff(
   }
 
   TransformOptimizerParams editParams =
-      TransformOptimizerParams{}
+      TransformOptimizerParams(params.transform)
           .withMinCountRepeat(params.minPrefixCount)
           .withMaxCountRepeat(params.maxPrefixCount)
           .withMaxResultsPerStartPos(params.transformMaxResultsPerStartPos);
@@ -353,54 +389,27 @@ optional<JoinPlan> computeJoinPlanForDiff(
     }
   }
 
-  struct GroupJoin {
-    JoinSimulation sim;
-    bool useGJ;
-  };
-  vector<GroupJoin> groupJoins;
-  groupJoins.reserve(targetLineCount);
-  for (int g = 0; g < targetLineCount; g++) {
-    auto [begin, end] = partition[g];
-    auto simJ = JoinSimulation::simulate(srcLines, begin, end, /*addSpace=*/true);
-    auto simGJ = JoinSimulation::simulate(srcLines, begin, end, /*addSpace=*/false);
-    int matchJ = joinSimMatchScore(simJ.joinedLine, fullTargetLines[g]);
-    int matchGJ = joinSimMatchScore(simGJ.joinedLine, fullTargetLines[g]);
-    bool useGJ = matchGJ > matchJ;
-    const auto& best = useGJ ? simGJ : simJ;
-    if (end - begin > 1) {
-      int commonLen = max(matchJ, matchGJ);
-      int maxLen = max(static_cast<int>(best.joinedLine.size()),
-                       static_cast<int>(fullTargetLines[g].size()));
-      double matchRatio = maxLen > 0 ? static_cast<double>(commonLen) / maxLen : 1.0;
-      if (matchRatio < 0.3) return nullopt;
-    }
-    groupJoins.push_back({best, useGJ});
-  }
-
   auto [entryBegin, entryEnd] = partition[0];
   if (entryEnd - entryBegin <= 1) return nullopt;
 
-  Sequence fullSeq;
-  CursorPos lastGoalPos(0, 0);
+  // Text survives on both sides of the deleted newlines, so only a join can
+  // merge it; similarity says nothing about whether the plan is worth it.
+  const bool joinRequired =
+      targetLineCount == 1 && !prefix.empty() && !suffix.empty();
 
-  for (int g = 0; g < targetLineCount; g++) {
+  constexpr double UNSOLVED = std::numeric_limits<double>::infinity();
+  struct GroupPlan {
+    Sequence seq;
+    double penalty = 0.0;
+    double effort = UNSOLVED;
+    int goalCol = 0;
+  };
+  auto planGroup = [&](int g, const JoinSimulation& sim, bool useGJ) {
     auto [begin, end] = partition[g];
     int numJoins = end - begin - 1;
-
-    // Navigate to next group's first line at col 0.
-    //   - `j0` (not `j` alone) ensures cursor lands at col 0, regardless of
-    //     prior targetCol. JoinSimulation models J's from slice-local (0, 0)
-    //     and the residual TransformOptimizer is called with cursorCol=0 for
-    //     non-join groups (or post-J col tracked by JoinSimulation for join
-    //     groups, also assuming the entry col was 0). Without `0`, `j` keeps
-    //     curswant from the prior group's exit, so the residual edit (e.g.
-    //     `C`) runs from the wrong column.
-    if (g > 0) fullSeq.append("j0");
-    const auto& [sim, useGJ] = groupJoins[g];
-    std::string_view joinCmd = useGJ ? "gJ" : "J";
-    for (int j = 0; j < numJoins; j++) fullSeq.append(joinCmd);
-
-    int cursorCol = numJoins > 0 ? sim.cursorCols.back() : 0;
+    GroupPlan plan;
+    plan.penalty = appendJoins(plan.seq, useGJ, numJoins, params, config);
+    plan.goalCol = numJoins > 0 ? sim.cursorCols.back() : 0;
 
     if (sim.joinedLine != fullTargetLines[g]) {
       Lines residualInitial = {sim.joinedLine};
@@ -415,7 +424,7 @@ optional<JoinPlan> computeJoinPlanForDiff(
           TransformBoundary::joinResidualBoundary(hasLinesAbove, hasLinesBelow);
       CursorPos residualGoalPos(0, fullTargetLines[g].lastCol());
       TransformOptimizerParams residualParams =
-          TransformOptimizerParams{}
+          TransformOptimizerParams(params.transform)
               .withMinCountRepeat(params.minPrefixCount)
               .withMaxCountRepeat(params.maxPrefixCount);
 
@@ -431,31 +440,64 @@ optional<JoinPlan> computeJoinPlanForDiff(
 
       if (nodesExplored) *nodesExplored += residualResult.getStats().nodesExplored();
 
-      const Result* res = residualResult.resultAt(0, cursorCol);
-      if (!res) return nullopt;
+      const Result* res = residualResult.resultAt(0, plan.goalCol);
+      if (!res) return plan;
 
-      fullSeq.append(res->getSequence().view());
-      lastGoalPos = residualResult.getGoalPos();
-    } else {
-      lastGoalPos = CursorPos(0, cursorCol);
+      plan.seq.append(res->getSequence().view());
+      plan.penalty += res->getPenalty();
+      plan.goalCol = residualResult.getGoalPos().col;
     }
+    plan.effort = getEffort(plan.seq.view(), config) + plan.penalty;
+    return plan;
+  };
+
+  Sequence fullSeq;
+  double penalty = 0.0;
+  int goalCol = 0;
+
+  for (int g = 0; g < targetLineCount; g++) {
+    auto [begin, end] = partition[g];
+    const bool joins = end - begin > 1;
+    auto simJ = JoinSimulation::simulate(srcLines, begin, end, /*addSpace=*/true);
+    auto simGJ = JoinSimulation::simulate(srcLines, begin, end, /*addSpace=*/false);
+    if (joins && !joinRequired) {
+      int matchJ = joinSimMatchScore(simJ.joinedLine, fullTargetLines[g]);
+      int matchGJ = joinSimMatchScore(simGJ.joinedLine, fullTargetLines[g]);
+      const auto& closer = matchGJ > matchJ ? simGJ : simJ;
+      int maxLen = max(static_cast<int>(closer.joinedLine.size()),
+                       static_cast<int>(fullTargetLines[g].size()));
+      double matchRatio =
+          maxLen > 0 ? static_cast<double>(max(matchJ, matchGJ)) / maxLen : 1.0;
+      if (matchRatio < 0.3) return nullopt;
+    }
+
+    // `J` and `gJ` leave different lines to finish, so cost picks; on the same
+    // line `J` is the cheaper spelling.
+    GroupPlan best = planGroup(g, simJ, false);
+    if (joins && simGJ.joinedLine != simJ.joinedLine) {
+      GroupPlan viaGJ = planGroup(g, simGJ, true);
+      if (viaGJ.effort < best.effort) best = std::move(viaGJ);
+    }
+    if (best.effort == UNSOLVED) return nullopt;
+
+    // `j0` (not `j` alone): JoinSimulation and the residual search both assume
+    // the group is entered at col 0, and `j` would keep the prior group's
+    // curswant.
+    if (g > 0) fullSeq.append("j0");
+    fullSeq.append(best.seq.view());
+    penalty += best.penalty;
+    goalCol = best.goalCol;
   }
 
-  CursorPos goalPos;
-  if (targetLineCount == 1) {
-    goalPos = CursorPos(diff.beginPos.line, lastGoalPos.col);
-  } else {
-    goalPos = CursorPos(diff.beginPos.line + targetLineCount - 1, lastGoalPos.col);
-  }
+  CursorPos goalPos(diff.beginPos.line + targetLineCount - 1, goalCol);
 
-  CHECK(fullSeq.view().starts_with("J") || fullSeq.view().starts_with("gJ"),
-        "composition join plan must start with J or gJ");
-  double effort = getEffort(fullSeq.view(), config);
+  double effort = getEffort(fullSeq.view(), config) + penalty;
 
   return JoinPlan{
       .sequence = std::move(fullSeq),
       .goalPos = goalPos,
       .effort = effort,
+      .penalty = penalty,
       .entryLine = diff.beginPos.line,
   };
 }

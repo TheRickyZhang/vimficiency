@@ -68,8 +68,8 @@ class CompositionState {
 
   RunningEffort runningEffort;
 
-  // Helper to append to sequence and update effort
-  void appendSequence(std::string_view s, const PhysicalKeys& keys, const Config& config);
+  // `penalty` is the sub-result's count penalty, which re-typing `s` cannot recover.
+  void appendSequence(std::string_view s, double penalty, const Config& config);
 
   inline CompositionState(CursorPos pos, Mode mode, int editsCompleted,
                    RunningEffort runningEffort = RunningEffort(),
@@ -103,12 +103,14 @@ public:
 private:
   // Internal: apply edit transition to this state (mutates)
   void applyEditTransitionImpl(const Sequence& editSequence,
+                               double penalty,
                                const CursorPos& newPos,
                                const Config& config);
 
   // Internal: apply motion result to this state (mutates)
   void applyNavResultImpl(const Sequence& moveSequence,
-                             const CursorPos& newPos, const Config& config);
+                          double penalty,
+                          const CursorPos& newPos, const Config& config);
 };
 
 template<class CostFn>
@@ -133,9 +135,10 @@ public:
   [[nodiscard]] inline CompositionState afterEditTransition(
       const CompositionState& state,
       const Sequence& editSequence,
+      double penalty,
       const CursorPos& newPos) const {
     CompositionState newState = state;
-    newState.applyEditTransitionImpl(editSequence, newPos, config);
+    newState.applyEditTransitionImpl(editSequence, penalty, newPos, config);
     newState.cost = costFor(newState);
     return newState;
   }
@@ -143,9 +146,10 @@ public:
   [[nodiscard]] inline CompositionState afterNavResult(
       const CompositionState& state,
       const Sequence& moveSequence,
+      double penalty,
       const CursorPos& newPos) const {
     CompositionState newState = state;
-    newState.applyNavResultImpl(moveSequence, newPos, config);
+    newState.applyNavResultImpl(moveSequence, penalty, newPos, config);
     newState.cost = costFor(newState);
     return newState;
   }

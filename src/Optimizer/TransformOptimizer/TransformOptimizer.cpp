@@ -119,7 +119,6 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
   const int leftColOffset = transformBoundary.leftColOffset();
   const int rightColOffset = transformBoundary.rightColOffset();
   const double effortWeight = params.effortWeight;
-  const double distanceWeight = params.distanceWeight;
 
   // Effective lines = boundary prefix + edit region + boundary suffix.
   // Same wrapping the depth-1 frontier (TransformFrontier) uses, via the
@@ -142,9 +141,27 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
   int uniquePositionsCovered = 0;
   TransformSearchStats stats;
 
-  const double startPriority =
-      distanceWeight * textDistanceEstimate(effectiveLines, leftColOffset, rightColOffset);
   TransformStateFactory states(config, effortWeight);
+  const string preSuf = pre + suf;
+
+  vector<vector<Result>> resultsByStart(totalPositions);
+  PureDeletionGoalCapture<PureDeletion> goalCapture(totalPositions);
+
+  using ModeType = std::conditional_t<PureDeletion, DeletionGoalHandler, ChangeGoalHandler>;
+  static_assert(GoalHandlerCore<ModeType>);
+  static_assert(PureDeletion || ChangeGoalEmitter<ModeType>);
+  ModeType mode(effectiveLines, leftColOffset, rightColOffset, effortWeight,
+                config, transformBoundary, initialLines, goalLines,
+                pre, suf, preSuf);
+
+  double typedTerm = 0.0;
+  if constexpr (!PureDeletion) {
+    typedTerm = params.typedWeight * effortWeight * mode.typedEffort.getEffort();
+  }
+  const TransformHeuristic heuristic{
+      params.distanceWeight, params.colExponent, params.breakCost, params.breakExponent,
+      typedTerm, leftColOffset, rightColOffset};
+  const double startPriority = heuristic(effectiveLines);
   int startIndex = 0;
   for (int line = 0; line <= initialLines.lastLine(); line++) {
     for (int col = 0; col < initialLines[line].effectiveSize(); col++) {
@@ -166,48 +183,45 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
     }
   }
 
-  const string preSuf = pre + suf;
-
-  vector<vector<Result>> resultsByStart(totalPositions);
-  PureDeletionGoalCapture<PureDeletion> goalCapture(totalPositions);
-
-  using ModeType = std::conditional_t<PureDeletion, DeletionGoalHandler, ChangeGoalHandler>;
-  static_assert(GoalHandlerCore<ModeType>);
-  static_assert(PureDeletion || ChangeGoalEmitter<ModeType>);
-  ModeType mode(effectiveLines, leftColOffset, rightColOffset, effortWeight,
-                config, transformBoundary, initialLines, goalLines,
-                pre, suf, preSuf);
-
   // A start with no solution would otherwise search its whole space, so each
   // start is cut off at a multiple of the work the hardest solved start took.
   vector<int> nodesByStart(totalPositions, 0);
   int hardestSolvedNodes = 0;
+  vector<Result> cheapestQueuedGoalByStart(totalPositions);
 
-  auto recordResult = [&](const TransformState& state, const Result& result, bool captureGoalPos) {
-    int idx = state.getStartIndex();
-    if (!startActive[idx]) return;
+  // False when the start is closed or already holds this sequence.
+  auto commitResult = [&](int idx, Result result) {
+    if (!startActive[idx]) return false;
     auto& bucket = resultsByStart[idx];
-    if (static_cast<int>(bucket.size()) >= params.maxResultsPerStartPos) return;
-
-    // Without a captured goal the landing is the fixed goalPos, which cannot follow curswant.
-    EntryCurswant entryCurswant = state.getEntryCurswant();
-    if (!captureGoalPos && entryCurswant == EntryCurswant::Followed) {
-      entryCurswant = EntryCurswant::Required;
+    if (static_cast<int>(bucket.size()) >= params.maxResultsPerStartPos) return false;
+    for (const Result& held : bucket) {
+      if (held.getSequence() == result.getSequence()) return false;
     }
 
     bool firstForStart = bucket.empty();
-    bucket.emplace_back(result.getSequence(), result.getCost(), entryCurswant);
+    bucket.push_back(std::move(result));
     resultsFound++;
-    if (captureGoalPos) goalCapture.onResult(idx, state.getPos());
     if (firstForStart) {
       uniquePositionsCovered++;
       hardestSolvedNodes = max(hardestSolvedNodes, nodesByStart[idx]);
     }
     if (static_cast<int>(bucket.size()) == params.maxResultsPerStartPos) {
-      if (startActive[idx]) {
-        startActive[idx] = false;
-        terminalStarts++;
-      }
+      startActive[idx] = false;
+      terminalStarts++;
+    }
+    return true;
+  };
+
+  auto recordResult = [&](const TransformState& state, Result result, bool captureGoalPos) {
+    // Without a captured goal the landing is the fixed goalPos, which cannot follow curswant.
+    EntryCurswant entryCurswant = state.getEntryCurswant();
+    if (!captureGoalPos && entryCurswant == EntryCurswant::Followed) {
+      entryCurswant = EntryCurswant::Required;
+    }
+    result.setEntryCurswant(entryCurswant);
+    const int idx = state.getStartIndex();
+    if (commitResult(idx, std::move(result)) && captureGoalPos) {
+      goalCapture.onResult(idx, state.getPos());
     }
   };
 
@@ -254,13 +268,13 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
 
     if (reachedGoal) {
       if constexpr (PureDeletion) {
-        recordResult(s, Result(Sequence(s.getSeq()), s.getEffort()), true);
+        recordResult(s, Result(Sequence(s.getSeq()), s.getRunningEffort()), true);
       } else {
         // emitEditGoal-pushed states already contain the typed completion in
         // their seq (and set lastEdit_). Initial / nav-only states whose
         // source already matched the cleared shell have not typed yet.
         Result result = s.hasLastEdit()
-            ? Result(Sequence(s.getSeq()), s.getEffort())
+            ? Result(Sequence(s.getSeq()), s.getRunningEffort())
             : mode.resultFromClearedGoal(s);
         recordResult(s, result, false);
       }
@@ -271,28 +285,31 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
     assert(pos.line >= 0 && pos.line <= lines.lastLine() &&
            "non-goal edit state must have in-bounds cursor line");
 
-    const bool unsolvedBeforeCache = resultsByStart[activeStart].empty();
-    auto cacheResult = mode.tryUseSuffixCache(s, resultsByStart,
-                                              params.maxResultsPerStartPos,
-                                              startActive,
-                                              resultsFound,
-                                              uniquePositionsCovered);
-    if (cacheResult.hit) {
-      if (unsolvedBeforeCache) {
-        hardestSolvedNodes = max(hardestSolvedNodes, nodesByStart[activeStart]);
-      }
-      if (cacheResult.startCapped && startActive[activeStart]) {
-        startActive[activeStart] = false;
-        terminalStarts++;
-      }
+    // A hit records a result now, long before a queued goal would pop: this
+    // state popped on its prefix cost, and that early result is what bounds the
+    // other starts' work. So the hit is only a trigger. A goal already queued
+    // for this start that beats the cached completion is recorded in its place.
+    if (SuffixCacheHit cached = mode.findCachedSuffix(s); cached.suffix) {
+      // The cached suffix was simulated from the column this prefix produced.
+      const bool prefixIgnoresCurswant =
+          s.getPathTail() && s.getEntryCurswant() == EntryCurswant::Ignored;
+      Result completion(
+          Sequence(s.getSeq() + cached.suffix->seq.str()),
+          RunningEffort::merge(s.getRunningEffort(), *cached.effort, config),
+          prefixIgnoresCurswant ? EntryCurswant::Ignored : EntryCurswant::Required);
+      const Result& queued = cheapestQueuedGoalByStart[activeStart];
+      const bool queuedWins =
+          !queued.getSequence().empty() && queued.getCost() < completion.getCost();
+      commitResult(activeStart, queuedWins ? queued : std::move(completion));
       ::maybeMarkStartExhausted(pendingByStart, startActive, terminalStarts, activeStart);
       continue;
     }
     DispatchType dispatch{
         mode,         s,           stats,         pq,
         costMap,      pendingByStart, startActive, bank,
-        transformBoundary, states,   distanceWeight,
-        leftColOffset, rightColOffset, params.allowLinewisePureDeletion};
+        transformBoundary, states,   heuristic,
+        leftColOffset, rightColOffset, params.allowLinewisePureDeletion,
+        cheapestQueuedGoalByStart};
 
     auto onDeletion = [&](const ResolvedEditAction& action,
                           const SequenceBinding& cmd) {

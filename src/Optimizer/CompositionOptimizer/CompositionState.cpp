@@ -5,26 +5,27 @@ import vf.Keyboard.ToKeys.MovementToKeys;
 
 using namespace std;
 
-void CompositionState::appendSequence(string_view s, const PhysicalKeys& keys,
-                                      const Config& config) {
+void CompositionState::appendSequence(string_view s, double penalty, const Config& config) {
   sequence.append(s);
-  effort = runningEffort.append(keys, config);
+  runningEffort.append(globalSequenceToKeys().tokenize(s), config);
+  runningEffort.addPenalty(penalty);
+  effort = runningEffort.getEffort();
 }
 
 void CompositionState::applyEditTransitionImpl(
     const Sequence& editSequence,
+    double penalty,
     const CursorPos& newPos,
     const Config& config) {
   pos = newPos;
   editsCompleted++;
-  PhysicalKeys keys = globalSequenceToKeys().tokenize(editSequence.view());
-  appendSequence(editSequence.view(), keys, config);
+  appendSequence(editSequence.view(), penalty, config);
 }
 
 void CompositionState::applyNavResultImpl(
     const Sequence& moveSequence,
+    double penalty,
     const CursorPos& newPos, const Config& config) {
   pos = newPos;
-  PhysicalKeys keys = globalSequenceToKeys().tokenize(moveSequence.view());
-  appendSequence(moveSequence.view(), keys, config);
+  appendSequence(moveSequence.view(), penalty, config);
 }

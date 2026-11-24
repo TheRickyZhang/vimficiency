@@ -62,17 +62,21 @@ TransformOptimizer already searches normal in-diff `J`, `gJ`, and counted join e
 
 Example: changing `aaa\nbbb` to `aaa bbb` can produce the scoped diff `\nbbb` -> ` bbb`. The physical `J` command must start on the `aaa` line, not inside the scoped deleted text. Composition owns that activation point because it operates on the full intermediate buffer.
 
-Invariant: every `JoinPlan` sequence starts with `J`. If the useful sequence would start with a residual edit, movement, or any non-join action, it is not a composition join plan; normal transform/composition search owns it.
+Invariant: every `JoinPlan` sequence starts with a join (`J`, `gJ`, or a counted one). If the useful sequence would start with a residual edit, movement, or any non-join action, it is not a composition join plan; normal transform/composition search owns it.
 
 ### Algorithm: Partition -> J per Group -> TransformOptimizer Residual
 
 For a diff with N source lines -> M target lines (N > M):
 
 1. **Partition** N source lines into M contiguous groups, where group k maps to target line k
-2. **Match quality check** -- if joined group content is too different from target (common prefix+suffix ratio < 0.3), skip J for this diff
+2. **Match quality check** -- if joined group content is too different from target (common prefix+suffix ratio < 0.3), skip J for this diff. A single-target-line diff with a non-empty prefix and suffix skips this check: text survives on both sides of the deleted newlines, so a join is required
 3. **Entry gate**: skip the plan unless the first group needs at least one `J`
-4. **Per group**: simulate J joins using `VimCore::joinLineRange` semantics, then run TransformOptimizer on the single-line residual (joined line vs target line)
-5. **Assemble**: concatenate all groups' sequences (J's + residual + `j` between groups) into one `JoinPlan`
+4. **Per group**: simulate both `J` and `gJ` joins using `VimCore::joinLineRange` semantics, run TransformOptimizer on each single-line residual (joined line vs target line), and keep the cheaper of the two; when both leave the same line, only `J` is tried
+5. **Assemble**: concatenate all groups' sequences (joins + residual + `j0` between groups) into one `JoinPlan`
+
+A group's count is not searched: the partition fixes it, since a group of `n` source lines is exactly `n - 1` joins. Only the spelling is chosen, the cheapest of `JJJ`, `J..`, and `4J`, which all leave the same text and cursor. The counted form is priced by the same `buildCountedEffort<CountClass::Join>` the transform explorer uses.
+
+A count cannot span planned edits. When the planner splits a join run into one region per newline, each region still contributes its own `J`.
 
 **Partition finding:**
 - M=1 (most common): trivial -- all N lines form one group
@@ -84,12 +88,13 @@ For a diff with N source lines -> M target lines (N > M):
 struct JoinPlan {
   Sequence sequence;
   CursorPos goalPos;
-  double effort;
+  double effort;   // includes penalty
+  double penalty;  // count penalties of the joins and residual edits
   int entryLine;
 };
 ```
 
-Because the first action is `J`, activation is column-insensitive: Vim joins the cursor line with the next line and lands at the join point regardless of the starting column on `entryLine`.
+Because the first action is a join, activation is column-insensitive: Vim joins the cursor line with the next line and lands at the join point regardless of the starting column on `entryLine`.
 
 ### Integration into A* search
 

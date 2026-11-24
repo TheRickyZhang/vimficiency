@@ -442,7 +442,7 @@ Result ChangeGoalHandler::resultFromClearedGoal(const TransformState& base) cons
 
   Sequence seq = Sequence(base.getSeq());
   seq.append(completion.seq.view());
-  return Result(seq, totalEffort.getEffort());
+  return Result(seq, totalEffort);
 }
 
 GoalStates ChangeGoalHandler::emitLinewiseChangeGoal(

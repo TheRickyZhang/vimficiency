@@ -91,6 +91,38 @@ concept ChangeGoalEmitter = requires(
   { handler.onJoinGoal(editorState, constState, cmd) } -> std::same_as<GoalStates>;
 };
 
+// Remaining-work estimate for a non-goal state. `typedTerm` is the same for
+// every such state, so it only orders them against queued goals.
+struct TransformHeuristic {
+  double distanceWeight;
+  double colExponent;
+  double breakCost;
+  double breakExponent;
+  double typedTerm;
+  int leftColOffset;
+  int rightColOffset;
+
+  static inline double shaped(int n, double exponent) {
+    if (exponent == 1.0) return n;
+    if (exponent == 0.5) return std::sqrt(n);
+    return n == 0 ? 0.0 : std::pow(n, exponent);
+  }
+
+  inline double operator()(const Lines& lines) const {
+    if (lines.empty()) return typedTerm;
+    double distance = 0.0;
+    const int lastLine = std::ssize(lines) - 1;
+    for (int i = 0; i <= lastLine; i++) {
+      int lineLen = lines[i].size();
+      if (i == 0) lineLen -= leftColOffset;
+      if (i == lastLine) lineLen -= rightColOffset;
+      distance += shaped(std::max(0, lineLen), colExponent);
+    }
+    distance += breakCost * shaped(lastLine, breakExponent);
+    return distanceWeight * distance + typedTerm;
+  }
+};
+
 template<bool PureDeletion, GoalHandlerCore ModePolicy>
   requires (PureDeletion || ChangeGoalEmitter<ModePolicy>)
 struct TransformTransitionDispatcher {
@@ -104,10 +136,12 @@ struct TransformTransitionDispatcher {
   const EffortBank& bank;
   const TransformBoundary& transformBoundary;
   const TransformStateFactory& states;
-  double distanceWeight;
+  const TransformHeuristic& heuristic;
   int leftColOffset;
   int rightColOffset;
   bool allowLinewisePureDeletion;
+  // Cheapest complete solution queued so far per start; empty sequence = none.
+  std::vector<Result>& cheapestQueuedGoalByStart;
 
   void emitState(TransformState&& state) {
     stats.incrementMotionsEmitted();
@@ -151,9 +185,7 @@ struct TransformTransitionDispatcher {
         baseState.getEditorState(), newPos);
     emitState(states.afterCommand(
         baseState, std::move(next), motionCmd.base.seq.view(), motionCmd.effort,
-        distanceWeight * textDistanceEstimate(baseState.getLines(), leftColOffset,
-                                              rightColOffset),
-        entryCurswant));
+        heuristic(baseState.getLines()), entryCurswant));
   }
 
   void emitChangeGoalForResolved(const TransformEditorState& afterDeletion,
@@ -258,8 +290,21 @@ struct TransformTransitionDispatcher {
 
 private:
   void emitGoalStates(GoalStates&& goals) {
+    noteQueuedGoal(goals.primary);
     emitState(std::move(goals.primary));
-    if (goals.dotVariant) emitState(std::move(*goals.dotVariant));
+    if (goals.dotVariant) {
+      noteQueuedGoal(*goals.dotVariant);
+      emitState(std::move(*goals.dotVariant));
+    }
+  }
+
+  void noteQueuedGoal(const TransformState& goal) {
+    Result& best = cheapestQueuedGoalByStart[goal.getStartIndex()];
+    if (!best.getSequence().empty() && best.getCost() <= goal.getEffort()) return;
+    // Change-mode goals land on the fixed goalPos, which cannot follow curswant.
+    EntryCurswant entryCurswant = goal.getEntryCurswant();
+    if (entryCurswant == EntryCurswant::Followed) entryCurswant = EntryCurswant::Required;
+    best = Result(Sequence(goal.getSeq()), goal.getRunningEffort(), entryCurswant);
   }
 
   bool finishTransition(TransformEditorState& next, const SequenceBinding& sourceCmd,
@@ -275,8 +320,7 @@ private:
     continueWithEdit(
         std::move(next),
         sourceCmd,
-        distanceWeight * textDistanceEstimate(nextLines, leftColOffset, rightColOffset),
-        entryCurswant);
+        heuristic(nextLines), entryCurswant);
     return false;
   }
 

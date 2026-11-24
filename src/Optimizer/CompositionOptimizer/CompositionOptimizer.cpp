@@ -176,6 +176,7 @@ optimizeImpl(
   // traced edit span.
   auto enqueueEditTransition = [&](const Entry& parent,
                                    const Sequence& editSequence,
+                                   double penalty,
                                    const CursorPos& newPos,
                                    int editsAfter,
                                    uint32_t editOffset = 0) {
@@ -183,7 +184,7 @@ optimizeImpl(
     const uint32_t seqLen = static_cast<uint32_t>(editSequence.size());
     assert(editOffset <= seqLen && "editOffset must lie inside transition sequence");
     CompositionState newState = states.afterEditTransition(
-        parent.state, editSequence, newPos);
+        parent.state, editSequence, penalty, newPos);
     const int editIndex = editsAfter - 1;
     typename Trace::State childTrace = trace.onEditTransition(
         parent.trace, editIndex, base + editOffset, base + seqLen);
@@ -191,9 +192,10 @@ optimizeImpl(
   };
   auto enqueueMotionTransition = [&](const Entry& parent,
                                      const Sequence& moveSequence,
+                                     double penalty,
                                      const CursorPos& newPos) {
     CompositionState newState = states.afterNavResult(
-        parent.state, moveSequence, newPos);
+        parent.state, moveSequence, penalty, newPos);
     enqueueState(std::move(newState), trace.onMotionTransition(parent.trace));
   };
 
@@ -256,7 +258,7 @@ optimizeImpl(
       if (movResult.getSequence().empty()) continue;
       CursorPos landing = movResult.getGoalPos();
       landing.line += slice.beginLine;
-      enqueueMotionTransition(parent, movResult.getSequence(), landing);
+      enqueueMotionTransition(parent, movResult.getSequence(), movResult.getPenalty(), landing);
     }
   };
 
@@ -276,7 +278,7 @@ optimizeImpl(
       double effort = s.getRunningEffort().getEffort();
       debug("GOAL #" + to_string(results.size()) + ":",
             "\"" + s.getSequence().str() + "\"", "effort:", effort);
-      results.emplace_back(s.getSequence(), effort);
+      results.emplace_back(s.getSequence(), s.getRunningEffort());
       if constexpr (Trace::collecting) {
         resultSpans.push_back(
             trace.onGoalReached(current.trace, ctx.totalEdits()));
@@ -330,7 +332,7 @@ optimizeImpl(
 
         if (inRange) {
           enqueueEditTransition(
-              current, Sequence(s.insertCmd), s.goalPos, editsCompleted + 1);
+              current, Sequence(s.insertCmd), 0.0, s.goalPos, editsCompleted + 1);
           return;
         }
 
@@ -354,7 +356,7 @@ optimizeImpl(
           const uint32_t motionBytes = static_cast<uint32_t>(fullSeq.size());
           fullSeq.append(s.insertCmd);
           enqueueEditTransition(
-              current, fullSeq, s.goalPos, editsCompleted + 1, motionBytes);
+              current, fullSeq, movResult.getPenalty(), s.goalPos, editsCompleted + 1, motionBytes);
         }
       };
 
@@ -370,7 +372,8 @@ optimizeImpl(
         [&](const Result& res, const CursorPos& editGoalPos) {
           debug("  edit found at", pos, "seq:", "\"" + res.getSequence().str() + "\"",
                 "cost:", res.getCost(), "goalPos:", editGoalPos);
-          enqueueEditTransition(current, res.getSequence(), editGoalPos, editsCompleted + 1);
+          enqueueEditTransition(
+              current, res.getSequence(), res.getPenalty(), editGoalPos, editsCompleted + 1);
         });
 
     const BracketQuoteContext& bqContext = ctx.edits[editsCompleted].bracketQuoteContext;
@@ -382,7 +385,7 @@ optimizeImpl(
             if (s.line != pos.line || s.col != pos.col) return;
             debug("    text-object strategy at col", s.col, ":", s.body);
             enqueueEditTransition(
-                current, Sequence(s.body), s.goalPos, editsCompleted + 1);
+                current, Sequence(s.body), 0.0, s.goalPos, editsCompleted + 1);
           });
     }
 
@@ -392,7 +395,7 @@ optimizeImpl(
       debug("  J plan at", pos, "seq:", "\"" + joinPlan->sequence.str() + "\"",
             "effort:", joinPlan->effort);
       enqueueEditTransition(
-          current, joinPlan->sequence, joinPlan->goalPos, editsCompleted + 1);
+          current, joinPlan->sequence, joinPlan->penalty, joinPlan->goalPos, editsCompleted + 1);
     }
 
     // Movement: no Transform edit applies here, so navigate toward one.

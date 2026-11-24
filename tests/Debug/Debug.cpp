@@ -26,6 +26,7 @@ import vf.Optimizer.NavOptimizer.NavOptimizer;
 import vf.Boundary.TransformBoundary;
 import vf.Boundary.NavBoundary;
 import vf.tests.Utils.NeovimOracle;
+import vf.tests.Utils.OracleReplay;
 import vf.Utils.PrettyText;
 import vf.tests.Utils.RandomBufferHelpers;
 import vf.tests.Utils.RandomGeneration;
@@ -271,4 +272,69 @@ TEST(DebugTest, DISABLED_CountPenaltyThroughComposition) {
            << "  (plain typing effort " << getEffort(r->getSequence().str(), config) << ")\n";
     showComposition("4dd", config, initial, {0, 0}, goal, {0, 0}, "");
   }
+}
+
+TEST(DebugTest, DISABLED_SuffixCacheDotContext) {
+  const Lines fullBuffer = {"ce.d.d ", "aa.eb", "f. e", ".e ae"};
+  const Lines editRegion = {".d.d ", "aa.eb", "f. e", ".e a"};
+  const Lines goalLines = {"fbbccbae", "c.dead", "aaadd   ", "e.b,"};
+  TransformBoundary boundary(fullBuffer, CursorPos(0, 2), CursorPos(3, 4));
+  TransformOptimizer opt(Config::uniform());
+  TransformResult res = opt.optimizeTransform(
+      editRegion, goalLines, boundary,
+      TransformOptimizerParams{}.withMaxResults(200).withMaxResultsPerStartPos(3));
+  cout << res.getStats() << "\n";
+  const auto& buckets = res.getResults();
+  for (size_t i = 0; i < buckets.size(); i++) {
+    cout << "start " << i << ": " << buckets[i].size();
+    if (!buckets[i].empty())
+      cout << "  " << buckets[i][0].getCost() << " " << VF::prettify(buckets[i][0].getSequence().str());
+    cout << "\n";
+  }
+}
+
+TEST(DebugTest, DISABLED_EmbeddedChangeCounterexample) {
+  const Lines fullBuffer = {"\"S ~E", "  T .", "E u~ "};
+  const Lines editRegion = {" ~E", "  T .", "E u"};
+  TransformBoundary boundary(fullBuffer, CursorPos(0, 2), CursorPos(2, 3));
+  TransformOptimizer opt(Config::uniform());
+  TransformResult res =
+      opt.optimizeTransform(editRegion, Lines({"", "", ""}), boundary, TransformOptimizerParams{});
+  cout << res.getStats() << "\n";
+  const auto& buckets = res.getResults();
+  for (size_t i = 0; i < buckets.size(); i++)
+    for (const Result& r : buckets[i])
+      cout << "start " << i << "  " << r.getCost() << "  " << VF::prettify(r.getSequence().str())
+           << "\n";
+}
+
+TEST(DebugTest, DISABLED_EmbeddedChangeOracle) {
+  NeovimOracle oracle;
+  const Lines fullBuffer = {"\"S ~E", "  T .", "E u~ "};
+  const Lines expected = {"\"S", "", "~ "};
+  for (const char* seq : {"d)", "d)dB", "d)dB.", "d)dB.ce\r\r\x1b", "d)dB.Jcaw\r\r\x1b"}) {
+    auto result = OracleReplay::matches(oracle, fullBuffer, CursorPos(1, 2), seq, expected,
+                                        std::nullopt, Mode::Normal, "probe");
+    cout << "== " << VF::prettify(seq) << (result ? "  MATCH" : "") << "\n";
+    if (!result) cout << result.message() << "\n";
+  }
+}
+
+TEST(DebugTest, DISABLED_CompositionNoResultCounterexample) {
+  showComposition("fuzz no-result", Config::uniform(), Lines({"    `", "1", "~"}), {0, 3},
+                  Lines({"    `", "1~N", "~~"}), {2, 0}, "");
+  showComposition("fuzz no-result, goal (2,1)", Config::uniform(), Lines({"    `", "1", "~"}), {0, 3},
+                  Lines({"    `", "1~N", "~~"}), {2, 1}, "");
+}
+
+TEST(DebugTest, DISABLED_NewlineReplacementTransform) {
+  const Lines initial({"    `", "1", "~"});
+  const TransformBoundary boundary(initial, CursorPos{1, 1}, CursorPos{2, 0});
+  TransformOptimizer opt(Config::uniform());
+  TransformResult res = opt.optimizeTransform(Lines({"", ""}), Lines({"~N", "~"}), boundary,
+                                              TransformOptimizerParams{}, 1, 1, CursorPos{2, 0});
+  cout << res.getStats() << "\n";
+  const auto& buckets = res.getResults();
+  for (size_t i = 0; i < buckets.size(); i++)
+    cout << "start " << i << ": " << buckets[i].size() << " results\n";
 }

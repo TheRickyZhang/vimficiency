@@ -232,7 +232,7 @@ TEST(CompositionTraceExport, ExportExample) {
       CursorPos landing = mr.getGoalPos();
       landing.line += beginLine;
       ChildRec c{"nav", mr.getSequence().str(), 0,
-                 states.afterNavResult(node.state, mr.getSequence(), landing)};
+                 states.afterNavResult(node.state, mr.getSequence(), mr.getPenalty(), landing)};
       c.navCall = navCallId;
       classify(c);
       node.children.push_back(std::move(c));
@@ -266,7 +266,7 @@ TEST(CompositionTraceExport, ExportExample) {
                               pos.col >= ins.beginCol && pos.col < ins.endCol);
         if (inRange) {
           ChildRec c{"insert", ins.insertCmd, 0,
-                     states.afterEditTransition(s, Sequence(ins.insertCmd),
+                     states.afterEditTransition(s, Sequence(ins.insertCmd), 0.0,
                                                 ins.goalPos)};
           classify(c);
           node.children.push_back(std::move(c));
@@ -299,7 +299,7 @@ TEST(CompositionTraceExport, ExportExample) {
           const int motionBytes = static_cast<int>(fullSeq.size());
           fullSeq.append(ins.insertCmd);
           ChildRec c{"insert", fullSeq.str(), motionBytes,
-                     states.afterEditTransition(s, fullSeq, ins.goalPos)};
+                     states.afterEditTransition(s, fullSeq, mr.getPenalty(), ins.goalPos)};
           c.navCall = navCallId;
           classify(c);
           node.children.push_back(std::move(c));
@@ -316,7 +316,7 @@ TEST(CompositionTraceExport, ExportExample) {
       canUseTransformAlternatives = false;
       if (pos.col == 0) {
         ChildRec c{"reset0", "0", 0,
-                   states.afterNavResult(s, Sequence("0"), CursorPos(pos.line, 0))};
+                   states.afterNavResult(s, Sequence("0"), 0.0, CursorPos(pos.line, 0))};
         classify(c);
         node.children.push_back(std::move(c));
       }
@@ -330,7 +330,7 @@ TEST(CompositionTraceExport, ExportExample) {
           editGoalPos = clampGoalPosToLines(editGoalPos, ctx.getLinesAfter(editsCompleted + 1));
         }
         ChildRec c{"edit", r.getSequence().str(), 0,
-                   states.afterEditTransition(s, r.getSequence(), editGoalPos)};
+                   states.afterEditTransition(s, r.getSequence(), r.getPenalty(), editGoalPos)};
         c.menuCost = r.getCost();
         classify(c);
         node.children.push_back(std::move(c));
@@ -344,7 +344,7 @@ TEST(CompositionTraceExport, ExportExample) {
           [&](const CompositionStrategies::BracketQuote& bq) {
             if (bq.line != pos.line || bq.col != pos.col) return;
             ChildRec c{"textobj", bq.body, 0,
-                       states.afterEditTransition(s, Sequence(bq.body),
+                       states.afterEditTransition(s, Sequence(bq.body), 0.0,
                                                   bq.goalPos)};
             classify(c);
             node.children.push_back(std::move(c));
@@ -354,7 +354,7 @@ TEST(CompositionTraceExport, ExportExample) {
     const auto& joinPlan = ctx.edits[editsCompleted].joinPlan;
     if (joinPlan && pos.line == joinPlan->entryLine) {
       ChildRec c{"join", joinPlan->sequence.str(), 0,
-                 states.afterEditTransition(s, joinPlan->sequence,
+                 states.afterEditTransition(s, joinPlan->sequence, joinPlan->penalty,
                                             joinPlan->goalPos)};
       classify(c);
       node.children.push_back(std::move(c));

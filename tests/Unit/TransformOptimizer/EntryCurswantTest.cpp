@@ -23,9 +23,9 @@ struct Visited {
 TransformResult resultWithEveryClass() {
   Lines initial = {"a"};
   vector<vector<Result>> buckets = {{
-      Result(Sequence("x"), 1.0, EntryCurswant::Ignored),
-      Result(Sequence("dd"), 2.0, EntryCurswant::Followed),
-      Result(Sequence("ddx"), 3.0, EntryCurswant::Required),
+      Result(Sequence("x"), RunningEffort(), EntryCurswant::Ignored),
+      Result(Sequence("dd"), RunningEffort(), EntryCurswant::Followed),
+      Result(Sequence("ddx"), RunningEffort(), EntryCurswant::Required),
   }};
   vector<vector<CursorPos>> goals = {{CursorPos(0, 0), CursorPos(0, 0), CursorPos(0, 0)}};
   return TransformResult(std::move(buckets), TransformSearchStats{}, initial, 0, 0,
@@ -78,7 +78,7 @@ TEST(TransformResultEntryCurswantTest, FollowedLandingResetsCurswantToClampedCol
 
 TEST(TransformResultEntryCurswantTest, OnlyRequiredResultsMeansNothingApplies) {
   Lines initial = {"a"};
-  vector<vector<Result>> buckets = {{Result(Sequence("ddx"), 3.0, EntryCurswant::Required)}};
+  vector<vector<Result>> buckets = {{Result(Sequence("ddx"), RunningEffort(), EntryCurswant::Required)}};
   TransformResult result(std::move(buckets), TransformSearchStats{}, initial);
 
   bool anyApplied = true;

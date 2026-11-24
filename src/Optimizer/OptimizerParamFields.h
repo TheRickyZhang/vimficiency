@@ -30,6 +30,12 @@
 #define TRANSFORM_FIELDS(F)                                                             \
     F(int, maxResultsPerStartPos, withMaxResultsPerStartPos, 1)                         \
     F(double, startWorkFactor, withStartWorkFactor, 8.0)                                \
+    /* Heuristic = distanceWeight * (sum of cols^colExponent per line                   \
+       + breakCost * breaks^breakExponent) + typedWeight * effort of the goal text. */  \
+    F(double, colExponent,   withColExponent,   1.0)                                    \
+    F(double, breakCost,     withBreakCost,     2.0)                                    \
+    F(double, breakExponent, withBreakExponent, 1.0)                                    \
+    F(double, typedWeight,   withTypedWeight,   0.0)                                    \
     F(bool, allowLinewisePureDeletion, withLinewisePureDeletion, true)
 
 #define COMPOSITION_OWN_FIELDS(F)                                                          \

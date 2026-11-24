@@ -105,6 +105,14 @@ Replacing the chain with replay (parse the generated sequence, simulate via the 
 
 At lookup: if caller dot context matches, use the dot override; otherwise use the expanded variant.
 
+### Hits record early
+
+A hit records a result when the prefix state pops, which is on the prefix's cost and not the completion's. That early result is load-bearing: it is what lets the per-start work cutoff close the other starts, and queueing completions at full cost instead made a four-line change exhaust `maxNodesPopped` with no results.
+
+The hit is therefore only a trigger. `cheapestQueuedGoalByStart` holds the cheapest goal state already queued for each start, and a hit records that goal instead when it beats the cached completion. Without it, a chain of cheap deletions reached a cached suffix first and `x...ceomega<Esc>` beat the queued `Comega<Esc>`.
+
+The goal state is still in the queue afterwards; `commitResult` drops it when it pops, since a bucket never holds one sequence twice.
+
 Subsequent dots (after the first explicit command) are unambiguous.
 
 ## Boundary Shift Handling
