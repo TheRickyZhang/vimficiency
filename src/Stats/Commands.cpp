@@ -14,6 +14,7 @@ namespace {
 // Below this many uses by either side, a ratio is mostly noise.
 constexpr int MIN_OCCURRENCES = 10;
 constexpr size_t ROWS_SHOWN = 8;
+constexpr int NEVER_SHOWN = 5;
 // Shares within 5% of each other count as the same.
 constexpr double DEADBAND = 0.05;
 
@@ -54,12 +55,16 @@ string displayTyped(string_view text) {
   return out;
 }
 
-// `ce` and `cw` act alike on a word (`:h cw`), as do `cE` and `cW`.
+// `ce` and `cw` act alike on a word (`:h cw`), as do `cE` and `cW`. A `gj` or
+// `gk` counted here crossed lines like `j` or `k`, or is taken to have
+// (countWithinLine has the rest).
 string rowName(string_view command) {
   const size_t i = countDigits(command);
   const string_view rest = command.substr(i);
   if (rest == "ce" || rest == "cw") return string(command.substr(0, i)) + "ce|cw";
   if (rest == "cE" || rest == "cW") return string(command.substr(0, i)) + "cE|cW";
+  if (rest == "j" || rest == "gj") return string(command.substr(0, i)) + "j|gj";
+  if (rest == "k" || rest == "gk") return string(command.substr(0, i)) + "k|gk";
   return string(command);
 }
 
@@ -134,6 +139,10 @@ void countKeys(CommandCounts& counts, string_view keys, bool insertText) {
   }
 }
 
+void countWithinLine(CommandCounts& counts, string_view keys) {
+  counts.commands[string(keys) + " (same line)"]++;
+}
+
 void countInsertKeys(CommandCounts& counts, string_view pressed) {
   for (const string_view key : splitKeys(pressed)) {
     if (isCharacterKey(key)) {
@@ -182,20 +191,22 @@ CommandComparison compareCommands(const CommandCounts& user, const CommandCounts
     if (row.user + row.optimizer < MIN_OCCURRENCES) continue;
     const double userShare = userTotal > 0 ? double(row.user) / userTotal : 0;
     const double optimizerShare = optimizerTotal > 0 ? double(row.optimizer) / optimizerTotal : 0;
-    CommandRow entry{.text = text,
+    CommandRow entry{.text = row.variants.size() == 1 ? *row.variants.begin() : text,
                      .user = row.user,
                      .optimizer = row.optimizer,
                      .variants = {row.variants.begin(), row.variants.end()}};
     entry.ratio = optimizerShare > 0 ? userShare / optimizerShare
                   : userShare > 0    ? numeric_limits<double>::infinity()
                                      : 0;
-    if (text.contains('|')) {
+    if (row.variants.size() > 1) {
       for (const auto& [variant, n] : row.userVariants) {
         if (!entry.split.empty()) entry.split += " · ";
         entry.split += variant + " " + to_string(n);
       }
     }
-    if (entry.ratio > 1 + DEADBAND) {
+    if (row.optimizer == 0) {
+      out.never.push_back(std::move(entry));
+    } else if (entry.ratio > 1 + DEADBAND) {
       out.more.push_back(std::move(entry));
     } else if (entry.ratio < 1 - DEADBAND) {
       out.less.push_back(std::move(entry));
@@ -212,6 +223,13 @@ CommandComparison compareCommands(const CommandCounts& user, const CommandCounts
   ranges::sort(out.less, furthest(false));
   if (out.more.size() > ROWS_SHOWN) out.more.resize(ROWS_SHOWN);
   if (out.less.size() > ROWS_SHOWN) out.less.resize(ROWS_SHOWN);
+  ranges::sort(out.never, [](const CommandRow& a, const CommandRow& b) {
+    return a.user != b.user ? a.user > b.user : a.text < b.text;
+  });
+  if (ssize(out.never) > NEVER_SHOWN) {
+    out.neverCut = ssize(out.never) - NEVER_SHOWN;
+    out.never.resize(NEVER_SHOWN);
+  }
   return out;
 }
 

@@ -166,6 +166,9 @@ message Sample {
   bytes best_seq = 15;
   // The window's `Atom.typed_insert`s; unset when any of its atoms has none.
   optional bytes typed_insert = 16;
+  // Indices of the `commands` that are a gj/gk which moved the cursor along
+  // its buffer line. Every other gj/gk counts as j/k.
+  repeated int32 within_line = 17;
 }
 
 message SampleRecord {

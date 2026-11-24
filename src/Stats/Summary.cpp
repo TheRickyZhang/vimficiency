@@ -313,6 +313,8 @@ expected<string, string> summarize(string_view requestBytes, int64_t now) {
   const CommandComparison compared = compareCommands(commands.user, commands.optimizer);
   for (const CommandRow& row : compared.more) fillRow(*table.add_more(), row);
   for (const CommandRow& row : compared.less) fillRow(*table.add_less(), row);
+  for (const CommandRow& row : compared.never) fillRow(*table.add_never(), row);
+  table.set_never_cut(compared.neverCut);
   return out.SerializeAsString();
 }
 
@@ -326,10 +328,8 @@ expected<string, string> listRuns(string_view requestBytes) {
   }
   const auto scope = openScope(request.scope());
   if (!scope) return unexpected(scope.error());
-  const RunOrder order = request.order() == vf::stats::RunsRequest::newest    ? RunOrder::Newest
-                         : request.order() == vf::stats::RunsRequest::slowest ? RunOrder::Slowest
-                                                                              : RunOrder::Worst;
-  const RunPage page = pageRuns(*scope, order, request.offset(), request.limit());
+  const RunPage page = pageRuns(*scope, RunOrder(request.order()), request.ascending(),
+                                request.offset(), request.limit());
 
   vf::stats::RunList out;
   out.set_total(page.total);

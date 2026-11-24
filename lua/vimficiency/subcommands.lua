@@ -168,7 +168,7 @@ return {
   },
 
   stats = {
-    desc = "Open the stats tab (sessions, journal, commands; narrow to any row's runs); `refresh` only scores the journal",
+    desc = "Open the stats tab (sessions, journal, commands; list any row's runs); `refresh` only scores the journal",
     usage = "stats [refresh]",
     complete = { { "refresh" } },
     run = function(args)

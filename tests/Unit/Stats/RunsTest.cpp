@@ -316,7 +316,7 @@ TEST_F(StatsRunsTest, EveryDrillFilterListsWhatItsRowCounted) {
     const auto& commands = summary.commands();
     ASSERT_GT(commands.more_size(), 0);
     ASSERT_GT(commands.less_size(), 0);
-    for (const auto* table : {&commands.more(), &commands.less()}) {
+    for (const auto* table : {&commands.more(), &commands.less(), &commands.never()}) {
       for (const auto& row : *table) {
         const auto [user, optimizer] = uses(runs(row.drill()), row);
         EXPECT_EQ(user, row.user()) << row.text();
@@ -386,9 +386,9 @@ TEST_F(StatsRunsTest, OrdersAndTheirTieBreaks) {
           {run(1, 10, 9, 5, 3), run(2, 10, 2, 9, 1), run(3, 10, 6, 1, 2), run(4, 10, 6, 1, 2), large});
   journal("b", 10, params, {run(3, 10, 6, 1, 2)});
 
-  auto order = [&](RunsRequest::Order by) {
+  auto order = [&](RunsRequest::Order by, bool ascending = false) {
     vector<string> out;
-    for (const auto& row : runs({}, by).runs()) {
+    for (const auto& row : runs({}, by, 0, 1000, false, ascending).runs()) {
       out.push_back(row.id().journal().file() + ":" + to_string(row.id().journal().last_atom()));
     }
     return out;
@@ -399,6 +399,15 @@ TEST_F(StatsRunsTest, OrdersAndTheirTieBreaks) {
             (vector<string>{"a.vfj:3", "a.vfj:4", "b.vfj:3", "a.vfj:1", "a.vfj:2", "a.vfj:9"}));
   EXPECT_EQ(order(RunsRequest::slowest),
             (vector<string>{"a.vfj:1", "a.vfj:3", "a.vfj:4", "b.vfj:3", "a.vfj:2", "a.vfj:9"}));
+  EXPECT_EQ(order(RunsRequest::best_cost),
+            (vector<string>{"a.vfj:1", "a.vfj:3", "a.vfj:4", "b.vfj:3", "a.vfj:2", "a.vfj:9"}));
+  EXPECT_EQ(order(RunsRequest::saved),
+            (vector<string>{"a.vfj:2", "a.vfj:3", "a.vfj:4", "b.vfj:3", "a.vfj:1", "a.vfj:9"}));
+  // The unscored run has nothing saved, so it is last in either direction.
+  EXPECT_EQ(order(RunsRequest::saved, true),
+            (vector<string>{"a.vfj:1", "a.vfj:3", "a.vfj:4", "b.vfj:3", "a.vfj:2", "a.vfj:9"}));
+  EXPECT_EQ(order(RunsRequest::user_cost, true),
+            (vector<string>{"a.vfj:3", "a.vfj:4", "b.vfj:3", "a.vfj:1", "a.vfj:2", "a.vfj:9"}));
 }
 
 TEST_F(StatsRunsTest, PagesAreSlicesOfTheWholeOrder) {

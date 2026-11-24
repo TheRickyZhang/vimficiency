@@ -26,15 +26,23 @@ bool matchesCommands(const Selection& selection, const Run& run) {
   });
 }
 
+// NaN when the run has no value to order by.
 double orderKey(const Run& run, RunOrder order) {
+  const double none = numeric_limits<double>::quiet_NaN();
   switch (order) {
     case RunOrder::Worst:
-      return isScoring(run.outcome) ? run.userCost - run.bestCost
-                                    : -numeric_limits<double>::infinity();
+      return isScoring(run.outcome) ? run.userCost - run.bestCost : none;
     case RunOrder::Newest:
       return run.wallEpoch;
     case RunOrder::Slowest:
       return run.analyzeMs;
+    case RunOrder::UserCost:
+      return run.userCost;
+    case RunOrder::BestCost:
+      return isScoring(run.outcome) ? run.bestCost : none;
+    case RunOrder::Saved:
+      return isScoring(run.outcome) && run.userCost > 0 ? (run.userCost - run.bestCost) / run.userCost
+                                                        : none;
   }
   return 0;
 }
@@ -93,7 +101,7 @@ int rolledUpRuns(const Scope& scope, const Selection& selection) {
   return runs;
 }
 
-RunPage pageRuns(const Scope& scope, RunOrder order, int offset, int limit) {
+RunPage pageRuns(const Scope& scope, RunOrder order, bool ascending, int offset, int limit) {
   const Selection selection = chartedSelection(scope);
   vector<ListedRun> listed;
   for (const Run& session : scope.sessions.runs) {
@@ -110,12 +118,13 @@ RunPage pageRuns(const Scope& scope, RunOrder order, int offset, int limit) {
   (selection.commands.empty() ? page.rolledUp : page.rollupRunsWithoutCommands) = rolled;
   page.total = ssize(listed) + page.rolledUp;
 
-  auto before = [order](const ListedRun& a, const ListedRun& b) {
+  auto before = [order, ascending](const ListedRun& a, const ListedRun& b) {
     const Run& x = *a.run;
     const Run& y = *b.run;
     const double kx = orderKey(x, order);
     const double ky = orderKey(y, order);
-    if (kx != ky) return kx > ky;
+    if (isnan(kx) != isnan(ky)) return isnan(ky);
+    if (kx < ky || ky < kx) return ascending ? kx < ky : kx > ky;
     if (x.wallEpoch != y.wallEpoch) return x.wallEpoch > y.wallEpoch;
     return tie(x.source, a.journal, x.windowSize, x.index) <
            tie(y.source, b.journal, y.windowSize, y.index);

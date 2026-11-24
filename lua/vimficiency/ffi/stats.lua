@@ -25,7 +25,7 @@ local lib = core.lib
 
 ---@alias VF.Stats.Outcome "scored"|"too_large"|"no_result"|"crashed"|"unsupported"|"unbeaten"
 ---@alias VF.Stats.Weight "effort"|"uniform"
----@alias VF.Stats.Order "worst"|"newest"|"slowest"
+---@alias VF.Stats.Order "worst"|"newest"|"slowest"|"user_cost"|"best_cost"|"saved"
 
 --- `vf.stats.Filter` (src/LuaExports/proto/summary.proto). Every field is
 --- optional; Lua copies a row's `drill` rather than building one.
@@ -107,6 +107,8 @@ local lib = core.lib
 ---@field runs integer
 ---@field more VF.Stats.CommandRow[]
 ---@field less VF.Stats.CommandRow[]
+---@field never VF.Stats.CommandRow[]   # Only the user uses these, most used first; never in `more`
+---@field never_cut integer             # How many more of those there are
 ---@field user_typed_chars integer
 ---@field optimizer_typed_chars integer
 
@@ -114,6 +116,7 @@ local lib = core.lib
 ---@class VF.Stats.RunsRequest
 ---@field scope VF.Stats.SummaryRequest   # its sessions and charted-size runs, under its filter
 ---@field order VF.Stats.Order
+---@field ascending? boolean  # else largest first; a run with no value there is last either way
 ---@field offset integer
 ---@field limit integer
 
@@ -154,6 +157,7 @@ local lib = core.lib
 --- relative to `lines`.
 ---@class VF.Stats.RunDetail
 ---@field lines string[]
+---@field goal_lines string[]   # the same slice as the run ended
 ---@field start_row integer
 ---@field start_col integer
 ---@field end_row integer

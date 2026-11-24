@@ -357,3 +357,21 @@ TEST(JournalWindowsTest, AnAtomJournaledWithoutInsertKeysLeavesItsWindowWithout)
   EXPECT_FALSE(windows[0].typedInsertKnown);
   EXPECT_TRUE(windows[1].typedInsertKnown);
 }
+
+TEST(JournalWindowsTest, AScreenLineMotionIsWithinItsLineOnlyWhenItMovedAlongIt) {
+  JournalBuilder j;
+  j.header(5000).snapshot({"a long wrapped line", "another"}).resync(0, 0);
+  j.next().atom("gj", 0, 8);
+  j.next().atom("gj", 1, 0);
+  j.next().atom("gj", 1, 0);
+  j.next().atom("2gk", 1, 4).atom("gk", 0, 4);
+  j.next().atom("l", 0, 5);
+  j.next().atom("l", 0, 6);
+
+  const vector<Window> windows = cut(j.bytes(), {5});
+  ASSERT_EQ(windows.size(), 1u);
+  vector<bool> withinLine;
+  for (const Journal::Command& command : windows[0].commands) withinLine.push_back(command.withinLine);
+  // Moved along row 0; crossed to row 1; stayed put; two sharing a tick.
+  EXPECT_EQ(withinLine, (vector<bool>{true, false, false, false, false}));
+}

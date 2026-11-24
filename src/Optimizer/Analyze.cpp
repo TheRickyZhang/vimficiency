@@ -55,6 +55,13 @@ Lines rows(const Lines& lines, pair<int, int> region) {
 
 }  // namespace
 
+bool isScreenLineMotion(string_view keys) {
+  const size_t digits = keys.find_first_not_of("0123456789");
+  if (digits == string_view::npos) return false;
+  const string_view motion = keys.substr(digits);
+  return motion == "gj" || motion == "gk";
+}
+
 NavBoundary sliceBoundary(const Lines& lines, bool hasLinesAbove, bool hasLinesBelow) {
   const int lastLine = lines.lastLine();
   return NavBoundary(lines, CursorPos(0, 0),

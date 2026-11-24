@@ -1,10 +1,23 @@
 ---@class (exact) VF.Stats.Render
----@field build_pages fun(summary: VF.Stats.Summary, background: VF.Stats.Background, weight: VF.Stats.Weight, split: boolean): VF.Stats.Page[]
----@field run_lines fun(list: VF.Stats.RunList, offset: integer, width: integer): string[]
+---@field build_pages fun(summary: VF.Stats.Summary, background: VF.Stats.Background, weight: VF.Stats.Weight): VF.Stats.Page[]
+---@field run_lines fun(list: VF.Stats.RunList, offset: integer, sort?: VF.Stats.RunSort): string[]
+---@field run_column_at fun(virtcol: integer): VF.Stats.Order|nil
+---@field run_preview fun(row: VF.Stats.RunRow, detail: VF.Stats.RunDetail|nil, err: string|nil, width: integer): VF.Stats.RunPreview
 local M = {}
 
 local config = require("vimficiency.config")
+local highlights = require("vimficiency.ui.highlights")
 local log = require("vimficiency.stats.log")
+local sequence_display = require("vimficiency.ui.sequence_display")
+
+--- The column a run list is sorted by; without one it lists the worst first.
+---@class VF.Stats.RunSort
+---@field order VF.Stats.Order
+---@field ascending boolean
+
+---@class VF.Stats.RunPreview
+---@field lines string[]
+---@field marks { row: integer, col: integer, end_col: integer, hl: string }[]   # 0-indexed row, byte columns
 
 --- The background scoring, as the Journal section reports it.
 ---@class VF.Stats.Background
@@ -235,14 +248,12 @@ local function push_command_rows(out, rows, side)
   end
 end
 
---- The stats as one page, or with `split` as two: Sessions and Journal, then
---- Commands and Dev.
+--- The stats as two pages: Sessions and Journal, then Commands and Dev.
 ---@param summary VF.Stats.Summary
 ---@param background VF.Stats.Background
 ---@param weight VF.Stats.Weight
----@param split boolean
 ---@return VF.Stats.Page[]
-function M.build_pages(summary, background, weight, split)
+function M.build_pages(summary, background, weight)
   local out = new_page()
   push(out, "")
   if summary.hidden_runs > 0 then
@@ -258,15 +269,21 @@ function M.build_pages(summary, background, weight, split)
   push(out, "")
 
   local pages = { out }
-  if split then
-    out = new_page()
-    pages[2] = out
-    push(out, "")
-  end
+  out = new_page()
+  pages[2] = out
+  push(out, "")
   local commands = summary.commands
   push_title(out, "  Commands — you use MORE than the optimizer")
   push_command_rows(out, commands.more, "(you more)")
   push(out, "")
+  if #commands.never > 0 then
+    push_title(out, "  Commands — you use, the optimizer NEVER does")
+    push_command_rows(out, commands.never, "(you only)")
+    if commands.never_cut > 0 then
+      push(out, string.format("    … and %d more", commands.never_cut))
+    end
+    push(out, "")
+  end
   push_title(out, "  Commands — you use LESS than the optimizer")
   push_command_rows(out, commands.less, "(you less)")
   push(out, string.format("    From %s and %s of %d commands.", plural(commands.sessions, "scored session"),
@@ -311,10 +328,6 @@ local function fit(line, width)
   return vim.fn.strcharpart(line, 0, chars) .. "…"
 end
 
-local WHEN_WIDTH = 12
-local EFFORT_WIDTH = 13
-local SAVED_WIDTH = 11
-
 --- How much less effort the best sequence takes, or why there is none.
 ---@param row VF.Stats.RunRow
 ---@return string
@@ -327,26 +340,72 @@ local function saved(row)
   return (percent > 0 and "+" or "") .. percent .. "%"
 end
 
----@param row VF.Stats.RunRow
+---@class VF.Stats.RunColumn
+---@field title string
+---@field order VF.Stats.Order   # what sorting by it asks for
+---@field width integer          # display columns
+---@field cell fun(row: VF.Stats.RunRow): string
+
+---@type VF.Stats.RunColumn[]
+local RUN_COLUMNS = {
+  { title = "when", order = "newest", width = 12,
+    cell = function(row) return os.date("%b %d %H:%M", row.wall_epoch) --[[@as string]] end },
+  { title = "you", order = "user_cost", width = 8,
+    cell = function(row) return string.format("%.1f", row.user_cost) end },
+  { title = "found", order = "best_cost", width = 8,
+    cell = function(row)
+      local has_best = row.outcome == "scored" or row.outcome == "unbeaten"
+      return has_best and string.format("%.1f", row.best_cost) or "—"
+    end },
+  { title = "saved", order = "saved", width = 10, cell = saved },
+  { title = "search ms", order = "slowest", width = 11,
+    cell = function(row) return string.format("%.1f", row.analyze_ms) end },
+}
+local RUN_COLUMN_GAP = 2
+
+---@param cells string[]   # one per RUN_COLUMNS
 ---@return string
-local function run_line(row)
-  local has_best = row.outcome == "scored" or row.outcome == "unbeaten"
-  local effort = string.format("%5.1f → %s", row.user_cost, has_best and string.format("%.1f", row.best_cost) or "—")
-  return string.format("%s   %s  %s  you: %s   best: %s", os.date("%b %d %H:%M", row.wall_epoch),
-    pad(effort, EFFORT_WIDTH), pad(saved(row), SAVED_WIDTH), row.user_display,
-    row.best_display == "" and "—" or row.best_display)
+local function run_line(cells)
+  local out = {}
+  for i, column in ipairs(RUN_COLUMNS) do
+    local cell = cells[i]
+    -- The first column reads as a label; the rest are figures.
+    local space = string.rep(" ", column.width - vim.fn.strdisplaywidth(cell))
+    out[i] = i == 1 and cell .. space or space .. cell
+  end
+  return " " .. table.concat(out, string.rep(" ", RUN_COLUMN_GAP))
 end
 
+--- The order the run-list column at 1-indexed display column `virtcol` sorts
+--- by. A column owns the gap to its right.
+---@param virtcol integer
+---@return VF.Stats.Order|nil
+function M.run_column_at(virtcol)
+  local first = 2
+  for _, column in ipairs(RUN_COLUMNS) do
+    local following = first + column.width + RUN_COLUMN_GAP
+    if virtcol >= first and virtcol < following then return column.order end
+    first = following
+  end
+end
+
+--- The run list: a header, a line per run, then a footer.
 ---@param list VF.Stats.RunList
 ---@param offset integer
----@param width integer
+---@param sort? VF.Stats.RunSort   # marked in the header
 ---@return string[]
-function M.run_lines(list, offset, width)
-  local lines = {
-    fit(string.format("%s   %s  %s  keys", pad("when", WHEN_WIDTH), pad("effort", EFFORT_WIDTH),
-      pad("saved", SAVED_WIDTH)), width),
-  }
-  for _, row in ipairs(list.runs) do lines[#lines + 1] = fit(run_line(row), width) end
+function M.run_lines(list, offset, sort)
+  local titles = {}
+  for i, column in ipairs(RUN_COLUMNS) do
+    local mark = sort and sort.order == column.order and (sort.ascending and " ▲" or " ▼") or ""
+    titles[i] = column.title .. mark
+  end
+  local lines = { run_line(titles) }
+  for _, row in ipairs(list.runs) do
+    local cells = {}
+    for i, column in ipairs(RUN_COLUMNS) do cells[i] = column.cell(row) end
+    lines[#lines + 1] = run_line(cells)
+  end
   lines[#lines + 1] = ""
   local footer = {
     #list.runs > 0 and string.format("runs %d–%d of %d", offset + 1, offset + #list.runs, list.total)
@@ -360,6 +419,64 @@ function M.run_lines(list, offset, width)
   end
   lines[#lines + 1] = table.concat(footer, " · ")
   return lines
+end
+
+---@param lines string[]
+---@return string
+local function joined(lines)
+  return table.concat(lines, "\n") .. "\n"
+end
+
+--- A run's keys in full, then its text before and after side by side with the
+--- changed lines marked. `detail` is nil for a session, which keeps no text,
+--- and for a run whose journal is gone (`err` says why).
+---@param row VF.Stats.RunRow
+---@param detail VF.Stats.RunDetail|nil
+---@param err string|nil
+---@param width integer
+---@return VF.Stats.RunPreview
+function M.run_preview(row, detail, err, width)
+  local lines = {
+    " you:   " .. sequence_display.inline(row.user_keys),
+    " found: " .. (row.best_seq == "" and "—" or sequence_display.inline(row.best_seq)),
+    "",
+  }
+  local marks = {}
+  if not detail then
+    lines[#lines + 1] = " " .. (err and "Text not available: " .. err or "A session keeps no text.")
+    return { lines = lines, marks = marks }
+  end
+
+  local half = math.floor((width - 4) / 2)
+  local tab = string.rep(" ", vim.o.tabstop)
+  ---@param left string
+  ---@param right string
+  ---@return integer row      # 0-indexed
+  ---@return integer divider  # byte column the left cell ends at
+  local function push_pair(left, right)
+    local cell = pad(fit((left:gsub("\t", tab)), half), half)
+    lines[#lines + 1] = " " .. cell .. " │ " .. fit((right:gsub("\t", tab)), half)
+    return #lines - 1, 1 + #cell
+  end
+  push_pair(string.format("before · cursor %d:%d", detail.start_row + 1, detail.start_col + 1),
+    string.format("after · cursor %d:%d", detail.end_row + 1, detail.end_col + 1))
+
+  local changed_before, changed_after = {}, {}
+  local hunks = vim.diff(joined(detail.lines), joined(detail.goal_lines), { result_type = "indices" })
+  for _, hunk in ipairs(hunks --[[@as integer[][] ]]) do
+    for i = hunk[1], hunk[1] + hunk[2] - 1 do changed_before[i] = true end
+    for i = hunk[3], hunk[3] + hunk[4] - 1 do changed_after[i] = true end
+  end
+  for i = 1, math.max(#detail.lines, #detail.goal_lines) do
+    local at, divider = push_pair(detail.lines[i] or "", detail.goal_lines[i] or "")
+    if changed_before[i] then
+      marks[#marks + 1] = { row = at, col = 1, end_col = divider, hl = highlights.VIEW_DIFF_DELETE }
+    end
+    if changed_after[i] then
+      marks[#marks + 1] = { row = at, col = divider + #" │ ", end_col = #lines[at + 1], hl = highlights.VIEW_DIFF_ADD }
+    end
+  end
+  return { lines = lines, marks = marks }
 end
 
 return M

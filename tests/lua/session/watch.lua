@@ -3,9 +3,7 @@
 --
 -- Focuses on the pieces this feature introduces: record shape, disarm
 -- hook wiring, on_fire re-resolution guard (bail if the alias has been
--- rebound), close/overwrite cleanup. The engine's own timer+cooldown
--- behavior is covered by end_trigger's contract; we don't re-test the
--- chronometer here.
+-- rebound), close/overwrite cleanup, and idle timer replacement.
 
 local config        = require("vimficiency.config")
 local session       = require("vimficiency.session")
@@ -145,4 +143,36 @@ test("end_trigger.arm_idle: name collision returns nil", function()
   assert_eq(disarm_2, nil, "duplicate name must refuse to arm")
   disarm_1 = assert(disarm_1)
   disarm_1()
+end)
+
+test("end_trigger.arm_idle: a reset invalidates an already queued expiration", function()
+  local callbacks, fires, listener = {}, 0, nil
+  local timer = {
+    start = function(_, _, _, cb) callbacks[#callbacks + 1] = cb end,
+    stop = function() end,
+    close = function() end,
+  }
+  h.with_patch({
+    { vim.uv, "new_timer", function() return timer end },
+    { vim, "schedule_wrap", function(fn) return fn end },
+    { atom_stream, "add_listener", function(_, fn)
+      listener = fn
+      return true
+    end },
+  }, function()
+    local disarm = assert(end_trigger.arm_idle({
+      name = "endt_test_reset", idle_ms = 60000, cooldown_ms = 0,
+      on_fire = function() fires = fires + 1 end,
+    }))
+    local reset = assert(listener)
+    reset()
+    reset()
+    callbacks[1]()
+    assert_eq(fires, 0)
+    callbacks[2]()
+    assert_eq(fires, 1)
+    disarm()
+    callbacks[2]()
+    assert_eq(fires, 1)
+  end)
 end)

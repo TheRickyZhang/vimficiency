@@ -168,6 +168,7 @@ function M.shutdown()
   local sim_closed = false
   local ok = pcall(simulate.cleanup_compare)
   if ok then sim_closed = true end
+  require("vimficiency.explore.runtime.lifecycle").shutdown()
 
   auto_suggest.disable()
 

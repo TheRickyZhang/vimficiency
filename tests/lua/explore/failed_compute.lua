@@ -2,7 +2,7 @@ local helpers         = require("_helpers")
 local explore_helpers = require("explore._helpers")
 local explore         = require("vimficiency.explore")
 local ffi_explore     = require("vimficiency.ffi.explore")
-local registry        = require("vimficiency.explore.registry")
+local registry        = require("vimficiency.explore.runtime.registry")
 
 test("explore: a failed compute closes the pending tab and surfaces the error", function()
   local result = explore_helpers.fake_result()

@@ -24,6 +24,10 @@ struct CommandCounts {
 // mode counts only with `insertText`.
 void countKeys(CommandCounts& counts, std::string_view keys, bool insertText);
 
+// Counts a gj/gk that moved the cursor along its buffer line, apart from the
+// ones that share a row with j/k.
+void countWithinLine(CommandCounts& counts, std::string_view keys);
+
 // Counts keys pressed in insert mode. The user's insert text is counted from
 // these, never from the keys that ran, which also hold what mappings typed.
 void countInsertKeys(CommandCounts& counts, std::string_view pressed);
@@ -64,6 +68,11 @@ struct CommandComparison {
   std::vector<CommandRow> more;
   // And less, furthest first.
   std::vector<CommandRow> less;
+  // Commands only the user uses, most used first; kept out of `more`, where
+  // their infinite ratios would crowd out every other row.
+  std::vector<CommandRow> never;
+  // How many more of those were cut.
+  int neverCut = 0;
 };
 
 CommandComparison compareCommands(const CommandCounts& user, const CommandCounts& optimizer);

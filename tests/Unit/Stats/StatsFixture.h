@@ -187,8 +187,10 @@ protected:
 
   vf::stats::RunList runs(const vf::stats::Filter& filter,
                           vf::stats::RunsRequest::Order order = vf::stats::RunsRequest::worst,
-                          int offset = 0, int limit = 1000, bool currentOnly = false) {
+                          int offset = 0, int limit = 1000, bool currentOnly = false,
+                          bool ascending = false) {
     vf::stats::RunsRequest req;
+    req.set_ascending(ascending);
     *req.mutable_scope() = request(currentOnly);
     *req.mutable_scope()->mutable_filter() = filter;
     req.set_order(order);

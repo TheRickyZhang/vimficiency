@@ -91,9 +91,10 @@ TEST(StatsCommands, RatiosCompareSharesAndOrderByDistance) {
   for (int i = 0; i < 10; i++) Stats::countKeys(optimizer, "b", true);
   const auto compared = Stats::compareCommands(user, optimizer);
 
-  ASSERT_EQ(compared.more.size(), 1u);
-  EXPECT_EQ(compared.more[0].text, "w");
-  EXPECT_EQ(compared.more[0].ratio, numeric_limits<double>::infinity());
+  EXPECT_TRUE(compared.more.empty());
+  ASSERT_EQ(compared.never.size(), 1u);
+  EXPECT_EQ(compared.never[0].text, "w");
+  EXPECT_EQ(compared.never[0].ratio, numeric_limits<double>::infinity());
 
   // `e`: half of the user's commands, two thirds of the optimizer's.
   ASSERT_EQ(compared.less.size(), 2u);
@@ -116,10 +117,41 @@ TEST(StatsCommands, ChangeWordAndChangeToWordEndShareARow) {
   Stats::CommandCounts optimizer = repeated("j", 12);
   const auto compared = Stats::compareCommands(user, optimizer);
 
-  ASSERT_EQ(compared.more.size(), 1u);
-  EXPECT_EQ(compared.more[0].text, "ce|cw");
-  EXPECT_EQ(compared.more[0].user, 12);
-  EXPECT_EQ(compared.more[0].split, "ce 5 · cw 7");
+  ASSERT_EQ(compared.never.size(), 1u);
+  EXPECT_EQ(compared.never[0].text, "ce|cw");
+  EXPECT_EQ(compared.never[0].user, 12);
+  EXPECT_EQ(compared.never[0].split, "ce 5 · cw 7");
   ASSERT_EQ(compared.less.size(), 1u);
+  EXPECT_EQ(compared.less[0].text, "j");
   EXPECT_EQ(compared.less[0].split, "");
+}
+
+TEST(StatsCommands, AScreenLineMotionSharesARowWithItsLineMotionUnlessItStayedOnItsLine) {
+  Stats::CommandCounts user = repeated("gj", 9);
+  for (int i = 0; i < 3; i++) Stats::countKeys(user, "j", true);
+  for (int i = 0; i < 10; i++) Stats::countWithinLine(user, "gj");
+  for (int i = 0; i < 2; i++) Stats::countKeys(user, "w", true);
+  Stats::CommandCounts optimizer = repeated("j", 8);
+  for (int i = 0; i < 8; i++) Stats::countKeys(optimizer, "w", true);
+  const auto compared = Stats::compareCommands(user, optimizer);
+
+  // 12 of the user's 24 commands against 8 of the optimizer's 16.
+  EXPECT_TRUE(compared.more.empty());
+  ASSERT_EQ(compared.never.size(), 1u);
+  EXPECT_EQ(compared.never[0].text, "gj (same line)");
+  EXPECT_EQ(compared.never[0].user, 10);
+  ASSERT_EQ(compared.less.size(), 1u);
+  EXPECT_EQ(compared.less[0].text, "w");
+}
+
+TEST(StatsCommands, CommandsOnlyTheUserUsesOrderByUseAndAreCut) {
+  Stats::CommandCounts user;
+  for (int n = 10; n < 17; n++) {
+    for (int i = 0; i < n; i++) Stats::countKeys(user, format("{}w", n), true);
+  }
+  const auto compared = Stats::compareCommands(user, repeated("b", 10));
+  ASSERT_EQ(compared.never.size(), 5u);
+  EXPECT_EQ(compared.never[0].text, "16w");
+  EXPECT_EQ(compared.never[4].text, "12w");
+  EXPECT_EQ(compared.neverCut, 2);
 }

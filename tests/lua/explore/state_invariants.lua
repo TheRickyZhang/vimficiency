@@ -114,7 +114,7 @@ local function run_case(label, seq)
       local scratch_win = v.nvim_get_current_win()
       helpers.feed(seq)
       vim.wait(1000, function()
-        local status, view = pcall(require("vimficiency.explore.registry").current)
+        local status, view = pcall(require("vimficiency.explore.runtime.registry").current)
         return status and view.restoring == nil
       end, 10)
       -- Headless artifact: `nvim_feedkeys` in `xt` mode doesn't reliably

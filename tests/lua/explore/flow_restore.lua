@@ -168,7 +168,7 @@ end)
 test("explore flow: overdelete snaps back with plan warning", function()
   with_notify_capture(function(notices)
     explore_helpers.open_scenario_flow("flow-overdelete", "overdelete_multiline", function()
-      local handlers = require("vimficiency.explore.handlers")
+      local handlers = require("vimficiency.explore.input.handlers")
       local view = explore_helpers.current_view()
       assert_eq(explore.status().phase.kind, "Transform")
 

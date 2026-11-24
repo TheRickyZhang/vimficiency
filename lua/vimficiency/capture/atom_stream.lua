@@ -197,7 +197,9 @@ local function add_pressed(raw, mode)
     -- Runs once the key is handled, so a later exit that no key caused is not
     -- blamed on it. Nothing scheduled runs between keys queued together or
     -- inside a command, which is what the other two `settle` calls are for.
-    vim.schedule(settle)
+    vim.schedule(function()
+      if unsettled == input then settle() end
+    end)
   end
 end
 
@@ -214,36 +216,55 @@ local function on_key(key, typed)
   if typed ~= "" then add_pressed(typed, mode) end
 end
 
+---@class VF.AtomStream.InputHooks
+---@field record (fun(raw: string, fed: boolean))|nil
+
 -- getchar(1) only peeks; getchar(0) returns 0 or "" when nothing is pending.
-local function wrap_getchar(getchar)
+---@param hooks VF.AtomStream.InputHooks
+local function wrap_getchar(getchar, hooks)
   return function(...)
     local ret = getchar(...)
     local expr = ...
-    if autocmd_id and expr ~= 1 and expr ~= true and ret ~= 0 and ret ~= "" then
-      add_pressed(type(ret) == "number" and vim.fn.nr2char(ret) or ret, vim.api.nvim_get_mode().mode)
+    if hooks.record and expr ~= 1 and expr ~= true and ret ~= 0 and ret ~= "" then
+      hooks.record(type(ret) == "number" and vim.fn.nr2char(ret) or ret, false)
     end
     return ret
   end
 end
 
-local function wrap_feedkeys(feedkeys)
+---@param hooks VF.AtomStream.InputHooks
+local function wrap_feedkeys(feedkeys, hooks)
   return function(keys, mode, ...)
-    if autocmd_id and mode and mode:find("t", 1, true) then add_input(keys, true) end
+    if hooks.record and mode and mode:find("t", 1, true) then hooks.record(keys, true) end
     return feedkeys(keys, mode, ...)
   end
 end
 
--- Installed once and left in place: unwrapping could drop another plugin's
--- wrapper around ours. They record only while the autocmd exists. Plugins that
--- saved the original function before this, and Vimscript callers, go unseen.
-local wrapped = false
+-- Installed once per Neovim process; another plugin may wrap ours.
+---@type VF.AtomStream.InputHooks|nil
+local input_hooks = _G.__vimficiency_input_hooks
+
 local function wrap_input_functions()
-  if wrapped then return end
-  wrapped = true
-  vim.fn.getchar = wrap_getchar(vim.fn.getchar)
-  vim.fn.getcharstr = wrap_getchar(vim.fn.getcharstr)
-  vim.fn.feedkeys = wrap_feedkeys(vim.fn.feedkeys)
-  vim.api.nvim_feedkeys = wrap_feedkeys(vim.api.nvim_feedkeys)
+  if input_hooks then return input_hooks end
+  ---@type VF.AtomStream.InputHooks
+  local hooks = {}
+  vim.fn.getchar = wrap_getchar(vim.fn.getchar, hooks)
+  vim.fn.getcharstr = wrap_getchar(vim.fn.getcharstr, hooks)
+  vim.fn.feedkeys = wrap_feedkeys(vim.fn.feedkeys, hooks)
+  vim.api.nvim_feedkeys = wrap_feedkeys(vim.api.nvim_feedkeys, hooks)
+  input_hooks = hooks
+  _G.__vimficiency_input_hooks = hooks
+  return hooks
+end
+
+---@param raw string
+---@param fed boolean
+local function record_input(raw, fed)
+  if fed then
+    add_input(raw, true)
+  else
+    add_pressed(raw, vim.api.nvim_get_mode().mode)
+  end
 end
 
 --- The keys pressed for the atom being dispatched and, of those, the insert
@@ -309,13 +330,22 @@ end
 local function ensure_autocmd()
   if autocmd_id then return end
   reset_pressed()
-  wrap_input_functions()
-  vim.on_key(on_key, on_key_ns)
   augroup = vim.api.nvim_create_augroup("VimficiencyAtoms", { clear = true })
   autocmd_id = vim.api.nvim_create_autocmd("CmdAtom", {
     group = augroup,
     callback = util.entry(dispatch),
   })
+  vim.on_key(on_key, on_key_ns)
+  wrap_input_functions().record = record_input
+end
+
+local function stop_autocmd()
+  if not autocmd_id then return end
+  vim.api.nvim_del_autocmd(autocmd_id)
+  autocmd_id = nil
+  vim.on_key(nil, on_key_ns)
+  if input_hooks and input_hooks.record == record_input then input_hooks.record = nil end
+  reset_pressed()
 end
 
 --- Attach a named atom listener
@@ -324,9 +354,9 @@ end
 ---@return boolean success
 function M.add_listener(name, listener)
   if listener_by_name[name] then return false end
+  ensure_autocmd()
   listener_by_name[name] = listener
   listener_count = listener_count + 1
-  ensure_autocmd()
   return true
 end
 
@@ -336,21 +366,12 @@ function M.remove_listener(name)
   if not listener_by_name[name] then return end
   listener_by_name[name] = nil
   listener_count = listener_count - 1
-  if listener_count == 0 and autocmd_id then
-    -- removes the autocmd when the last one leaves
-    vim.api.nvim_del_autocmd(autocmd_id)
-    autocmd_id = nil
-    vim.on_key(nil, on_key_ns)
-  end
+  if listener_count == 0 then stop_autocmd() end
 end
 
 --- Tear down the autocmd and drop every listener.
 function M.shutdown()
-  if autocmd_id then
-    vim.api.nvim_del_autocmd(autocmd_id)
-    autocmd_id = nil
-    vim.on_key(nil, on_key_ns)
-  end
+  stop_autocmd()
   if augroup then
     vim.api.nvim_del_augroup_by_id(augroup)
     augroup = nil

@@ -182,6 +182,10 @@ message CommandSummary {
   repeated CommandRow less = 4;
   int64 user_typed_chars = 5;
   int64 optimizer_typed_chars = 6;
+  // Commands only the user uses, most used first; never in `more`.
+  repeated CommandRow never = 7;
+  // How many more of those there are.
+  int32 never_cut = 8;
 }
 
 message Summary {
@@ -196,21 +200,28 @@ message Summary {
 }
 
 message RunsRequest {
+  // `Stats::RunOrder`, value for value.
   enum Order {
-    // By user_cost − best_cost, largest first; runs without a score last.
+    // By user_cost − best_cost.
     worst = 0;
     newest = 1;
-    // By analyze_ms, largest first.
+    // By analyze_ms.
     slowest = 2;
+    user_cost = 3;
+    best_cost = 4;
+    // By the share of user_cost that best_cost saves.
+    saved = 5;
   }
 
   // Lists the sessions and charted-size journal runs this summary reduces;
   // its `weight` is unused.
   SummaryRequest scope = 1;
-  // Ties go newest first, then by id.
+  // Largest first unless `ascending`; a run with no value there goes last
+  // either way. Ties go newest first, then by id.
   Order order = 2;
   int32 offset = 3;
   int32 limit = 4;
+  bool ascending = 5;
 }
 
 message RunId {
@@ -279,4 +290,6 @@ message RunDetail {
   bytes typed = 7;
   // The buffer's, as the run started.
   string filetype = 8;
+  // The slice's ending text.
+  repeated bytes goal_lines = 9;
 }

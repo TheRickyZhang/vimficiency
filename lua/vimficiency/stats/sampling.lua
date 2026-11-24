@@ -36,8 +36,9 @@ local LOCKED = "another sampler is scoring the journal"
 ---@type (fun(err: string|nil))[]|nil
 local waiters = nil
 
+---@type { group: integer, timer: uv.uv_timer_t|nil }|nil
+local background_run
 local background = {
-  armed = false,
   ---@type integer|nil  journal bytes when the last background run started
   journal_bytes = nil,
   last_run_ms = -math.huge,
@@ -72,7 +73,7 @@ end
 ---@param request string
 ---@param crashes integer
 local function spawn(request, crashes)
-  local proc = vim.system({ tool_path() }, { stdin = request, text = true }, vim.schedule_wrap(function(result)
+  local ok, proc = pcall(vim.system, { tool_path() }, { stdin = request, text = true }, vim.schedule_wrap(function(result)
     if result.signal == 0 then
       if result.code == BUSY_EXIT_CODE then
         finish(LOCKED)
@@ -85,6 +86,10 @@ local function spawn(request, crashes)
       finish(string.format("vimfy_journal died %d times (signal %d)", crashes + 1, result.signal))
     end
   end))
+  if not ok then
+    finish(tostring(proc))
+    return
+  end
   -- Scoring is never urgent; the editor's own work comes first.
   vim.uv.os_setpriority(proc.pid, LOWEST_PRIORITY)
 end
@@ -106,9 +111,10 @@ function M.refresh(on_done)
     on_done("vimfy_journal is not installed; run `:Lazy build vimficiency`, or `./scripts/install.sh` in the plugin directory")
     return
   end
+  local request = ffi_core.encode("vf.journal.SampleRequest",
+    { journal_dir = journal.dir(), params = M.params(), keep_days = config.journal.keep_days })
   waiters = { on_done }
-  spawn(ffi_core.encode("vf.journal.SampleRequest",
-    { journal_dir = journal.dir(), params = M.params(), keep_days = config.journal.keep_days }), 0)
+  spawn(request, 0)
 end
 
 ---@return boolean
@@ -143,7 +149,8 @@ local function journal_bytes()
 end
 
 local function maybe_run()
-  if not background.armed or waiters or not vim.uv.fs_stat(journal.dir()) then return end
+  local run = background_run
+  if not run or waiters or not vim.uv.fs_stat(journal.dir()) then return end
   if vim.uv.now() - background.last_run_ms < RUN_INTERVAL_MS then return end
   local bytes = journal_bytes()
   if bytes == background.journal_bytes then return end
@@ -151,7 +158,7 @@ local function maybe_run()
   background.last_run_ms = vim.uv.now()
   M.refresh(function(err)
     -- The active sampler is doing this run's work.
-    if err ~= LOCKED then background.err = err end
+    if background_run == run and err ~= LOCKED then background.err = err end
   end)
 end
 
@@ -160,14 +167,25 @@ end
 function M.start_background()
   M.stop_background()
   if not config.journal.sampling.auto then return end
-  background.armed = true
-  vim.api.nvim_create_autocmd("CursorHold", { group = AUGROUP, callback = maybe_run })
-  vim.defer_fn(maybe_run, STARTUP_DELAY_MS)
+  local run = { group = vim.api.nvim_create_augroup(AUGROUP, { clear = true }) }
+  background_run = run
+  vim.api.nvim_create_autocmd("CursorHold", { group = run.group, callback = maybe_run })
+  run.timer = vim.defer_fn(function()
+    if background_run ~= run then return end
+    run.timer = nil
+    maybe_run()
+  end, STARTUP_DELAY_MS)
 end
 
 function M.stop_background()
-  background.armed = false
-  vim.api.nvim_create_augroup(AUGROUP, { clear = true })
+  local run = background_run
+  if not run then return end
+  background_run = nil
+  if run.timer and not run.timer:is_closing() then
+    run.timer:stop()
+    run.timer:close()
+  end
+  vim.api.nvim_del_augroup_by_id(run.group)
 end
 
 M._for_test = { maybe_run = maybe_run }

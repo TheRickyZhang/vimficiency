@@ -128,32 +128,39 @@ Watch's idle trigger fire) and try again.
 Opens a tab with a header over two panes, side by side, or stacked on a
 narrow screen:
 
-- **Header** — the current filter as breadcrumbs (`Stats › Nov 20 › cw (you
-  more)`), the scorings counted, the weight and the charted run length; once
-  narrowed, also the run order and the run-list page.
-- **Top level** — the stats in two columns: Sessions and Journal on the left,
-  the Commands tables and Dev on the right.
-- **Narrowed** (after `<CR>` on a row or chart day) — every section on the
-  left, computed over the current filter, and on the right one line per
-  session or journal run the filter selects: when, your effort → the best
-  found, the saving, then your keys and the best sequence. Typed text shows as
-  its length (`ciw⟨11⟩<Esc>`). Runs older than `journal.keep_days` are rolled
-  up: they count in the total but are not listed.
+- **Header** — the scorings counted, the weight and the charted run length.
+- **Stats** — two columns: Sessions and Journal on the left, the Commands
+  tables and Dev on the right.
 
-Keys (`?` lists them); `<CR>` works on the stats and the run list, the rest
-in every pane:
+Keys in the stats (`?` lists them):
 
 | Key           | Action                                                        |
 |---------------|---------------------------------------------------------------|
-| `<CR>`        | On a highlighted row or a day in a daily chart: narrow to its runs. |
-| `<CR>`        | On a journal run: replay it as `:Vimfy play` does, your keys beside the best sequence, highlighted as the file was. `q` there returns to the stats. On a session: show its full keys and costs (sessions keep no text to replay). |
-| `<BS>`        | Undo the last narrowing.                                      |
-| `s`           | Once narrowed, cycle the run order: worst first (your effort minus the best), newest, slowest search. |
+| `<CR>`        | On a highlighted row or a day in a daily chart: list its runs. |
 | `w`           | Switch the score weight between effort and uniform for this view. |
 | `l`           | Cycle the journal run length the stats chart and list.        |
 | `v`           | Count every scoring, or only the current one (see below).     |
-| `]` / `[`     | Once narrowed, next / previous page of runs.                  |
 | `q`           | Close the tab.                                                |
+
+The run list floats over the tab at its full width, one line per session or
+journal run: when, your effort, the best found, the saving and the search
+time. Its title holds the row it came from, the sort and the page.
+
+Under it, a preview follows the cursor: your keys and the best sequence in
+full, then the run's text before and after, side by side, with the changed
+lines marked. A session keeps no text, so its preview is the keys alone.
+
+Runs older than `journal.keep_days` are rolled up: they count in the total but
+are not listed.
+
+Keys in the run list; every motion works, so the cursor can sit in any column:
+
+| Key           | Action                                                        |
+|---------------|---------------------------------------------------------------|
+| `s`           | Sort by the column under the cursor: largest first, then smallest first, then off. Unsorted, the worst runs come first (your effort minus the best). |
+| `<CR>`        | On a journal run: replay it as `:Vimfy play` does, your keys beside the best sequence, highlighted as the file was. `q` there returns to the list. |
+| `]` / `[`     | Next / previous page of runs.                                 |
+| `<Esc>` / `q` | Back to the stats.                                            |
 
 Sections:
 
@@ -172,12 +179,15 @@ Sections:
 - **Commands** — for every command that appears at least ten times
   combined across your scored sessions and journal runs and the
   optimizer's best sequences for them, the ratio
-  `your_share / optimizer_share`. Two lists: what you use *more* than
-  the optimizer (potential inefficient habits) and what you use *less*
+  `your_share / optimizer_share`. Three lists: what you use *more* than
+  the optimizer (potential inefficient habits), what you use and the
+  optimizer *never* does (the five you use most), and what you use *less*
   (candidates to practice). The target of `f`/`F`/`t`/`T`/`r`/`R` is
   collapsed to `_`, an insert counts its entry command and editing keys
   such as `<BS>` (typed characters are only totalled), and `ce`/`cw`
-  share a row, as do `cE`/`cW`, with your split shown.
+  share a row, as do `cE`/`cW`, with your split shown. A `gj` or `gk`
+  that crossed to another line shares a row with `j` or `k`; one that
+  moved along a wrapped line is listed apart, as `gj (same line)`.
 - **Dev — Optimizer beats queued** — count of finished sessions where
   your sequence came in cheaper than the optimizer's best result.
   **Beats are interesting-to-study, not ground truth**: many are

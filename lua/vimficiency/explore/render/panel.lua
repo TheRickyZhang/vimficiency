@@ -3,7 +3,7 @@
 -- Thin presentation wrapper around `settings_window.attach`. The panel
 -- owns the side-split window/buffer; the widget owns rendering, the
 -- allow-list-only keymaps, cursor hiding, and the close lifecycle.
--- Toggle via `gs` (see explore/keymaps.lua).
+-- Toggle via `gs` (see explore/input/keymaps.lua).
 local settings_window = require("vimficiency.settings.window")
 local buf_window = require("vimficiency.ui.buf_window")
 

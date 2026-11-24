@@ -48,8 +48,9 @@ immediately with a "Computing…" placeholder and polls `vf_explore_poll` on a
 `vim.uv` timer. When the worker finishes, poll builds the `View` from the
 precomputed plan (the precomputed-plan `View` constructor — never a half-ready
 View) and returns its id; the controller then installs the interactive handlers
-and renders. Closing or cancelling mid-compute calls `vf_explore_cancel`. A
-failed poll (the worker threw) closes the tab and raises the worker's error.
+and renders. Closing, cancelling, or plugin shutdown mid-compute calls
+`vf_explore_cancel`. A failed poll or view activation tears down the view and
+reports the error.
 
 The worker's search honours a `SearchControl` (cancel flag + optional deadline).
 Both are polled per pop in the composition A* loop and in every nested

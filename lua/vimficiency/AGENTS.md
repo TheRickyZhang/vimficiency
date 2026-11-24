@@ -13,10 +13,12 @@ Plugin entry points and domain modules:
 | `session/archive.lua` | Finished results by handle: alias resolution through the store, filename resolution on disk, save/store/fetch/rm, view. |
 | `simulate/init.lua` | Side-by-side animation of motion sequences. Required as `vimficiency.simulate`. |
 | `explore/init.lua` | Interactive result exploration view. Required as `vimficiency.explore`. |
+| `explore/input/key_tracking.lua` | Reduces raw `vim.on_key()` events for interactive Explore's frontier replay. |
 | `simulate/settings.lua` | Play-screen settings and modal wiring. |
 | `stats/query.lua` | Builds requests for stats summaries, run lists, and run details. |
 | `stats/render.lua` | Formats summary pages, charts, drill targets, and run rows. |
-| `stats/view.lua` | The `:Vimfy stats` tab: header, two stat columns at the top level, stats beside the run list once narrowed; drill/sort/weight/length/scoring/page keys, and `<CR>` on a journal run replays it. |
+| `stats/view.lua` | The `:Vimfy stats` tab: header and two stat columns; weight/length/scoring keys, and `<CR>` on a row or chart day opens its run list. |
+| `stats/run_list.lua` | The floating run list and its preview float: sort by the column under the cursor, page, and `<CR>` on a journal run replays it. |
 | `stats/sampling.lua` | Runs `vimfy_journal` over the journal in the background. See `dev/lua/atom-stream.md` § Sampling. |
 | `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, run) per `:Vimfy` verb. Depends on the domain modules; only `init.lua` depends on it. |
 | `dev_reload.lua` | `:Vimfy reload`: cmake rebuild, then hot-reload the `.so` and every Lua module. |
@@ -39,10 +41,11 @@ Subdirectories hold supporting modules for each domain:
 | `session/result_window.lua` | Full-screen side-by-side viewer (`:Vimfy view`): initial/final panes, diff + cursor highlights. |
 | `session/store.lua` | Canonical session records + manual/recall indexing. |
 
-### `session/picker/` — session picker support
+### `session/picker/` — session picker
 
 | File | Purpose |
 |------|---------|
+| `session/picker/init.lua` | Picker controller. Required as `vimficiency.session.picker`. |
 | `session/picker/model.lua` | Active/saved item construction, filtering, sorting, and row formatting. |
 | `session/picker/preview.lua` | Preview-pane content for active and saved items. |
 | `session/picker/popups.lua` | Sort/help popup windows. |
@@ -79,7 +82,6 @@ Subdirectories hold supporting modules for each domain:
 |------|---------|
 | `capture/state.lua` | Captures buffer text, cursor position, and viewport state. |
 | `capture/atom_stream.lua` | CmdAtom-driven capture: one atom per atomic user action, normalized and fanned out to named subscribers (manual/recall/triggers). See `dev/lua/atom-stream.md`. |
-| `capture/key_tracking.lua` | Legacy `vim.on_key()` capture, now used only by interactive Explore's frontier replay. |
 | `capture/recall.lua` | Rolling recall-ring capture driven by atom events. |
 | `capture/buffer_history.lua` | Per-buffer shadow copy plus the lines replaced between marks; rebuilds a recall record's start text on demand. |
 | `capture/journal.lua` | Opt-in protobuf journal of every atom plus buffer snapshots and line deltas (`config.journal`). See `dev/lua/atom-stream.md` § Journal. |
@@ -213,8 +215,8 @@ mapping-LHS leakage, no missing text-object final char, no retraction. A
 without any scan — the obsolete `mapping_scan` warning was removed with the
 migration.
 
-`key_tracking.lua` (the former `vim.on_key` layer) survives only for
-interactive Explore's frontier replay, which still consumes raw key events.
+`explore/input/key_tracking.lua` handles interactive Explore's frontier replay,
+which still consumes raw key events.
 
 **Approximate motion conversions** (C++ `sliceSearch`, `src/Optimizer/Analyze.cppm`):
 - `gj` → `j`, `gk` → `k` (screen-line motions unsupported by optimizer)

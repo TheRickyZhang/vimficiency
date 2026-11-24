@@ -147,9 +147,9 @@ test("stats.log: a session's insert text is the keys pressed in it, not the keys
   local commands = commands_after_ten_inserts("f(<BS>")
   assert_eq(commands.user_typed_chars, 20)
   assert_eq(commands.optimizer_typed_chars, 20)
-  assert_eq(#commands.more, 1)
-  assert_eq(commands.more[1].text, "<BS>")
-  assert_eq(commands.more[1].user, 10)
+  assert_eq(#commands.never, 1)
+  assert_eq(commands.never[1].text, "<BS>")
+  assert_eq(commands.never[1].user, 10)
 end)
 
 test("stats.log: pressing nothing in Insert mode still counts the optimizer's insert text", function()

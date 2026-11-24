@@ -1,6 +1,6 @@
 ---@class (exact) VF.Stats.Query
 ---@field summary     fun(scope: VF.Stats.Scope): VF.Stats.Summary
----@field runs        fun(scope: VF.Stats.Scope, order: VF.Stats.Order, offset: integer, limit: integer): VF.Stats.RunList
+---@field runs        fun(scope: VF.Stats.Scope, order: VF.Stats.Order, ascending: boolean, offset: integer, limit: integer): VF.Stats.RunList
 ---@field run         fun(id: VF.Stats.RunId): VF.Stats.RunDetail|nil, string|nil
 local M = {}
 
@@ -40,11 +40,14 @@ end
 --- The runs `M.summary` reduces under the same scope, one page of them.
 ---@param scope VF.Stats.Scope
 ---@param order VF.Stats.Order
+---@param ascending boolean
 ---@param offset integer
 ---@param limit integer
 ---@return VF.Stats.RunList
-function M.runs(scope, order, offset, limit)
-  return ffi_stats.runs({ scope = request(scope), order = order, offset = offset, limit = limit })
+function M.runs(scope, order, ascending, offset, limit)
+  return ffi_stats.runs({
+    scope = request(scope), order = order, ascending = ascending, offset = offset, limit = limit,
+  })
 end
 
 --- A listed journal run as its search saw it, or why it is unavailable.

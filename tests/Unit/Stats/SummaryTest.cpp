@@ -152,9 +152,9 @@ TEST_F(StatsSummaryTest, CommandTablesCountScoredSessionsAndChartedRuns) {
   const auto c = summarize().commands();
   EXPECT_EQ(c.sessions(), 10);
   EXPECT_EQ(c.runs(), 1);
-  ASSERT_EQ(c.more_size(), 1);
-  EXPECT_EQ(c.more(0).text(), "w");
-  EXPECT_EQ(c.more(0).user(), 11);
+  ASSERT_EQ(c.never_size(), 1);
+  EXPECT_EQ(c.never(0).text(), "w");
+  EXPECT_EQ(c.never(0).user(), 11);
   ASSERT_EQ(c.less_size(), 1);
   EXPECT_EQ(c.less(0).text(), "e");
   EXPECT_EQ(c.less(0).optimizer(), 11);
@@ -173,9 +173,9 @@ TEST_F(StatsSummaryTest, TheUsersInsertTextIsWhatTheyPressedNotWhatRan) {
   const auto c = summarize().commands();
   EXPECT_EQ(c.user_typed_chars(), 30);
   EXPECT_EQ(c.optimizer_typed_chars(), 30);
-  ASSERT_EQ(c.more_size(), 1);
-  EXPECT_EQ(c.more(0).text(), "<BS>");
-  EXPECT_EQ(c.more(0).user(), 10);
+  ASSERT_EQ(c.never_size(), 1);
+  EXPECT_EQ(c.never(0).text(), "<BS>");
+  EXPECT_EQ(c.never(0).user(), 10);
   ASSERT_EQ(c.less_size(), 1);
   EXPECT_EQ(c.less(0).text(), "i");
 }

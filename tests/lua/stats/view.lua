@@ -5,6 +5,8 @@
 -- tests/Unit/Stats/.
 
 local config = require("vimficiency.config")
+local highlights = require("vimficiency.ui.highlights")
+local sequence_display = require("vimficiency.ui.sequence_display")
 local stats_query = require("vimficiency.stats.query")
 local render = require("vimficiency.stats.render")
 local stats_log = require("vimficiency.stats.log")
@@ -46,13 +48,12 @@ local function summary()
   return stats_query.summary(TOP)
 end
 
---- Every section on one page, as the narrowed left pane shows them.
+--- Every section's lines, both pages together.
 ---@param s VF.Stats.Summary
 ---@return string[] lines
----@return VF.Stats.DrillTarget[] targets
 local function build(s)
-  local page = render.build_pages(s, IDLE, "effort", false)[1]
-  return page.lines, page.targets
+  local pages = render.build_pages(s, IDLE, "effort")
+  return vim.list_extend(pages[1].lines, pages[2].lines)
 end
 
 --- A summary with `n` sessions behind it, so the Sessions section is drawn.
@@ -92,7 +93,7 @@ local function seed()
   for _ = 1, 3 do finish("x", "x", 1.0, two_days_ago_noon()) end
 end
 
----@alias VF.Test.StatsPane "header"|"overview"|"commands"|"runs"
+---@alias VF.Test.StatsPane "header"|"overview"|"commands"|"runs"|"preview"
 
 ---@return table<VF.Test.StatsPane, { win: integer, buf: integer }>
 local function panes()
@@ -118,6 +119,20 @@ end
 local function footer()
   local lines = text("runs")
   return lines[#lines]
+end
+
+--- The run list float's title.
+---@return string
+local function runs_title()
+  local title = v.nvim_win_get_config(panes().runs.win).title
+  return title[1][1]
+end
+
+--- The 1-indexed byte column in the run list's header line that `name` starts at.
+---@param name string
+---@return integer
+local function runs_column(name)
+  return assert(text("runs")[1]:find(name, 1, true))
 end
 
 --- Presses `keys` in pane `name`; an error a keymap reports fails the test.
@@ -151,12 +166,7 @@ local function put_cursor_on(name, t)
   v.nvim_win_set_cursor(panes()[name].win, { t.row + 1, t.cols and t.cols[1] or 0 })
 end
 
---- The header's settings after the breadcrumbs.
----@param rest string
----@return string
-local function settings(rest)
-  return "    all scorings · weight: effort · runs of 8" .. rest
-end
+local HEADER = " Stats    all scorings · weight: effort · runs of 8"
 
 ---@param fn fun()
 local function in_view(fn)
@@ -196,7 +206,7 @@ test("stats pages: failed and unbeaten sessions are shown apart from the score",
   s.sessions.score = { spans = 2, score = 87.5 }
   s.sessions.no_result = 1
   s.sessions.unbeaten = 1
-  local lines = render.build_pages(s, IDLE, "uniform", false)[1].lines
+  local lines = render.build_pages(s, IDLE, "uniform")[1].lines
   assert_line(lines, "Score:    87.5 / 100  (2 scored sessions, weighted by uniform)")
   assert_line(lines, "Not scored: 1 session with no solution found")
   assert_line(lines, "Unbeaten (scored 100): 1 session")
@@ -205,15 +215,17 @@ end)
 test("stats pages: command rows show the ratio, the counts and a merged row's split", function()
   h.use_temp_data_home()
   local s = summary()
-  s.commands.more = {
+  s.commands.never = {
     { text = "ce|cw", ratio = math.huge, user = 12, optimizer = 0, split = "ce 5 · cw 7", drill = {} },
   }
+  s.commands.never_cut = 3
   s.commands.sessions = 3
   s.commands.runs = 2
   s.commands.user_typed_chars = 40
   s.commands.optimizer_typed_chars = 30
   local lines = build(s)
   assert_line(lines, "ce|cw        ∞×   (12 vs 0)   ce 5 · cw 7")
+  assert_line(lines, "… and 3 more")
   assert_line(lines, "(no command is used 10 times yet)")
   assert_line(lines, "From 3 scored sessions and 2 journal runs of 8 commands.")
   assert_line(lines, "Characters typed in insert mode: you 40 · optimizer 30")
@@ -226,10 +238,10 @@ test("stats pages: dev timing is labeled as the last 30 days", function()
   assert_line(build(s), "Optimizer time, last 30 days: p50 1.0 · p95 2.0 · p99 3.0 · max 4.0 ms  (n=3)")
 end)
 
-test("stats pages: split, Sessions and Journal come first and Commands and Dev second", function()
+test("stats pages: Sessions and Journal come first and Commands and Dev second", function()
   h.use_temp_data_home()
   local s = summary()
-  local pages = render.build_pages(s, IDLE, "effort", true)
+  local pages = render.build_pages(s, IDLE, "effort")
   assert_eq(#pages, 2)
   assert_line(pages[1].lines, "  Sessions")
   assert_line(pages[1].lines, "  Journal")
@@ -238,13 +250,6 @@ test("stats pages: split, Sessions and Journal come first and Commands and Dev s
   assert_line(pages[2].lines, "  Commands — you use MORE than the optimizer")
   assert_line(pages[2].lines, "  Dev")
   assert_no_line(pages[2].lines, "  Sessions")
-
-  local one = build(s)
-  for _, page in ipairs(pages) do
-    for _, line in ipairs(page.lines) do
-      if line ~= "" then assert_line(one, line) end
-    end
-  end
 end)
 
 test("stats pages: every drillable row and chart day is a target carrying its drill", function()
@@ -268,7 +273,7 @@ test("stats pages: every drillable row and chart day is a target carrying its dr
   local cw = { commands = { { tokens = { "cw" }, side = "either" } } }
   s.commands.more = { { text = "cw", ratio = 2, user = 8, optimizer = 4, split = "", drill = cw } }
   s.commands.less = { { text = "w", ratio = 0.5, user = 4, optimizer = 8, split = "", drill = {} } }
-  local pages = render.build_pages(s, IDLE, "effort", true)
+  local pages = render.build_pages(s, IDLE, "effort")
 
   local rows = {
     { 1, "unbeaten sessions", "Unbeaten (scored 100): 1 session", drill("unbeaten") },
@@ -317,6 +322,56 @@ test("stats pages: every drillable row and chart day is a target carrying its dr
   assert_eq({ titles, axes }, { 2, 2 })
 end)
 
+test("stats run list: each column owns its width and the gap after it", function()
+  assert_eq(render.run_column_at(1), nil)
+  assert_eq(render.run_column_at(2), "newest")
+  assert_eq(render.run_column_at(15), "newest")
+  assert_eq(render.run_column_at(16), "user_cost")
+  assert_eq(render.run_column_at(26), "best_cost")
+  assert_eq(render.run_column_at(36), "saved")
+  assert_eq(render.run_column_at(48), "slowest")
+  assert_eq(render.run_column_at(61), nil)
+end)
+
+test("stats run list: the preview puts the text before and after side by side and marks what changed", function()
+  local row = { id = { run = "journal" }, user_keys = "dw", best_seq = "", outcome = "no_result" }
+  local detail = {
+    lines = { "a", "b", "c" }, goal_lines = { "a", "B", "c", "d" },
+    start_row = 0, start_col = 0, end_row = 3, end_col = 0,
+  }
+  ---@diagnostic disable-next-line: param-type-mismatch
+  local preview = render.run_preview(row, detail, nil, 44)
+  local cell = string.rep(" ", 19)
+  assert_eq(preview.lines, {
+    " you:   " .. sequence_display.inline("dw"),
+    " found: —",
+    "",
+    " before · cursor 1:1  │ after · cursor 4:1",
+    " a" .. cell .. " │ a",
+    " b" .. cell .. " │ B",
+    " c" .. cell .. " │ c",
+    " " .. cell .. "  │ d",
+  })
+  local divider = 1 + 20
+  local after = divider + #" │ "
+  assert_eq(preview.marks, {
+    { row = 5, col = 1, end_col = divider, hl = highlights.VIEW_DIFF_DELETE },
+    { row = 5, col = after, end_col = after + 1, hl = highlights.VIEW_DIFF_ADD },
+    { row = 7, col = after, end_col = after + 1, hl = highlights.VIEW_DIFF_ADD },
+  })
+
+  ---@diagnostic disable-next-line: param-type-mismatch
+  assert_eq(render.run_preview(row, nil, "journal gone", 44).lines[4], " Text not available: journal gone")
+end)
+
+--- Opens the run list of the Commands row labelled `label`.
+---@param label string
+local function open_runs(label)
+  local pages = render.build_pages(summary(), IDLE, "effort")
+  put_cursor_on("commands", target(pages[2].targets, label, false))
+  press("commands", "<CR>")
+end
+
 test("stats view: opens a tab with the stats in two panes, and q returns", function()
   h.use_temp_data_home()
   local tab, win = v.nvim_get_current_tabpage(), v.nvim_get_current_win()
@@ -329,8 +384,8 @@ test("stats view: opens a tab with the stats in two panes, and q returns", funct
     assert_eq(vim.bo[p[name].buf].filetype, "vimficiency_stats", name)
     assert_eq(vim.bo[p[name].buf].modifiable, false, name)
   end
-  assert_eq(header(), " Stats" .. settings(""))
-  local pages = render.build_pages(summary(), IDLE, "effort", true)
+  assert_eq(header(), HEADER)
+  local pages = render.build_pages(summary(), IDLE, "effort")
   assert_eq(text("overview"), pages[1].lines)
   assert_eq(text("commands"), pages[2].lines)
 
@@ -349,7 +404,7 @@ test("stats view: closing one pane closes the view and its buffers", function()
   for _, buf in ipairs(v.nvim_list_bufs()) do
     if vim.startswith(v.nvim_buf_get_name(buf), prefix) then buffers[#buffers + 1] = buf end
   end
-  assert_eq(#buffers, 4)
+  assert_eq(#buffers, 3)
   v.nvim_win_close(panes().commands.win, true)
   vim.wait(1000, function() return #v.nvim_list_tabpages() == 1 end)
   assert_eq(v.nvim_get_current_tabpage(), tab)
@@ -369,26 +424,15 @@ end)
 
 test("stats view: the two stat columns sit side by side when they fit, else stacked", function()
   seed()
-  ---@param right VF.Test.StatsPane
-  local function assert_beside(right)
-    local p = panes()
-    assert_eq(v.nvim_win_get_position(p[right].win)[1], v.nvim_win_get_position(p.overview.win)[1])
-    assert_true(v.nvim_win_get_position(p[right].win)[2] > 0, right .. " on the right")
-    local widest = 0
-    for _, line in ipairs(text("overview")) do widest = math.max(widest, vim.fn.strdisplaywidth(line)) end
-    assert_eq(v.nvim_win_get_width(p.overview.win), widest + 1)
-    assert_eq(v.nvim_win_get_height(p.header.win), 1)
-  end
   h.with_patch({ { vim.o, "columns", 200 } }, function()
     in_view(function()
-      assert_beside("commands")
-      local pages = render.build_pages(summary(), IDLE, "effort", true)
-      put_cursor_on("commands", target(pages[2].targets, "dw (you more)", false))
-      press("commands", "<CR>")
-      assert_eq(panes().commands, nil)
-      assert_beside("runs")
-      assert_line(text("overview"), "  Commands — you use MORE than the optimizer")
-      assert_true(#text("overview") > #pages[1].lines, "the left holds every section")
+      local p = panes()
+      assert_eq(v.nvim_win_get_position(p.commands.win)[1], v.nvim_win_get_position(p.overview.win)[1])
+      assert_true(v.nvim_win_get_position(p.commands.win)[2] > 0, "commands on the right")
+      local widest = 0
+      for _, line in ipairs(text("overview")) do widest = math.max(widest, vim.fn.strdisplaywidth(line)) end
+      assert_eq(v.nvim_win_get_width(p.overview.win), widest + 1)
+      assert_eq(v.nvim_win_get_height(p.header.win), 1)
     end)
   end)
   h.with_patch({ { vim.o, "columns", 60 } }, function()
@@ -400,125 +444,112 @@ test("stats view: the two stat columns sit side by side when they fit, else stac
   end)
 end)
 
-test("stats view: <CR> on a chart day narrows to its runs and <BS> back removes them", function()
+test("stats view: <CR> on a chart day floats its runs over the whole width, and <Esc> or q closes them", function()
   seed()
-  h.with_patch({ { vim.o, "columns", 200 } }, function()
-    in_view(function()
-      local pages = render.build_pages(summary(), IDLE, "effort", true)
-      local t = two_days_ago_noon()
-      local label = os.date("%b ", t) .. tonumber(os.date("%d", t))
-      local day = target(pages[1].targets, label, true)
+  in_view(function()
+    local pages = render.build_pages(summary(), IDLE, "effort")
+    local t = two_days_ago_noon()
+    local label = os.date("%b ", t) .. tonumber(os.date("%d", t))
+    local day = target(pages[1].targets, label, true)
 
-      -- A column with no data narrows nothing.
-      v.nvim_win_set_cursor(panes().overview.win, { day.row + 1, day.cols[1] - 1 })
-      press("overview", "<CR>")
-      assert_eq(panes().runs, nil)
+    -- A column with no data lists nothing.
+    v.nvim_win_set_cursor(panes().overview.win, { day.row + 1, day.cols[1] - 1 })
+    press("overview", "<CR>")
+    assert_eq(panes().runs, nil)
 
+    for _, key in ipairs({ "<Esc>", "q" }) do
       put_cursor_on("overview", day)
       press("overview", "<CR>")
-      assert_eq(header(), " Stats › " .. label .. settings(" · sort: worst · page 1/1"))
+      local p = panes()
+      assert_eq(v.nvim_get_current_win(), p.runs.win)
+      local list, preview = v.nvim_win_get_config(p.runs.win), v.nvim_win_get_config(p.preview.win)
+      assert_eq(list.relative, "editor")
+      assert_eq({ list.width, preview.width }, { vim.o.columns - 2, vim.o.columns - 2 })
+      assert_true(preview.row > list.row + list.height, "the preview is under the list")
+      assert_eq(runs_title(), " Stats › " .. label .. " · sort: worst · page 1/1 ")
       assert_eq(footer(), "runs 1–3 of 3")
-      assert_eq(panes().commands, nil)
-      assert_line(text("overview"), "15 sessions")
-      assert_line(text("overview"), "  Dev")
-
-      press("runs", "<BS>")
-      assert_eq(header(), " Stats" .. settings(""))
-      assert_eq(panes().runs, nil)
-      assert_eq(text("commands"), pages[2].lines)
+      assert_eq(v.nvim_win_get_cursor(p.runs.win), { 2, 0 })
+      assert_eq(header(), HEADER)
       assert_eq(text("overview"), pages[1].lines)
-      press("overview", "<BS>")
-      assert_eq(panes().runs, nil)
-    end)
+      assert_eq(text("commands"), pages[2].lines)
+
+      press("runs", key)
+      assert_eq(panes().runs, nil, key)
+      assert_eq(panes().preview, nil, key)
+      assert_eq(v.nvim_get_current_win(), panes().overview.win)
+    end
   end)
 end)
 
-test("stats view: <CR> on a command row lists the runs using it, each on a line", function()
+test("stats view: <CR> on a command row lists the runs using it, a column each", function()
   seed()
-  h.with_patch({ { vim.o, "columns", 200 } }, function()
-    in_view(function()
-      local pages = render.build_pages(summary(), IDLE, "effort", true)
-      local dw = target(pages[2].targets, "dw (you more)", false)
-      put_cursor_on("commands", dw)
-      press("commands", "<CR>")
-      assert_eq(header(), " Stats › dw (you more)" .. settings(" · sort: worst · page 1/1"))
-      assert_eq(footer(), "runs 1–12 of 12")
-      local runs = text("runs")
-      assert_eq(runs[1], "when           effort         saved        keys")
-      for i = 2, 13 do
-        assert_pattern(runs[i],"^%a%a%a %d%d %d%d:%d%d     3%.0 → 2%.0    −33%%         you: dw   best: de$")
-      end
-
-      local _, narrowed = build(stats_query.summary({ current_only = false, weight = "effort", filter = dw.drill, charted_size = 0 }))
-      put_cursor_on("overview", target(narrowed, "de (you less)", false))
-      press("overview", "<CR>")
-      assert_eq(header(), " Stats › dw (you more) › de (you less)" .. settings(" · sort: worst · page 1/1"))
-      press("overview", "<BS>")
-      press("overview", "<BS>")
-      assert_eq(panes().runs, nil)
-    end)
+  in_view(function()
+    open_runs("dw (you only)")
+    assert_eq(runs_title(), " Stats › dw (you only) · sort: worst · page 1/1 ")
+    assert_eq(footer(), "runs 1–12 of 12")
+    local runs = text("runs")
+    assert_pattern(runs[1], "^ when%s+you%s+found%s+saved%s+search ms$")
+    for i = 2, 13 do
+      assert_pattern(runs[i], "^ %a%a%a %d%d %d%d:%d%d%s+3%.0%s+2%.0%s+−33%%%s+%d+%.%d$")
+      assert_eq(vim.fn.strdisplaywidth(runs[i]), vim.fn.strdisplaywidth(runs[1]))
+    end
   end)
 end)
 
-test("stats view: a run row is cut to the pane with an ellipsis", function()
-  h.use_temp_data_home()
-  finish("ciw" .. string.rep("a", 200) .. "<Esc>" .. string.rep("w", 120), "de", 2.0, os.time())
-  h.with_patch({ { vim.o, "columns", 200 } }, function()
-    in_view(function()
-      local pages = render.build_pages(summary(), IDLE, "effort", true)
-      put_cursor_on("commands", target(pages[2].targets, "w (you more)", false))
-      press("commands", "<CR>")
-      local row = text("runs")[2]
-      assert_match(row, "you: ciw⟨200⟩<Esc>ww")
-      assert_pattern(row, "…$")
-      assert_eq(vim.fn.strdisplaywidth(row), v.nvim_win_get_width(panes().runs.win))
-    end)
-  end)
-end)
-
-test("stats view: <CR> on a session run echoes its keys and costs and opens nothing", function()
+test("stats view: the preview shows the run's keys in full, and <CR> on a session opens nothing", function()
   h.use_temp_data_home()
   local long = "ciw" .. string.rep("a", 200) .. "<Esc>" .. string.rep("w", 12)
   finish(long, "de", 2.0, os.time())
-  h.with_patch({ { vim.o, "columns", 200 } }, function()
-    in_view(function()
-      local pages = render.build_pages(summary(), IDLE, "effort", true)
-      put_cursor_on("commands", target(pages[2].targets, "w (you more)", false))
-      press("commands", "<CR>")
-      local tabs = #v.nvim_list_tabpages()
-      local echoed = {}
-      h.with_patch({ { v, "nvim_echo", function(chunks) echoed[#echoed + 1] = chunks[1][1] end } }, function()
-        for _, row in ipairs({ 1, 3, 4, 2 }) do
-          v.nvim_win_set_cursor(panes().runs.win, { row, 0 })
-          press("runs", "<CR>")
-        end
-      end)
-      assert_eq(echoed, { "you: " .. long .. " (3.00)  best: de (2.00)" })
-      assert_eq(#v.nvim_list_tabpages(), tabs)
-    end)
+  in_view(function()
+    open_runs("w (you only)")
+    assert_eq(text("preview"), {
+      " you:   " .. sequence_display.inline(long),
+      " found: " .. sequence_display.inline("de"),
+      "",
+      " A session keeps no text.",
+    })
+    assert_eq(vim.wo[panes().preview.win].wrap, true)
+    local tabs = #v.nvim_list_tabpages()
+    press("runs", "<CR>")
+    assert_eq(#v.nvim_list_tabpages(), tabs)
   end)
 end)
 
-test("stats view: s, w and v re-query", function()
+test("stats view: s sorts by the column under the cursor, down, up, then off", function()
+  seed()
+  in_view(function()
+    open_runs("dw (you only)")
+    ---@param column string
+    ---@param title string
+    local function press_s_on(column, title)
+      v.nvim_win_set_cursor(panes().runs.win, { 3, runs_column(column) - 1 })
+      press("runs", "s")
+      assert_match(runs_title(), title, column)
+    end
+    press_s_on("saved", "sort: saved ▼")
+    assert_match(text("runs")[1], "saved ▼")
+    press_s_on("saved", "sort: saved ▲")
+    assert_match(text("runs")[1], "saved ▲")
+    press_s_on("saved", "sort: worst")
+    assert_true(not text("runs")[1]:find("▲", 1, true), "no column is marked")
+    press_s_on("when", "sort: newest ▼")
+    press_s_on("found", "sort: best_cost ▼")
+    assert_eq(footer(), "runs 1–12 of 12")
+
+    -- The margin belongs to no column.
+    v.nvim_win_set_cursor(panes().runs.win, { 3, 0 })
+    press("runs", "s")
+    assert_match(runs_title(), "sort: best_cost ▼")
+  end)
+end)
+
+test("stats view: w and v re-query", function()
   seed()
   h.with_patch({ { config, "RESULTS_CALCULATED", config.RESULTS_CALCULATED + 1 } }, function()
     finish("dd", "dd", 3.0, os.time())
     in_view(function()
       assert_match(header(), "    all scorings · ")
       assert_no_line(text("overview"), "hidden")
-      press("overview", "s")
-      assert_true(not header():find("sort:", 1, true), "no sort at the top level")
-
-      put_cursor_on("commands", target(render.build_pages(summary(), IDLE, "effort", true)[2].targets,
-        "dw (you more)", false))
-      press("commands", "<CR>")
-      assert_eq(footer(), "runs 1–12 of 12")
-      press("runs", "s")
-      assert_match(header(), "sort: newest")
-      press("runs", "s")
-      assert_match(header(), "sort: slowest")
-      press("runs", "s")
-      assert_match(header(), "sort: worst")
 
       press("header", "w")
       assert_match(header(), "weight: uniform")
@@ -527,59 +558,49 @@ test("stats view: s, w and v re-query", function()
       assert_line(text("overview"), "weighted by effort")
 
       press("overview", "v")
-      assert_eq(footer(), "no runs to list of 0")
       assert_match(header(), "    " .. summary().scoring_label .. " · ")
       assert_line(text("overview"), "  15 runs from other scorings hidden (v)")
       press("overview", "v")
-      assert_eq(footer(), "runs 1–12 of 12")
       assert_match(header(), "    all scorings · ")
     end)
   end)
 end)
 
-test("stats view: l cycles the charted run length without narrowing", function()
+test("stats view: l cycles the charted run length, and in the run list only moves the cursor", function()
   seed()
-  h.with_patch({ { vim.o, "columns", 200 } }, function()
-    in_view(function()
-      assert_eq(header(), " Stats" .. settings(""))
-      press("overview", "l")
-      assert_match(header(), "runs of 16")
-      press("commands", "l")
-      assert_match(header(), "runs of 4")
-      assert_eq(panes().runs, nil)
+  in_view(function()
+    assert_eq(header(), HEADER)
+    press("overview", "l")
+    assert_match(header(), "runs of 16")
+    press("commands", "l")
+    assert_match(header(), "runs of 4")
 
-      local pages = render.build_pages(summary(), IDLE, "effort", true)
-      put_cursor_on("commands", target(pages[2].targets, "dw (you more)", false))
-      press("commands", "<CR>")
-      press("runs", "l")
-      assert_eq(header(), " Stats › dw (you more)" .. settings(" · sort: worst · page 1/1"))
-      assert_eq(footer(), "runs 1–12 of 12")
-    end)
+    open_runs("dw (you only)")
+    press("runs", "l")
+    assert_eq(v.nvim_win_get_cursor(panes().runs.win), { 2, 1 })
+    assert_match(header(), "runs of 4")
+    assert_eq(footer(), "runs 1–12 of 12")
   end)
 end)
 
-test("stats view: ] and [ page the run list, stop at its ends, and do nothing at the top level", function()
+test("stats view: ] and [ page the run list and stop at its ends", function()
   h.use_temp_data_home()
   for i = 1, 60 do finish("dw", "de", 2.0, os.time() - i) end
   in_view(function()
-    press("overview", "]")
-    assert_eq(header(), " Stats" .. settings(""))
-
-    local pages = render.build_pages(summary(), IDLE, "effort", true)
-    put_cursor_on("commands", target(pages[2].targets, "dw (you more)", false))
-    press("commands", "<CR>")
+    open_runs("dw (you only)")
     assert_eq(footer(), "runs 1–50 of 60")
-    assert_match(header(), "page 1/2")
+    assert_match(runs_title(), "page 1/2")
     press("runs", "G")
     press("runs", "]")
     assert_eq(footer(), "runs 51–60 of 60")
-    assert_match(header(), "page 2/2")
+    assert_match(runs_title(), "page 2/2")
     assert_eq(v.nvim_win_get_cursor(panes().runs.win), { 1, 0 })
     press("runs", "]")
     assert_eq(footer(), "runs 51–60 of 60")
-    press("overview", "[")
+    press("runs", "[")
     assert_eq(footer(), "runs 1–50 of 60")
-    press("overview", "[")
+    press("runs", "[")
     assert_eq(footer(), "runs 1–50 of 60")
   end)
 end)
+

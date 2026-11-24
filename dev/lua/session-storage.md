@@ -104,6 +104,11 @@ the weight, not a filter.
   an insert split into its entry command, editing keys such as `<BS>`, and a
   typed-character count. `ce`/`cw` and `cE`/`cW` share a row. They cover scored
   sessions and the journal runs of the charted size.
+- `gj`/`gk` share a row with `j`/`k`, except a journal sample's `within_line`
+  commands (`Stats::countWithinLine`): the window cutter marks a `gj`/`gk`
+  alone in its tick that moved the cursor without leaving its row.
+- A command the optimizer never used is listed in `never`, by the user's
+  count, and kept out of `more`.
 - The user's insert text is counted from `typed_insert` (`Stats::countInsertKeys`),
   not from the commands, whose keys also hold what mappings typed. A session or
   run without `typed_insert` counts no insert text on either side.
@@ -112,7 +117,7 @@ Both exports narrow by one `vf.stats.Filter` (`src/Stats/Query.cpp` applies it)
 and read the same scope, so a row's `drill` filter lists exactly the runs it
 counted. Lua copies `drill` verbatim and never builds a filter: `build_pages`
 returns each drillable row and daily chart column with its `drill`, and the
-view keeps a stack of them, the top one the current filter.
+view opens `stats/run_list.lua`'s float over the one under the cursor.
 
 - A field a source lacks leaves it out: a window size or nav/edit leaves
   sessions out; commands leave rollups out, counted as
@@ -123,10 +128,13 @@ view keeps a stack of them, the top one the current filter.
   everywhere but the per-size scores.
 - Run rows carry `user_display`/`best_display` (`Stats::displayKeys`): each
   stretch of typed characters as `⟨n⟩`, line breaks and every other key as the
-  sequence display renders them.
+  sequence display renders them. Nothing in Lua reads them: the run list's
+  preview renders the keys in full.
 - `vf_stats_runs` pages the sessions in scope and the charted runs of the
-  current params' samples, worst, newest or slowest first; ties go newest first, then by
-  id. Rolled-up runs count in `total` but have no rows.
+  current params' samples by one `Order` column, largest first unless
+  `ascending`; a run with no value in that column goes last either way, and
+  ties go newest first, then by id. Rolled-up runs count in `total` but have
+  no rows.
 - A journal run's `RunId` is its file, window size and `last_atom`; a session's
   is its index among the log's sessions.
 - `vf_stats_run` (`Journal::runDetail`) cuts a journal run's window again under
@@ -136,7 +144,8 @@ view keeps a stack of them, the top one the current filter.
   run without a slice, a deleted journal, or params that no longer cut that
   window are errors, which `ffi/stats.run` returns rather than raises.
 - `<CR>` on a journal run feeds the detail to `simulate.simulate_compare`
-  (`filetype` highlights only the visible panes); a session row echoes its keys.
+  (`filetype` highlights only the visible panes). The preview shows the same
+  detail's `lines` beside its `goal_lines`; a session has neither.
 
 `diffs` is the planner's own partition (half-open, 0-indexed spans per side), so
 the viewer highlights exactly the regions the search ran against; `disk.validate`

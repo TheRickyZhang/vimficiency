@@ -2,8 +2,8 @@
 
 Capture moved to the `CmdAtom` autocmd (`atom-stream.md`), which reports one
 resolved unit per command and has none of these problems. Explore still runs its
-own `vim.on_key` listener (`explore/key_capture.lua`) and reduces the raw events
-with `capture/key_tracking.lua`, so the hazards below still apply there.
+own `vim.on_key` listener (`explore/input/key_capture.lua`) and reduces the raw events
+with `explore/input/key_tracking.lua`, so the hazards below still apply there.
 
 Capture has an `on_key` listener too, but reads only the `typed` argument, to
 know which keys were pressed (`atom-stream.md`, "Pressed keys"). The first two

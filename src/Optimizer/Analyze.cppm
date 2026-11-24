@@ -74,6 +74,9 @@ std::pair<int, int> computeSearchRegion(
     int startRow, int endRow, const Lines& startLines, const Lines& endLines,
     int padding);
 
+// Whether `keys` is one screen-line motion: `[count]gj` or `[count]gk`.
+bool isScreenLineMotion(std::string_view keys);
+
 // Rows `region` (from computeSearchRegion) of a session, as one search problem.
 SearchSlice sliceSearch(
     const Lines& initialLines, const Lines& goalLines, const SessionEnds& ends,

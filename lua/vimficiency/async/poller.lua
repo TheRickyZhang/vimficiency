@@ -17,7 +17,7 @@ local POLL_INTERVAL_MS = 25
 --- Shared by the explore (View) and suggest (analyze) async paths — they differ
 --- only in the injected callbacks. `poll_fn()` returns a non-nil value once the
 --- worker finishes, or nil while still computing; `on_ready` is called exactly
---- once with that value. A `poll_fn()` that raises ends the job instead:
+--- once with that value. An error in either callback ends the job:
 --- `on_error` releases what the caller tied to it, then the error surfaces at
 --- `util.entry`. `cancel_fn()` signals the worker to stop and is invoked by
 --- `M.cancel` only if the job has not finished.
@@ -38,23 +38,29 @@ function M.start(poll_fn, cancel_fn, on_ready, on_error)
   end
   handle.close_timer = close_timer
 
-  timer:start(0, POLL_INTERVAL_MS, vim.schedule_wrap(util.entry(function()
+  local started, start_err = timer:start(0, POLL_INTERVAL_MS, vim.schedule_wrap(util.entry(function()
     -- Guard against an already-queued tick firing after we resolved/cancelled:
     -- polling a taken job raises (its id is no longer live).
     if handle.done or handle.cancelled then return end
-    local ok, value = pcall(poll_fn)
+    local ok, err = pcall(function()
+      local value = poll_fn()
+      if value == nil then return end
+      handle.done = true
+      close_timer()
+      on_ready(value)
+    end)
     if not ok then
       -- A failed poll must stop the timer, or the error repeats every tick.
       handle.done = true
       close_timer()
       on_error()
-      error(value, 0)
+      error(err, 0)
     end
-    if value == nil then return end
-    handle.done = true
-    close_timer()
-    on_ready(value)
   end)))
+  if not started then
+    close_timer()
+    error(start_err, 0)
+  end
 
   return handle
 end

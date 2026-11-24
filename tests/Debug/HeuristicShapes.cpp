@@ -3,6 +3,7 @@
 //   gap  = cost / best known cost - 1   (best over the pure-effort search and all settings)
 //   lost = some setting solves the start, this one does not
 //   work = nodes explored, relative to the current defaults
+// Gap and lost are averaged within an edit first, so every edit counts once.
 // History is split by file into halves A and B to show whether a ranking holds up.
 //   ./build/tests/vimfy_debug --gtest_filter='HeuristicShapes.*'
 // with VIMFY_JOURNAL_DIR and/or VIMFY_SESSION_DUMP_DIR set.
@@ -47,6 +48,7 @@ struct CorpusEdit {
   CursorPos begin, end;
   string deleted, inserted;
   double weight = 1.0;  // history edits this one stands for
+  bool heavy = false;   // one of the few edits holding most of the search work
 };
 
 struct Problem {
@@ -78,9 +80,10 @@ string rangeText(const CorpusEdit& e) {
   return flat.substr(begin, end - begin);
 }
 
-vector<Problem> corpusProblems() {
+vector<Problem> corpusProblems(bool heavy) {
   vector<Problem> problems;
   for (const CorpusEdit& e : CORPUS) {
+    if (e.heavy != heavy) continue;
     EXPECT_EQ(rangeText(e), e.deleted) << "corpus entry range does not match its deleted text";
     problems.push_back({toDiff(e), int(problems.size() % 2), e, true});
   }
@@ -286,10 +289,11 @@ void report(const char* keyboard, const Config& config, const vector<Problem>& p
   vector<Setting> settings;
   const char* spec = getenv("VIMFY_SETTINGS");
   if (spec && string_view(spec) == "fine") {
-    // Near the defaults, where work stays affordable.
-    for (double typed : {0.0, 1.0, 2.0}) {
-      for (double colExp : {1.0, 0.9, 0.8}) {
-        for (double dw : {1.0, 0.9, 0.8, 0.7, 0.6}) settings.push_back({dw, colExp, 1.0, typed});
+    for (double typed : {0.0, 1.0}) {
+      for (double colExp : {1.0, 0.9, 0.8, 0.7, 0.6, 0.5}) {
+        for (double dw : {1.0, 0.9, 0.8, 0.7, 0.6, 0.5}) {
+          settings.push_back({dw, colExp, 1.0, typed});
+        }
       }
     }
   } else if (spec) {
@@ -341,99 +345,209 @@ void report(const char* keyboard, const Config& config, const vector<Problem>& p
     baselineNodes += w * runs[0][p].nodes;
   }
 
-  printf("== %s: %d edits, %.0f solvable starts\n", keyboard, P, solvable);
-  printf("  %4s %5s %6s %6s | %6s %7s %8s %8s %8s %8s | %6s\n", "dist", "col^", "break^",
-         "typed", "lost", "%worse", "meanGap%", "gapA%", "gapB%", "maxGap%", "work");
+  // Each edit counts once, however many starts it has: lost%, %worse and the
+  // gaps are per-edit averages over its starts, then averaged over edits.
+  // `work` is total nodes; `typical` is the geometric mean of per-edit ratios.
+  // How much any one edit can sway the table, under the first setting.
+  double weightSum = 0, gapTotal = 0, topWeight = 0, topWork = 0, topGap = 0;
+  vector<double> editGaps(P, 0.0);
+  for (int p = 0; p < P; p++) {
+    const double w = problems[p].edit.weight;
+    int solved = 0;
+    double gap = 0;
+    for (size_t i = 0; i < best[p].size(); i++) {
+      const double c = runs[0][p].costByStart[i];
+      if (best[p][i] < EPS || c < 0) continue;
+      solved++;
+      gap += c / best[p][i] - 1.0;
+    }
+    editGaps[p] = solved ? w * gap / solved : 0.0;
+    weightSum += w;
+    gapTotal += editGaps[p];
+    topWeight = max(topWeight, w);
+    topWork = max(topWork, w * runs[0][p].nodes);
+    topGap = max(topGap, editGaps[p]);
+  }
+  printf("== %s: %d edits standing for %.0f edits, %.0f solvable starts\n", keyboard, P, weightSum,
+         solvable);
+  printf("   largest single-edit share: %.0f%% of edits, %.0f%% of work, %.0f%% of gap\n",
+         100.0 * topWeight / weightSum, baselineNodes ? 100.0 * topWork / baselineNodes : 0.0,
+         gapTotal > EPS ? 100.0 * topGap / gapTotal : 0.0);
+  printf("  %4s %5s %6s %6s | %6s %7s %8s %8s %8s %8s | %6s %8s\n", "dist", "col^", "break^",
+         "typed", "lost%", "%worse", "meanGap%", "gapA%", "gapB%", "maxGap%", "work", "typical");
   for (int s = 0; s < S; s++) {
-    double lost = 0, compared = 0, worse = 0, nodes = 0;
-    double gapSum = 0, gapMax = 0;
+    double edits = 0, lost = 0, worse = 0, nodes = 0, gapSum = 0, gapMax = 0, logRatio = 0;
     array<double, 2> halfSum{}, halfCount{};
     for (int p = 0; p < P; p++) {
       const double w = problems[p].edit.weight;
       nodes += w * runs[s][p].nodes;
+      int solvableStarts = 0, solved = 0, worseStarts = 0;
+      double editGap = 0;
       for (size_t i = 0; i < best[p].size(); i++) {
         if (best[p][i] < 0) continue;
+        solvableStarts++;
         const double c = runs[s][p].costByStart[i];
-        if (c < 0) { lost += w; continue; }
+        if (c < 0) continue;
         const double gap = best[p][i] > EPS ? c / best[p][i] - 1.0 : 0.0;
-        compared += w;
-        gapSum += w * gap;
+        solved++;
+        editGap += gap;
         gapMax = max(gapMax, gap);
-        halfSum[problems[p].half] += w * gap;
-        halfCount[problems[p].half] += w;
-        if (gap > EPS) worse += w;
+        if (gap > EPS) worseStarts++;
       }
+      if (solvableStarts == 0) continue;
+      edits += w;
+      lost += w * (solvableStarts - solved) / solvableStarts;
+      logRatio += w * log(max(1.0, double(runs[s][p].nodes)) / max(1.0, double(runs[0][p].nodes)));
+      if (solved == 0) continue;
+      worse += w * worseStarts / solved;
+      gapSum += w * editGap / solved;
+      halfSum[problems[p].half] += w * editGap / solved;
+      halfCount[problems[p].half] += w;
     }
     const Setting& v = settings[s];
-    printf("  %4.1f %5.2f %6.1f %6.1f | %6.0f %6.1f%% %8.2f %8.2f %8.2f %8.1f | %5.2fx\n",
-           v.distanceWeight, v.colExponent, v.breakExponent, v.typedWeight, lost,
-           compared ? 100.0 * worse / compared : 0.0, compared ? 100.0 * gapSum / compared : 0.0,
+    printf("  %4.1f %5.2f %6.1f %6.1f | %6.2f %6.1f%% %8.2f %8.2f %8.2f %8.1f | %5.2fx %7.2fx\n",
+           v.distanceWeight, v.colExponent, v.breakExponent, v.typedWeight,
+           edits ? 100.0 * lost / edits : 0.0, edits ? 100.0 * worse / edits : 0.0,
+           edits ? 100.0 * gapSum / edits : 0.0,
            halfCount[0] ? 100.0 * halfSum[0] / halfCount[0] : 0.0,
            halfCount[1] ? 100.0 * halfSum[1] / halfCount[1] : 0.0, 100.0 * gapMax,
-           baselineNodes ? double(nodes) / baselineNodes : 0.0);
+           baselineNodes ? nodes / baselineNodes : 0.0, edits ? exp(logRatio / edits) : 0.0);
   }
 }
 
 }  // namespace
 
-// Resamples the canonical corpus. Within each kind the edits are sorted by
-// search work (nodes under the current defaults) and cut into equal-count
-// bins; each bin contributes the edit nearest its mean work, weighted by the
-// bin's size, so weighted corpus totals estimate the history's.
+// Resamples the canonical corpus. Search work is concentrated in a few edits,
+// so the heaviest are all kept at weight 1. The rest are cut, within each
+// kind, into bins of equal total work; each bin contributes the edit nearest
+// its mean work, weighted by the bin's edit count, so weighted corpus figures
+// estimate the history's.
 // Writes HeuristicCorpus.inc to $VIMFY_CORPUS_OUT. The output is raw history
-// text: read it and rewrite anything private before committing.
+// text: read it, then rerun with $VIMFY_CORPUS_PRIVATE naming anything
+// private, before it goes anywhere near the repo.
 TEST(HeuristicShapes, PickCorpus) {
   const char* outPath = getenv("VIMFY_CORPUS_OUT");
   if (!outPath) GTEST_SKIP() << "set VIMFY_CORPUS_OUT and a history directory";
-  constexpr int PER_KIND = 7;
+  constexpr double HEAVY_SHARE = 0.05, MAX_SHARE = 0.05;
   const Config config = Config::uniform();
+  const TransformOptimizerParams defaults = TransformOptimizerParams{}.withMaxResults(ALL_STARTS);
+  const TransformOptimizerParams probe =
+      TransformOptimizerParams(defaults).withDistanceWeight(0.6).withColExponent(0.9);
 
   struct Candidate {
     CorpusEdit edit;
-    long nodes;
+    long nodes;  // under the defaults
+    long work;   // defaults + probe
   };
   const vector<Problem> history = historyProblems(config);
-  map<string, vector<Candidate>> byKind;
+  vector<Candidate> all;
   long historyNodes = 0;
   for (const Problem& p : history) {
-    const long nodes = run(p.diff, config, TransformOptimizerParams{}.withMaxResults(ALL_STARTS)).nodes;
+    const long nodes = run(p.diff, config, defaults).nodes;
     historyNodes += nodes;
-    if (p.isolates) byKind[p.edit.kind].push_back({p.edit, nodes});
+    if (p.isolates) all.push_back({p.edit, nodes, nodes + run(p.diff, config, probe).nodes});
   }
+  ranges::stable_sort(all, greater{}, &Candidate::work);
 
   ofstream out(outPath);
   double corpusNodes = 0;
-  printf("harvested %zu edits, %ld nodes\n", history.size(), historyNodes);
+  // $VIMFY_CORPUS_PRIVATE="needle|needle": an edit containing a needle gets
+  // every letter and digit replaced at random, keeping case, word shapes,
+  // punctuation and positions.
+  vector<string> needles;
+  if (const char* spec = getenv("VIMFY_CORPUS_PRIVATE")) {
+    for (auto part : string_view(spec) | views::split('|')) needles.emplace_back(string_view(part));
+  }
+  mt19937 rng(20261124);
+  const auto anonymise = [&](string& s) {
+    for (char& c : s) {
+      if (islower(static_cast<unsigned char>(c))) c = 'a' + rng() % 26;
+      else if (isupper(static_cast<unsigned char>(c))) c = 'A' + rng() % 26;
+      else if (isdigit(static_cast<unsigned char>(c))) c = '0' + rng() % 10;
+    }
+  };
+  int anonymised = 0;
+  const auto emit = [&](const Candidate& c, int weight, bool heavyEdit) {
+    CorpusEdit e = c.edit;
+    const bool isPrivate = ranges::any_of(needles, [&](const string& needle) {
+      return ranges::any_of(e.lines, [&](const string& l) { return l.contains(needle); }) ||
+             e.inserted.contains(needle);
+    });
+    if (isPrivate) {
+      for (size_t l = 0; l < e.lines.size(); l++) {
+        if (e.lines[l] != "above" && e.lines[l] != "below") anonymise(e.lines[l]);
+      }
+      e.deleted = rangeText(e);
+      anonymise(e.inserted);
+      anonymised++;
+    }
+    corpusNodes += double(weight) * c.nodes;
+    out << "    {\"" << e.kind << "\", {";
+    for (size_t l = 0; l < e.lines.size(); l++) out << (l ? ", " : "") << cppLiteral(e.lines[l]);
+    out << "}, {" << e.begin.line << ", " << e.begin.col << "}, {" << e.end.line << ", "
+        << e.end.col << "}, " << cppLiteral(e.deleted) << ", " << cppLiteral(e.inserted)
+        << ", " << weight << ", " << (heavyEdit ? "true" : "false") << "},\n";
+  };
+
+  // Heavy tail: peel off the heaviest edit until none left holds more than
+  // HEAVY_SHARE of the remaining work. They are kept, but flagged, so they
+  // are reported apart and cannot swamp the typical edits.
+  long totalWork = 0;
+  for (const Candidate& c : all) totalWork += c.work;
+  long typicalWork = totalWork;
+  int heavy = 0;
+  while (heavy < ssize(all) && all[heavy].work > HEAVY_SHARE * typicalWork) {
+    typicalWork -= all[heavy].work;
+    emit(all[heavy++], 1, true);
+  }
+  const int typicalEdits = ssize(all) - heavy;
+  printf("harvested %zu edits; %d heavy ones hold %.0f%% of the work and are set apart\n",
+         history.size(), heavy, 100.0 * (totalWork - typicalWork) / totalWork);
+
+  // Typical edits: within a kind, in work order, a bin closes before it would
+  // stand for more than MAX_SHARE of the edits or of the work.
+  const int maxBinEdits = max(1, int(MAX_SHARE * typicalEdits));
+  const double maxBinWork = MAX_SHARE * typicalWork;
+  map<string, vector<Candidate>> byKind;
+  for (int i = heavy; i < ssize(all); i++) byKind[all[i].edit.kind].push_back(all[i]);
   for (auto& [kind, edits] : byKind) {
-    ranges::stable_sort(edits, {}, &Candidate::nodes);
-    const int n = edits.size(), take = min(n, PER_KIND);
-    printf("  %-14s %3d available, %d taken, work %ld..%ld\n", kind.c_str(), n, take,
-           edits.front().nodes, edits.back().nodes);
-    for (int bin = 0; bin < take; bin++) {
-      const int first = bin * n / take, end = (bin + 1) * n / take;
-      double mean = 0;
-      for (int i = first; i < end; i++) mean += edits[i].nodes;
-      mean /= end - first;
+    ranges::stable_sort(edits, {}, &Candidate::work);
+    const int n = edits.size();
+    int taken = 0;
+    for (int first = 0; first < n;) {
+      int end = first;
+      double binWork = 0;
+      while (end < n && (end == first || (end - first < maxBinEdits &&
+                                          binWork + edits[end].work <= maxBinWork))) {
+        binWork += edits[end++].work;
+      }
+      const double mean = binWork / (end - first);
       int pick = first;
       for (int i = first; i < end; i++) {
-        if (abs(edits[i].nodes - mean) < abs(edits[pick].nodes - mean)) pick = i;
+        if (abs(edits[i].work - mean) < abs(edits[pick].work - mean)) pick = i;
       }
-      const CorpusEdit& e = edits[pick].edit;
-      corpusNodes += double(end - first) * edits[pick].nodes;
-      out << "    {\"" << e.kind << "\", {";
-      for (size_t l = 0; l < e.lines.size(); l++) out << (l ? ", " : "") << cppLiteral(e.lines[l]);
-      out << "}, {" << e.begin.line << ", " << e.begin.col << "}, {" << e.end.line << ", "
-          << e.end.col << "}, " << cppLiteral(e.deleted) << ", " << cppLiteral(e.inserted)
-          << ", " << end - first << "},\n";
+      emit(edits[pick], end - first, false);
+      taken++;
+      first = end;
     }
+    printf("  %-14s %3d edits, %d taken, work %ld..%ld\n", kind.c_str(), n, taken,
+           edits.front().work, edits.back().work);
   }
-  printf("weighted corpus nodes %.0f (%.2fx history)\n", corpusNodes, corpusNodes / historyNodes);
+  printf("weighted corpus nodes %.0f (%.2fx history), %d edits anonymised\n", corpusNodes,
+         corpusNodes / historyNodes, anonymised);
 }
 
 TEST(HeuristicShapes, Corpus) {
-  const vector<Problem> problems = corpusProblems();
+  const vector<Problem> problems = corpusProblems(false);
   report("corpus / uniform", Config::uniform(), problems);
   report("corpus / qwerty", Config::qwerty(), problems);
+}
+
+// The few edits that hold most of the search work, reported on their own.
+TEST(HeuristicShapes, Heavy) {
+  const vector<Problem> problems = corpusProblems(true);
+  report("heavy / uniform", Config::uniform(), problems);
+  report("heavy / qwerty", Config::qwerty(), problems);
 }
 
 TEST(HeuristicShapes, History) {

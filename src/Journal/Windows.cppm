@@ -23,6 +23,9 @@ struct WindowState {
 struct Command {
   std::string keys;
   std::string kind;
+  // A gj/gk that moved the cursor along its buffer line. Every other one is
+  // taken for the line motion it equals on unwrapped text.
+  bool withinLine = false;
 };
 
 // Consecutive recorded atoms of one window and the states on either side.

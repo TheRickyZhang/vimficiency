@@ -61,12 +61,18 @@ void visitJournal(const Scope& scope, const Selection& selection,
 // Rolled-up runs `selection` selects, but for its commands.
 int rolledUpRuns(const Scope& scope, const Selection& selection);
 
+// What a run list sorts by. A run with no value there (the best cost of an
+// unscored run) goes last in either direction.
 enum class RunOrder : uint8_t {
-  // By user cost − best cost, largest first; runs without a score last.
+  // User cost − best cost.
   Worst,
   Newest,
-  // By analysis time, longest first.
+  // Analysis time.
   Slowest,
+  UserCost,
+  BestCost,
+  // The share of the user's cost the best sequence saves.
+  Saved,
 };
 
 struct ListedRun {
@@ -84,7 +90,8 @@ struct RunPage {
 };
 
 // The scope's sessions and charted journal runs that its selection selects, in
-// `order`, from `offset`. Ties go newest first, then by run id.
-RunPage pageRuns(const Scope& scope, RunOrder order, int offset, int limit);
+// `order`, largest first unless `ascending`, from `offset`. Ties go newest
+// first, then by run id.
+RunPage pageRuns(const Scope& scope, RunOrder order, bool ascending, int offset, int limit);
 
 }  // namespace Stats

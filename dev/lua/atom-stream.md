@@ -3,7 +3,7 @@
 Read before changing capture, the admission rule, recall start marks, or any
 listener (`capture/recall.lua`, `capture/journal.lua`, `session/init.lua`,
 `capture/end_trigger.lua`).
-`key_tracking.lua` is Explore-only; see `neovim_on_key_issues.md`.
+`explore/input/key_tracking.lua` is Explore-only; see `neovim_on_key_issues.md`.
 
 ## Model
 
@@ -130,9 +130,10 @@ below. Neovim also reads the keys of one Insert-mode command like any others,
 so each counts on its own: the `<C-\>` of `<C-\><C-n>` stays, and a register
 name after `<C-r>` is a typed character.
 
-The wrappers are installed on the first listener and never removed, since
-unwrapping could drop a later plugin's wrapper around ours. They only record
-while the autocmd exists. Under the real config (flash, mini.ai, mini.pairs,
+The wrappers are installed once per Neovim process and stay in place, since
+unwrapping could drop a later plugin's wrapper around ours. The active capture
+registers its recorder when the first listener joins and clears it when the last
+one leaves. Under the real config (flash, mini.ai, mini.pairs,
 mini.surround, which-key) 43 of 43 probed sequences came out exact.
 
 Known gaps, all Neovim's:
@@ -228,14 +229,13 @@ and `tick`.
   `typed_insert` (unset in older journals), `decision`, `lossy`, `abort_reason`
   (abort only), `mode`, and the post-atom `view`.
 - `tick_end` — empty (4 bytes on disk): the tick of the records before it is
-  complete. Written from the callback that closes the tick, which still runs
-  when Neovim quits mid-burst. Absent after a tick the writer did not outlive,
-  and in older journals.
+  complete. Written when the scheduled callback closes the tick or when the
+  journal stops cleanly with a tick open. Absent if the writer could not finish
+  the tick, and in older journals.
 
 The text at an atom is the snapshot plus every delta written before it. Records
-written in one drain of the event queue share a `tick`. The scheduled tick close
-belongs to the file that queued it, so a restart preserves the new file's open
-tick when an old callback runs. Deferred delivery means
+written in one drain of the event queue share a `tick`. Scheduled tick closes
+and resyncs belong to the journal run that queued them. Deferred delivery means
 every atom of a tick carries the tick's final cursor and the first carries the
 whole delta. Only the last state of a tick is real, so a reader never splits one.
 

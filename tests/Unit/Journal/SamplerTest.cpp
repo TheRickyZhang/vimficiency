@@ -38,7 +38,8 @@ string journalOf(int atoms) {
 
 // Eight atoms moving over and deleting from rows 10 and 11 of twenty, so a
 // slice cuts rows off both ends. The filetype changes from cpp to lua in the
-// tick of atom 3. Atom 2 is a `gj`, which the search scores as `j`.
+// tick of atom 3. Atom 2 is a `gj` that crossed a line, which the search
+// scores as `j`.
 string editedJournal() {
   vector<string> lines;
   for (int i = 0; i < 20; i++) lines.push_back(format("line {} of the text", i));
@@ -358,6 +359,8 @@ TEST_F(JournalSamplerTest, EverySampledRunIsSlicedAgainAsItWasScored) {
     EXPECT_LT(got->lines_size(), 20);
     ASSERT_EQ(got->lines_size(), ssize(in.initialLines));
     for (int i = 0; i < got->lines_size(); i++) EXPECT_EQ(got->lines(i), string(in.initialLines[i]));
+    ASSERT_EQ(got->goal_lines_size(), ssize(in.goalLines));
+    for (int i = 0; i < got->goal_lines_size(); i++) EXPECT_EQ(got->goal_lines(i), string(in.goalLines[i]));
     EXPECT_EQ(got->start_row(), in.initialPos.line);
     EXPECT_EQ(got->start_col(), in.initialPos.col);
     EXPECT_EQ(got->end_row(), in.goalPos.line);

@@ -2,6 +2,7 @@ module vf.Journal.Windows;
 
 import std.compat;
 import vf.Journal.Replay;
+import vf.Optimizer.Analyze;
 import vf.Types.Lines;
 
 using namespace std;
@@ -74,6 +75,9 @@ void WindowCutter::closeGroup(vector<Window>& out) {
   }
 
   if (vouched) {
+    // Only an atom alone in its tick has a state of its own to judge by.
+    const bool withinLine = group.size() == 1 && last.row == anchor.row &&
+                            last.col != anchor.col && isScreenLineMotion(last.keys);
     for (const Event& event : group) {
       if (event.decision != Decision::Record) continue;
       for (Window& window : open) {
@@ -83,7 +87,7 @@ void WindowCutter::closeGroup(vector<Window>& out) {
         }
         window.lastAtom = event.atomIndex;
         window.atomCount++;
-        window.commands.push_back({event.keys, event.atomKind});
+        window.commands.push_back({event.keys, event.atomKind, withinLine});
         window.keys += event.keys;
         window.typed += event.typed;
         window.typedInsert += event.typedInsert;

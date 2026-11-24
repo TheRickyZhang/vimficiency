@@ -35,6 +35,32 @@ test("reload: shutdown detaches atom subscribers", function()
     "recall_capture subscriber gone after shutdown")
 end)
 
+test("reload: shutdown releases pending and ready Explore views", function()
+  local explore = require("vimficiency.explore")
+  local registry = require("vimficiency.explore.runtime.registry")
+  local flow = require("explore._helpers")
+  local result = flow.fake_result()
+  h.new_buf(result.lines)
+  h.silence_notify(function() explore.open("ready", result) end)
+  local ready = registry.current()
+  assert_true(vim.wait(5000, function() return ready.view_id ~= nil end))
+  h.silence_notify(function() explore.open("pending", result) end)
+  local pending = registry.current()
+  local ready_group, pending_group = ready.augroup, pending.augroup
+  assert_eq(pending.view_id, nil)
+
+  vimfy.shutdown()
+
+  assert_true(not registry.has_any())
+  assert_true(pending.poll_handle.cancelled)
+  assert_eq(pcall(vim.api.nvim_get_autocmds, { group = ready_group }), false)
+  assert_eq(pcall(vim.api.nvim_get_autocmds, { group = pending_group }), false)
+  assert_true(vim.wait(1000, function()
+    return not vim.api.nvim_tabpage_is_valid(ready.scratch.tab)
+      and not vim.api.nvim_tabpage_is_valid(pending.scratch.tab)
+  end))
+end)
+
 test("reload: reload_lua swaps module identities and preserves finished records", function()
   vimfy.setup({})
 
@@ -55,6 +81,7 @@ test("reload: reload_lua swaps module identities and preserves finished records"
     "seeded finished record is visible before reload")
 
   local pre_store = store
+  local feedkeys = vim.api.nvim_feedkeys
 
   local stats = vimfy.reload_lua(nil)
   assert_true(stats.preserved_records >= 1,
@@ -63,6 +90,7 @@ test("reload: reload_lua swaps module identities and preserves finished records"
   local post_store = require("vimficiency.session.store")
   assert_true(pre_store ~= post_store,
     "session.store module table identity changed across reload")
+  assert_eq(vim.api.nvim_feedkeys, feedkeys, "input wrappers are reused across reload")
 
   assert_true(post_store.get_result("@") ~= nil,
     "finished record survived reload")

@@ -1,14 +1,14 @@
 local ffi_explore     = require("vimficiency.ffi.explore")
 local highlights      = require("vimficiency.explore.highlights")
-local lifecycle       = require("vimficiency.explore.lifecycle")
+local lifecycle       = require("vimficiency.explore.runtime.lifecycle")
 local panel_render    = require("vimficiency.explore.render.panel")
-local registry        = require("vimficiency.explore.registry")
+local registry        = require("vimficiency.explore.runtime.registry")
 local runtime         = require("vimficiency.explore.runtime")
 local settings        = require("vimficiency.explore.settings")
 local settings_schema = require("vimficiency.explore.settings_schema")
 local state           = require("vimficiency.explore.state")
 local view_model      = require("vimficiency.explore.view")
-local handlers        = require("vimficiency.explore.handlers")
+local handlers        = require("vimficiency.explore.input.handlers")
 
 local M = {}
 

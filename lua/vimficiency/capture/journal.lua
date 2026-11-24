@@ -24,94 +24,103 @@ local LISTENER_NAME = "journal"
 local AUGROUP = "VimficiencyJournal"
 local TICK_END = ffi_core.encode("vf.journal.File", { records = { { tick_end = {} } } })
 
----@type file*|nil
-local fh = nil
----@type string|nil
-local file_path = nil
-local started_mono_ns = 0
+---@class VF.Journal.Run
+---@field file file*
+---@field path string
+---@field started_mono_ns integer
+---@field since_snapshot table<integer, integer>
+---@field tick integer
+---@field tick_open boolean
+---@field atoms_seen integer
+---@field last_resync string|nil
+---@field group integer|nil
+---@field listening boolean
 
---- Atoms journaled per buffer since its last snapshot; nil until the first one.
----@type table<integer, integer>
-local since_snapshot = {}
-
-local tick = 0
-local tick_open = false
-
---- Every atom delivered, in scope or not. A cursor or text event that no atom
---- follows was not caused by a command.
-local atoms_seen = 0
-
---- `buf:win:row:col` of a resync that is still the last record written.
----@type string|nil
-local last_resync = nil
+---@type VF.Journal.Run|nil
+local active = nil
 
 function M.dir()
   return vim.fn.stdpath("data") .. "/vimficiency/journal"
 end
 
+---@param run VF.Journal.Run
+---@param finish_tick boolean
+---@return string|nil
+local function release(run, finish_tick)
+  if active ~= run then return end
+  active = nil
+
+  local write_err
+  if finish_tick and run.tick_open then
+    local _
+    _, write_err = run.file:write(TICK_END)
+  end
+  local _, close_err = run.file:close()
+  if run.group then vim.api.nvim_del_augroup_by_id(run.group) end
+  if run.listening then
+    atom_stream.remove_listener(LISTENER_NAME)
+    buffer_history.set_observer(nil)
+  end
+  return write_err or close_err
+end
+
+---@param run VF.Journal.Run
 ---@param bytes string
-local function append(bytes)
-  local ok, err = (fh --[[@as file*]]):write(bytes)
+local function append(run, bytes)
+  local ok, err = run.file:write(bytes)
   if not ok then
-    local path = file_path
-    M.stop()
-    error("vimfy journal: stopped, could not write " .. tostring(path) .. ": " .. tostring(err), 0)
+    release(run, false)
+    error("vimfy journal: stopped, could not write " .. run.path .. ": " .. tostring(err), 0)
   end
 end
 
---- Ends the open tick, on record in `file` unless the journal has left it.
----@param file file*|nil
-local function close_tick(file)
-  if not file or file ~= fh then return end
-  tick_open = false
-  append(TICK_END)
+---@param run VF.Journal.Run
+local function close_tick(run)
+  if not run.tick_open then return end
+  run.tick_open = false
+  append(run, TICK_END)
 end
 
 --- A callback scheduled now runs after every atom already queued, so the tick
 --- closes exactly when the current burst has been delivered.
+---@param run VF.Journal.Run
 ---@return integer
-local function current_tick()
-  if not tick_open then
-    tick = tick + 1
-    tick_open = true
-    local file = fh
-    vim.schedule(util.entry(function() close_tick(file) end))
+local function current_tick(run)
+  if not run.tick_open then
+    run.tick = run.tick + 1
+    run.tick_open = true
+    local tick = run.tick
+    vim.schedule(util.entry(function()
+      if active == run and run.tick == tick then close_tick(run) end
+    end))
   end
-  return tick
+  return run.tick
 end
 
+---@param run VF.Journal.Run
 ---@param kind "header"|"snapshot"|"delta"|"resync"|"atom"
 ---@param body table
-local function write(kind, body)
-  last_resync = nil
-  append(ffi_core.encode("vf.journal.File", { records = { {
-    ms = math.floor((vim.uv.hrtime() - started_mono_ns) / 1e6),
-    tick = current_tick(),
+local function write(run, kind, body)
+  run.last_resync = nil
+  append(run, ffi_core.encode("vf.journal.File", { records = { {
+    ms = math.floor((vim.uv.hrtime() - run.started_mono_ns) / 1e6),
+    tick = current_tick(run),
     [kind] = body,
   } } }))
 end
 
+---@param run VF.Journal.Run
 ---@param buf integer
 ---@param lines string[]
-local function write_snapshot(buf, lines)
-  since_snapshot[buf] = 0
-  write("snapshot", {
+local function write_snapshot(run, buf, lines)
+  run.since_snapshot[buf] = 0
+  write(run, "snapshot", {
     buf = buf,
     bufname = vim.api.nvim_buf_get_name(buf),
     filetype = vim.bo[buf].filetype,
     lines = lines,
   })
 end
-
----@type VF.BufferHistory.Observer
-local observer = {
-  on_seed = write_snapshot,
-  on_delta = function(buf, first, old_count, new_lines)
-    -- Before the first snapshot there is no base for a delta to apply to.
-    if not since_snapshot[buf] then return end
-    write("delta", { buf = buf, first = first, old_count = old_count, lines = new_lines })
-  end,
-}
 
 ---@param buf integer
 ---@param win integer
@@ -129,8 +138,9 @@ local function view_state(buf, win)
 end
 
 --- Record the focused window's state as one no atom accounts for.
-local function resync()
-  if not fh then return end
+---@param run VF.Journal.Run
+local function resync(run)
+  if active ~= run then return end
   local buf, win = vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_win()
   -- Outside Normal mode the change belongs to an atom that has not finished.
   if vim.api.nvim_get_mode().mode ~= "n" or not atom_stream.in_live_file_buffer(buf, win) then
@@ -138,40 +148,42 @@ local function resync()
   end
 
   buffer_history.mark(buf)
-  if not since_snapshot[buf] then
-    write_snapshot(buf, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+  if not run.since_snapshot[buf] then
+    write_snapshot(run, buf, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
   end
 
   local view = view_state(buf, win)
   local key = string.format("%d:%d:%d:%d", buf, win, view.row, view.col)
-  if key == last_resync then return end
-  write("resync", { buf = buf, win = win, view = view })
-  last_resync = key
+  if key == run.last_resync then return end
+  write(run, "resync", { buf = buf, win = win, view = view })
+  run.last_resync = key
 end
 
 --- Resync unless an atom is delivered first. An atom is queued when its command
 --- ends, ahead of anything scheduled from the events that command fired.
-local function resync_unless_atom()
-  local seen = atoms_seen
+---@param run VF.Journal.Run
+local function resync_unless_atom(run)
+  local seen = run.atoms_seen
   vim.schedule(util.entry(function()
-    if atoms_seen == seen then resync() end
+    if run.atoms_seen == seen then resync(run) end
   end))
 end
 
+---@param run VF.Journal.Run
 ---@param atom VF.Atom
 ---@param decision VF.Atom.Decision
-local function listener(atom, decision)
-  atoms_seen = atoms_seen + 1
+local function listener(run, atom, decision)
+  run.atoms_seen = run.atoms_seen + 1
   if not atom_stream.in_live_file_buffer(atom.buf, atom.win) then return end
   local buf = atom.buf
 
   buffer_history.mark(buf)
-  if (since_snapshot[buf] or math.huge) >= config.journal.snapshot_every then
-    write_snapshot(buf, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+  if (run.since_snapshot[buf] or math.huge) >= config.journal.snapshot_every then
+    write_snapshot(run, buf, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
   end
-  since_snapshot[buf] = since_snapshot[buf] + 1
+  run.since_snapshot[buf] = run.since_snapshot[buf] + 1
 
-  write("atom", {
+  write(run, "atom", {
     buf = buf,
     win = atom.win,
     keys = atom.keys,
@@ -186,8 +198,42 @@ local function listener(atom, decision)
   })
 end
 
+---@param run VF.Journal.Run
+local function install(run)
+  local ok, err = run.file:setvbuf("no")
+  if not ok then error("vimfy journal: could not configure " .. run.path .. ": " .. tostring(err), 0) end
+  write(run, "header", { version = JOURNAL_FORMAT, started_wall_epoch = os.time() })
+
+  run.listening = atom_stream.add_listener(LISTENER_NAME, function(atom, decision)
+    listener(run, atom, decision)
+  end)
+  assert(run.listening, "vimfy journal: listener already installed")
+  buffer_history.set_observer({
+    on_seed = function(buf, lines) write_snapshot(run, buf, lines) end,
+    on_delta = function(buf, first, old_count, new_lines)
+      -- Before the first snapshot there is no base for a delta to apply to.
+      if run.since_snapshot[buf] then
+        write(run, "delta", { buf = buf, first = first, old_count = old_count, lines = new_lines })
+      end
+    end,
+  })
+
+  local group = vim.api.nvim_create_augroup(AUGROUP, { clear = true })
+  run.group = group
+  local resync_run = util.entry(function() resync(run) end)
+  vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
+    group = group,
+    callback = function() vim.schedule(resync_run) end,
+  })
+  vim.api.nvim_create_autocmd({ "CursorMoved", "TextChanged" }, {
+    group = group,
+    callback = function() resync_unless_atom(run) end,
+  })
+  vim.schedule(resync_run)
+end
+
 function M.start()
-  if fh then return end
+  if active then return end
   local dir = M.dir()
   vim.fn.mkdir(dir, "p")
   local mono_ns = vim.uv.hrtime()
@@ -196,49 +242,44 @@ function M.start()
   if not handle then
     error("vimfy journal: could not open " .. path .. ": " .. tostring(err), 0)
   end
-  handle:setvbuf("no")
 
-  fh, file_path, started_mono_ns = handle, path, mono_ns
-  tick = 0
-  since_snapshot = {}
-  write("header", { version = JOURNAL_FORMAT, started_wall_epoch = os.time() })
-
-  buffer_history.set_observer(observer)
-  atom_stream.add_listener(LISTENER_NAME, listener)
-
-  local group = vim.api.nvim_create_augroup(AUGROUP, { clear = true })
-  vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
-    group = group,
-    callback = function() vim.schedule(util.entry(resync)) end,
-  })
-  vim.api.nvim_create_autocmd({ "CursorMoved", "TextChanged" }, {
-    group = group,
-    callback = resync_unless_atom,
-  })
-  vim.schedule(util.entry(resync))
+  local run = {
+    file = handle,
+    path = path,
+    started_mono_ns = mono_ns,
+    since_snapshot = {},
+    tick = 0,
+    tick_open = false,
+    atoms_seen = 0,
+    listening = false,
+  }
+  active = run
+  local ok, install_err = pcall(install, run)
+  if not ok then
+    release(run, false)
+    error(install_err, 0)
+  end
 end
 
 function M.stop()
-  if not fh then return end
-  vim.api.nvim_del_augroup_by_name(AUGROUP)
-  atom_stream.remove_listener(LISTENER_NAME)
-  buffer_history.set_observer(nil)
-  fh:close()
-  fh, file_path = nil, nil
-  tick_open = false
-  since_snapshot = {}
+  local run = active
+  if not run then return end
+  local err = release(run, true)
+  if err then
+    vim.notify("vimfy journal: could not finish " .. run.path .. ": " .. err, vim.log.levels.ERROR)
+  end
 end
 
 --- The file being written, or nil when the journal is off.
 ---@return string|nil
 function M.path()
-  return file_path
+  return active and active.path
 end
 
 M._for_test = {
-  listener = listener,
-  resync = resync,
-  close_tick = function() close_tick(fh) end,
+  listener = function(atom, decision) listener(assert(active), atom, decision) end,
+  resync = function() resync(assert(active)) end,
+  close_tick = function() close_tick(assert(active)) end,
 }
 
 return M

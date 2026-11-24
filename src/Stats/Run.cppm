@@ -34,12 +34,20 @@ struct Run {
 
 // Tallies a `vf.journal.Sample` or `vf.stats.Session` and `run.bestSeq`. One
 // recorded before `typed_insert` existed counts no insert text on either side.
+// `withinLine` indexes the commands that are a gj/gk which stayed on its line.
 // A template because generated headers stay out of module interfaces.
 template <typename Recorded>
-void tallyCommands(Run& run, const Recorded& recorded) {
+void tallyCommands(Run& run, const Recorded& recorded, std::span<const int> withinLine = {}) {
   const bool insertText = recorded.has_typed_insert();
   CommandCounts user;
-  for (const auto& command : recorded.commands()) countKeys(user, command.keys(), false);
+  int index = 0;
+  for (const auto& command : recorded.commands()) {
+    if (std::ranges::contains(withinLine, index++)) {
+      countWithinLine(user, command.keys());
+    } else {
+      countKeys(user, command.keys(), false);
+    }
+  }
   if (insertText) countInsertKeys(user, recorded.typed_insert());
   CommandCounts optimizer;
   countKeys(optimizer, run.bestSeq, insertText);
@@ -62,7 +70,7 @@ Run journalRun(const Sample& sample) {
           .analyzeMs = sample.analyze_ms(),
           .bestSeq = sample.best_seq()};
   for (const auto& command : sample.commands()) run.userKeys += command.keys();
-  tallyCommands(run, sample);
+  tallyCommands(run, sample, {sample.within_line().data(), size_t(sample.within_line_size())});
   return run;
 }
 

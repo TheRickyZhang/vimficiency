@@ -139,6 +139,7 @@ expected<string, string> detailOf(const Window& window, const EvaluateParams& pa
   const SearchInputs& in = sliced.inputs;
   vf::stats::RunDetail detail;
   for (const Line& line : in.initialLines) detail.add_lines(line);
+  for (const Line& line : in.goalLines) detail.add_goal_lines(line);
   detail.set_start_row(in.initialPos.line);
   detail.set_start_col(in.initialPos.col);
   detail.set_end_row(in.goalPos.line);
@@ -213,6 +214,7 @@ int sampleJournal(const fs::path& journal, const vf::journal::SampleParams& para
         vf::stats::Command& out = *sample.add_commands();
         out.set_keys(command.keys);
         out.set_kind(command.kind);
+        if (command.withinLine) sample.add_within_line(sample.commands_size() - 1);
       }
       if (window.typedInsertKnown) sample.set_typed_insert(window.typedInsert);
       sample.set_outcome(vf::journal::Sample::crashed);

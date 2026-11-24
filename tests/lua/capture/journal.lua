@@ -51,8 +51,7 @@ local function replay(records, buf, kind)
   return at
 end
 
---- Runs `fn` against an open journal on a fresh buffer. Callbacks an earlier
---- test scheduled are drained first so none lands in this journal.
+--- Runs `fn` against an open journal on a fresh buffer.
 ---@param fn fun(buf: integer, atom: VF.Atom)
 ---@return table[] records, integer buf
 local function with_journal(fn)
@@ -107,7 +106,7 @@ test("journal: an atom carries its keys, kind, mode and the cursor after it", fu
     atom.typed_insert = "x<BS>"
     journal._for_test.listener(atom, "record")
   end)
-  local atom = records[#records].atom
+  local atom = records[#records - 1].atom
   assert_eq(atom.keys, "jl")
   assert_eq(atom.kind, "motion")
   assert_eq(atom.typed, "<Space>m")
@@ -136,7 +135,7 @@ test("journal: a full snapshot recurs every snapshot_every atoms", function()
       for _ = 1, 5 do journal._for_test.listener(atom, "record") end
     end)
     assert_eq(kinds(records),
-      { "header", "snapshot", "atom", "atom", "snapshot", "atom", "atom", "snapshot", "atom" })
+      { "header", "snapshot", "atom", "atom", "snapshot", "atom", "atom", "snapshot", "atom", "tick_end" })
   end)
 end)
 
@@ -169,7 +168,7 @@ test("journal: a resync records the state before the first atom", function()
     vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "ONE" })
     journal._for_test.listener(atom, "record")
   end)
-  assert_eq(kinds(records), { "header", "snapshot", "resync", "delta", "atom" })
+  assert_eq(kinds(records), { "header", "snapshot", "resync", "delta", "atom", "tick_end" })
   assert_eq(replay(records, buf_id, "resync"), { { "one", "two", "three" } })
   assert_eq({ records[3].resync.view.row, records[3].resync.view.col }, { 2, 2 })
 end)
@@ -183,7 +182,7 @@ test("journal: a resync repeats only once the state has moved on", function()
     vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "changed with no atom" })
     journal._for_test.resync()
   end)
-  assert_eq(kinds(records), { "header", "snapshot", "resync", "resync", "delta", "resync" })
+  assert_eq(kinds(records), { "header", "snapshot", "resync", "resync", "delta", "resync", "tick_end" })
   assert_eq(replay(records, buf_id, "resync")[3], { "changed with no atom", "two", "three" })
 end)
 
@@ -194,7 +193,7 @@ test("journal: no resync outside a file buffer", function()
     journal._for_test.resync()
     vim.api.nvim_buf_delete(scratch, { force = true })
   end)
-  assert_eq(kinds(records), { "header" })
+  assert_eq(kinds(records), { "header", "tick_end" })
 end)
 
 test("journal: an atom delivered through the autocmd window is left out", function()
@@ -209,7 +208,7 @@ test("journal: an atom delivered through the autocmd window is left out", functi
     end)
     vim.api.nvim_buf_delete(hidden, { force = true })
   end)
-  assert_eq(kinds(records), { "header" })
+  assert_eq(kinds(records), { "header", "tick_end" })
 end)
 
 test("journal: entering a buffer resyncs once the event queue drains", function()
@@ -239,7 +238,7 @@ test("journal: records share a tick until the event queue drains", function()
   end
   assert_eq(ticks[1], ticks[2])
   assert_true(ticks[3] > ticks[2], "a closed tick is not reused")
-  assert_eq(kinds(records), { "header", "snapshot", "atom", "atom", "tick_end", "atom" })
+  assert_eq(kinds(records), { "header", "snapshot", "atom", "atom", "tick_end", "atom", "tick_end" })
 end)
 
 test("journal: a drained event queue ends the tick on record", function()
@@ -262,22 +261,56 @@ test("journal: a same-second restart keeps its file and open tick separate", fun
   }, function()
     journal.start()
     local first_path = assert(journal.path())
-    local close_first_tick = callbacks[1]
+    local first_callbacks = callbacks
+    journal._for_test.listener(atom, "record")
+    journal.stop()
     journal.stop()
 
     callbacks = {}
     journal.start()
     local second_path = assert(journal.path())
-    close_first_tick()
+    for _, cb in ipairs(first_callbacks) do cb() end
     journal._for_test.listener(atom, "record")
     callbacks[1]()
     journal.stop()
     vim.api.nvim_buf_delete(buf, { force = true })
 
     assert_true(first_path ~= second_path)
-    assert_eq(kinds(read_records(first_path)), { "header" })
+    assert_eq(kinds(read_records(first_path)), { "header", "snapshot", "atom", "tick_end" })
     local records = read_records(second_path)
     assert_eq(kinds(records), { "header", "snapshot", "atom", "tick_end" })
     assert_eq({ records[1].tick, records[2].tick, records[3].tick }, { 1, 1, 1 })
   end)
+end)
+
+test("journal: a write failure releases the run without certifying the tick", function()
+  h.use_temp_data_home()
+  local atoms = require("vimficiency.capture.atom_stream")
+  local buf = h.new_buf({ "one" })
+  local atom = { keys = "l", kind = "motion", typed = "l", typed_insert = "", buf = buf,
+    win = vim.api.nvim_get_current_win(), lossy = false }
+  local writes, closes = 0, 0
+  local file = {
+    setvbuf = function() return true end,
+    write = function(self)
+      writes = writes + 1
+      if writes == 1 then return self end
+      return nil, "disk full"
+    end,
+    close = function()
+      closes = closes + 1
+      return true
+    end,
+  }
+  h.with_patch({ { io, "open", function() return file end } }, function()
+    journal.start()
+    local ok, err = pcall(journal._for_test.listener, atom, "record")
+    assert_eq(ok, false)
+    assert_true(err:find("disk full", 1, true) ~= nil)
+    assert_eq(journal.path(), nil)
+    assert_true(not atoms._has_listener("journal"))
+    journal.stop()
+    assert_eq({ writes, closes }, { 2, 1 })
+  end)
+  vim.api.nvim_buf_delete(buf, { force = true })
 end)
