@@ -10,7 +10,7 @@ command -v gawk >/dev/null
 
 is_known_module() {
   case "$1" in
-    Types|Optimizer|Interpreter|Session|Effort|Keyboard|VimCore|Boundary|Utils|Versions) return 0 ;;
+    Types|Optimizer|Interpreter|Session|Storage|Effort|Keyboard|VimCore|Boundary|Utils|Versions) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -25,6 +25,7 @@ is_allowed_edge() {
     "Keyboard->Types"|"Keyboard->Utils") return 0 ;;
     "Boundary->Types"|"Boundary->Utils") return 0 ;;
     "Utils->Types") return 0 ;;
+    "Storage->Versions") return 0 ;;
     *) return 1 ;;
   esac
 }

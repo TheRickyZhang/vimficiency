@@ -58,6 +58,7 @@ local M = {}
 local alias_mod = require("vimficiency.session.alias")
 local atom_stream = require("vimficiency.capture.atom_stream")
 local buffer_history = require("vimficiency.capture.buffer_history")
+local capture_state = require("vimficiency.capture.state")
 local util = require("vimficiency.util")
 local config = require("vimficiency.config")
 local stats_log = require("vimficiency.stats.log")
@@ -671,7 +672,7 @@ local recall_prev_state = {}
 ---@param win integer
 ---@return VF.Session.RecallMark
 local function recall_mark(buf, win)
-  return { view = util.capture_view(buf, win), seq = buffer_history.mark(buf) }
+  return { view = capture_state.capture_view(buf, win), seq = buffer_history.mark(buf) }
 end
 
 --- Ingest one recorded atom into the rolling recall ring.

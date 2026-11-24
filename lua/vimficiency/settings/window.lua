@@ -20,7 +20,7 @@
 --     `VimficiencySettingsCursorHidden`, modern TUIs render no cursor;
 --     older ones fall back to the row-selection extmark for state.
 --   - The buffer is non-modifiable, so there's no edit path either.
-local highlights = require("vimficiency.highlights")
+local highlights = require("vimficiency.ui.highlights")
 local util = require("vimficiency.util")
 
 local M = {}

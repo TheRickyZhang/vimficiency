@@ -1,7 +1,7 @@
 -- VF.Session.Result display adapters. Stable report text is formatted in C++.
 
 local ffi_display = require("vimficiency.ffi.display")
-local sequence_display = require("vimficiency.sequence_display")
+local sequence_display = require("vimficiency.ui.sequence_display")
 
 local M = {}
 

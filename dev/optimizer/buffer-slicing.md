@@ -153,7 +153,7 @@ This applies to both code paths in CompositionOptimizer: the edit/motion transit
 
 | Layer | Slicing | Padding | Params Location |
 |-------|---------|---------|-----------------|
-| Lua → C++ | Yes | `SLICE_PADDING` = 5 | `lua/vimficiency/config.lua` |
+| Lua → C++ | Yes | `SLICE_PADDING` = 5 | `lua/vimficiency/config/init.lua` |
 | NavOptimizer | No | N/A | (caller responsibility) |
 | TransformOptimizer | No | N/A | (exact regions) |
 | TransformOptimizer → NavOptimizer | Yes | `navLinePadding*` = 1 | `TransformOptimizerParams.cppm` |

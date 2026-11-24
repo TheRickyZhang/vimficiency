@@ -5,7 +5,7 @@
 
 local compute = require("vimficiency.session.compute")
 local ffi_optimizer = require("vimficiency.ffi.optimizer")
-local util    = require("vimficiency.util")
+local capture_state = require("vimficiency.capture.state")
 local h       = require("_helpers")
 
 local function fake_active(buf, win)
@@ -14,7 +14,7 @@ local function fake_active(buf, win)
     stream_sub = nil,
     win = win,
     buf = buf,
-    start_state = util.capture_state(buf, win),
+    start_state = capture_state.capture_state(buf, win),
     started_mono_ns = vim.uv.hrtime(),
     atoms = {},
   }

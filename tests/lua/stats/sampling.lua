@@ -5,7 +5,8 @@ local config    = require("vimficiency.config")
 local journal   = require("vimficiency.capture.journal")
 local ffi_stats = require("vimficiency.ffi.stats")
 local sampling  = require("vimficiency.stats.sampling")
-local stats     = require("vimficiency.stats")
+local stats_query = require("vimficiency.stats.query")
+local render = require("vimficiency.stats.render")
 local stats_log = require("vimficiency.stats.log")
 local stats_view = require("vimficiency.stats.view")
 local h         = require("_helpers")
@@ -47,7 +48,7 @@ local TOP = { shown = 1, weight = "effort", filter = {}, charted_size = 0 }
 
 ---@return VF.Stats.JournalSummary
 local function journal_summary()
-  return stats.summary(TOP).journal
+  return stats_query.summary(TOP).journal
 end
 
 --- The stats as the narrowed left pane shows them, every section on one page.
@@ -55,7 +56,7 @@ end
 ---@param background VF.Stats.Background
 ---@return VF.Stats.Page
 local function page_of(summary, background)
-  return stats.build_pages(summary, background, "effort", false)[1]
+  return render.build_pages(summary, background, "effort", false)[1]
 end
 
 --- Journals `count` single-`l` atoms over one line, one tick each, after a
@@ -84,7 +85,7 @@ end
 ---@return string[]
 local function lines_with_journal(fields, background)
   h.use_temp_data_home()
-  local summary = stats.summary(TOP)
+  local summary = stats_query.summary(TOP)
   summary.journal = vim.tbl_extend("force", summary.journal,
     { present = true, scored_bytes = 100, journal_bytes = 100 }, fields)
   return page_of(summary, background or { scoring = false }).lines
@@ -92,7 +93,7 @@ end
 
 test("stats journal section: shows progress and never waits for scoring", function()
   h.use_temp_data_home()
-  assert_true(line_with(page_of(stats.summary(TOP), { scoring = false }).lines,
+  assert_true(line_with(page_of(stats_query.summary(TOP), { scoring = false }).lines,
     "journal = { enabled = true }") ~= nil)
   local lines = lines_with_journal({ scored_bytes = 25 }, { scoring = true })
   assert_true(line_with(lines,
@@ -149,14 +150,14 @@ test("sampling.refresh: scores a journal written by this Neovim, once", function
   h.with_patch({ { config.journal.sampling, "window_sizes", { 2 } } }, function()
     assert_eq(refresh(), nil)
 
-    -- The sixth atom is the journal's last tick, which is never cut.
+    -- The sixth atom's tick is never ended, so it is not cut.
     local j = journal_summary()
     assert_true(j.journal_bytes > 0)
     assert_eq(j.scored_bytes, j.journal_bytes)
     assert_eq(j.charted_size, 2)
     assert_eq(j.score.spans, 2)
     assert_eq(j.nav.spans, 2)
-    assert_eq(stats.summary(TOP).commands.runs, 2)
+    assert_eq(stats_query.summary(TOP).commands.runs, 2)
     assert_eq(vim.uv.fs_stat(journal.dir() .. "/sampling.lock"), nil)
 
     assert_eq(refresh(), nil)
@@ -208,7 +209,7 @@ test("stats view: narrows to the movement-only journal runs", function()
 
   h.with_patch({ { config.journal.sampling, "window_sizes", { 2 } } }, function()
     assert_eq(refresh(), nil)
-    local targets = stats.build_pages(stats.summary(TOP), { scoring = false }, "effort", true)[1].targets
+    local targets = render.build_pages(stats_query.summary(TOP), { scoring = false }, "effort", true)[1].targets
     stats_view.open()
     local runs
     for _, kind in ipairs({ "nav", "edit" }) do
@@ -240,7 +241,7 @@ local function in_nav_runs(fn)
   h.with_patch({ { config.journal.sampling, "window_sizes", { 2 } } }, function()
     assert_eq(refresh(), nil)
     local nav
-    for _, t in ipairs(stats.build_pages(stats.summary(TOP), { scoring = false }, "effort", true)[1].targets) do
+    for _, t in ipairs(render.build_pages(stats_query.summary(TOP), { scoring = false }, "effort", true)[1].targets) do
       if t.label == "nav" then nav = t end
     end
     stats_view.open()
@@ -248,7 +249,7 @@ local function in_nav_runs(fn)
     vim.api.nvim_set_current_win(overview)
     vim.api.nvim_win_set_cursor(overview, { nav.row + 1, 0 })
     h.feed("<CR>")
-    local rows = stats.runs({ shown = 1, weight = "effort", filter = nav.drill, charted_size = 0 }, "worst", 0, 50).runs
+    local rows = stats_query.runs({ shown = 1, weight = "effort", filter = nav.drill, charted_size = 0 }, "worst", 0, 50).runs
     assert_eq(#rows, 2)
     local runs_win = stats_pane("runs")
     vim.api.nvim_set_current_win(runs_win)
@@ -274,7 +275,7 @@ test("stats view: <CR> on a journal run replays it, and q comes back to the same
     local _, header = stats_pane("header")
     local row = rows[2]
     assert_true(row.best_seq ~= "", "the run has a best sequence")
-    local detail = assert(stats.run(row.id))
+    local detail = assert(stats_query.run(row.id))
 
     -- The column header, the blank line and the footer open nothing.
     for _, line in ipairs({ 1, 4, 5 }) do
@@ -335,7 +336,7 @@ test("stats view: l switches the charted run length and the narrowed runs follow
 
   h.with_patch({ { config.journal.sampling, "window_sizes", { 2, 4 } } }, function()
     assert_eq(refresh(), nil)
-    local targets = stats.build_pages(stats.summary(TOP), { scoring = false }, "effort", true)[1].targets
+    local targets = render.build_pages(stats_query.summary(TOP), { scoring = false }, "effort", true)[1].targets
     stats_view.open()
     local overview_win, overview = stats_pane("overview")
     assert_true(line_with(overview, "    Run length: [2] (") ~= nil)
@@ -380,7 +381,7 @@ test("sampling.refresh: an old journal is rolled up and deleted, and still count
     assert_eq(j.journal_bytes, 0)
     assert_eq(j.score.spans, 2)
     assert_eq(j.nav.spans, 2)
-    assert_eq(stats.summary(TOP).commands.runs, 2)
+    assert_eq(stats_query.summary(TOP).commands.runs, 2)
   end)
 end)
 

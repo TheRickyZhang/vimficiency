@@ -2,11 +2,11 @@
 -- columns come from the optimizer's own diff (result.diffs); see archive.view.
 
 local v            = vim.api
-local buf_window   = require("vimficiency.explore.buf_window")
-local util         = require("vimficiency.util")
-local highlights   = require("vimficiency.highlights")
+local buf_window   = require("vimficiency.ui.buf_window")
+local ui_windows = require("vimficiency.ui.windows")
+local highlights   = require("vimficiency.ui.highlights")
 local result_view  = require("vimficiency.session.result_view")
-local sequence_display = require("vimficiency.sequence_display")
+local sequence_display = require("vimficiency.ui.sequence_display")
 
 local M = {}
 
@@ -170,9 +170,9 @@ function M.open(label, result)
     pcall(v.nvim_buf_delete, placeholder_buf, { force = true })
   end
 
-  util.configure_scratch_window(header_win, { winfixheight = true })
-  util.configure_scratch_window(left_win, { cursorline = true })
-  util.configure_scratch_window(right_win, { cursorline = true })
+  ui_windows.configure_scratch_window(header_win, { winfixheight = true })
+  ui_windows.configure_scratch_window(left_win, { cursorline = true })
+  ui_windows.configure_scratch_window(right_win, { cursorline = true })
   v.nvim_win_resize(header_win, -1, math.max(1, #header_lines))
 
   highlight_diffs(left_buf, initial_lines, diffs, "init", highlights.VIEW_DIFF_DELETE)
@@ -198,12 +198,12 @@ function M.open(label, result)
     end
   end
 
-  local keymaps = util.with_standard_ui_keymaps({
+  local keymaps = ui_windows.with_standard_ui_keymaps({
     { lhs = "q", handler = close, desc = "Close vimfy view", nowait = true },
   }, { title = "Vimfy View Keys", docs = true })
-  util.set_buffer_keymaps(header_buf, keymaps)
-  util.set_buffer_keymaps(left_buf, keymaps)
-  util.set_buffer_keymaps(right_buf, keymaps)
+  ui_windows.set_buffer_keymaps(header_buf, keymaps)
+  ui_windows.set_buffer_keymaps(left_buf, keymaps)
+  ui_windows.set_buffer_keymaps(right_buf, keymaps)
 end
 
 return M

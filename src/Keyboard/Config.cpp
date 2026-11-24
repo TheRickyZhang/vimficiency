@@ -95,6 +95,7 @@ Config Config::qwerty() {
 
   set_key(Key::Key_Ctrl,  Hand::Left, Finger::Lp, 2.5);
   set_key(Key::Key_Shift, Hand::Left, Finger::Lp, 1.2);
+  set_key(Key::Key_Alt,   Hand::Left, Finger::Lt, 1.8);
 
   set_key(Key::Key_Home, Hand::Right, Finger::Ri, 3.0);
   set_key(Key::Key_End,  Hand::Right, Finger::Ri, 3.0);
@@ -199,6 +200,7 @@ Config Config::colemakDh() {
 
   set_key(Key::Key_Ctrl,  Hand::Left, Finger::Lp, 1.2);
   set_key(Key::Key_Shift, Hand::Left, Finger::Lp, 1.2);
+  set_key(Key::Key_Alt,   Hand::Left, Finger::Lt, 1.8);
 
   set_key(Key::Key_Home, Hand::Right, Finger::Ri, 3.0);
   set_key(Key::Key_End,  Hand::Right, Finger::Ri, 3.0);
@@ -216,7 +218,7 @@ Config Config::uniform() {
   for (auto& ki : cfg.keyInfo) {
     ki.base_cost = 1.0;
   }
-  for (Key k : {Key::Key_Shift, Key::Key_Ctrl}) {
+  for (Key k : {Key::Key_Shift, Key::Key_Ctrl, Key::Key_Alt}) {
     cfg.keyInfo[static_cast<uint8_t>(k)].base_cost = 0.0;
   }
   return cfg;

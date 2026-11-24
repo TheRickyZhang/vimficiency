@@ -40,13 +40,13 @@ function M.list_has_warning(view)
 end
 
 function M.with_notify_capture(fn)
-  local util = require("vimficiency.util")
+  local ui_windows = require("vimficiency.ui.windows")
   local notices = {}
   base.with_patch({
     { vim, "notify", function(msg, level)
       notices[#notices + 1] = { msg = tostring(msg), level = level }
     end },
-    { util, "show_output", function() end },
+    { ui_windows, "show_output", function() end },
   }, function()
     fn(notices)
   end)

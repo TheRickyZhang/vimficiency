@@ -1,0 +1,288 @@
+// What `:Vimfy stats` shows, reduced from the session log and the journal
+// samples by src/Stats/.
+
+syntax = "proto3";
+
+package vf.stats;
+
+import "journal.proto";
+import "stats.proto";
+
+option optimize_for = LITE_RUNTIME;
+
+// Narrows the runs a summary or run list reduces. A field at its default
+// narrows nothing; a field a source lacks leaves that source out.
+message Filter {
+  enum Source {
+    both = 0;
+    journal = 1;
+    sessions = 2;
+  }
+  enum Kind {
+    any = 0;
+    nav = 1;
+    edit = 2;
+  }
+  enum Side {
+    either = 0;
+    user = 1;
+    optimizer = 2;
+  }
+  // Inclusive, in days since 1970-01-01, local time.
+  message Days {
+    int64 first = 1;
+    int64 last = 2;
+  }
+  // Any of `tokens`, command classes as the command tables count them, on `side`.
+  message Commands {
+    repeated bytes tokens = 1;
+    Side side = 2;
+  }
+
+  Source source = 1;
+  // Unset: every day.
+  Days days = 2;
+  // Leaves sessions out. 0 is every size in the summary's `sizes` and the
+  // charted size everywhere else.
+  int32 window_size = 3;
+  // `nav` or `edit` leaves sessions out.
+  Kind kind = 4;
+  // Empty: every outcome. A session's outcome is the like-named one.
+  repeated vf.journal.Sample.Outcome outcomes = 5;
+  // Each must hold. Leaves rollups out: they keep no per-run commands.
+  repeated Commands commands = 6;
+}
+
+message SummaryRequest {
+  enum Weight {
+    // Each span counts by the user's effort, so long spans count more.
+    effort = 0;
+    uniform = 1;
+  }
+
+  bytes session_log = 1;
+  Stamp stamp = 2;
+  // Which stamp's sessions to reduce: an index into the groups, the current
+  // stamp's first and the rest by their latest session, newest first.
+  int32 shown_group = 3;
+  bytes journal_dir = 4;
+  vf.journal.SampleParams sample_params = 5;
+  Weight weight = 6;
+  // Narrows every count but `lifetime`, `other_sessions` and
+  // `other_rollup_runs`.
+  Filter filter = 7;
+  // One of `sample_params.window_sizes`; 0 for the middle one. The filter's
+  // window size overrides it.
+  int32 charted_size = 8;
+}
+
+// Σ w·min(best/user, 1) / Σ w × 100 over `spans`; `score` is unset when there
+// are none.
+message Score {
+  int32 spans = 1;
+  double score = 2;
+}
+
+// Every `drill` is the request's filter narrowed to the runs its row counts.
+message DayScore {
+  // 0 is today, local time.
+  int32 days_ago = 1;
+  double score = 2;
+  Filter drill = 3;
+}
+
+// Every stamp's sessions.
+message Lifetime {
+  int32 sessions = 1;
+  int32 mark = 2;
+  int32 watch = 3;
+  int32 recall = 4;
+  int32 suggest = 5;
+  int64 commands = 6;
+}
+
+message Timing {
+  int32 n = 1;
+  double p50 = 2;
+  double p95 = 3;
+  double p99 = 4;
+  double max = 5;
+}
+
+// The shown stamp's sessions.
+message SessionSummary {
+  string label = 1;
+  bool current = 2;
+  int32 groups = 3;
+  // Sessions under every other stamp.
+  int32 other_sessions = 4;
+  int32 sessions = 5;
+  Score score = 6;
+  // The last 30 days.
+  repeated DayScore days = 7;
+  int32 no_result = 8;
+  int32 unbeaten = 9;
+  // Scored sessions whose keys cost less than the best sequence found.
+  int32 beats = 10;
+  // Of the last 30 days' sessions.
+  Timing timing = 11;
+  Filter no_result_drill = 12;
+  Filter unbeaten_drill = 13;
+}
+
+message SizeScore {
+  int32 size = 1;
+  Score score = 2;
+}
+
+message Unscored {
+  // A `vf.journal.Sample.Outcome` name.
+  string outcome = 1;
+  int32 runs = 2;
+  Filter drill = 3;
+}
+
+// Samples and rollups made under the current settings only.
+message JournalSummary {
+  // A journal directory exists.
+  bool present = 1;
+  // How much of the journal those samples cover.
+  int64 scored_bytes = 2;
+  int64 journal_bytes = 3;
+  repeated SizeScore sizes = 4;
+  // The filter's window size, else the request's `charted_size`, else the
+  // middle one; the fields below are about runs of it.
+  int32 charted_size = 5;
+  Score score = 6;
+  Score nav = 7;
+  Score edit = 8;
+  repeated DayScore days = 9;
+  repeated Unscored unscored = 10;
+  int32 unbeaten = 11;
+  int32 deadline_hit = 12;
+  // Runs rolled up under other settings: their journals are gone, so they are
+  // never rescored.
+  int32 other_rollup_runs = 13;
+  // Rolled-up runs of the charted size the filter selects but for its
+  // commands, which rollups do not keep; left out of every count.
+  int32 rollup_runs_without_commands = 14;
+  Filter nav_drill = 15;
+  Filter edit_drill = 16;
+  Filter unbeaten_drill = 17;
+}
+
+message CommandRow {
+  string text = 1;
+  int32 user = 2;
+  int32 optimizer = 3;
+  // Infinity when the optimizer never uses the command.
+  double ratio = 4;
+  // A merged row's user counts per variant.
+  string split = 5;
+  // The runs with any of the row's variants on either side.
+  Filter drill = 6;
+}
+
+// Commands of the scored spans: the shown sessions and the journal runs of
+// the charted size.
+message CommandSummary {
+  int32 sessions = 1;
+  int32 runs = 2;
+  repeated CommandRow more = 3;
+  repeated CommandRow less = 4;
+  int64 user_typed_chars = 5;
+  int64 optimizer_typed_chars = 6;
+}
+
+message Summary {
+  Lifetime lifetime = 1;
+  SessionSummary sessions = 2;
+  JournalSummary journal = 3;
+  CommandSummary commands = 4;
+}
+
+message RunsRequest {
+  enum Order {
+    // By user_cost − best_cost, largest first; runs without a score last.
+    worst = 0;
+    newest = 1;
+    // By analyze_ms, largest first.
+    slowest = 2;
+  }
+
+  // Lists the sessions and charted-size journal runs this summary reduces;
+  // its `weight` is unused.
+  SummaryRequest scope = 1;
+  // Ties go newest first, then by id.
+  Order order = 2;
+  int32 offset = 3;
+  int32 limit = 4;
+}
+
+message RunId {
+  message Journal {
+    // The journal's file name in the journal directory.
+    bytes file = 1;
+    int32 window_size = 2;
+    int32 last_atom = 3;
+  }
+  oneof run {
+    Journal journal = 1;
+    // Among the session log's sessions, every stamp's, 0-based.
+    int32 session = 2;
+  }
+}
+
+message RunRow {
+  RunId id = 1;
+  int64 wall_epoch = 2;
+  // A journal run's commands, concatenated, or a session's `user_seq`.
+  bytes user_keys = 3;
+  bytes best_seq = 4;
+  double user_cost = 5;
+  // An unbeaten run's is its user_cost.
+  double best_cost = 6;
+  vf.journal.Sample.Outcome outcome = 7;
+  bool nav_only = 8;
+  // A session's is 0.
+  int32 window_size = 9;
+  double analyze_ms = 10;
+  // `user_keys` and `best_seq` as the run list shows them (`Stats::displayKeys`).
+  string user_display = 11;
+  string best_display = 12;
+}
+
+message RunList {
+  // Runs the filter selects, rolled-up ones included.
+  int32 total = 1;
+  // Of `total`, rolled up: counted but never listed.
+  int32 rolled_up = 2;
+  // Rolled-up runs the filter selects but for its commands, which rollups do
+  // not keep; not in `total`.
+  int32 rollup_runs_without_commands = 3;
+  repeated RunRow runs = 4;
+}
+
+// A journal run's window, cut again under the params its sample was made with.
+message RunRequest {
+  RunId id = 1;
+  bytes journal_dir = 2;
+  vf.journal.SampleParams sample_params = 3;
+}
+
+// A journal run as its search saw it. Rows and columns are 0-indexed and
+// relative to `lines`, the slice's starting text.
+message RunDetail {
+  repeated bytes lines = 1;
+  int32 start_row = 2;
+  int32 start_col = 3;
+  int32 end_row = 4;
+  int32 end_col = 5;
+  // Resolved keys as the search scored them (`sliceSearch` approximates gj/gk),
+  // like a session's `user_seq`, so replay feeds the same sequence.
+  bytes keys = 6;
+  // Physical keys.
+  bytes typed = 7;
+  // The buffer's, as the run started.
+  string filetype = 8;
+}

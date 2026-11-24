@@ -1,3 +1,59 @@
+---@class VF.Explore.PhaseNavigate
+---@field kind "Navigate"
+---@field edit_index integer
+
+---@class VF.Explore.PhaseTransform
+---@field kind "Transform"
+---@field edit_index integer
+
+---@class VF.Explore.PhaseInsert
+---@field kind "Insert"
+---@field edit_index integer
+
+---@alias VF.Explore.Phase
+---| VF.Explore.PhaseNavigate
+---| VF.Explore.PhaseTransform
+---| VF.Explore.PhaseInsert
+
+---@class VF.Explore.State
+---@field phase VF.Explore.Phase
+---@field is_completed boolean
+---@field cursor VF.Position
+---@field total_edits integer
+---@field cost number
+---@field seq string
+---@field can_undo boolean
+---@field can_redo boolean
+---@field target_range VF.Range
+
+---@class VF.Explore.Rejected
+---@field reason string
+
+--- Exactly one of `applied` / `rejected` is set; `outcome` names it.
+---@class VF.Explore.ApplyResult
+---@field outcome "applied"|"rejected"
+---@field applied? table
+---@field rejected? VF.Explore.Rejected
+
+---@class VF.Explore.Recommendation
+---@field text string
+---@field cost_diff number
+---@field distance number
+---@field score number
+---@field landing VF.Position
+---@field literal_text string
+---@field rank? integer
+
+---@class VF.Explore.ReconfigurePlanResult
+---@field reset boolean
+
+---@class VF.Explore.HeaderRowsResult
+---@field rows string[]
+
+---@class VF.Explore.HeaderRows
+---@field explored string[]
+---@field optimal VF.Explore.HeaderRowsResult[]
+
 local core = require("vimficiency.ffi.core")
 
 local M = {}

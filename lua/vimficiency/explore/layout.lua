@@ -1,5 +1,5 @@
 local v          = vim.api
-local buf_window = require("vimficiency.explore.buf_window")
+local buf_window = require("vimficiency.ui.buf_window")
 
 local M = {}
 

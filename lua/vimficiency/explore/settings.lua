@@ -1,5 +1,5 @@
 local config           = require("vimficiency.config")
-local settings_profile = require("vimficiency.settings_profile")
+local settings_profile = require("vimficiency.settings.profile")
 
 local M = {}
 

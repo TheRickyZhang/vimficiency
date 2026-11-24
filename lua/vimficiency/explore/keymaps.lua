@@ -2,7 +2,7 @@
 -- recommendation list buffer. Declarative: each spec entry names a
 -- `handler` key that the caller's `handlers` table must provide — so this
 -- module stays ignorant of session state, forward-declared locals, etc.
-local util = require("vimficiency.util")
+local ui_windows = require("vimficiency.ui.windows")
 
 local M = {}
 
@@ -65,7 +65,7 @@ end
 ---@param list_buf integer
 ---@param handlers table<string, function>
 function M.install(scratch_buf, list_buf, handlers)
-  local scratch_resolved = util.with_standard_ui_keymaps(
+  local scratch_resolved = ui_windows.with_standard_ui_keymaps(
     resolve(SCRATCH_SPEC, handlers),
     {
       title = "Explore — Keys",
@@ -76,8 +76,8 @@ function M.install(scratch_buf, list_buf, handlers)
         desc = "Toggle explore settings",
       },
     })
-  util.set_buffer_keymaps(scratch_buf, scratch_resolved)
-  util.set_buffer_keymaps(list_buf, resolve(LIST_SPEC, handlers))
+  ui_windows.set_buffer_keymaps(scratch_buf, scratch_resolved)
+  ui_windows.set_buffer_keymaps(list_buf, resolve(LIST_SPEC, handlers))
 end
 
 return M

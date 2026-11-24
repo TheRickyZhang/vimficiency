@@ -1,7 +1,7 @@
 # Atom stream (`capture/atom_stream.lua`)
 
 Read before changing capture, the admission rule, recall start marks, or any
-listener (`capture/recall.lua`, `capture/journal.lua`, `session.lua`,
+listener (`capture/recall.lua`, `capture/journal.lua`, `session/init.lua`,
 `capture/end_trigger.lua`).
 `key_tracking.lua` is Explore-only; see `neovim_on_key_issues.md`.
 
@@ -160,7 +160,7 @@ at atom `i` therefore takes its start state from the mark kept after atom
 `i-1`; `store.lua` shifts one `recall_prev_state[buf]` forward per atom, and the
 first atom in a buffer only seeds it.
 
-A mark is the cursor/viewport (`util.capture_view`) plus a `buffer_history`
+A mark is the cursor/viewport (`capture.state.capture_view`) plus a `buffer_history`
 sequence number, not a copy of the text. `capture/buffer_history.lua` keeps one
 shadow copy per tracked buffer, as of its last mark. `on_lines` only widens one
 pending range, so its cost does not grow with the buffer or the event count.
@@ -209,7 +209,8 @@ appended per record, so the whole file decodes as one `File`. It is binary
 because the protos are `LITE_RUNTIME`, which has no JSON, and both Lua and C++
 have to read it. Rows and line indexes are 0-indexed.
 
-Every record has `ms` (monotonic milliseconds since the header) and `tick`.
+Every record but `tick_end` has `ms` (monotonic milliseconds since the header)
+and `tick`.
 
 - `header` — `version`, `started_wall_epoch`. A second header in one file is a
   restart: discard all buffer state. `version` is `JOURNAL_FORMAT`
@@ -224,6 +225,10 @@ Every record has `ms` (monotonic milliseconds since the header) and `tick`.
 - `atom` — `buf`, `win`, `keys`, `kind` (empty in older journals), `typed`,
   `typed_insert` (unset in older journals), `decision`, `lossy`, `abort_reason`
   (abort only), `mode`, and the post-atom `view`.
+- `tick_end` — empty (4 bytes on disk): the tick of the records before it is
+  complete. Written from the callback that closes the tick, which still runs
+  when Neovim quits mid-burst. Absent after a tick the writer did not outlive,
+  and in older journals.
 
 The text at an atom is the snapshot plus every delta written before it. Records
 written in one drain of the event queue share a `tick`: deferred delivery means
@@ -265,11 +270,14 @@ Results go to `<journal>.samples`, a `vf.journal.SampleFile` appended the same
 way. Each sample keeps the window's commands (`{keys, kind}`), its
 `typed_insert` and the best sequence found. A window with an atom from before
 `typed_insert` existed leaves it unset, and the command tables then count no
-insert text for that run on either side. The journal's last tick is never cut, which keeps the windows of
-a growing journal a prefix of its later windows and lets a rerun resume by count.
+insert text for that run on either side.
+
+A tick is cut at its `tick_end`, or once a record of a later tick follows; a
+last tick with neither is never cut. That keeps the windows of a growing journal
+a prefix of its later windows and lets a rerun resume by count.
 
 A samples file is current when its stored `SampleParams` equal the request's,
-completed by `stampSampleParams` (`src/LuaExports/Samples.cppm`): the stamp of
+completed by `stampSampleParams` (`src/Storage/Samples.cppm`): the stamp of
 `dev/lua/session-storage.md` § The session log, plus `SAMPLES_FORMAT` (`src/Versions.cppm`). Bump
 that when a sample gains content, so older files are redone. The sampler
 recomputes a file that is not current. `:Vimfy stats` reads samples through

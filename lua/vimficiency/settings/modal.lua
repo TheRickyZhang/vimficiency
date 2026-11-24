@@ -14,8 +14,8 @@
 --   { kind = "separator" }
 --   { kind = "action", label = "...", run = function() ... end }
 --   { kind = "hint", text = "..." }
-local util = require("vimficiency.util")
-local settings_window = require("vimficiency.settings_window")
+local ui_windows = require("vimficiency.ui.windows")
+local settings_window = require("vimficiency.settings.window")
 
 local M = {}
 local v = vim.api
@@ -57,7 +57,7 @@ function M.open(rows, on_change, opts)
   end
 
   local win_width, win_height, popup_row, popup_col =
-    util.centered_popup_geometry(width + 4, #layout.lines + 1)
+    ui_windows.centered_popup_geometry(width + 4, #layout.lines + 1)
 
   local buf = v.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
@@ -77,7 +77,7 @@ function M.open(rows, on_change, opts)
     title_pos = "center",
     noautocmd = true,
   })
-  util.configure_scratch_window(win, { cursorline = false })
+  ui_windows.configure_scratch_window(win, { cursorline = false })
 
   return settings_window.attach(buf, win, {
     rows = rows,

@@ -295,7 +295,7 @@ function M.simulate_compare(lines, row, col, pool_arg, opts)
   local my_gen = multi_sim.precompute_gen
 
   if opts.initial_window_count then
-    require("vimficiency.play").set_setting(
+    require("vimficiency.simulate.settings").set_setting(
       "window_count", max(1, min(4, opts.initial_window_count)))
   end
 

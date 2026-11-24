@@ -79,11 +79,16 @@ message Atom {
   ViewState view = 8;
 }
 
+// The tick of the records before it is complete. Absent after a tick the
+// writer did not outlive, and in older journals.
+message TickEnd {}
+
 message Record {
-  // Monotonic milliseconds since the header.
+  // Monotonic milliseconds since the header. Unset on a `tick_end`.
   int64 ms = 1;
   // Records written in one drain of Neovim's event queue share a tick. Atoms
   // sharing one were delivered together, so only the last one's state is real.
+  // Unset on a `tick_end`.
   int32 tick = 2;
   oneof body {
     Header header = 3;
@@ -91,6 +96,7 @@ message Record {
     Delta delta = 5;
     Resync resync = 6;
     Atom atom = 7;
+    TickEnd tick_end = 8;
   }
 }
 

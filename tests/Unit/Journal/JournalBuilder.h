@@ -85,6 +85,13 @@ public:
     return write(record);
   }
 
+  JournalBuilder& tickEnd() {
+    vf::journal::File file;
+    file.add_records()->mutable_tick_end();
+    out += file.SerializeAsString();
+    return *this;
+  }
+
   const std::string& bytes() const { return out; }
 
 private:

@@ -6,7 +6,7 @@ local disk = require("vimficiency.session.disk")
 local ffi_optimizer = require("vimficiency.ffi.optimizer")
 local poller = require("vimficiency.async.poller")
 local ffi_session = require("vimficiency.ffi.session")
-local util = require("vimficiency.util")
+local capture_state = require("vimficiency.capture.state")
 
 ---@class (exact) VF.SessionCompute
 ---@field capture_end_state               fun(active: VF.Session.Active): VF.BufferState
@@ -88,8 +88,8 @@ function M.capture_end_state(active)
     win = v.nvim_get_current_win()
   end
 
-  local end_state = util.capture_state(active.buf, win)
-  util.check_state_inconsistencies(active.start_state, end_state)
+  local end_state = capture_state.capture_state(active.buf, win)
+  capture_state.check_state_inconsistencies(active.start_state, end_state)
   return end_state
 end
 

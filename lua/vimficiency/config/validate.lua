@@ -1,4 +1,4 @@
--- Validators for the structured config blocks. The shape itself is declared in config.lua.
+-- Validators for the structured config blocks. The shape itself is declared in config/init.lua.
 
 local alias_mod = require("vimficiency.session.alias")
 

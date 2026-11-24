@@ -4,8 +4,8 @@
 -- owns the side-split window/buffer; the widget owns rendering, the
 -- allow-list-only keymaps, cursor hiding, and the close lifecycle.
 -- Toggle via `gs` (see explore/keymaps.lua).
-local settings_window = require("vimficiency.settings_window")
-local buf_window = require("vimficiency.explore.buf_window")
+local settings_window = require("vimficiency.settings.window")
+local buf_window = require("vimficiency.ui.buf_window")
 
 local M = {}
 local v = vim.api

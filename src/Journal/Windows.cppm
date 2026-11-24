@@ -53,9 +53,9 @@ struct Window {
 // vouch for from end to end: any other group ends every open window, and the
 // next ones start from the state after it.
 //
-// A group is complete once an event of a later tick arrives, so the journal's
-// last group is never cut. That keeps the windows of a growing journal a prefix
-// of the windows it yields later.
+// A group is complete at its `TickEnd`, or once an event of a later tick
+// arrives; a last group with neither is never cut. That keeps the windows of a
+// growing journal a prefix of the windows it yields later.
 class WindowCutter {
 public:
   WindowCutter(std::span<const int> sizes, int64_t idleGapMs);

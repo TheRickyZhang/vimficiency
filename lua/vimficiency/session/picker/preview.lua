@@ -1,5 +1,5 @@
 local model = require("vimficiency.session.picker.model")
-local sequence_display = require("vimficiency.sequence_display")
+local sequence_display = require("vimficiency.ui.sequence_display")
 
 local M = {}
 

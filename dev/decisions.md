@@ -174,7 +174,7 @@ to deeper docs when needed.
 - The command tables read commands from `keys`: it is the only stream with command structure, and it shares the optimizer's vocabulary. Inside an insert session `keys` also holds what mappings typed (autopairs runs `()<C-g>U<Left>` for `(`), which showed up as commands the user never pressed.
 - So the user's insert text (typed characters and keys such as `<BS>`) is counted from `typed_insert`, the keys pressed in an insert that did not end it. Capture takes both from the mode before and after each press; nothing downstream knows about any plugin.
 - The press that ends an insert is found by the mode after it, not by its key (2026-11-23). Matching `<Esc>` counted a `jk` exit as two typed characters and `<C-c>` as a command. An `InsertLeave` or `ModeChanged` autocmd was rejected: a mapping that leaves Insert mode and returns would count as an exit.
-- Naming `<C-\><C-n>` to drop its first key was rejected for the same reason as `<Esc>`. Neovim gives no sign that a read is the second key of a command, and guessing from timing fails for keys queued together.
+- Naming `<C-\><C-n>` to drop its first key was rejected for the same reason as `<Esc>`. The only sign that a read is the second key of a command is that Neovim did not go idle before it, and that is equally true of keys queued together (a held key, a paste).
 - Counting everything from `typed` was rejected: it has no command structure, so a mapped key parses as the builtin it shadows. Filtering known expansions out of `keys` was rejected as one patch per plugin.
 - Sessions and journal atoms recorded before `typed_insert` count no insert text on either side, instead of keeping the old counting beside the new.
 

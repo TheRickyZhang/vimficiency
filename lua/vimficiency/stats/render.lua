@@ -1,32 +1,10 @@
--- `:Vimfy stats`: the requests behind the stats view (stats/view.lua) and the
--- stats it draws from the summary src/Stats/ reduces from the session log
--- (stats/log.lua) and the journal samples (stats/sampling.lua). Scores come
--- from one stamp's sessions at a time, the current one first, since scores made
--- under different stamps do not compare; <Tab> cycles through the others.
---
--- The journal is scored in the background. The view shows what is scored so
--- far and redraws when a run in flight finishes.
-
----@class (exact) VF.Stats
----@field summary     fun(scope: VF.Stats.Scope): VF.Stats.Summary
----@field runs        fun(scope: VF.Stats.Scope, order: VF.Stats.Order, offset: integer, limit: integer): VF.Stats.RunList
----@field run         fun(id: VF.Stats.RunId): VF.Stats.RunDetail|nil, string|nil
+---@class (exact) VF.Stats.Render
 ---@field build_pages fun(summary: VF.Stats.Summary, background: VF.Stats.Background, weight: VF.Stats.Weight, split: boolean): VF.Stats.Page[]
----@field refresh     fun()
+---@field run_lines fun(list: VF.Stats.RunList, offset: integer, width: integer): string[]
 local M = {}
 
 local config = require("vimficiency.config")
-local ffi_stats = require("vimficiency.ffi.stats")
-local journal = require("vimficiency.capture.journal")
 local log = require("vimficiency.stats.log")
-local sampling = require("vimficiency.stats.sampling")
-
---- What a summary or run list reduces.
----@class VF.Stats.Scope
----@field shown integer   # 1-based stamp group
----@field weight VF.Stats.Weight
----@field filter VF.Stats.Filter
----@field charted_size integer   # 0: the middle window size
 
 --- The background scoring, as the Journal section reports it.
 ---@class VF.Stats.Background
@@ -320,54 +298,76 @@ function M.build_pages(summary, background, weight, split)
   return pages
 end
 
----@param scope VF.Stats.Scope
----@return VF.Stats.SummaryRequest
-local function request(scope)
-  return {
-    session_log = log.path(),
-    stamp = log.stamp(),
-    shown_group = scope.shown - 1,
-    journal_dir = journal.dir(),
-    sample_params = sampling.params(),
-    weight = scope.weight,
-    filter = scope.filter,
-    charted_size = scope.charted_size,
-  }
+--- `s` left-aligned in `width` display columns.
+---@param s string
+---@param width integer
+---@return string
+local function pad(s, width)
+  return s .. string.rep(" ", width - vim.fn.strdisplaywidth(s))
 end
 
----@param scope VF.Stats.Scope
----@return VF.Stats.Summary
-function M.summary(scope)
-  return ffi_stats.summary(request(scope))
+--- `line` cut to `width` display columns, ending in `…` when cut.
+---@param line string
+---@param width integer
+---@return string
+local function fit(line, width)
+  if vim.fn.strdisplaywidth(line) <= width then return line end
+  local chars = vim.fn.strcharlen(line)
+  while chars > 0 and vim.fn.strdisplaywidth(vim.fn.strcharpart(line, 0, chars)) > width - 1 do
+    chars = chars - 1
+  end
+  return vim.fn.strcharpart(line, 0, chars) .. "…"
 end
 
---- The runs `M.summary` reduces under the same scope, one page of them.
----@param scope VF.Stats.Scope
----@param order VF.Stats.Order
+local WHEN_WIDTH = 12
+local EFFORT_WIDTH = 13
+local SAVED_WIDTH = 11
+
+--- How much less effort the best sequence takes, or why there is none.
+---@param row VF.Stats.RunRow
+---@return string
+local function saved(row)
+  if row.outcome == "unbeaten" then return "unbeaten" end
+  if row.outcome ~= "scored" then return (row.outcome:gsub("_", " ")) end
+  if row.user_cost == 0 then return "—" end
+  local percent = math.floor((row.best_cost - row.user_cost) / row.user_cost * 100 + 0.5)
+  if percent < 0 then return "−" .. -percent .. "%" end
+  return (percent > 0 and "+" or "") .. percent .. "%"
+end
+
+---@param row VF.Stats.RunRow
+---@return string
+local function run_line(row)
+  local has_best = row.outcome == "scored" or row.outcome == "unbeaten"
+  local effort = string.format("%5.1f → %s", row.user_cost, has_best and string.format("%.1f", row.best_cost) or "—")
+  return string.format("%s   %s  %s  you: %s   best: %s", os.date("%b %d %H:%M", row.wall_epoch),
+    pad(effort, EFFORT_WIDTH), pad(saved(row), SAVED_WIDTH), row.user_display,
+    row.best_display == "" and "—" or row.best_display)
+end
+
+---@param list VF.Stats.RunList
 ---@param offset integer
----@param limit integer
----@return VF.Stats.RunList
-function M.runs(scope, order, offset, limit)
-  return ffi_stats.runs({ scope = request(scope), order = order, offset = offset, limit = limit })
-end
-
---- A listed journal run as its search saw it, or why it is unavailable.
----@param id VF.Stats.RunId
----@return VF.Stats.RunDetail|nil detail
----@return string|nil err
-function M.run(id)
-  return ffi_stats.run({ id = id, journal_dir = journal.dir(), sample_params = sampling.params() })
-end
-
---- Scores the journal without opening the view.
-function M.refresh()
-  sampling.refresh(function(err)
-    if err then
-      vim.notify("vimfy: could not score the journal: " .. err, vim.log.levels.ERROR)
-    else
-      vim.notify("vimfy: journal scored")
-    end
-  end)
+---@param width integer
+---@return string[]
+function M.run_lines(list, offset, width)
+  local lines = {
+    fit(string.format("%s   %s  %s  keys", pad("when", WHEN_WIDTH), pad("effort", EFFORT_WIDTH),
+      pad("saved", SAVED_WIDTH)), width),
+  }
+  for _, row in ipairs(list.runs) do lines[#lines + 1] = fit(run_line(row), width) end
+  lines[#lines + 1] = ""
+  local footer = {
+    #list.runs > 0 and string.format("runs %d–%d of %d", offset + 1, offset + #list.runs, list.total)
+      or string.format("no runs to list of %d", list.total),
+  }
+  if list.rolled_up > 0 then
+    footer[#footer + 1] = string.format("%d rolled up (not listable)", list.rolled_up)
+  end
+  if list.rollup_runs_without_commands > 0 then
+    footer[#footer + 1] = string.format("%d rolled up without commands, left out", list.rollup_runs_without_commands)
+  end
+  lines[#lines + 1] = table.concat(footer, " · ")
+  return lines
 end
 
 return M

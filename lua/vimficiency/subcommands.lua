@@ -9,7 +9,7 @@ local auto_suggest = require("vimficiency.capture.auto_suggest")
 local alias_mod = require("vimficiency.session.alias")
 local explore = require("vimficiency.explore")
 local dev_reload = require("vimficiency.dev_reload")
-local util = require("vimficiency.util")
+local ui_windows = require("vimficiency.ui.windows")
 
 ---@class VF.Subcommand
 ---@field desc string
@@ -175,7 +175,13 @@ return {
       if args[1] == nil then
         require("vimficiency.stats.view").open()
       elseif args[1] == "refresh" then
-        require("vimficiency.stats").refresh()
+        require("vimficiency.stats.sampling").refresh(function(err)
+          if err then
+            vim.notify("vimfy: could not score the journal: " .. err, vim.log.levels.ERROR)
+          else
+            vim.notify("vimfy: journal scored")
+          end
+        end)
       else
         error("Usage: Vimfy stats [refresh]", 0)
       end
@@ -219,7 +225,7 @@ return {
   config = {
     desc = "Show current configuration",
     usage = "config",
-    run = function() util.show_output("Vimfy Config", ffi_core.debug_config()) end,
+    run = function() ui_windows.show_output("Vimfy Config", ffi_core.debug_config()) end,
   },
 
   version = {

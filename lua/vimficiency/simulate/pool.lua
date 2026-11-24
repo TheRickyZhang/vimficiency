@@ -45,7 +45,7 @@ end
 ---@return boolean include_user
 ---@return integer requested_count
 function M.effective_layout(pool)
-  local settings = require("vimficiency.play").get_settings()
+  local settings = require("vimficiency.simulate.settings").get_settings()
   local include_user = (settings.include_user_sequence == true) and pool.user ~= nil
   local requested_count = max(1, min(4, settings.window_count))
   local window_count = requested_count

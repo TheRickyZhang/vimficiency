@@ -12,11 +12,12 @@ local disk = require("vimficiency.session.disk")
 local playback = require("vimficiency.session.playback")
 local session_store = require("vimficiency.session.store")
 local alias_mod = require("vimficiency.session.alias")
-local highlights = require("vimficiency.highlights")
+local highlights = require("vimficiency.ui.highlights")
 local keymaps = require("vimficiency.session.picker.keymaps")
 local model = require("vimficiency.session.picker.model")
 local popups = require("vimficiency.session.picker.popups")
 local preview = require("vimficiency.session.picker.preview")
+local ui_windows = require("vimficiency.ui.windows")
 local util = require("vimficiency.util")
 
 -- Namespace for picker-owned extmarks (header pane indicator, section
@@ -476,7 +477,7 @@ function M.open()
     border = "rounded", style = "minimal",
     title = " Vimfy Sessions ", title_pos = "center",
   })
-  util.configure_scratch_window(win, { cursorline = true })
+  ui_windows.configure_scratch_window(win, { cursorline = true })
 
   -- Prompt split (bottom, 1 line, full float width).
   vim.cmd("belowright split")
@@ -488,7 +489,7 @@ function M.open()
   vim.bo[prompt_buf].filetype = "vimficiency_picker_prompt"
   v.nvim_win_set_buf(prompt_win, prompt_buf)
   v.nvim_win_resize(prompt_win, -1, 1)
-  util.configure_scratch_window(prompt_win, {
+  ui_windows.configure_scratch_window(prompt_win, {
     winfixheight = true,
     statusline   = "/",
   })
@@ -503,7 +504,7 @@ function M.open()
   vim.bo[prev_buf].swapfile = false
   vim.bo[prev_buf].filetype = "vimficiency_picker_preview"
   v.nvim_win_set_buf(prev_win, prev_buf)
-  util.configure_scratch_window(prev_win)
+  ui_windows.configure_scratch_window(prev_win)
   local prev_width = math.floor(width * 0.4)
   v.nvim_win_resize(prev_win, prev_width, -1)
 

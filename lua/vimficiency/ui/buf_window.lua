@@ -1,5 +1,5 @@
 local v = vim.api
-local util = require("vimficiency.util")
+local ui_windows = require("vimficiency.ui.windows")
 
 local M = {}
 
@@ -76,7 +76,7 @@ function M.create_side_pane(anchor_win, side, name, buffer_options, window_optio
   local win = split_and_capture(split_cmd)
   local buf = M.create_scratch_buffer(name, buffer_options)
   v.nvim_win_set_buf(win, buf)
-  util.configure_side_pane(win, window_options)
+  ui_windows.configure_side_pane(win, window_options)
   return buf, win
 end
 

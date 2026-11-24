@@ -32,9 +32,9 @@ WindowCutter::WindowCutter(span<const int> sizes, int64_t idleGapMs) : idleGapMs
 }
 
 void WindowCutter::push(const Event& event, vector<Window>& out) {
-  if (!group.empty() && (event.kind == EventKind::Start || event.tick != group.back().tick)) {
-    closeGroup(out);
-  }
+  const bool boundary = event.kind == EventKind::Start || event.kind == EventKind::TickEnd;
+  if (!group.empty() && (boundary || event.tick != group.back().tick)) closeGroup(out);
+  if (event.kind == EventKind::TickEnd) return;
   if (event.kind == EventKind::Start) {
     wallEpoch = event.wallEpoch;
     anchored = false;

@@ -23,7 +23,7 @@ a thread join on the main thread:
 
 | path | main-thread work | bound |
 |---|---|---|
-| `:Vimfy finish`, `:Vimfy recall`, Watch's idle auto-finish (`session.lua` `finish_active` → `vf_analyze`) | full analyze search under `SearchControl::NEVER_STOP` | none |
+| `:Vimfy finish`, `:Vimfy recall`, Watch's idle auto-finish (`session/init.lua` `finish_active` → `vf_analyze`) | full analyze search under `SearchControl::NEVER_STOP` | none |
 | Explore settings change that affects the plan (`explore/state.lua` `reconfigure_plan` → `View::computePlan`) | full composition search under `NEVER_STOP` | none |
 | every accepted key, undo, redo and restore in Explore (`explore/state.lua` `fetch` → `vf_explore_recommendations`) | one Nav or Transform search for the current phase | natural search caps |
 | cancelling a live worker (`vf_analyze_cancel`, `vf_explore_cancel`) | `~AsyncJob` joins the worker | the worker's next cancel check |

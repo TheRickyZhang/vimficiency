@@ -29,7 +29,6 @@ fi
 declare -A PCALL_CEILING=(
   [lua/vimficiency/async/poller.lua]=1
   [lua/vimficiency/dev_reload.lua]=2
-  [lua/vimficiency/explore/buf_window.lua]=4
   [lua/vimficiency/explore/handlers.lua]=1
   [lua/vimficiency/explore/lifecycle.lua]=1
   [lua/vimficiency/ffi/config.lua]=2
@@ -43,10 +42,12 @@ declare -A PCALL_CEILING=(
   [lua/vimficiency/session/picker/popups.lua]=5
   [lua/vimficiency/session/picker/preview.lua]=1
   [lua/vimficiency/session/result_window.lua]=2
-  [lua/vimficiency/settings_profile.lua]=1
-  [lua/vimficiency/simulate.lua]=1
+  [lua/vimficiency/settings/profile.lua]=1
+  [lua/vimficiency/simulate/init.lua]=1
   [lua/vimficiency/simulate/windows.lua]=1
-  [lua/vimficiency/util.lua]=3
+  [lua/vimficiency/ui/buf_window.lua]=4
+  [lua/vimficiency/ui/windows.lua]=2
+  [lua/vimficiency/util.lua]=1
 )
 while IFS= read -r file; do
   count="$(grep -c 'pcall(' "$file" || true)"

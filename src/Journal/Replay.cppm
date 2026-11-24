@@ -20,6 +20,7 @@ enum class EventKind : uint8_t {
   Start,   // a journal header: nothing before it carries over
   Resync,
   Atom,
+  TickEnd,  // the events since the last boundary are a whole tick; carries nothing else
 };
 
 enum class Decision : uint8_t { Record, Skip, Abort };

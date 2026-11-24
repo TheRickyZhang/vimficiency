@@ -26,6 +26,7 @@ local M = {}
 local config = require("vimficiency.config")
 local ffi_session = require("vimficiency.ffi.session")
 local keynorm = require("vimficiency.capture.keynorm")
+local capture_state = require("vimficiency.capture.state")
 local util = require("vimficiency.util")
 
 --------------------------------------------------------------------------------
@@ -169,14 +170,14 @@ end
 ---@return boolean
 local function reads_text(mode)
   local lead = mode:sub(1, 1)
-  return util.is_insert_mode(mode) or lead == "s" or lead == "S" or lead == "\19"
+  return capture_state.is_insert_mode(mode) or lead == "s" or lead == "S" or lead == "\19"
 end
 
 -- The insert has not ended: Insert, Replace, or the one command `<C-o>` lends.
 ---@param mode string  `nvim_get_mode().mode`
 ---@return boolean
 local function inserting(mode)
-  return util.is_insert_mode(mode) or mode:sub(1, 2) == "ni"
+  return capture_state.is_insert_mode(mode) or mode:sub(1, 2) == "ni"
 end
 
 -- A press is insert text when Neovim is still inserting once it has run.

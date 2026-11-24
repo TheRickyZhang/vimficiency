@@ -16,11 +16,13 @@ local buffer_history = require("vimficiency.capture.buffer_history")
 local config = require("vimficiency.config")
 local ffi_core = require("vimficiency.ffi.core")
 local ffi_versions = require("vimficiency.ffi.versions")
+local capture_state = require("vimficiency.capture.state")
 local util = require("vimficiency.util")
 
 local JOURNAL_FORMAT = ffi_versions.versions().journal_format
 local LISTENER_NAME = "journal"
 local AUGROUP = "VimficiencyJournal"
+local TICK_END = ffi_core.encode("vf.journal.File", { records = { { tick_end = {} } } })
 
 ---@type file*|nil
 local fh = nil
@@ -47,6 +49,23 @@ function M.dir()
   return vim.fn.stdpath("data") .. "/vimficiency/journal"
 end
 
+---@param bytes string
+local function append(bytes)
+  local ok, err = (fh --[[@as file*]]):write(bytes)
+  if not ok then
+    local path = file_path
+    M.stop()
+    error("vimfy journal: stopped, could not write " .. tostring(path) .. ": " .. tostring(err), 0)
+  end
+end
+
+--- Ends the open tick, on record in `file` unless the journal has left it.
+---@param file file*|nil
+local function close_tick(file)
+  tick_open = false
+  if file == fh then append(TICK_END) end
+end
+
 --- A callback scheduled now runs after every atom already queued, so the tick
 --- closes exactly when the current burst has been delivered.
 ---@return integer
@@ -54,7 +73,8 @@ local function current_tick()
   if not tick_open then
     tick = tick + 1
     tick_open = true
-    vim.schedule(function() tick_open = false end)
+    local file = fh
+    vim.schedule(util.entry(function() close_tick(file) end))
   end
   return tick
 end
@@ -63,17 +83,11 @@ end
 ---@param body table
 local function write(kind, body)
   last_resync = nil
-  local bytes = ffi_core.encode("vf.journal.File", { records = { {
+  append(ffi_core.encode("vf.journal.File", { records = { {
     ms = math.floor((vim.uv.hrtime() - started_mono_ns) / 1e6),
     tick = current_tick(),
     [kind] = body,
-  } } })
-  local ok, err = (fh --[[@as file*]]):write(bytes)
-  if not ok then
-    local path = file_path
-    M.stop()
-    error("vimfy journal: stopped, could not write " .. tostring(path) .. ": " .. tostring(err), 0)
-  end
+  } } }))
 end
 
 ---@param buf integer
@@ -102,7 +116,7 @@ local observer = {
 ---@param win integer
 ---@return table  # `vf.journal.ViewState`
 local function view_state(buf, win)
-  local view = util.capture_view(buf, win)
+  local view = capture_state.capture_view(buf, win)
   return {
     row = view.row,
     col = view.col,
@@ -220,7 +234,7 @@ end
 M._for_test = {
   listener = listener,
   resync = resync,
-  close_tick = function() tick_open = false end,
+  close_tick = function() close_tick(fh) end,
 }
 
 return M

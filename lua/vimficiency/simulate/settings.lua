@@ -1,7 +1,7 @@
 -- Play-screen UI preferences.
 --
 -- Mirror of the explore settings pattern:
---   - hardcoded defaults in config.lua's `fields.play`
+--   - hardcoded defaults in config/init.lua's `fields.play`
 --   - user setup declarations merged over by `config.apply`
 --   - sidecar file auto-layered on top, mutated on every toggle
 --
@@ -17,8 +17,8 @@
 -- single-buffer controller; the settings still live outside the replay
 -- state machine.
 local config = require("vimficiency.config")
-local settings_profile = require("vimficiency.settings_profile")
-local settings_ui = require("vimficiency.settings_modal")
+local settings_profile = require("vimficiency.settings.profile")
+local settings_ui = require("vimficiency.settings.modal")
 
 local M = {}
 

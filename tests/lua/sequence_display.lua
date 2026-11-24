@@ -1,4 +1,4 @@
-local sequence_display = require("vimficiency.sequence_display")
+local sequence_display = require("vimficiency.ui.sequence_display")
 
 local function flatten_chunk_lines(lines)
   local out = {}

@@ -3,11 +3,11 @@ local cmd = vim.cmd
 local max = math.max
 local min = math.min
 
-local chunks_util = require("vimficiency.chunks")
-local highlights = require("vimficiency.highlights")
+local chunks_util = require("vimficiency.ui.chunks")
+local highlights = require("vimficiency.ui.highlights")
 local pool_mod = require("vimficiency.simulate.pool")
-local sequence_display = require("vimficiency.sequence_display")
-local util = require("vimficiency.util")
+local sequence_display = require("vimficiency.ui.sequence_display")
+local ui_windows = require("vimficiency.ui.windows")
 
 local M = {}
 
@@ -228,7 +228,7 @@ function M.create_status_bar(ctx)
   v.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
   v.nvim_win_set_buf(win, buf)
 
-  util.configure_scratch_window(win, {
+  ui_windows.configure_scratch_window(win, {
     winfixheight = true,
     statusline   = " ",
     winhighlight = "Normal:StatusLine,StatusLine:Normal,StatusLineNC:Normal",

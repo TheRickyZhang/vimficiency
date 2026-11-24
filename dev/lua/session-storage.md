@@ -87,8 +87,8 @@ leaves scoring alone keeps the stamp, so its history stays comparable.
 
 `vf_stats_summary` (`src/LuaExports/proto/summary.proto`) reduces the shown
 group and the current journal samples and rollups (`dev/lua/atom-stream.md`
-§ Sampling) into everything the stats view draws; `stats.lua` only renders it
-into pages, and `stats/view.lua` lays out the tab and maps its keys. The view
+§ Sampling). `stats/render.lua` formats the summary into pages, and
+`stats/view.lua` lays out the tab and maps its keys. The view
 holds the charted window size (`charted_size`, cycled by `l`) as a setting like
 the weight, not a filter.
 
@@ -107,7 +107,7 @@ the weight, not a filter.
   not from the commands, whose keys also hold what mappings typed. A session or
   run without `typed_insert` counts no insert text on either side.
 
-Both exports narrow by one `vf.stats.Filter` (`src/Stats/Runs.cppm` applies it)
+Both exports narrow by one `vf.stats.Filter` (`src/Stats/Query.cpp` applies it)
 and read the same scope, so a row's `drill` filter lists exactly the runs it
 counted. Lua copies `drill` verbatim and never builds a filter: `build_pages`
 returns each drillable row and daily chart column with its `drill`, and the

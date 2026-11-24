@@ -1,0 +1,82 @@
+// The session log, `sessions.vfs`: one record per finished session, reduced by
+// src/Stats/ for `:Vimfy stats` (summary.proto).
+
+syntax = "proto3";
+
+package vf.stats;
+
+import "config.proto";
+
+option optimize_for = LITE_RUNTIME;
+
+// Everything a score depends on. Two scores compare only under equal stamps.
+message Stamp {
+  reserved 1;
+  reserved "plugin_version";
+  // `SCORING_VERSION`, filled by the C++ doing the scoring. Unset in older logs.
+  int32 scoring_version = 7;
+  vf.config.Config config = 2;
+  bytes optimizer_overrides = 3;
+  int32 slice_padding = 4;
+  int32 max_search_lines = 5;
+  int32 results_calculated = 6;
+}
+
+message Command {
+  bytes keys = 1;
+  // CmdAtom's `type`.
+  string kind = 2;
+}
+
+message Session {
+  enum Outcome {
+    no_result = 0;
+    scored = 1;
+    // Nothing modeled comes close to the user's keys; scores as optimal.
+    unbeaten = 2;
+  }
+
+  int64 finished_wall_epoch = 1;
+  // `VF.Session.Kind`.
+  string kind = 2;
+  Outcome outcome = 3;
+  double user_cost = 4;
+  // Scored only.
+  double best_cost = 5;
+  bytes user_seq = 6;
+  bytes best_seq = 7;
+  repeated Command commands = 8;
+  int32 key_count = 9;
+  double analyze_ms = 10;
+  // The insert text pressed (`vf.journal.Atom.typed_insert`).
+  // Unset in sessions logged before it existed.
+  optional bytes typed_insert = 11;
+}
+
+// The first record of a log; a log without one is format 1.
+message LogHeader {
+  // `SESSION_LOG_FORMAT`.
+  int32 format = 1;
+}
+
+// A stamp is written once per log, before the first session made under it.
+message LogRecord {
+  // FNV-1a of the serialized stamp; unset on the header.
+  fixed64 stamp_id = 1;
+  oneof body {
+    Stamp stamp = 2;
+    Session session = 3;
+    LogHeader header = 4;
+  }
+}
+
+// The file is its records appended one at a time.
+message SessionLog {
+  repeated LogRecord records = 1;
+}
+
+message AppendSessionRequest {
+  bytes path = 1;
+  Stamp stamp = 2;
+  Session session = 3;
+}

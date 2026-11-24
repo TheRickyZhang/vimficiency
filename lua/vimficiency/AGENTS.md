@@ -4,25 +4,26 @@ The Lua layer is a Neovim plugin that captures user editing sessions and calls t
 
 ## Layout
 
-Top-level modules are the plugin entry and cross-cutting infrastructure:
+Plugin entry points and domain modules:
 
 | File | Purpose |
 |------|---------|
 | `init.lua` | Plugin entry point: `setup()`, the `:Vimfy` dispatcher and its tab completion, teardown and reload. |
-| `session.lua` | Live capture lifecycle: start, watch, finish, recall, close. Argument errors raise to the `:Vimfy` boundary. |
+| `session/init.lua` | Live capture lifecycle: start, watch, finish, recall, close. Argument errors raise to the `:Vimfy` boundary. |
 | `session/archive.lua` | Finished results by handle: alias resolution through the store, filename resolution on disk, save/store/fetch/rm, view. |
-| `simulate.lua` | Side-by-side animation of motion sequences. Required as `vimficiency.simulate`. |
-| `explore.lua` | Interactive result exploration view. Required as `vimficiency.explore`. |
-| `play.lua` | Play-screen settings and modal wiring. Required as `vimficiency.play`. |
-| `stats.lua` | Builds the `:Vimfy stats` requests (`vf_stats_summary`, `vf_stats_runs`) and draws the stats pages with their drill targets. Required as `vimficiency.stats`. |
+| `simulate/init.lua` | Side-by-side animation of motion sequences. Required as `vimficiency.simulate`. |
+| `explore/init.lua` | Interactive result exploration view. Required as `vimficiency.explore`. |
+| `simulate/settings.lua` | Play-screen settings and modal wiring. |
+| `stats/query.lua` | Builds requests for stats summaries, run lists, and run details. |
+| `stats/render.lua` | Formats summary pages, charts, drill targets, and run rows. |
 | `stats/view.lua` | The `:Vimfy stats` tab: header, two stat columns at the top level, stats beside the run list once narrowed; drill/sort/weight/length/page keys, and `<CR>` on a journal run replays it. |
 | `stats/sampling.lua` | Runs `vimfy_journal` over the journal in the background. See `dev/lua/atom-stream.md` § Sampling. |
 | `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, run) per `:Vimfy` verb. Depends on the domain modules; only `init.lua` depends on it. |
 | `dev_reload.lua` | `:Vimfy reload`: cmake rebuild, then hot-reload the `.so` and every Lua module. |
-| `config.lua` | Shared configuration constants (Lua-side only). |
-| `config/validate.lua` | Validators for the structured `watch` and `auto_suggest` blocks; the shape itself stays in `config.lua`. |
-| `ffi.lua` | Compatibility surface for LuaJIT FFI bindings to `libvimficiency.so`. |
-| `util.lua` | State capture, ID generation, UI helpers, `entry` (the error boundary for every autocmd/timer/keymap callback). |
+| `config/init.lua` | Shared configuration constants (Lua-side only). |
+| `config/validate.lua` | Validators for the structured `watch` and `auto_suggest` blocks; the shape itself stays in `config/init.lua`. |
+| `ffi/init.lua` | Compatibility surface for LuaJIT FFI bindings to `libvimficiency.so`. |
+| `util.lua` | Plugin paths, ID generation, and `entry` (the error boundary for every autocmd/timer/keymap callback). |
 
 Subdirectories hold supporting modules for each domain:
 
@@ -76,6 +77,7 @@ Subdirectories hold supporting modules for each domain:
 
 | File | Purpose |
 |------|---------|
+| `capture/state.lua` | Captures buffer text, cursor position, and viewport state. |
 | `capture/atom_stream.lua` | CmdAtom-driven capture: one atom per atomic user action, normalized and fanned out to named subscribers (manual/recall/triggers). See `dev/lua/atom-stream.md`. |
 | `capture/key_tracking.lua` | Legacy `vim.on_key()` capture, now used only by interactive Explore's frontier replay. |
 | `capture/recall.lua` | Rolling recall-ring capture driven by atom events. |
@@ -125,7 +127,7 @@ field. Past the constructor nothing re-checks shape, type, or handle validity.
   list.lua`, `explore/render/panel.lua`, `simulate/precompute.lua` teardown,
   `simulate/windows.lua` teardown, picker WinClosed paths).
 - **Tests go through the same constructors.** `h.fake_result` must pass
-  `disk.validate`; session fixtures use `util.capture_state`; config fixtures use
+  `disk.validate`; session fixtures use `capture.state.capture_state`; config fixtures use
   `validate.normalize_*`. A guard that exists only because a fixture skipped the
   constructor is a fixture bug.
 
@@ -231,9 +233,9 @@ ffi_sequence.tokenize_sequence(seq) → VF.Sequence.Token[]  -- {text, kind} tok
 ffi_sequence.tokenize_movements(seq) → VF.Sequence.Token[]   -- all kind="motion"
 ```
 
-**Position indexing:** C++ uses 0-indexed rows/cols. Neovim uses 1-indexed rows. Conversion happens before calls cross the FFI boundary, at state capture (`util.capture_view`).
+**Position indexing:** C++ uses 0-indexed rows/cols. Neovim uses 1-indexed rows. Conversion happens before calls cross the FFI boundary, at state capture (`capture.state.capture_view`).
 
-## Configuration (config.lua)
+## Configuration (config/init.lua)
 
 Config keys are owned by exactly one side. C++ owns process globals (`vf.config.Config`: keyboard cost model, shiftwidth), pushed once by `ffi_config.apply_globals`. Lua owns everything read at call time, including per-search optimizer parameters passed as FFI arguments:
 
@@ -245,7 +247,7 @@ Config keys are owned by exactly one side. C++ owns process globals (`vf.config.
 | `MAX_SEARCH_LINES` | 500 | Max lines in search region |
 | `KEY_SESSION_CAPACITY` | 10 | Rolling key session limit |
 
-## Simulation (simulate.lua)
+## Simulation (simulate/init.lua)
 
 Terminology: **step** means the small replay unit, usually one parsed token.
 Interactive Explore's larger state-machine units are **phases** (`Navigate`,

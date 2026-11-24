@@ -1,5 +1,6 @@
 module;
 #include <csignal>
+#include <unistd.h>
 
 #include "proto/journal.pb.h"
 #include "proto/summary.pb.h"
@@ -12,8 +13,8 @@ import vf.Journal.Replay;
 import vf.Journal.Windows;
 import vf.LuaExports.Common;
 import vf.LuaExports.Logic;
-import vf.LuaExports.RecordFile;
-import vf.LuaExports.Samples;
+import vf.Storage.RecordFile;
+import vf.Storage.Samples;
 import vf.Optimizer.Analyze;
 import vf.Stats.Rollup;
 import vf.Stats.Run;
@@ -33,7 +34,7 @@ string g_progress_path;
 volatile std::sig_atomic_t g_evaluating = 0;
 
 void stopQuietly(int) {
-  if (g_evaluating) std::remove(g_progress_path.c_str());
+  if (g_evaluating) ::unlink(g_progress_path.c_str());
   std::_Exit(0);
 }
 

@@ -13,7 +13,7 @@
 -- starts by clearing the scratch buffer's tags_ns extmarks.
 local v = vim.api
 local highlights = require("vimficiency.explore.highlights")
-local sequence_display = require("vimficiency.sequence_display")
+local sequence_display = require("vimficiency.ui.sequence_display")
 
 local M = {}
 

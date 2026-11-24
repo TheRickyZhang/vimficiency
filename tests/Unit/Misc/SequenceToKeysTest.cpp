@@ -54,12 +54,52 @@ TEST(SequenceToKeysTest, KeyNotations) {
   EXPECT_EQ(tok.tokenize("<NL>"), PhysicalKeys({Key::Key_Ctrl, Key::Key_J}));
 }
 
-// A named character missing from the notations prices as the letters of its name.
-TEST(SequenceToKeysTest, EveryNamedCharacterIsANotation) {
+TEST(SequenceToKeysTest, EveryNamedCharacterIsPriced) {
   const auto& tok = globalSequenceToKeys();
   for (const CharName& named : CHAR_NAMES) {
-    EXPECT_NE(tok.tokenize(named.name), charwise(named.name)) << named.name;
+    EXPECT_FALSE(tok.tokenize(named.name).empty()) << named.name;
   }
+}
+
+TEST(SequenceToKeysTest, ModifiersArePricedByStructure) {
+  const auto& tok = globalSequenceToKeys();
+  EXPECT_EQ(tok.tokenize("<C-^>"), PhysicalKeys({Key::Key_Ctrl, Key::Key_Shift, Key::Key_6}));
+  EXPECT_EQ(tok.tokenize("<C-]>"), PhysicalKeys({Key::Key_Ctrl, Key::Key_RBracket}));
+  EXPECT_EQ(tok.tokenize("<S-Esc>"), PhysicalKeys({Key::Key_Shift, Key::Key_Esc}));
+  EXPECT_EQ(tok.tokenize("<M-x>"), PhysicalKeys({Key::Key_Alt, Key::Key_X}));
+  EXPECT_EQ(tok.tokenize("<A-x>"), PhysicalKeys({Key::Key_Alt, Key::Key_X}));
+  EXPECT_EQ(tok.tokenize("<M-Bar>"), PhysicalKeys({Key::Key_Alt, Key::Key_Shift, Key::Key_Backslash}));
+  EXPECT_EQ(tok.tokenize("<M-C-Left>"), PhysicalKeys({Key::Key_Alt, Key::Key_Ctrl, Key::Key_Left}));
+  // keytrans() writes Ctrl-A as `<C-A>`, and a held Shift as its own modifier.
+  EXPECT_EQ(tok.tokenize("<C-A>"), PhysicalKeys({Key::Key_Ctrl, Key::Key_A}));
+  EXPECT_EQ(tok.tokenize("<C-S-W>"), PhysicalKeys({Key::Key_Ctrl, Key::Key_Shift, Key::Key_W}));
+  EXPECT_EQ(tok.tokenize("<M-X>"), PhysicalKeys({Key::Key_Alt, Key::Key_Shift, Key::Key_X}));
+}
+
+// A key the model lacks costs nothing; it is never spelled out letter by letter.
+TEST(SequenceToKeysTest, UnmodelledNamesAddNothing) {
+  const auto& tok = globalSequenceToKeys();
+  for (const char* name : {"<F5>", "<PageDown>", "<D-x>", "<C-F5>", "<t_PS>", "<NoSuchKey>"}) {
+    EXPECT_TRUE(tok.tokenize(name).empty()) << name;
+  }
+  EXPECT_EQ(tok.tokenize("a<F5>b"), charwise("ab"));
+}
+
+// The fixture is every name Neovim writes (`tests/lua/key_names.lua` holds it
+// to that), so this is the full list of what is and is not priced.
+TEST(SequenceToKeysTest, EveryNeovimKeyNameIsClassified) {
+  const auto& tok = globalSequenceToKeys();
+  ifstream fixture(filesystem::path(__FILE__).parent_path() / "fixtures" / "neovim_key_names.tsv");
+  ASSERT_TRUE(fixture.is_open());
+  string line;
+  int names = 0;
+  while (getline(fixture, line)) {
+    const size_t tab = line.find('\t');
+    const string name = line.substr(0, tab);
+    EXPECT_EQ(tok.tokenize(name).empty(), line.substr(tab + 1) == "unpriced") << name;
+    names++;
+  }
+  EXPECT_GT(names, 0);
 }
 
 TEST(SequenceToKeysTest, MixedSequences) {

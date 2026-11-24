@@ -95,12 +95,25 @@ TEST(JournalWindowsTest, TheLastGroupIsNotCutUntilALaterTickArrives) {
   EXPECT_EQ(cut(j.bytes(), {2}).size(), 1u);
 }
 
+TEST(JournalWindowsTest, ATickEndCutsTheLastGroup) {
+  JournalBuilder j = opened();
+  moveRight(j, 2);
+  j.tickEnd();
+  EXPECT_EQ(j.bytes().size(), opened().next().atom("l", 0, 1).next().atom("l", 0, 2).bytes().size() + 4);
+
+  const vector<Window> windows = cut(j.bytes(), {2});
+  ASSERT_EQ(windows.size(), 1u);
+  EXPECT_EQ(windows[0].lastAtom, 1);
+  EXPECT_EQ(windows[0].end.col, 2);
+}
+
 TEST(JournalWindowsTest, AGrowingJournalOnlyAddsWindows) {
   JournalBuilder j = opened();
   moveRight(j, 3);
-  j.next().atom("l", 0, 4).atom("l", 0, 5);
-  j.next().resync(0, 9);
+  j.next().atom("l", 0, 4).atom("l", 0, 5).tickEnd();
+  j.next().resync(0, 9).tickEnd();
   moveRight(j, 4, 9);
+  j.tickEnd();
   const vector<Window> whole = cut(j.bytes(), {2, 3});
 
   for (size_t size = 0; size <= j.bytes().size(); size++) {

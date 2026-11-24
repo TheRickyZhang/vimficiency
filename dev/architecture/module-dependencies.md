@@ -24,12 +24,14 @@ the few remaining `#include "..."` lines are X-macro `.inc`/`.h` fragments.
 - `Wasm`: C ABI adapter for the docs site's planner module (Emscripten build only; excluded from `vimfy_core`). See `dev/web/how-it-works-site.md`.
 - `Journal`: The `vimfy_journal` tool: replays the capture journal, cuts it into windows and scores them; the shared library also links it to cut one sampled run again (`vf_stats_run`). Excluded from `vimfy_core`. See `dev/lua/atom-stream.md` § Sampling.
 - `Stats`: The session log, the journal rollups, and the filtering and reduction of them and the journal samples into what `:Vimfy stats` shows and lists (`vimfy_stats_lib`, excluded from `vimfy_core` because it reads protobuf files). See `dev/lua/session-storage.md` § The session log.
+- `Storage`: Shared record framing and sample format parameters.
 - `Versions`: `src/Versions.cppm` (`vf.Versions`), the one root-level module: every file-format and scoring version, with the signatures recorded beside them. A leaf any module may import.
 
 ## Allowed Dependencies
 
 - `Types` -> (none)
 - `Versions` -> (none)
+- `Storage` -> `Versions`
 - `Utils` -> `Types`
 - `Keyboard` -> `Types`, `Utils`
 - `Effort` -> `Keyboard`
@@ -41,8 +43,8 @@ the few remaining `#include "..."` lines are X-macro `.inc`/`.h` fragments.
 - `Explore` -> `Types`, `Keyboard`, `Effort`, `Boundary`, `VimCore`, `Interpreter`, `Optimizer`
 - `LuaExports` -> `Types`, `Keyboard`, `Boundary`, `Interpreter`, `VimCore`, `Optimizer`, `Explore`, `Utils`, `Stats` and `Journal` (`StatsExports.cpp` only: `Stats` and `Journal` import the `vimfy_lua_common` modules, never the `*Exports.cpp` entry points, so there is no build cycle)
 - `Wasm` -> `Types`, `Keyboard`, `Effort`, `Boundary`, `Optimizer` (DiffPlanner only), `Utils`
-- `Journal` -> `Types`, `Keyboard`, `Effort`, `Optimizer`, `Utils`, `LuaExports` (config and override decoding, `RecordFile` framing and `Samples` params only), `Stats` (`Rollup` and `Run` only)
-- `Stats` -> `Interpreter` (`SequenceParser` and `SequenceDisplay` only), `LuaExports` (`RecordFile` framing and `Samples` params only)
+- `Journal` -> `Types`, `Keyboard`, `Effort`, `Optimizer`, `Utils`, `LuaExports` (config and override decoding only), `Storage`, `Stats` (`Rollup` and `Run` only)
+- `Stats` -> `Interpreter` (`SequenceParser` and `SequenceDisplay` only), `Storage`, `Versions`
 
 ## Placement Rules
 

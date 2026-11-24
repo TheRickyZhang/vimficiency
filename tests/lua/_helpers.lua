@@ -188,13 +188,13 @@ function M.result_scenario(name, overrides)
   return M.fake_result(vim.tbl_deep_extend("force", scenario, overrides or {}))
 end
 
---- Run `fn` with `vim.notify` and `util.show_output` stubbed to no-op.
+--- Run `fn` with `vim.notify` and `ui_windows.show_output` stubbed to no-op.
 ---@param fn fun()
 function M.silence_notify(fn)
-  local util = require("vimficiency.util")
+  local ui_windows = require("vimficiency.ui.windows")
   M.with_patch({
     { vim, "notify", function(...) end },
-    { util, "show_output", function(...) end },
+    { ui_windows, "show_output", function(...) end },
   }, fn)
 end
 
@@ -204,6 +204,7 @@ end
 ---@return table rec, integer buf, string id
 function M.seed_recall(opts)
   opts = opts or {}
+  local capture_state = require("vimficiency.capture.state")
   local session_store = require("vimficiency.session.store")
   local util = require("vimficiency.util")
   local buf = opts.buf or M.new_buf(opts.lines or { "x" })
@@ -212,7 +213,7 @@ function M.seed_recall(opts)
   vim.api.nvim_win_set_buf(win, buf)
   local buffer_history = require("vimficiency.capture.buffer_history")
   local rec = session_store.new_active_session(
-    id, nil, win, buf, util.capture_view(buf, win), "recall")
+    id, nil, win, buf, capture_state.capture_view(buf, win), "recall")
   rec.start_seq = buffer_history.mark(buf)
   if opts.backdate_s then
     rec.started_mono_ns = vim.uv.hrtime() - opts.backdate_s * 1e9
@@ -226,12 +227,12 @@ end
 ---@param id string
 ---@return table rec
 function M.seed_named(alias, id)
+  local capture_state = require("vimficiency.capture.state")
   local session_store = require("vimficiency.session.store")
-  local util = require("vimficiency.util")
   local buf = vim.api.nvim_get_current_buf()
   local win = vim.api.nvim_get_current_win()
   local rec = session_store.new_active_session(
-    id, nil, win, buf, util.capture_state(buf, win), "mark")
+    id, nil, win, buf, capture_state.capture_state(buf, win), "mark")
   session_store.store_named(alias, rec)
   return rec
 end

@@ -7,6 +7,7 @@ local atom_stream = require("vimficiency.capture.atom_stream")
 local end_trigger = require("vimficiency.capture.end_trigger")
 local result_view = require("vimficiency.session.result_view")
 local session_store = require("vimficiency.session.store")
+local capture_state = require("vimficiency.capture.state")
 local util = require("vimficiency.util")
 
 local M = {}
@@ -83,7 +84,7 @@ local function start_named_session(alias, kind)
   local buf = v.nvim_get_current_buf()
   local win = v.nvim_get_current_win()
   local id = util.new_id(buf)
-  local start_state = util.capture_state(buf, win)
+  local start_state = capture_state.capture_state(buf, win)
 
   atom_stream.add_listener(id, make_session_listener(alias, id))
 

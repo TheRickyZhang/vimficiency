@@ -3,7 +3,7 @@
 -- envelope edge cases.
 local explore = require("vimficiency.explore")
 local settings = require("vimficiency.explore.settings")
-local settings_profile = require("vimficiency.settings_profile")
+local settings_profile = require("vimficiency.settings.profile")
 
 local helpers = explore._for_test
 

@@ -3,13 +3,15 @@ local cmd = vim.cmd
 local max = math.max
 local min = math.min
 
+local ui_windows = require("vimficiency.ui.windows")
+
 local util = require("vimficiency.util")
 
 local M = {}
 
 ---@param win integer
 function M.decorate(win)
-  util.configure_scratch_window(win, {
+  ui_windows.configure_scratch_window(win, {
     cursorline = true,
     cursorcolumn = true,
   })
@@ -43,7 +45,7 @@ function M.create_buffer(ctx, lines, label)
   v.nvim_buf_set_lines(buf, 0, -1, true, lines)
   highlight(buf, ctx.state.filetype)
 
-  util.set_buffer_keymaps(buf, ctx.actions.keymaps)
+  ui_windows.set_buffer_keymaps(buf, ctx.actions.keymaps)
 
   v.nvim_create_autocmd("WinEnter", {
     buffer = buf,

@@ -9,8 +9,8 @@ import vf.Journal.Evaluate;
 import vf.Journal.Replay;
 import vf.Journal.Sampler;
 import vf.Journal.Windows;
-import vf.LuaExports.RecordFile;
-import vf.LuaExports.Samples;
+import vf.Storage.RecordFile;
+import vf.Storage.Samples;
 import vf.Optimizer.Analyze;
 import vf.Versions;
 

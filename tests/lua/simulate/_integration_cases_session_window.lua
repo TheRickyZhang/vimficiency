@@ -74,7 +74,7 @@ return function(ctx)
 
       helpers.new_buf({ "session simulate source" })
       local id = session_store.register_fetched_result("simreplay", result)
-      local play = require("vimficiency.play")
+      local play = require("vimficiency.simulate.settings")
       play.set_setting("include_user_sequence", true)
       play.set_setting("window_count", 3)
       playback.simulate("simreplay", 3)
@@ -134,7 +134,7 @@ return function(ctx)
 
       helpers.new_buf({ "session simulate source" })
       local id = session_store.register_fetched_result("simcap", result)
-      require("vimficiency.play").set_setting("include_user_sequence", true)
+      require("vimficiency.simulate.settings").set_setting("include_user_sequence", true)
       playback.simulate("simcap", 4)
 
       local tries = 0

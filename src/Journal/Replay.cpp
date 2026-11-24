@@ -4,7 +4,7 @@ module;
 module vf.Journal.Replay;
 
 import std.compat;
-import vf.LuaExports.RecordFile;
+import vf.Storage.RecordFile;
 import vf.Types.Lines;
 import vf.Versions;
 
@@ -140,6 +140,11 @@ bool Replay::next(Event& out) {
         out.normalMode = atom.mode() == "n";
         return true;
       }
+
+      case vf::journal::Record::kTickEnd:
+        out = Event{};
+        out.kind = EventKind::TickEnd;
+        return true;
 
       case vf::journal::Record::BODY_NOT_SET:
         break;

@@ -6,7 +6,7 @@ local recall_capture = require("vimficiency.capture.recall")
 local journal = require("vimficiency.capture.journal")
 local sampling = require("vimficiency.stats.sampling")
 local ffi_config = require("vimficiency.ffi.config")
-local util = require("vimficiency.util")
+local ui_windows = require("vimficiency.ui.windows")
 
 local M = {}
 
@@ -30,7 +30,7 @@ local function cmdline_entry(opts)
       table.insert(cmd_lines, string.format("  Vimfy %-20s %s", cmd.usage, cmd.desc))
     end
     table.sort(cmd_lines)
-    util.show_output("Vimfy Commands", table.concat(cmd_lines, "\n"), {
+    ui_windows.show_output("Vimfy Commands", table.concat(cmd_lines, "\n"), {
       ui_keys = {
         title = "Vimfy Scratch Output Keys",
         docs = true,
@@ -94,7 +94,7 @@ end
 --- * apply config to Lua and C++,
 --- * register the `:Vimfy` command
 --- * setup capture mechanism
----@param user_config? table  Keys from `config.lua` and `ffi/config.lua`; unknown keys warn
+---@param user_config? table  Keys from `config/init.lua` and `ffi/config.lua`; unknown keys warn
 function M.setup(user_config)
   -- Require CmdAtom for our capture semantics to work
   if not atom_stream.supported() then

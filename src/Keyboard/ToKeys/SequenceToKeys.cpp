@@ -23,41 +23,60 @@ std::string hexWindow(std::string_view s, size_t start, size_t end) {
 
 using namespace std;
 
-SequenceToKeys::SequenceToKeys(const CommandToKeys &notations) {
-  tokens_.reserve(notations.size());
-  for (const auto &p : notations) {
-    tokens_.push_back(TokenDef{p.first, &p.second});
+SequenceToKeys::SequenceToKeys(const CommandToKeys &names) : names_(&names) {}
+
+bool SequenceToKeys::appendName(string_view name, PhysicalKeys &out) const {
+  if (const auto it = names_->find(name); it != names_->end()) {
+    out.append(it->second);
+    return true;
   }
 
-  // Longest tokens first for greedy matching.
-  sort(tokens_.begin(), tokens_.end(),
-            [](const TokenDef &a, const TokenDef &b) {
-              if (a.token.size() != b.token.size())
-                return a.token.size() > b.token.size();
-              return a.token < b.token;
-            });
-}
+  string_view held = name.substr(1, name.size() - 2);
+  vector<Key> keys;
+  bool ctrl = false;
+  while (held.size() > 2 && held[1] == '-') {
+    switch (held[0]) {
+      case 'C': keys.push_back(Key::Key_Ctrl); ctrl = true; break;
+      case 'S': keys.push_back(Key::Key_Shift); break;
+      case 'M':
+      case 'A': keys.push_back(Key::Key_Alt); break;
+      default: return false;
+    }
+    held.remove_prefix(2);
+  }
+  if (keys.empty()) return false;
 
+  const PhysicalKeys *base = nullptr;
+  if (held.size() == 1) {
+    // `<C-A>` is Ctrl with the A key; a held Shift is written `<C-S-A>`.
+    const char c = ctrl ? tolower(held[0]) : held[0];
+    if (const auto it = CHAR_TO_KEYS.find(c); it != CHAR_TO_KEYS.end()) base = &it->second;
+  } else if (const auto it = names_->find(format("<{}>", held)); it != names_->end()) {
+    base = &it->second;
+  }
+  if (!base) return false;
+
+  for (const Key key : *base) {
+    if (!ranges::contains(keys, key)) keys.push_back(key);
+  }
+  out.append(PhysicalKeys(std::move(keys)));
+  return true;
+}
 
 PhysicalKeys SequenceToKeys::tokenize(string_view s) const {
   PhysicalKeys out;
   size_t i=0;
 
   while(i < s.size()){
-    bool matched=false;
-
-    for(const auto& td: tokens_){
-      const string& tok = td.token;
-      const size_t len = tok.size();
-      if(len<=s.size()-i && s.compare(i,len,tok)==0){
-        const auto& keys = *td.keys;
-        out.append(keys);
-        i += len;
-        matched = true;
-        break;
+    if (s[i] == '<') {
+      const size_t close = s.find_first_of("<>", i + 1);
+      if (close != string_view::npos && s[close] == '>' && close > i + 1) {
+        appendName(s.substr(i, close + 1 - i), out);
+        i = close + 1;
+        continue;
       }
     }
-    if(!matched){
+    {
       char ch = s[i];
       auto it = CHAR_TO_KEYS.find(ch);
       if (it != CHAR_TO_KEYS.end()) {

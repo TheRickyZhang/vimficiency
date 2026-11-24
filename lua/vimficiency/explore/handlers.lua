@@ -8,6 +8,7 @@ local list_render    = require("vimficiency.explore.render.list")
 local registry       = require("vimficiency.explore.registry")
 local state          = require("vimficiency.explore.state")
 local autocmds       = require("vimficiency.explore.autocmds")
+local capture_state = require("vimficiency.capture.state")
 local util           = require("vimficiency.util")
 
 local M = {}
@@ -25,7 +26,7 @@ local function refresh_key_buffer(view)
 end
 
 local function mode_is_insert()
-  return util.is_insert_mode(v.nvim_get_mode().mode)
+  return capture_state.is_insert_mode(v.nvim_get_mode().mode)
 end
 
 local function lines_equal(a, b)
@@ -69,7 +70,7 @@ local function check_background_invariants(view, context)
   local live_cursor = v.nvim_win_get_cursor(view.scratch.win)
   local live_row, live_col = live_cursor[1] - 1, live_cursor[2]
   local mode = v.nvim_get_mode().mode
-  local insert_like = util.is_insert_mode(mode)
+  local insert_like = capture_state.is_insert_mode(mode)
   local phase_kind = view.state.phase.kind
   local violations = {}
 

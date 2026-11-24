@@ -9,7 +9,7 @@ package.path = tests_root .. "?.lua;" .. package.path
 
 local helpers = require("_helpers")
 local sim = require("vimficiency.simulate")
-local highlights = require("vimficiency.highlights")
+local highlights = require("vimficiency.ui.highlights")
 local session_store = require("vimficiency.session.store")
 
 -- Quiet the environment — mirrors `runner.lua`'s treatment so this test
@@ -159,7 +159,7 @@ local function with_replay(sequences, lines, fn, next, opts)
   end
   -- Seed play settings so every pane in the test set is visible. Without
   -- this the tests would be clamped to the default window_count (2).
-  local play = require("vimficiency.play")
+  local play = require("vimficiency.simulate.settings")
   local expected_windows = #suggestions + (user_seq and 1 or 0)
   play.set_setting("window_count", math.min(4, math.max(1, expected_windows)))
   play.set_setting("include_user_sequence", user_seq ~= nil)

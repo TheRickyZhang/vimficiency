@@ -63,15 +63,22 @@ directory taxonomy.
 
 ### Scoring signature
 
-`ScoringSignature` (`tests/Unit/Journal/ScoringSignatureTest.cpp`) hashes the
-best cost, outcome and stop reason of a fixed set of small windows, under
-`Config::uniform()` and `Config::qwerty()`, and compares it with
-`SCORING_SIGNATURE` (`src/Versions.cppm`). Stats only compare scores under one
-`SCORING_VERSION`, so a change that moves costs without a bump silently mixes scorings.
+`ScoringSignature` (`tests/Unit/Journal/ScoringSignatureTest.cpp`) hashes two
+parts and compares the hash with `SCORING_SIGNATURE` (`src/Versions.cppm`).
+Stats only compare scores under one `SCORING_VERSION`, so a change that moves
+costs without a bump silently mixes scorings.
 
+- Effort model, exhaustively, under each built-in `Config`: weights, every key
+  plain/Shift/Ctrl, every `KeyedSequence` constant, the emitted notations, all
+  printable ASCII typed in Insert, and every count class's penalty for counts
+  1–20.
+- Search: one small window per component, built so that component decides its
+  best cost (labelled in the file), under `qwerty` and, where it catches a
+  tunable `qwerty` misses, `uniform`. Before adding a case, check that it makes
+  a component decisive that no other case does.
 - It is the one agreed exception to not pinning optimizer output: only best
   costs, never sequences or ranked menus.
-- On failure it prints every case's costs. If the move is intended, bump
+- On failure it prints both parts. If the move is intended, bump
   `SCORING_VERSION` and record the printed signature; otherwise find the change
   that moved them.
 - Cases must stay below the node caps (the test fails on a cap hit), and

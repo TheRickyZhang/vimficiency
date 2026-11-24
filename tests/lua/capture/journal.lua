@@ -38,12 +38,13 @@ local function replay(records, buf, kind)
       if r.body == "snapshot" then
         text = body.lines
       elseif r.body == "delta" then
-        local tail = vim.list_slice(text, body.first + body.old_count + 1)
-        text = vim.list_slice(text, 1, body.first)
+        local before = assert(text, "journal delta precedes its buffer snapshot")
+        local tail = vim.list_slice(before, body.first + body.old_count + 1)
+        text = vim.list_slice(before, 1, body.first)
         vim.list_extend(text, body.lines)
         vim.list_extend(text, tail)
       elseif r.body == kind then
-        at[#at + 1] = vim.deepcopy(text)
+        at[#at + 1] = vim.deepcopy(assert(text, "journal " .. kind .. " precedes its buffer snapshot"))
       end
     end
   end
@@ -238,4 +239,13 @@ test("journal: records share a tick until the event queue drains", function()
   end
   assert_eq(ticks[1], ticks[2])
   assert_true(ticks[3] > ticks[2], "a closed tick is not reused")
+  assert_eq(kinds(records), { "header", "snapshot", "atom", "atom", "tick_end", "atom" })
+end)
+
+test("journal: a drained event queue ends the tick on record", function()
+  local records = with_journal(function(_, atom)
+    journal._for_test.listener(atom, "record")
+    vim.wait(5, function() return false end)
+  end)
+  assert_eq(vim.list_slice(kinds(records), 1, 4), { "header", "snapshot", "atom", "tick_end" })
 end)

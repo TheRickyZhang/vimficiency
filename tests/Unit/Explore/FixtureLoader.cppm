@@ -8,7 +8,7 @@ export {
 
 // Canonical saved-session JSON loader for Explore integration tests.
 // Mirrors the on-disk schema written by
-// lua/vimficiency/session.lua:save_results so that tests can replay
+// lua/vimficiency/session/disk.lua so that tests can replay
 // actual program state end-to-end instead of hand-rolling Lines/cursors.
 
 
