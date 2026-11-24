@@ -9,6 +9,7 @@ module vf.LuaExports.Common;
 
 import std.compat;
 import vf.Utils.Debug;
+import vf.Versions;
 
 namespace VF::LuaExports {
 
@@ -59,6 +60,25 @@ VFByteSlice vf_proto_descriptor() {
       .data = reinterpret_cast<const char*>(VF_PROTO_DESCRIPTOR),
       .len = VF_PROTO_DESCRIPTOR_SIZE,
   };
+}
+
+VFByteSlice vf_versions() {
+  static std::string storage;
+  return guarded(storage, [] {
+    vf::Versions msg;
+    msg.set_release(VIMF_VERSION);
+    msg.set_journal_format(JOURNAL_FORMAT);
+    msg.set_samples_format(SAMPLES_FORMAT);
+    msg.set_rollup_format(ROLLUP_FORMAT);
+    msg.set_session_log_format(SESSION_LOG_FORMAT);
+    msg.set_scoring_version(SCORING_VERSION);
+    msg.set_journal_schema(JOURNAL_SCHEMA);
+    msg.set_samples_schema(SAMPLES_SCHEMA);
+    msg.set_rollup_schema(ROLLUP_SCHEMA);
+    msg.set_session_log_schema(SESSION_LOG_SCHEMA);
+    msg.set_scoring_signature(SCORING_SIGNATURE);
+    return proto(msg);
+  });
 }
 
 VFByteSlice vf_enums() {

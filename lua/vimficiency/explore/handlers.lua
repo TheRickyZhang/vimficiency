@@ -25,9 +25,7 @@ local function refresh_key_buffer(view)
 end
 
 local function mode_is_insert()
-  local mode = v.nvim_get_mode().mode
-  local first = mode:sub(1, 1)
-  return first == "i" or first == "R"
+  return util.is_insert_mode(v.nvim_get_mode().mode)
 end
 
 local function lines_equal(a, b)
@@ -71,8 +69,7 @@ local function check_background_invariants(view, context)
   local live_cursor = v.nvim_win_get_cursor(view.scratch.win)
   local live_row, live_col = live_cursor[1] - 1, live_cursor[2]
   local mode = v.nvim_get_mode().mode
-  local first = mode:sub(1, 1)
-  local insert_like = first == "i" or first == "R"
+  local insert_like = util.is_insert_mode(mode)
   local phase_kind = view.state.phase.kind
   local violations = {}
 

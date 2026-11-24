@@ -17,11 +17,11 @@ end
 
 --- The keys pressed for an atom, from what Neovim read as typed, when some of
 --- it was fed by a plugin rather than pressed.
----@param inputs { keys: string, fed: boolean }[]  in order, key notation
----@return string
+---@param inputs { keys: string, fed: boolean, insert: boolean }[]  in order, key notation
+---@return { typed: string, typed_insert: string }  # `vf.session.TypedKeys`
 function M.typed_keys(inputs)
   return core.call(lib.vf_typed_keys, "vf.session.TypedKeysRequest",
-    { inputs = inputs }, "vf.Text").text
+    { inputs = inputs }, "vf.session.TypedKeys")
 end
 
 ---@param start_row integer

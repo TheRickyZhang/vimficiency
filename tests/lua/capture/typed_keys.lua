@@ -12,7 +12,7 @@ local function case(parts, expected)
   for i, part in ipairs(parts) do
     inputs[i] = type(part) == "table" and { keys = part.fed, fed = true } or { keys = part, fed = false }
   end
-  assert_eq(ffi_session.typed_keys(inputs), expected, vim.inspect(parts))
+  assert_eq(ffi_session.typed_keys(inputs).typed, expected, vim.inspect(parts))
 end
 
 test("typed_keys: reads alone are the pressed keys", function()
@@ -41,4 +41,18 @@ end)
 
 test("typed_keys: fed keys match whole notation tokens", function()
   case({ "c", { fed = "<Esc>" }, "<Esc>", "é", { fed = "é" }, "é" }, "cé")
+end)
+
+test("typed_keys: the insert text is told apart", function()
+  -- `c` triggers which-key, which feeds back the `w` it read; `x` is typed into
+  -- the insert session that opens and `<Esc>` leaves it.
+  local pressed = ffi_session.typed_keys({
+    { keys = "c", fed = false, insert = false },
+    { keys = "w", fed = false, insert = false },
+    { keys = "w", fed = true, insert = false },
+    { keys = "w", fed = false, insert = false },
+    { keys = "x", fed = false, insert = true },
+    { keys = "<Esc>", fed = false, insert = false },
+  })
+  assert_eq(pressed, { typed = "cwx<Esc>", typed_insert = "x" })
 end)

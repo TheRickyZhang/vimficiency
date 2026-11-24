@@ -93,6 +93,7 @@ local REQUIRED_FIELDS = {
 local OPTIONAL_FIELDS = {
   { key = "commands",      kind = "table" },
   { key = "user_typed",    kind = "string" },
+  { key = "user_typed_insert", kind = "string" },
   { key = "analyze_ms",    kind = "number" },
   { key = "optimizer_overrides", kind = "string" },
   { key = "results_calculated",  kind = "number" },

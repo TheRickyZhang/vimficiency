@@ -1,3 +1,5 @@
+local util = require("vimficiency.util")
+
 local v = vim.api
 local cmd = vim.cmd
 local max = math.max
@@ -131,10 +133,7 @@ function M.states(tokens, lines, row, col, should_cancel, on_done)
       if not v.nvim_win_is_valid(probe_win) then return end
       v.nvim_set_current_win(probe_win)
       local mode_flags = "n"
-      local curr_mode = v.nvim_get_mode().mode
-      local first = curr_mode:sub(1, 1)
-      local insert_like = first == "i" or first == "R"
-      if not insert_like and not enters_modal_state(token) then
+      if not util.is_insert_mode(v.nvim_get_mode().mode) and not enters_modal_state(token) then
         mode_flags = "nx"
       end
       v.nvim_feedkeys(keys, mode_flags, false)

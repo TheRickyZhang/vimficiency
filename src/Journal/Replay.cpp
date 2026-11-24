@@ -6,6 +6,7 @@ module vf.Journal.Replay;
 import std.compat;
 import vf.LuaExports.RecordFile;
 import vf.Types.Lines;
+import vf.Versions;
 
 using namespace std;
 
@@ -98,7 +99,7 @@ bool Replay::next(Event& out) {
   while (nextRecord(rest, bytes) && record.ParseFromArray(bytes.data(), bytes.size())) {
     switch (record.body_case()) {
       case vf::journal::Record::kHeader:
-        if (record.header().version() != FORMAT_VERSION) {
+        if (record.header().version() != JOURNAL_FORMAT) {
           rest = {};
           return false;
         }
@@ -132,6 +133,8 @@ bool Replay::next(Event& out) {
         out.keys = atom.keys();
         out.atomKind = atom.kind();
         out.typed = atom.typed();
+        out.typedInsert = atom.typed_insert();
+        out.typedInsertKnown = atom.has_typed_insert();
         out.decision = decisionOf(atom.decision());
         out.lossy = atom.lossy();
         out.normalMode = atom.mode() == "n";

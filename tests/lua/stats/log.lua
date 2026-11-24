@@ -4,6 +4,7 @@
 local config = require("vimficiency.config")
 local ffi_core = require("vimficiency.ffi.core")
 local ffi_stats = require("vimficiency.ffi.stats")
+local ffi_versions = require("vimficiency.ffi.versions")
 local journal = require("vimficiency.capture.journal")
 local sampling = require("vimficiency.stats.sampling")
 local stats = require("vimficiency.stats")
@@ -38,24 +39,25 @@ test("stats.log: sessions round-trip under the current stamp", function()
   assert_eq(sessions.groups, 1)
   assert_eq(sessions.sessions, 2)
   assert_true(sessions.current)
-  assert_true(sessions.label:find(ffi_core.version_string(), 1, true) == 1, sessions.label)
+  local prefix = "scoring " .. ffi_versions.versions().scoring_version .. "·"
+  assert_true(sessions.label:find(prefix, 1, true) == 1, sessions.label)
 
-  local first = records()[2].session
+  local first = records()[3].session
   assert_eq(first.user_seq, "dw")
   assert_eq(first.best_seq, "dw")
   assert_eq(first.outcome, "scored")
   assert_eq(first.kind, "mark")
   assert_eq(first.commands, { { keys = "dw", kind = "operator" } })
-  assert_eq(records()[3].session.finished_wall_epoch, 20)
+  assert_eq(records()[4].session.finished_wall_epoch, 20)
 end)
 
-test("stats.log: a stamp is written once, before its first session", function()
+test("stats.log: the header comes first, then a stamp once, before its first session", function()
   h.use_temp_data_home()
   finish("a", 1)
   finish("b", 2)
   local bodies = {}
   for _, r in ipairs(records()) do bodies[#bodies + 1] = r.body end
-  assert_eq(bodies, { "stamp", "session", "session" })
+  assert_eq(bodies, { "header", "stamp", "session", "session" })
 end)
 
 test("stats.log: another stamp's sessions form their own group", function()
@@ -123,6 +125,43 @@ test("stats.log: a row's drill filter lists its sessions through ffi.stats.runs"
   assert_eq(list.runs[1].user_keys, "de")
   assert_eq(list.runs[1].outcome, "scored")
   assert_eq(list.runs[2].wall_epoch, now - 60)
+end)
+
+---@param user_typed_insert string|nil
+---@return VF.Stats.CommandSummary
+local function commands_after_ten_inserts(user_typed_insert)
+  h.use_temp_data_home()
+  for epoch = 1, 10 do
+    stats_log.append("mark", h.finished_result("if()<C-g>U<Left><BS><Esc>", {
+      user_cost = 3.0,
+      finished_wall_epoch = epoch,
+      commands = { { keys = "if()<C-g>U<Left><BS><Esc>", kind = "insert" } },
+      user_typed_insert = user_typed_insert,
+      optimal_results = { { seq = "if)<Esc>", cost = 1.0 } },
+    }))
+  end
+  return stats.summary({ shown = 1, weight = "effort", filter = {}, charted_size = 0 }).commands
+end
+
+test("stats.log: a session's insert text is the keys pressed in it, not the keys that ran", function()
+  local commands = commands_after_ten_inserts("f(<BS>")
+  assert_eq(commands.user_typed_chars, 20)
+  assert_eq(commands.optimizer_typed_chars, 20)
+  assert_eq(#commands.more, 1)
+  assert_eq(commands.more[1].text, "<BS>")
+  assert_eq(commands.more[1].user, 10)
+end)
+
+test("stats.log: pressing nothing in Insert mode still counts the optimizer's insert text", function()
+  local commands = commands_after_ten_inserts("")
+  assert_eq(commands.user_typed_chars, 0)
+  assert_eq(commands.optimizer_typed_chars, 20)
+end)
+
+test("stats.log: a session without pressed insert keys counts no insert text", function()
+  local commands = commands_after_ten_inserts(nil)
+  assert_eq(commands.user_typed_chars, 0)
+  assert_eq(commands.optimizer_typed_chars, 0)
 end)
 
 test("stats.log: the lowest-cost result is the best, and beating it still scores", function()

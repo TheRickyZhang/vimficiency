@@ -150,7 +150,7 @@ release-active `CHECK` macro.
   `CHECK` runs at the end of `rankNavFrontier`.
 - **CompositionFrontier** — one direct edit-bearing token valid from the
   current cursor:
-  - Pure-insertion shortcut: `i / a / I / A / o` when the cursor lies
+  - Pure-insertion shortcut: `i / a / I / A / o / O` when the cursor lies
     inside the strategy's insertion column range.
   - Bracket/quote text-object structural: `di" / da{ / ci( / ca[ / ...`
     when the cursor is at the enumerated `(line, col)` of a visible

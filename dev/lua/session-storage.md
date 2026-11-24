@@ -48,6 +48,8 @@ Bump `FORMAT_VERSION` on any change that old files cannot satisfy. All fields
 are required except these:
 - `analyze_ms`, debug-only.
 - `user_typed`, the pressed keys behind `user_cost` (`user_seq` is what ran).
+- `user_typed_insert`, the insert text in `user_typed` (`atom.typed_insert`,
+  see `atom-stream.md`). The session log copies it as `typed_insert`.
 - `optimizer_overrides` and `results_calculated`, which complete the replayable
   `VF.SearchRequest` and are absent from files saved before 0.3.0.
 - `commands`, the `{keys, kind}` atoms `user_seq` concatenates, and `unbeaten`,
@@ -65,15 +67,19 @@ its log record always agree.
 `sessions.vfs` is a `vf.stats.SessionLog` (`src/LuaExports/proto/stats.proto`),
 appended through `vf_append_session` and read only by `vf_stats_summary` and
 `vf_stats_runs` (`src/Stats/Summary.cpp`). Each session is logged under the stamp it was scored
-with: the plugin version plus every setting a score depends on
-(`stats_log.stamp()`, which the journal sampler sends too).
+with: `SCORING_VERSION` (`src/Versions.cppm`) plus every setting a score depends on
+(`stats_log.stamp()`, which the journal sampler sends too). A release that
+leaves scoring alone keeps the stamp, so its history stays comparable.
 
+- A new log opens with a `header` record holding `SESSION_LOG_FORMAT`
+  (`src/Versions.cppm`); a log without one is format 1. A newer format fails
+  both the summary and the append, rather than being misread.
 - A record carries the stamp's id, an FNV-1a hash of the serialized stamp. The
   full stamp is written once, before the first session under it, so concurrent
   Neovims need no ordering. A duplicate stamp record from a race is harmless.
 - Lua never sees the id (LuaJIT has no 64-bit integers). The summary groups
   sessions by stamp, the current stamp's group first, and reduces one group
-  (`shown_group`), labelled with its version and a short id.
+  (`shown_group`), labelled `scoring <N>·<id>` (`older·<id>` for stamps from before `scoring_version`).
 - Sessions are never rescored: they keep no buffer text. Stats show one group at
   a time, so scores made under different stamps never mix.
 - The unstamped v1 `sessions.jsonl` is moved to `legacy/sessions.v1.jsonl` on
@@ -97,6 +103,9 @@ the weight, not a filter.
   an insert split into its entry command, editing keys such as `<BS>`, and a
   typed-character count. `ce`/`cw` and `cE`/`cW` share a row. They cover scored
   sessions and the journal runs of the charted size.
+- The user's insert text is counted from `typed_insert` (`Stats::countInsertKeys`),
+  not from the commands, whose keys also hold what mappings typed. A session or
+  run without `typed_insert` counts no insert text on either side.
 
 Both exports narrow by one `vf.stats.Filter` (`src/Stats/Runs.cppm` applies it)
 and read the same scope, so a row's `drill` filter lists exactly the runs it

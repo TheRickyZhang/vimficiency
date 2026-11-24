@@ -4,6 +4,7 @@ import std.compat;
 import vf.tests.Unit.Explore.TestHelpers;
 import vf.Optimizer.CompositionOptimizer.CompositionStrategies;
 import vf.Optimizer.DiffPlanner.DiffState;
+import vf.tests.Utils.NeovimOracle;
 
 using namespace std;
 
@@ -20,6 +21,33 @@ struct Case {
 };
 
 class InsertTypedSequenceTest : public ExploreViewTest {};
+
+TEST_F(InsertTypedSequenceTest, OpenAboveContinuationClearsCopiedIndent) {
+  const Lines initial{"left", "  right"};
+  const Lines goal{"left", "payload", "  right"};
+  const CursorPos start{1, 2};
+  NeovimOracle oracle;
+  for (bool snapshot : {false, true}) {
+    SCOPED_TRACE(snapshot ? "snapshot" : "applyEdit");
+    auto view = makeView(initial, start, goal, {1, 6});
+    const auto recommendations = view.recommendations(100);
+    ASSERT_TRUE(ranges::any_of(recommendations, [](const Suggestion& s) {
+      return s.token == "O";
+    }));
+    const auto accepted = snapshot
+        ? view.acceptSnapshot(Lines{"left", "  ", "  right"}, {1, 2}, "O", true)
+        : view.applyEdit("O");
+    ASSERT_TRUE(accepted.has_value());
+    const auto continuations = view.recommendations(1);
+    ASSERT_EQ(continuations.size(), 1u);
+    const string tail = string(string_view(continuations[0].token)) + "<Esc>";
+    const auto replay = oracle.simulate(initial, start.line, start.col, "O" + tail);
+    EXPECT_EQ(replay.lines, goal);
+    EXPECT_EQ(CursorPos(replay.row, replay.col), continuations[0].landingPos);
+    EXPECT_TRUE(view.acceptInsertExit(replay.lines, {replay.row, replay.col}, tail).has_value());
+    EXPECT_TRUE(view.isCompleted());
+  }
+}
 
 TEST_F(InsertTypedSequenceTest, MatchesCompositionStrategies) {
   const vector<Case> cases = {

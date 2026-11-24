@@ -15,9 +15,10 @@ local atom_stream = require("vimficiency.capture.atom_stream")
 local buffer_history = require("vimficiency.capture.buffer_history")
 local config = require("vimficiency.config")
 local ffi_core = require("vimficiency.ffi.core")
+local ffi_versions = require("vimficiency.ffi.versions")
 local util = require("vimficiency.util")
 
-local FORMAT_VERSION = 3
+local JOURNAL_FORMAT = ffi_versions.versions().journal_format
 local LISTENER_NAME = "journal"
 local AUGROUP = "VimficiencyJournal"
 
@@ -161,6 +162,7 @@ local function listener(atom, decision)
     keys = atom.keys,
     kind = atom.kind,
     typed = atom.typed,
+    typed_insert = atom.typed_insert,
     decision = decision,
     lossy = atom.lossy,
     abort_reason = atom.abort_reason,
@@ -182,7 +184,7 @@ function M.start()
 
   fh, file_path, started_mono_ns = handle, path, vim.uv.hrtime()
   since_snapshot = {}
-  write("header", { version = FORMAT_VERSION, started_wall_epoch = os.time() })
+  write("header", { version = JOURNAL_FORMAT, started_wall_epoch = os.time() })
 
   buffer_history.set_observer(observer)
   atom_stream.add_listener(LISTENER_NAME, listener)

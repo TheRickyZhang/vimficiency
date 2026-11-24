@@ -86,6 +86,8 @@ void WindowCutter::closeGroup(vector<Window>& out) {
         window.commands.push_back({event.keys, event.atomKind});
         window.keys += event.keys;
         window.typed += event.typed;
+        window.typedInsert += event.typedInsert;
+        window.typedInsertKnown &= event.typedInsertKnown;
         window.lossy |= event.lossy;
       }
     }

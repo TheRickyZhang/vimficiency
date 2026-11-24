@@ -7,6 +7,7 @@ import vf.Optimizer.DiffPlanner.DiffState;
 import vf.Optimizer.OptimizerParamOverrides;
 import vf.Optimizer.Result;
 import vf.Optimizer.SearchControl;
+import vf.Optimizer.SearchStats;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
 import vf.Types.NavContext;
@@ -57,6 +58,7 @@ struct AnalyzeOutput {
   // The planner's regions the search ran against; empty for pure navigation.
   std::vector<DiffState> diffs;
   double userCost = 0;
+  SearchStopReason stopReason = SearchStopReason::Unknown;
   // No result, though the search drained its queue and dropped states only
   // for exceeding exploreFactor × the user's effort: the user's keys beat every
   // modeled sequence. A drained search with no such drops is a model gap instead.

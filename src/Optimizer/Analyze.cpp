@@ -125,10 +125,11 @@ AnalyzeOutput analyze(const SearchInputs& in, int resultsCalculated,
                                   .withMaxResults(resultsCalculated)
                                   .withMaxResultsPerEndPos(resultsCalculated));
 
-    const vector<LandingResult> navResults =
+    const LandingNavResult navigated =
         opt.optimize(in.initialLines, in.initialPos, in.goalPos, navParams,
-                     in.userSeq, in.boundary, in.navContext, control)
-            .getResults();
+                     in.userSeq, in.boundary, in.navContext, control);
+    const vector<LandingResult>& navResults = navigated.getResults();
+    out.stopReason = navigated.getStats().stopReason();
 
     // NavOptimizer returns LandingResult (with goalPos); analyze only surfaces
     // (sequence, cost), so down-convert to Result for shared output.
@@ -148,6 +149,7 @@ AnalyzeOutput analyze(const SearchInputs& in, int resultsCalculated,
     out.results = composed.getResults();
     out.diffs = composed.getDiffs();
     const CompositionSearchStats& stats = composed.getStats();
+    out.stopReason = stats.stopReason();
     out.unbeaten = out.results.empty() &&
                    stats.stopReason() == SearchStopReason::FullyExplored &&
                    stats.statesOverEffortCap() > 0;

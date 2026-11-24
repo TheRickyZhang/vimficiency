@@ -111,6 +111,25 @@ reads are the answer. Otherwise `logic::typedKeys` cancels each read against
 the next fed key. A read that doesn't match means the fed keys were consumed
 unreported, so the rest are dropped.
 
+`atom.typed_insert` is the insert text in `typed`: each key pressed in an
+insert that did not end it. A press can be text when it is read in Insert,
+Replace or Select mode (a character typed over a selection starts an insert).
+It is text when Neovim is still inserting once the press has run: Insert or
+Replace mode, or the one command `<C-o>` lends.
+
+The mode after a press is taken at whichever comes first: Neovim going idle
+(`vim.schedule` from the read), the next read, or dispatch. So whichever press
+ends an insert is left out (`<Esc>`, `<C-c>`, a `jk` mapping) and no key is
+named. An exit no press caused (a timer calling `stopinsert`) comes after the
+idle check, so the press before it stays.
+
+Inside an insert session `keys` cannot tell a pressed key from one a mapping
+typed (autopairs runs `()<C-g>U<Left>` for `(`), so the command tables count
+the user's insert text by these (`dev/decisions.md`). It shares `typed`'s gaps
+below. Neovim also reads the keys of one Insert-mode command like any others,
+so each counts on its own: the `<C-\>` of `<C-\><C-n>` stays, and a register
+name after `<C-r>` is a typed character.
+
 The wrappers are installed on the first listener and never removed, since
 unwrapping could drop a later plugin's wrapper around ours. They only record
 while the autocmd exists. Under the real config (flash, mini.ai, mini.pairs,
@@ -128,8 +147,10 @@ Known gaps, all Neovim's:
   `yw`). Neovim clears `on_key`'s buffer inside the nested `getchar()`.
 - Vimscript `getchar()`/`feedkeys()` callers, and Lua that saved the function
   before the wrappers went in, are not seen.
-- Keys that end in no atom (an operator cancelled with `<Esc>`) count toward
-  the next one. Terminal-mode keys are ignored, since nothing would bound them.
+- Keys that end in no atom count toward the next one: an operator cancelled
+  with `<Esc>`, or a character typed over a Select-mode selection together with
+  the insert it starts. Terminal-mode keys are ignored, since nothing would
+  bound them.
 
 ## Deferred delivery
 
@@ -191,7 +212,9 @@ have to read it. Rows and line indexes are 0-indexed.
 Every record has `ms` (monotonic milliseconds since the header) and `tick`.
 
 - `header` — `version`, `started_wall_epoch`. A second header in one file is a
-  restart: discard all buffer state.
+  restart: discard all buffer state. `version` is `JOURNAL_FORMAT`
+  (`src/Versions.cppm`), which Lua reads through `vf_versions`; `Replay` stops
+  at a header of any other version.
 - `snapshot` — `buf`, `bufname`, `filetype`, `lines` (the whole text).
 - `delta` — `buf`, `first`, `old_count`, `lines`: replace `old_count` lines at
   `first` with `lines`. Applies to the text built so far for `buf`.
@@ -199,7 +222,8 @@ Every record has `ms` (monotonic milliseconds since the header) and `tick`.
   for, taken in Normal mode once the event queue drains. Written when a window
   or buffer is entered, or the cursor or text changed with no atom behind it.
 - `atom` — `buf`, `win`, `keys`, `kind` (empty in older journals), `typed`,
-  `decision`, `lossy`, `abort_reason` (abort only), `mode`, and the post-atom `view`.
+  `typed_insert` (unset in older journals), `decision`, `lossy`, `abort_reason`
+  (abort only), `mode`, and the post-atom `view`.
 
 The text at an atom is the snapshot plus every delta written before it. Records
 written in one drain of the event queue share a `tick`: deferred delivery means
@@ -238,13 +262,15 @@ window's pressed keys against the best sequence found. Nothing is replayed,
 since the journal holds the real state at both ends.
 
 Results go to `<journal>.samples`, a `vf.journal.SampleFile` appended the same
-way. Each sample keeps the window's commands (`{keys, kind}`) and the best
-sequence found. The journal's last tick is never cut, which keeps the windows of
+way. Each sample keeps the window's commands (`{keys, kind}`), its
+`typed_insert` and the best sequence found. A window with an atom from before
+`typed_insert` existed leaves it unset, and the command tables then count no
+insert text for that run on either side. The journal's last tick is never cut, which keeps the windows of
 a growing journal a prefix of its later windows and lets a rerun resume by count.
 
 A samples file is current when its stored `SampleParams` equal the request's,
 completed by `stampSampleParams` (`src/LuaExports/Samples.cppm`): the stamp of
-`dev/lua/session-storage.md` § The session log, plus `SAMPLES_FORMAT`. Bump
+`dev/lua/session-storage.md` § The session log, plus `SAMPLES_FORMAT` (`src/Versions.cppm`). Bump
 that when a sample gains content, so older files are redone. The sampler
 recomputes a file that is not current. `:Vimfy stats` reads samples through
 `vf_stats_summary` and `vf_stats_runs` (`src/Stats/`), which skip such files
@@ -268,6 +294,8 @@ were scored under and are never rescored: under other params they only count as
   a pass that dies between the append and the deletion is finished by the next,
   and the summary skips the journal meanwhile.
 - `keep_days` is not a param, so changing it rescores nothing.
+- A rollup carries `ROLLUP_FORMAT` (0, from before the field, is format 1);
+  readers skip a rollup of a newer format.
 
 Windows are scored like sessions (`dev/lua/session-storage.md` § The session
 log). Windows that end where they started score a best of 0. `unbeaten` windows

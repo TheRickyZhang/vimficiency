@@ -107,10 +107,12 @@ VFByteSlice vf_typed_keys(const char* request, size_t request_len) {
         vector<logic::KeyInput> inputs;
         inputs.reserve(req.inputs_size());
         for (const auto& input : req.inputs()) {
-          inputs.push_back({.keys = input.keys(), .fed = input.fed()});
+          inputs.push_back({.keys = input.keys(), .fed = input.fed(), .insert = input.insert()});
         }
-        vf::Text msg;
-        msg.set_text(logic::typedKeys(inputs));
+        const logic::TypedKeys keys = logic::typedKeys(inputs);
+        vf::session::TypedKeys msg;
+        msg.set_typed(keys.typed);
+        msg.set_typed_insert(keys.typedInsert);
         return proto(msg);
       });
 }

@@ -170,12 +170,21 @@ to deeper docs when needed.
 - Wrapping global functions is deliberate: flash, mini.ai, mini.surround and which-key all look up `vim.fn.getcharstr` at call time.
 - Sequences shown to the user are still `keys`. The optimizer suggesting a user's own mappings stays open (`dev/architecture/todo.md` item 7).
 
+## Insert text is counted by the keys pressed in Insert mode (2026-11-22)
+- The command tables read commands from `keys`: it is the only stream with command structure, and it shares the optimizer's vocabulary. Inside an insert session `keys` also holds what mappings typed (autopairs runs `()<C-g>U<Left>` for `(`), which showed up as commands the user never pressed.
+- So the user's insert text (typed characters and keys such as `<BS>`) is counted from `typed_insert`, the keys pressed in an insert that did not end it. Capture takes both from the mode before and after each press; nothing downstream knows about any plugin.
+- The press that ends an insert is found by the mode after it, not by its key (2026-11-23). Matching `<Esc>` counted a `jk` exit as two typed characters and `<C-c>` as a command. An `InsertLeave` or `ModeChanged` autocmd was rejected: a mapping that leaves Insert mode and returns would count as an exit.
+- Naming `<C-\><C-n>` to drop its first key was rejected for the same reason as `<Esc>`. Neovim gives no sign that a read is the second key of a command, and guessing from timing fails for keys queued together.
+- Counting everything from `typed` was rejected: it has no command structure, so a mapped key parses as the builtin it shadows. Filtering known expansions out of `keys` was rejected as one patch per plugin.
+- Sessions and journal atoms recorded before `typed_insert` count no insert text on either side, instead of keeping the old counting beside the new.
+
 ## An empty search can mean the user won (2026-11-21)
 - With no whole-buffer fallback, a search can end empty. When the queue drained and the only drops were states over `exploreFactor` × user effort, no modeled sequence comes close to the user's keys (typically `p`, `u`, `:s`). That is `unbeaten`: scored 100 and counted apart, in sessions and journal samples alike.
 - An empty search with no effort-cap drops is a model gap (such as the pure-newline deletion) and counts as failed. A gap masked by cap drops would be misread as unbeaten; telling them apart needs an uncapped rerun, which is not worth its cost.
 
 ## Scores carry a stamp; only equal stamps compare (2026-11-21)
-- A stamp is the plugin version plus every scoring setting. It replaced `SAMPLER_VERSION`: a separate scoring version would answer the same question as the plugin version and depend on someone remembering to bump it. File-format versions stay separate, since old files must stay readable whatever the plugin version.
+- A stamp is `SCORING_VERSION` plus every scoring setting. File-format versions stay separate, since old files must stay readable whatever the scoring.
+- The stamp first carried the plugin version, to avoid relying on a manual bump (2026-11-23: reversed). Every UI-only release then split the stats history. The `ScoringSignature` unit test now catches a missed bump by hashing the best costs of a fixed reference set.
 - Journal samples are rescored under a new stamp; sessions cannot be (no buffer text), so stats show one stamp's sessions at a time instead of hiding older ones.
 - Session records carry a hashed stamp id, with the full stamp written once per log. A stamp record per change was rejected: with several Neovims appending, the last stamp written may be another process's.
 - Sessions and journal runs share one score, `Σ w·min(best/user, 1) / Σ w` with `w` the user's effort by default, reduced in C++ (`src/Stats/`). It replaced the sessions' geometric mean, which let many tiny sessions outweigh the long ones and disagreed with the journal's ratio of sums.

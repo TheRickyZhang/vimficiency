@@ -16,8 +16,6 @@ struct BufferText {
 
 export namespace Journal {
 
-inline constexpr int FORMAT_VERSION = 3;
-
 enum class EventKind : uint8_t {
   Start,   // a journal header: nothing before it carries over
   Resync,
@@ -60,6 +58,9 @@ struct Event {
   // CmdAtom's `type`; empty in journals older than it.
   std::string atomKind;
   std::string typed;
+  // Of `typed`, the keys read in Insert mode; unknown in journals older than it.
+  std::string typedInsert;
+  bool typedInsertKnown = false;
   Decision decision = Decision::Record;
   bool lossy = false;
 };

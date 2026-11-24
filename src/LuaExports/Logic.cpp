@@ -5,6 +5,7 @@ import vf.LuaExports.Common;
 import vf.LuaExports.Payload;
 import vf.Optimizer.OptimizerParamOverrides;
 import vf.Interpreter.SequenceParser;
+import vf.Types.KeyNotation;
 
 using namespace std;
 
@@ -71,32 +72,11 @@ string buildKeySequence(span<const KeyEvent> events) {
   return out;
 }
 
-namespace {
-
-// `<...>` names and single characters.
-vector<string_view> notationTokens(string_view keys) {
-  vector<string_view> tokens;
-  while (!keys.empty()) {
-    size_t size = 1;
-    if (keys.front() == '<') {
-      const size_t close = keys.find_first_of("<>", 1);
-      if (close != string_view::npos && keys[close] == '>') size = close + 1;
-    } else {
-      while (size < keys.size() && (keys[size] & 0xC0) == 0x80) size++;
-    }
-    tokens.push_back(keys.substr(0, size));
-    keys.remove_prefix(size);
-  }
-  return tokens;
-}
-
-}  // namespace
-
-string typedKeys(span<const KeyInput> inputs) {
+TypedKeys typedKeys(span<const KeyInput> inputs) {
   deque<string_view> fed;
-  string out;
+  TypedKeys out;
   for (const KeyInput& input : inputs) {
-    for (const string_view token : notationTokens(input.keys)) {
+    for (const string_view token : splitKeys(input.keys)) {
       if (input.fed) {
         fed.push_back(token);
       } else if (!fed.empty() && fed.front() == token) {
@@ -105,7 +85,8 @@ string typedKeys(span<const KeyInput> inputs) {
         // Fed keys sit at the front of typeahead, so a read that is not the
         // next one means the rest were consumed without being reported.
         fed.clear();
-        out += token;
+        out.typed += token;
+        if (input.insert) out.typedInsert += token;
       }
     }
   }

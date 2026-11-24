@@ -39,6 +39,7 @@ local util = require("vimficiency.util")
 ---@field keys         string        # Replayable post-mapping sequence (notation); "" when unavailable. Feed this to the simulator/optimizer.
 ---@field kind         string        # The event's `type`: operator, insert, motion, normal, visual, jump, scroll, excmd, mouse or mapping.
 ---@field typed        string        # Physical keys pressed since the previous atom (notation). Cost the user by these; never replay them. Atoms delivered together cannot be told apart, so an earlier one carries the keys of a later one, which gets "".
+---@field typed_insert string        # Of `typed`, the insert text: keys pressed in an insert that did not end it. `keys` also holds what mappings typed there.
 ---@field buf          integer       # Buffer the atom fired for (`ev.buf`).
 ---@field win          integer       # Focused window at atom time.
 ---@field lossy        boolean       # `keys` is the typed lhs of a Lua-callback mapping (lossy_mappings ~= "drop"); replay may diverge.
@@ -135,23 +136,68 @@ local on_key_ns = vim.api.nvim_create_namespace("vimfy_atom_typed")
 -- What Neovim read as typed since the last atom, in order: `vim.on_key`'s
 -- `typed`, plus what plugins read themselves with getchar(), which on_key never
 -- sees. Keys a plugin fed as typed are read again, so they are kept as `fed`.
----@type { keys: string, fed: boolean }[]
+-- `insert` is whether a press is insert text (`VF.Atom.typed_insert`).
+---@alias VF.AtomStream.Input { keys: string, fed: boolean, insert: boolean }
+---@type VF.AtomStream.Input[]
 local inputs = {}
 local any_fed = false
+-- The latest press that may be insert text, until the mode after it is seen.
+---@type VF.AtomStream.Input|nil
+local unsettled = nil
 -- Whether the latest mapping ran in Visual mode. Atoms are deferred; `on_key` is not.
 local last_mapping_in_visual = false
 
 local function reset_pressed()
-  inputs, any_fed = {}, false
+  inputs, any_fed, unsettled = {}, false, nil
 end
 
 ---@param raw string
 ---@param fed boolean
+---@return VF.AtomStream.Input|nil
 local function add_input(raw, fed)
   local keys = keynorm.without_mouse(keynorm.normalize(raw))
   if keys == "" then return end
-  inputs[#inputs + 1] = { keys = keys, fed = fed }
+  local input = { keys = keys, fed = fed, insert = false }
+  inputs[#inputs + 1] = input
   any_fed = any_fed or fed
+  return input
+end
+
+-- A key read here can become text: Insert, Replace, or Select, where a
+-- printable key replaces the selection and starts an insert.
+---@param mode string  `nvim_get_mode().mode`
+---@return boolean
+local function reads_text(mode)
+  local lead = mode:sub(1, 1)
+  return util.is_insert_mode(mode) or lead == "s" or lead == "S" or lead == "\19"
+end
+
+-- The insert has not ended: Insert, Replace, or the one command `<C-o>` lends.
+---@param mode string  `nvim_get_mode().mode`
+---@return boolean
+local function inserting(mode)
+  return util.is_insert_mode(mode) or mode:sub(1, 2) == "ni"
+end
+
+-- A press is insert text when Neovim is still inserting once it has run.
+local function settle()
+  if not unsettled then return end
+  unsettled.insert = inserting(vim.api.nvim_get_mode().mode)
+  unsettled = nil
+end
+
+---@param raw string
+---@param mode string  the mode Neovim read the key in
+local function add_pressed(raw, mode)
+  settle()
+  local input = add_input(raw, false)
+  if input and reads_text(mode) then
+    unsettled = input
+    -- Runs once the key is handled, so a later exit that no key caused is not
+    -- blamed on it. Nothing scheduled runs between keys queued together or
+    -- inside a command, which is what the other two `settle` calls are for.
+    vim.schedule(settle)
+  end
 end
 
 ---@param key string
@@ -164,7 +210,7 @@ local function on_key(key, typed)
     local lead = mode:sub(1, 1)
     last_mapping_in_visual = lead == "v" or lead == "V" or lead == "\22"
   end
-  if typed ~= "" then add_input(typed, false) end
+  if typed ~= "" then add_pressed(typed, mode) end
 end
 
 -- getchar(1) only peeks; getchar(0) returns 0 or "" when nothing is pending.
@@ -173,7 +219,7 @@ local function wrap_getchar(getchar)
     local ret = getchar(...)
     local expr = ...
     if autocmd_id and expr ~= 1 and expr ~= true and ret ~= 0 and ret ~= "" then
-      add_input(type(ret) == "number" and vim.fn.nr2char(ret) or ret, false)
+      add_pressed(type(ret) == "number" and vim.fn.nr2char(ret) or ret, vim.api.nvim_get_mode().mode)
     end
     return ret
   end
@@ -199,15 +245,24 @@ local function wrap_input_functions()
   vim.api.nvim_feedkeys = wrap_feedkeys(vim.api.nvim_feedkeys)
 end
 
---- The keys pressed for the atom being dispatched, and forgets them.
----@return string
+--- The keys pressed for the atom being dispatched and, of those, the insert
+--- text; forgets them.
+---@return string typed
+---@return string typed_insert
 local function take_pressed()
+  settle()
   local taken, fed = inputs, any_fed
   reset_pressed()
-  if fed then return ffi_session.typed_keys(taken) end
-  local parts = {}
-  for i, input in ipairs(taken) do parts[i] = input.keys end
-  return table.concat(parts)
+  if fed then
+    local pressed = ffi_session.typed_keys(taken)
+    return pressed.typed, pressed.typed_insert
+  end
+  local typed, typed_insert = {}, {}
+  for i, input in ipairs(taken) do
+    typed[i] = input.keys
+    if input.insert then typed_insert[#typed_insert + 1] = input.keys end
+  end
+  return table.concat(typed), table.concat(typed_insert)
 end
 
 local function dispatch(ev)
@@ -229,12 +284,14 @@ local function dispatch(ev)
     keys_norm = (d.count and d.count > 1 and tostring(d.count) or "") .. lhs_norm
   end
   local decision = classify(d.type, keys_raw, keys_norm, changed, moved)
+  local typed, typed_insert = take_pressed()
 
   ---@type VF.Atom
   local atom = {
     keys  = keys_norm,
     kind  = d.type,
-    typed = take_pressed(),
+    typed = typed,
+    typed_insert = typed_insert,
     buf   = ev.buf,
     win   = vim.api.nvim_get_current_win(),
     lossy = lossy,

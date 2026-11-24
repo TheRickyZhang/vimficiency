@@ -40,13 +40,14 @@ bool isHistoryCheckpoint(const State& state) {
 }
 
 std::string deriveInsertModeTypedText(const DiffState& diff,
-                                       const Lines& lines) {
+                                    const Lines& lines,
+                                    std::string_view autoindent) {
   if (diff.isPureDeletion()) return "";
 
   KeyedSequence ks = diff.isPureInsertion()
       ? CompositionStrategies::typedInsertion(diff, lines).typed
       : buildTypedCommands(
-            diff.insertedLines(), "",
+            diff.insertedLines(), autoindent,
             lines[diff.beginPos.line].substr(0, diff.beginPos.col),
             lines[diff.endPos.line].substr(diff.endPos.col));
 
@@ -62,12 +63,23 @@ bool containsInsertCursor(const Lines& lines, CursorPos pos) {
   return pos.col >= 0 && pos.col <= lines.getSize(pos.line);
 }
 
-std::optional<DiffState> insertionResidualBetween(
+std::optional<DiffState> insertResidualBetween(
     const Lines& from,
-    const Lines& to) {
+    const Lines& to,
+    std::optional<CursorPos> insertCursor = std::nullopt) {
   auto diff = DiffText::calculateContiguousResidualDiff(from, to);
-  if (!diff || !diff->isPureInsertion()) return std::nullopt;
-  return diff;
+  if (!diff) return std::nullopt;
+  if (diff->isPureInsertion()) return diff;
+  if (!insertCursor || diff->beginPos.line != diff->endPos.line ||
+      diff->endPos != *insertCursor || !containsInsertCursor(from, *insertCursor))
+    return std::nullopt;
+  const Line& line = from[insertCursor->line];
+  if (insertCursor->col != line.size() || leadingWhitespace(line).size() != line.size())
+    return std::nullopt;
+  const CursorPos begin(insertCursor->line, 0);
+  return DiffState(begin, diff->endPos, line,
+                   line.substr(0, diff->beginPos.col) + diff->insertedText,
+                   TransformBoundary(from, begin, diff->endPos));
 }
 
 DiffState deletionPrefixDiff(const DiffState& diff) {
@@ -393,18 +405,16 @@ vector<Suggestion> View::recommendInsert(int editIndex, int maxCount) const {
   assert(editIndex >= 0 && editIndex < totalEdits_ &&
          "Insert editIndex out of range");
 
-  // state_.lines is the pre-edit fencepost during Insert (afterEditCompleted
-  // hasn't run yet) unless the user entered Insert after a Normal-mode
-  // deletion prefix. In that case the physical buffer is already the
-  // deletion intermediate, so derive the typed tail from the residual diff.
+  // Mode entry can change the text, including copying an opened line's indent.
   const auto plannedEdit = plan_.plannedEditAt(editIndex);
-  auto currentResidual = insertionResidualBetween(
-      state_.lines, plannedEdit.postFencepost);
+  auto currentResidual = insertResidualBetween(
+      state_.lines, plannedEdit.postFencepost, state_.cursor);
   const DiffState& insertDiff = currentResidual
       ? *currentResidual
       : plannedEdit.diff;
   std::string typedText =
-      deriveInsertModeTypedText(insertDiff, state_.lines);
+      deriveInsertModeTypedText(insertDiff, state_.lines,
+                                currentResidual ? currentResidual->deletedText : "");
   if (typedText.empty()) return {};
 
   // Running effort is contextual across the accepted-sequence boundary.
@@ -418,8 +428,9 @@ vector<Suggestion> View::recommendInsert(int editIndex, int maxCount) const {
   Suggestion suggestion{
       .token = Token{typedText},
       .landingPos = currentResidual
-          ? CompositionStrategies::typedInsertion(insertDiff, state_.lines)
-                .exitCursor
+          ? (insertDiff.isPureInsertion()
+                 ? CompositionStrategies::typedInsertion(insertDiff, state_.lines).exitCursor
+                 : typedCommandsExitCursor(insertDiff.beginPos, insertDiff.insertedLines()))
           : plannedEdit.transformResult.getGoalPos(),
   };
   suggestion.literalText = insertDiff.insertedText;
@@ -436,7 +447,7 @@ bool View::hasExecutableEditStartAt(
   if (editIndex == totalEdits_) return false;
 
   const auto plannedEdit = plan_.plannedEditAt(editIndex);
-  auto currentResidual = insertionResidualBetween(
+  auto currentResidual = insertResidualBetween(
       lines, plannedEdit.postFencepost);
   if (currentResidual && currentResidual->isPureInsertion()) {
     return cursor == currentResidual->beginPos &&
@@ -453,7 +464,7 @@ vector<CursorPos> View::executableEditStartPositions(
   if (editIndex == totalEdits_) return {};
 
   const auto plannedEdit = plan_.plannedEditAt(editIndex);
-  auto currentResidual = insertionResidualBetween(
+  auto currentResidual = insertResidualBetween(
       lines, plannedEdit.postFencepost);
   if (currentResidual && currentResidual->isPureInsertion()) {
     return {currentResidual->beginPos};
@@ -706,11 +717,12 @@ Outcome View::acceptSnapshot(const Lines& liveLines, CursorPos liveCursor,
 
   if (hasPlannedEdit) {
     const auto plannedEdit = plan_.plannedEditAt(editIndex);
-    auto residualInsertion = insertionResidualBetween(
-        liveLines, plannedEdit.postFencepost);
+    auto residualInsertion = insertResidualBetween(
+        liveLines, plannedEdit.postFencepost,
+        insertMode ? std::optional(liveCursor) : std::nullopt);
 
     if (insertMode && liveLines == state_.lines && residualInsertion &&
-        liveCursor == residualInsertion->beginPos &&
+        liveCursor == residualInsertion->endPos &&
         containsInsertCursor(liveLines, liveCursor)) {
       State next = state_;
       next.cursor = liveCursor;
@@ -721,7 +733,7 @@ Outcome View::acceptSnapshot(const Lines& liveLines, CursorPos liveCursor,
     if (liveLines != plannedEdit.postFencepost &&
         residualInsertion) {
       const bool validInsertCursor =
-          liveCursor == residualInsertion->beginPos &&
+          liveCursor == residualInsertion->endPos &&
           containsInsertCursor(liveLines, liveCursor);
       const bool validDeleteCursor =
           std::holds_alternative<Transform>(state_.phase) &&

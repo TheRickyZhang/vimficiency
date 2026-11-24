@@ -14,6 +14,9 @@ struct JournalAtomOptions {
   // Empty: the keys were typed as they ran.
   std::string typed;
   std::string kind = "motion";
+  std::string typedInsert;
+  // False: an atom journaled before `typed_insert` existed.
+  bool insertTagged = true;
 };
 
 // Journal bytes as capture/journal.lua writes them: one single-record
@@ -74,6 +77,7 @@ public:
     atom->set_keys(keys);
     atom->set_kind(options.kind);
     atom->set_typed(options.typed.empty() ? keys : options.typed);
+    if (options.insertTagged) atom->set_typed_insert(options.typedInsert);
     atom->set_decision(options.decision);
     atom->set_lossy(options.lossy);
     atom->set_mode(options.mode);

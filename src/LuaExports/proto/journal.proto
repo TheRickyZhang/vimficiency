@@ -65,6 +65,12 @@ message Atom {
   // Physical keys pressed since the previous atom. Atoms delivered together
   // cannot be told apart, so an earlier one carries the keys of a later one.
   bytes typed = 9;
+  // Of `typed`, the insert text: keys pressed in an insert that did not end it.
+  // `keys` cannot tell them from what a mapping typed there. Unset in older
+  // journals.
+  optional bytes typed_insert = 12;
+  // `typed_insert` while it still held the press that left Insert mode.
+  reserved 11;
   Decision decision = 4;
   bool lossy = 5;
   bytes abort_reason = 6;
@@ -152,6 +158,8 @@ message Sample {
   repeated vf.stats.Command commands = 14;
   // Scored only.
   bytes best_seq = 15;
+  // The window's `Atom.typed_insert`s; unset when any of its atoms has none.
+  optional bytes typed_insert = 16;
 }
 
 message SampleRecord {
@@ -206,6 +214,8 @@ message Rollup {
   bytes journal = 1;
   SampleParams params = 2;
   repeated RollupEntry entries = 3;
+  // `ROLLUP_FORMAT`; 0 in rollups written before it, which are format 1.
+  int32 format = 4;
 }
 
 // `rollup.vfr` in the journal directory, appended like `File`.

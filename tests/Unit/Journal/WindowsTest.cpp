@@ -322,3 +322,25 @@ TEST(JournalWindowsTest, CarriesTheKeysPressedBesideTheKeysThatRan) {
   EXPECT_EQ(windows[0].keys, "3ll");
   EXPECT_EQ(windows[0].typed, "Ql");
 }
+
+TEST(JournalWindowsTest, CarriesTheKeysPressedInInsertMode) {
+  JournalBuilder j = opened();
+  j.next().atom("ia()<Left><Esc>", 0, 0, {.typed = "ia(<Esc>", .typedInsert = "a("});
+  moveRight(j, 2);
+
+  const vector<Window> windows = cut(j.bytes(), {2});
+  ASSERT_EQ(windows.size(), 1u);
+  EXPECT_TRUE(windows[0].typedInsertKnown);
+  EXPECT_EQ(windows[0].typedInsert, "a(");
+}
+
+TEST(JournalWindowsTest, AnAtomJournaledWithoutInsertKeysLeavesItsWindowWithout) {
+  JournalBuilder j = opened();
+  j.next().atom("l", 0, 1, {.insertTagged = false});
+  moveRight(j, 4, 1);
+
+  const vector<Window> windows = cut(j.bytes(), {2});
+  ASSERT_EQ(windows.size(), 2u);
+  EXPECT_FALSE(windows[0].typedInsertKnown);
+  EXPECT_TRUE(windows[1].typedInsertKnown);
+}

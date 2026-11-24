@@ -4,6 +4,7 @@
 
 import std.compat;
 import vf.Keyboard.ToKeys.MovementToKeys;
+import vf.Types.KeyNotation;
 
 using namespace std;
 
@@ -47,6 +48,18 @@ TEST(SequenceToKeysTest, KeyNotations) {
   EXPECT_EQ(tok.tokenize("<Esc>"), PhysicalKeys({Key::Key_Esc}));
   EXPECT_EQ(tok.tokenize("<Space>"), PhysicalKeys({Key::Key_Space}));
   EXPECT_EQ(tok.tokenize("<BS>"), PhysicalKeys({Key::Key_Backspace}));
+  // keytrans() names `|`, `\` and Ctrl-J.
+  EXPECT_EQ(tok.tokenize("<Bar>"), CHAR_TO_KEYS.at('|'));
+  EXPECT_EQ(tok.tokenize("<Bslash>"), CHAR_TO_KEYS.at('\\'));
+  EXPECT_EQ(tok.tokenize("<NL>"), PhysicalKeys({Key::Key_Ctrl, Key::Key_J}));
+}
+
+// A named character missing from the notations prices as the letters of its name.
+TEST(SequenceToKeysTest, EveryNamedCharacterIsANotation) {
+  const auto& tok = globalSequenceToKeys();
+  for (const CharName& named : CHAR_NAMES) {
+    EXPECT_NE(tok.tokenize(named.name), charwise(named.name)) << named.name;
+  }
 }
 
 TEST(SequenceToKeysTest, MixedSequences) {

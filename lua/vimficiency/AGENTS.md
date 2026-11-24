@@ -70,6 +70,7 @@ Subdirectories hold supporting modules for each domain:
 | `ffi/display.lua` | C++ sequence-display and session-report formatter wrappers. |
 | `ffi/explore.lua` | Explore-state and recommendation wrappers. |
 | `ffi/stats.lua` | Session log, stats summary, run list and single-run lookup. |
+| `ffi/versions.lua` | `vf_versions`: the library's release and its format and scoring versions (`src/Versions.cppm`). |
 
 ### `capture/` — observation and triggers
 
@@ -197,7 +198,7 @@ action, AFTER it runs, carrying the resolved post-mapping `keys`, the `lhs`
 that produced it, the count, and whether the buffer changed or the cursor
 moved. `atom_stream.lua` normalizes each event into a `VF.Atom`, adds the keys
 physically pressed for it (`typed`, from `vim.on_key` plus wrappers around
-`getchar`/`feedkeys`), classifies it
+`getchar`/`feedkeys`; `typed_insert` is the insert text among them), classifies it
 (record / skip / abort), and fans it out to named subscribers; buffer
 and window scoping is each subscriber's job. See `dev/lua/atom-stream.md` for
 the full design (admission policy, synthetic-count stripping, recall

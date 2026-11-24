@@ -42,11 +42,19 @@ message KeyInput {
   bytes keys = 1;
   // Fed by a plugin as if typed (`nvim_feedkeys` mode "t"); otherwise read as typed.
   bool fed = 2;
+  // Insert text: pressed in an insert without ending it.
+  bool insert = 3;
 }
 
 // What Neovim read as typed for one CmdAtom, in order. See `logic::typedKeys`.
 message TypedKeysRequest {
   repeated KeyInput inputs = 1;
+}
+
+message TypedKeys {
+  bytes typed = 1;
+  // Of `typed`, the insert text.
+  bytes typed_insert = 2;
 }
 
 message ManualEvictRequest {

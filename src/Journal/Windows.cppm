@@ -40,6 +40,9 @@ struct Window {
   std::vector<Command> commands;
   std::string keys;
   std::string typed;
+  // Of `typed`, the keys read in Insert mode; unknown once an atom has none.
+  std::string typedInsert;
+  bool typedInsertKnown = true;
   bool lossy = false;
 };
 

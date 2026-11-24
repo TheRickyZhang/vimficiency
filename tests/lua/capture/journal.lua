@@ -5,6 +5,7 @@ local journal        = require("vimficiency.capture.journal")
 local session_store  = require("vimficiency.session.store")
 local config         = require("vimficiency.config")
 local ffi_core       = require("vimficiency.ffi.core")
+local ffi_versions   = require("vimficiency.ffi.versions")
 local h              = require("_helpers")
 
 ---@param path string
@@ -60,7 +61,7 @@ local function with_journal(fn)
   journal.start()
   local path = assert(journal.path())
   local ok, err = pcall(fn, buf,
-    { keys = "x", kind = "operator", typed = "x", buf = buf, win = vim.api.nvim_get_current_win(), lossy = false })
+    { keys = "x", kind = "operator", typed = "x", typed_insert = "", buf = buf, win = vim.api.nvim_get_current_win(), lossy = false })
   journal.stop()
   vim.api.nvim_buf_delete(buf, { force = true })
   if not ok then error(err, 0) end
@@ -86,7 +87,7 @@ test("journal: snapshot plus deltas rebuild the text at every atom", function()
   end)
 
   assert_eq(records[1].body, "header")
-  assert_eq(records[1].header.version, 3)
+  assert_eq(records[1].header.version, ffi_versions.versions().journal_format)
   assert_eq(replay(records, buf_id, "atom"), expected)
 
   local decisions = {}
@@ -102,12 +103,14 @@ test("journal: an atom carries its keys, kind, mode and the cursor after it", fu
     atom.keys = "jl"
     atom.kind = "motion"
     atom.typed = "<Space>m"
+    atom.typed_insert = "x<BS>"
     journal._for_test.listener(atom, "record")
   end)
   local atom = records[#records].atom
   assert_eq(atom.keys, "jl")
   assert_eq(atom.kind, "motion")
   assert_eq(atom.typed, "<Space>m")
+  assert_eq(atom.typed_insert, "x<BS>")
   assert_eq(atom.mode, "n")
   assert_eq({ atom.view.row, atom.view.col }, { 1, 1 })
   assert_eq(atom.lossy, false)
@@ -201,7 +204,7 @@ test("journal: an atom delivered through the autocmd window is left out", functi
       local win = vim.api.nvim_get_current_win()
       assert_eq(vim.fn.win_gettype(win), "autocmd")
       journal._for_test.listener(
-        { keys = "x", kind = "operator", typed = "x", buf = hidden, win = win, lossy = false }, "record")
+        { keys = "x", kind = "operator", typed = "x", typed_insert = "", buf = hidden, win = win, lossy = false }, "record")
     end)
     vim.api.nvim_buf_delete(hidden, { force = true })
   end)

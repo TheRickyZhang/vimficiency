@@ -198,6 +198,7 @@ int sampleJournal(const fs::path& journal, const vf::journal::SampleParams& para
         out.set_keys(command.keys);
         out.set_kind(command.kind);
       }
+      if (window.typedInsertKnown) sample.set_typed_insert(window.typedInsert);
       sample.set_outcome(vf::journal::Sample::crashed);
       g_evaluating = 1;
       ofstream(progressPath, ios::binary | ios::trunc) << sample.SerializeAsString();

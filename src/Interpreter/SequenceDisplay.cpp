@@ -2,6 +2,7 @@ module vf.Interpreter.SequenceDisplay;
 
 import std.compat;
 import vf.Interpreter.SequenceParser;
+import vf.Types.KeyNotation;
 import vf.Utils.PrettyText;
 
 using namespace std;
@@ -9,44 +10,10 @@ using namespace std;
 namespace VF::SequenceDisplay {
 namespace {
 
-string glyphForKeyNotation(string_view special) {
-  if (special == "<Space>") return string(PrettyText::SPACE);
-  if (special == "<Tab>") return string(PrettyText::TAB);
-  if (special == "<CR>" || special == "<Enter>" || special == "<Return>") {
-    return string(PrettyText::NEWLINE);
-  }
-  if (special == "<lt>" || special == "<LT>") return "<";
-  return string(special);
-}
-
-vector<string_view> splitKeyNotationTypedText(string_view text) {
-  vector<string_view> parts;
-  size_t plainStart = 0;
-  size_t i = 0;
-  while (i < text.size()) {
-    if (text[i] != '<') {
-      i++;
-      continue;
-    }
-
-    const size_t close = text.find('>', i);
-    if (close == string_view::npos) {
-      i++;
-      continue;
-    }
-
-    if (plainStart < i) {
-      parts.push_back(text.substr(plainStart, i - plainStart));
-    }
-    parts.push_back(text.substr(i, close - i + 1));
-    i = close + 1;
-    plainStart = i;
-  }
-
-  if (plainStart < text.size()) {
-    parts.push_back(text.substr(plainStart));
-  }
-  return parts;
+// A named character as its glyph; any other name as written.
+string glyphForKeyName(string_view name) {
+  const optional<char> named = parseDisplayChar(name);
+  return named ? prettify(string_view(&*named, 1)) : string(name);
 }
 
 string displayTokenText(const TaggedToken& token) {
@@ -149,33 +116,16 @@ vector<string> tokenizedLines(string_view seq, Options opts) {
 
 string displayKeyNotation(string_view text) {
   string out;
-  size_t i = 0;
-  while (i < text.size()) {
-    if (text[i] != '<') {
-      out += text[i];
-      i++;
-      continue;
-    }
-
-    const size_t close = text.find('>', i);
-    if (close == string_view::npos) {
-      out += text[i];
-      i++;
-      continue;
-    }
-
-    out += glyphForKeyNotation(text.substr(i, close - i + 1));
-    i = close + 1;
+  for (const string_view key : splitKeys(text)) {
+    out += isKeyName(key) ? glyphForKeyName(key) : string(key);
   }
   return out;
 }
 
 string displayTypedText(string_view text) {
   string out;
-  for (const string_view part : splitKeyNotationTypedText(text)) {
-    const bool keyNotation =
-        part.size() >= 2 && part.front() == '<' && part.back() == '>';
-    out += keyNotation ? displayKeyNotation(part) : prettify(part);
+  for (const string_view key : splitKeys(text)) {
+    out += isKeyName(key) ? glyphForKeyName(key) : prettify(key);
   }
   return out;
 }

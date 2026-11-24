@@ -10,7 +10,7 @@ command -v gawk >/dev/null
 
 is_known_module() {
   case "$1" in
-    Types|Optimizer|Interpreter|Session|Effort|Keyboard|VimCore|Boundary|Utils) return 0 ;;
+    Types|Optimizer|Interpreter|Session|Effort|Keyboard|VimCore|Boundary|Utils|Versions) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -55,12 +55,14 @@ done < <(
   rg -n -e '#include "([^"]+)"' -e '^\s*(export\s+)?import\s+vf\.' src | gawk '
     match($0, /^([^:]+):([0-9]+):#include "([^"]+)"/, m) {
       split(m[1], fparts, "/");
+      sub(/\.cppm?$/, "", fparts[2]);
       split(m[3], iparts, "/");
       printf "%s\t%s\t%s:%s\t%s\n", fparts[2], iparts[1], m[1], m[2], m[3];
       next;
     }
     match($0, /^([^:]+):([0-9]+):\s*(export\s+)?import\s+vf\.([A-Za-z0-9_]+)\.([A-Za-z0-9_.]+)/, m) {
       split(m[1], fparts, "/");
+      sub(/\.cppm?$/, "", fparts[2]);
       printf "%s\t%s\t%s:%s\t%s\n", fparts[2], m[4], m[1], m[2], "vf." m[4] "." m[5];
     }
   '

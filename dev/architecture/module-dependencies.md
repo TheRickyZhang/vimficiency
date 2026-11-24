@@ -24,10 +24,12 @@ the few remaining `#include "..."` lines are X-macro `.inc`/`.h` fragments.
 - `Wasm`: C ABI adapter for the docs site's planner module (Emscripten build only; excluded from `vimfy_core`). See `dev/web/how-it-works-site.md`.
 - `Journal`: The `vimfy_journal` tool: replays the capture journal, cuts it into windows and scores them; the shared library also links it to cut one sampled run again (`vf_stats_run`). Excluded from `vimfy_core`. See `dev/lua/atom-stream.md` § Sampling.
 - `Stats`: The session log, the journal rollups, and the filtering and reduction of them and the journal samples into what `:Vimfy stats` shows and lists (`vimfy_stats_lib`, excluded from `vimfy_core` because it reads protobuf files). See `dev/lua/session-storage.md` § The session log.
+- `Versions`: `src/Versions.cppm` (`vf.Versions`), the one root-level module: every file-format and scoring version, with the signatures recorded beside them. A leaf any module may import.
 
 ## Allowed Dependencies
 
 - `Types` -> (none)
+- `Versions` -> (none)
 - `Utils` -> `Types`
 - `Keyboard` -> `Types`, `Utils`
 - `Effort` -> `Keyboard`
@@ -62,4 +64,4 @@ Run dependency lint locally:
 ./scripts/lint-module-deps.sh
 ```
 
-CI runs the same lint before build/tests. The lint reads `import vf.<Dir>...` lines (and any remaining quoted includes) and currently enforces the core domain modules; `Explore`, `LuaExports`, `Journal`, `Stats`, and the root FFI entrypoint are documented edge layers rather than linted core modules.
+CI runs the same lint before build/tests. The lint reads `import vf.<Dir>...` lines (and any remaining quoted includes) and currently enforces the core domain modules and `Versions`; `Explore`, `LuaExports`, `Journal`, `Stats`, and the root FFI entrypoint are documented edge layers rather than linted core modules.

@@ -72,6 +72,7 @@ local function session_of(kind, result)
     user_seq = result.user_seq,
     best_seq = best and best.seq or "",
     commands = result.commands,
+    typed_insert = result.user_typed_insert,
     key_count = result.key_count,
     analyze_ms = result.analyze_ms,
   }

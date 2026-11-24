@@ -52,12 +52,20 @@ std::string buildKeySequence(std::span<const KeyEvent> events);
 struct KeyInput {
   std::string keys;
   bool fed;
+  // Insert text: pressed in an insert without ending it.
+  bool insert;
+};
+
+struct TypedKeys {
+  std::string typed;
+  // Of `typed`, the insert text.
+  std::string typedInsert;
 };
 
 // The keys pressed for one CmdAtom, from what Neovim read as typed, in order.
 // A plugin that feeds keys as typed (which-key re-feeding what it read with
 // getchar()) makes Neovim read them again; those reads are not presses.
-std::string typedKeys(std::span<const KeyInput> inputs);
+TypedKeys typedKeys(std::span<const KeyInput> inputs);
 int manualEvictReason(
     int startRow,
     int cursorRow,

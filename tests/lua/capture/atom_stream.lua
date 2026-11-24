@@ -257,6 +257,67 @@ local function run_cases()
     vim.keymap.del("i", "(")
   end)
 
+  check("typed_insert is the keys pressed inside an insert session", function()
+    vim.keymap.set("i", "(", "()<Left>")
+    vim.keymap.set("n", "gQ", "ofoo<Esc>")
+    for typed, typed_insert in pairs({
+      ["dw"] = "",
+      ["ifoo<Esc>"] = "foo",
+      ["cwa<BS>b<Esc>"] = "a<BS>b",
+      ["ia(b<Left><Esc>"] = "a(b<Left>",
+      ["Rxy<Esc>"] = "xy",
+      -- The mapping typed its text; the user pressed nothing in Insert mode.
+      ["gQ"] = "",
+    }) do
+      reset_buf(); feed(typed)
+      eq(#captured, 1, typed .. ": one atom")
+      eq(captured[1].atom.typed, typed, typed .. ": typed")
+      eq(captured[1].atom.typed_insert, typed_insert, typed .. ": typed_insert")
+    end
+    vim.keymap.del("i", "(")
+    vim.keymap.del("n", "gQ")
+  end)
+
+  ---@return string  every atom's insert text, in order
+  local function pressed_insert()
+    local parts = {}
+    for _, e in ipairs(captured) do parts[#parts + 1] = e.atom.typed_insert end
+    return table.concat(parts)
+  end
+
+  check("typed_insert leaves out whichever press left Insert mode", function()
+    vim.keymap.set("i", "jk", "<Esc>")
+    vim.keymap.set("i", "<F2>", "<C-o>0")
+    vim.keymap.set("i", "<F3>", function() vim.cmd("stopinsert") end)
+    for typed, typed_insert in pairs({
+      ["ifoojk"] = "foo",
+      ["ia<F3>"] = "a",
+      -- Back in Insert mode by the next press, so still a key pressed in it.
+      ["ia<F2>b<Esc>"] = "a<F2>b",
+      -- `<C-o>` lends one Normal command; the insert goes on after `w`.
+      ["ia<C-o>wb<Esc>"] = "a<C-o>b",
+      -- Delivered together: the first `<Esc>` is followed by a Normal-mode read.
+      ["ifoo<Esc>ibar<Esc>"] = "foobar",
+      -- `x` is read in Select mode and starts the insert. Neovim reports no atom
+      -- for it, so the keys arrive with `l`.
+      ["ghxy<Esc>l"] = "xy",
+    }) do
+      reset_buf(); feed(typed)
+      eq(pressed_insert(), typed_insert, typed)
+    end
+    vim.keymap.del("i", "jk")
+    vim.keymap.del("i", "<F2>")
+    vim.keymap.del("i", "<F3>")
+
+    -- Sent apart: an interrupt discards input still queued ahead of it.
+    reset_buf(); feed("ifoo"); feed("<C-c>")
+    eq(pressed_insert(), "foo", "<C-c>")
+
+    -- No key caused this exit, so the text before it stays.
+    reset_buf(); feed("ia"); vim.cmd("stopinsert"); sleep(80)
+    eq(pressed_insert(), "a", "stopinsert from outside")
+  end)
+
   -- flash.nvim's `f` and mini.ai's `i` read their target with getchar(), which
   -- `vim.on_key` never sees.
   check("typed includes keys a mapping read with getchar()", function()

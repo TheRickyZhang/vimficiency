@@ -11,12 +11,15 @@ namespace {
 const CommandToKeys specialWithBracket = {
   {"<lt>", {Key::Key_Shift, Key::Key_Comma}},
   {"<LT>", {Key::Key_Shift, Key::Key_Comma}},
+  {"<Bslash>", {Key::Key_Backslash}},
+  {"<Bar>", {Key::Key_Shift, Key::Key_Backslash}},
 
   {"<Space>", {Key::Key_Space}},
   {"<Tab>", {Key::Key_Tab}},
   {"<CR>", {Key::Key_Enter}},
   {"<Enter>", {Key::Key_Enter}},
   {"<Return>", {Key::Key_Enter}},
+  {"<NL>", {Key::Key_Ctrl, Key::Key_J}},
   {"<Esc>", {Key::Key_Esc}},
   {"<BS>", {Key::Key_Backspace}},
   {"<Del>", {Key::Key_Delete}},

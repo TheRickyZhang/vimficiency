@@ -40,3 +40,19 @@ message Lines {
 message JobHandle {
   int32 job_id = 1;
 }
+
+// `vf_versions`: the library's release and every format and scoring version it
+// reads and writes (src/Versions.cppm), with their recorded signatures.
+message Versions {
+  string release = 1;
+  int32 journal_format = 2;
+  int32 samples_format = 3;
+  int32 rollup_format = 4;
+  int32 session_log_format = 5;
+  int32 scoring_version = 6;
+  string journal_schema = 7;
+  string samples_schema = 8;
+  string rollup_schema = 9;
+  string session_log_schema = 10;
+  string scoring_signature = 11;
+}

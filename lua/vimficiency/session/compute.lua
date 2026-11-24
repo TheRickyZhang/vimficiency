@@ -109,10 +109,11 @@ local function build_analyze_input(active, end_state)
   -- CmdAtom already resolves mappings and operator-pending duplication, so the
   -- replayable sequence is just each atom's keys concatenated — no reduction.
   local atom_seq = vim.list_extend({}, active.atoms)
-  local raw_parts, typed_parts = {}, {}
+  local raw_parts, typed_parts, typed_insert_parts = {}, {}, {}
   for i, atom in ipairs(atom_seq) do
     raw_parts[i] = atom.keys
     typed_parts[i] = atom.typed
+    typed_insert_parts[i] = atom.typed_insert
   end
 
   local request = ffi_optimizer.build_search_request({
@@ -135,6 +136,7 @@ local function build_analyze_input(active, end_state)
     request = request,
     results_calculated = config.RESULTS_CALCULATED,
     atom_seq = atom_seq,
+    user_typed_insert = table.concat(typed_insert_parts),
   }
 end
 
@@ -192,6 +194,7 @@ local function build_result(input, analyze, analyze_ms)
     scroll_amount = request.scroll_amount,
     user_seq = request.user_seq,
     user_typed = request.user_typed,
+    user_typed_insert = input.user_typed_insert,
     optimizer_overrides = request.optimizer_overrides,
     results_calculated = input.results_calculated,
     user_cost = analyze.user_cost,

@@ -2,7 +2,6 @@
 
 #include "Unit/Journal/JournalBuilder.h"
 
-#include "BuildConfig.h"
 #include "proto/summary.pb.h"
 
 import std.compat;
@@ -13,6 +12,7 @@ import vf.Journal.Windows;
 import vf.LuaExports.RecordFile;
 import vf.LuaExports.Samples;
 import vf.Optimizer.Analyze;
+import vf.Versions;
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -141,7 +141,7 @@ TEST_F(JournalSamplerTest, WritesParamsThenSamplesThenTheJournalSize) {
   const vector<vf::journal::SampleRecord> written = records();
   ASSERT_EQ(written.size(), 4u);
   ASSERT_TRUE(written[0].has_params());
-  EXPECT_EQ(written[0].params().stamp().plugin_version(), VIMF_VERSION);
+  EXPECT_EQ(written[0].params().stamp().scoring_version(), SCORING_VERSION);
   EXPECT_EQ(written[0].params().samples_format(), SAMPLES_FORMAT);
   EXPECT_EQ(written[0].params().window_sizes(0), 2);
 
@@ -163,6 +163,24 @@ TEST_F(JournalSamplerTest, WritesParamsThenSamplesThenTheJournalSize) {
   EXPECT_EQ(written[2].sample().first_atom(), 2);
   EXPECT_EQ(written[3].journal_size(), ssize(journal));
   EXPECT_FALSE(fs::exists(dir / "a.inprogress"));
+}
+
+TEST_F(JournalSamplerTest, ASampleKeepsThePressedInsertKeysOnlyWhenEveryAtomHasThem) {
+  JournalBuilder j;
+  j.header(5000).snapshot({"abcdefghijklmnopqrstuvwxyz"}).resync(0, 0);
+  j.next().atom("l", 0, 1, {.typedInsert = "a"});
+  j.next().atom("l", 0, 2, {.typedInsert = "b"});
+  j.next().atom("l", 0, 3, {.insertTagged = false});
+  j.next().atom("l", 0, 4);
+  j.next().atom("l", 0, 5);
+  writeFile(dir / "a.vfj", j.bytes());
+  run();
+
+  const vector<vf::journal::Sample> all = samples();
+  ASSERT_EQ(all.size(), 2u);
+  EXPECT_TRUE(all[0].has_typed_insert());
+  EXPECT_EQ(all[0].typed_insert(), "ab");
+  EXPECT_FALSE(all[1].has_typed_insert());
 }
 
 TEST_F(JournalSamplerTest, AnUnchangedJournalIsNotSampledAgain) {
@@ -284,7 +302,7 @@ TEST_F(JournalSamplerTest, AnOldJournalIsScoredThenRolledUpAndDeleted) {
   vf::journal::Rollup rollup;
   ASSERT_TRUE(rollup.ParseFromArray(entry.data(), entry.size()));
   EXPECT_EQ(rollup.journal(), "a.vfj");
-  EXPECT_EQ(rollup.params().stamp().plugin_version(), VIMF_VERSION);
+  EXPECT_EQ(rollup.params().stamp().scoring_version(), SCORING_VERSION);
   int runs = 0;
   for (const vf::journal::RollupEntry& e : rollup.entries()) {
     EXPECT_EQ(e.window_size(), 2);

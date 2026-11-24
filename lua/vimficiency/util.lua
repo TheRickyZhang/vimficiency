@@ -20,6 +20,8 @@
 ---@field capture_view               fun(buf: integer, win: integer): VF.ViewState
 ---@field capture_state              fun(buf: integer, win: integer): VF.BufferState
 ---@field check_state_inconsistencies fun(start_state: VF.ViewState, end_state: VF.ViewState)
+--- Modes
+---@field is_insert_mode             fun(mode: string): boolean
 local M = {}
 
 local v  = vim.api
@@ -456,6 +458,14 @@ function M.check_state_inconsistencies(start_state, end_state)
   if end_state.window_height ~= start_state.window_height then
     vim.notify("window height changed during session")
   end
+end
+
+--- Insert or Replace, including their completion submodes.
+---@param mode string  `nvim_get_mode().mode`
+---@return boolean
+function M.is_insert_mode(mode)
+  local lead = mode:sub(1, 1)
+  return lead == "i" or lead == "R"
 end
 
 return M
