@@ -16,7 +16,7 @@ Plugin entry points and domain modules:
 | `simulate/settings.lua` | Play-screen settings and modal wiring. |
 | `stats/query.lua` | Builds requests for stats summaries, run lists, and run details. |
 | `stats/render.lua` | Formats summary pages, charts, drill targets, and run rows. |
-| `stats/view.lua` | The `:Vimfy stats` tab: header, two stat columns at the top level, stats beside the run list once narrowed; drill/sort/weight/length/page keys, and `<CR>` on a journal run replays it. |
+| `stats/view.lua` | The `:Vimfy stats` tab: header, two stat columns at the top level, stats beside the run list once narrowed; drill/sort/weight/length/scoring/page keys, and `<CR>` on a journal run replays it. |
 | `stats/sampling.lua` | Runs `vimfy_journal` over the journal in the background. See `dev/lua/atom-stream.md` § Sampling. |
 | `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, run) per `:Vimfy` verb. Depends on the domain modules; only `init.lua` depends on it. |
 | `dev_reload.lua` | `:Vimfy reload`: cmake rebuild, then hot-reload the `.so` and every Lua module. |

@@ -72,7 +72,7 @@ void catchUp(ParsedSamples& parsed, const fs::path& path) {
 
 }  // namespace
 
-JournalRuns readJournalRuns(const string& dir, string_view params) {
+JournalRuns readJournalRuns(const string& dir, string_view params, bool currentOnly) {
   JournalRuns out;
   out.present = fs::is_directory(dir);
   if (!out.present) return out;
@@ -81,11 +81,11 @@ JournalRuns readJournalRuns(const string& dir, string_view params) {
   unordered_set<string> rolledUp;
   for (RolledJournal& rolled : readRollups(fs::path(dir) / ROLLUP_FILE)) {
     rolledUp.insert(rolled.journal);
-    if (rolled.params == params) {
+    if (!currentOnly || rolled.params == params) {
       out.rolledUp.push_back(std::move(rolled.runs));
       continue;
     }
-    for (const auto& [key, totals] : rolled.runs) out.otherRollupRuns += totals.runs;
+    for (const auto& [key, totals] : rolled.runs) out.hiddenRollupRuns += totals.runs;
   }
 
   unordered_map<string, ParsedSamples>& cached = sampleCache()[dir];

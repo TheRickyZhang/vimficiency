@@ -12,6 +12,7 @@ int main() {
   try {
     const std::string request(std::istreambuf_iterator<char>(std::cin), {});
     const Journal::SampleRun run = Journal::sampleJournals(request);
+    if (run.busy) return 2;
     if (!run.error.empty()) {
       std::cerr << "vimfy_journal: " << run.error << "\n";
       return 1;

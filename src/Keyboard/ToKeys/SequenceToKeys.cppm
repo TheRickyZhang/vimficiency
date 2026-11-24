@@ -11,13 +11,14 @@ export {
 
 class SequenceToKeys {
 public:
-  // `names` are the `<...>` names without modifiers. `<C-…>`, `<S-…>` and
-  // `<M-…>` are priced as the modifier keys plus the key they hold, and every
-  // other byte by CHAR_TO_KEYS. The map must outlive the tokenizer.
+  // `names` are the `<...>` names without modifiers. `<C-…>`, `<S-…>`,
+  // `<M-…>` and `<D-…>` are priced as the modifier keys plus the key they
+  // hold, and every other byte by CHAR_TO_KEYS. The map must outlive the
+  // tokenizer.
   explicit SequenceToKeys(const CommandToKeys &names);
 
-  // A name the keyboard model has no key for adds nothing, so it is never
-  // priced as the letters that spell it.
+  // A name with no price warns and adds nothing, so it is never priced as the
+  // letters that spell it.
   PhysicalKeys tokenize(std::string_view s) const;
 
 private:

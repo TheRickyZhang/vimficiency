@@ -422,7 +422,7 @@ TEST_F(StatsRunsTest, PagesAreSlicesOfTheWholeOrder) {
   EXPECT_FALSE(Stats::listRuns(negative.SerializeAsString()));
 }
 
-TEST_F(StatsRunsTest, SessionsComeFromTheShownGroupAndRunsFromTheCurrentParams) {
+TEST_F(StatsRunsTest, SessionsComeFromEveryStampUnlessCurrentOnlyAndRunsFromTheCurrentParams) {
   vf::stats::Stamp other = stamp;
   other.set_slice_padding(9);
   append(other, session(10, 5));
@@ -433,21 +433,15 @@ TEST_F(StatsRunsTest, SessionsComeFromTheShownGroupAndRunsFromTheCurrentParams) 
   journal("old", 10, stale, {sample(4, 10, 1)});
   journal("new", 10, params, {sample(4, 10, 5)});
 
-  const auto current = runs({});
-  ASSERT_EQ(current.total(), 2);
-  for (const auto& row : current.runs()) {
-    if (row.id().has_session()) {
-      EXPECT_EQ(row.id().session(), 1);
-    } else {
-      EXPECT_EQ(row.id().journal().file(), "new.vfj");
+  auto ids = [](const vf::stats::RunList& list) {
+    vector<string> out;
+    for (const auto& row : list.runs()) {
+      out.push_back(row.id().has_session() ? to_string(row.id().session())
+                                           : row.id().journal().file());
     }
-  }
-
-  const auto older = runs({}, RunsRequest::newest, 0, 10, 1);
-  vector<int> indices;
-  for (const auto& row : older.runs()) {
-    if (row.id().has_session()) indices.push_back(row.id().session());
-  }
-  ranges::sort(indices);
-  EXPECT_EQ(indices, (vector<int>{0, 2}));
+    ranges::sort(out);
+    return out;
+  };
+  EXPECT_EQ(ids(runs({})), (vector<string>{"0", "1", "2", "new.vfj"}));
+  EXPECT_EQ(ids(runs({}, RunsRequest::newest, 0, 10, true)), (vector<string>{"1", "new.vfj"}));
 }

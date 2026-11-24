@@ -17,8 +17,4 @@ struct StringHash {
 
 using CommandToKeys = std::unordered_map<std::string, PhysicalKeys, StringHash, std::equal_to<>>;
 
-// Merge multiple CommandToKeys maps into one. reference_wrapper avoids copying
-// while still giving the initializer list concrete objects.
-CommandToKeys combineAll(std::initializer_list<std::reference_wrapper<const CommandToKeys>> maps);
-
 }  // export

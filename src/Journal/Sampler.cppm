@@ -8,13 +8,15 @@ struct SampleRun {
   int journals = 0;
   int evaluated = 0;
   int rolledUp = 0;
+  bool busy = false;
   // Empty unless the request could not be served.
   std::string error;
 };
 
 // Brings `<name>.samples` up to date beside every `<name>.vfj` in the request's
-// directory, then rolls up the journals older than `keep_days`
-// (`rollUpJournals`). `request` is a serialized `vf.journal.SampleRequest`
+// directory, then rolls up the journals older than `keep_days`. Returns busy
+// if another sampler holds the directory's lock.
+// `request` is a serialized `vf.journal.SampleRequest`
 // (proto/journal.proto).
 //
 // A samples file is only ever appended to, so a run resumes where the last
@@ -40,8 +42,7 @@ std::expected<int, std::string> rollUpJournals(const std::filesystem::path& dir,
 std::expected<std::string, std::string> runDetail(std::string_view request);
 
 // Makes SIGTERM and SIGINT end the process without leaving `.inprogress`
-// behind: being told to stop is not dying on a window. Neovim sends SIGTERM to
-// a running sampler when it exits.
+// behind: being told to stop is not dying on a window.
 void stopQuietlyWhenTerminated();
 
 }  // namespace Journal

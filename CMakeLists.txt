@@ -167,7 +167,6 @@ if(VIMF_WASM)
     src/Keyboard/Config.cpp
     src/Keyboard/PhysicalKeys.cpp
     src/Keyboard/ToKeys/CharToKeys.cpp
-    src/Keyboard/ToKeys/CommandToKeys.cpp
     src/Keyboard/ToKeys/CountToKeys.cpp
     src/Keyboard/ToKeys/MovementToKeys.cpp
     src/Keyboard/ToKeys/SequenceToKeys.cpp

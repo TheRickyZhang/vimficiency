@@ -41,7 +41,7 @@ local lib = core.lib
 ---@class VF.Stats.SummaryRequest
 ---@field session_log string
 ---@field stamp table
----@field shown_group integer   # 0-based
+---@field current_only boolean   # leave out every other stamp's sessions and rollups
 ---@field journal_dir string
 ---@field sample_params table
 ---@field weight VF.Stats.Weight
@@ -62,12 +62,10 @@ local lib = core.lib
 ---@field sessions VF.Stats.SessionSummary
 ---@field journal VF.Stats.JournalSummary
 ---@field commands VF.Stats.CommandSummary
+---@field scoring_label string   # the current stamp's
+---@field hidden_runs integer    # sessions and rolled-up runs `current_only` left out
 
 ---@class VF.Stats.SessionSummary
----@field label string
----@field current boolean
----@field groups integer
----@field other_sessions integer
 ---@field sessions integer
 ---@field score VF.Stats.Score
 ---@field days VF.Stats.DayScore[]
@@ -91,7 +89,6 @@ local lib = core.lib
 ---@field unscored { outcome: VF.Stats.Outcome, runs: integer, drill: VF.Stats.Filter }[]
 ---@field unbeaten integer
 ---@field deadline_hit integer
----@field other_rollup_runs integer
 ---@field rollup_runs_without_commands integer
 ---@field nav_drill VF.Stats.Filter
 ---@field edit_drill VF.Stats.Filter

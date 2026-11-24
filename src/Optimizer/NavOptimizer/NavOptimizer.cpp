@@ -63,7 +63,7 @@ LandingNavResult NavOptimizer::optimize(
   if (range.containsPos(startPos)) {
     NavSearchStats stats;
     std::vector<LandingResult> results;
-    results.emplace_back(Sequence{}, 0.0, startPos);
+    results.emplace_back(Sequence{}, RunningEffort(), startPos);
     stats.finalizeRangeGoal(
         static_cast<int>(results.size()),
         1,
@@ -125,8 +125,8 @@ LandingNavResult NavOptimizer::optimize(
 
     if (isGoal) {
       stats.incrementNodesExplored();
-      const double cost = s.getEffort();
-      landings.add(stateKey, cost, LandingResult(s.getSequence(), cost, pos));
+      landings.add(stateKey, s.getEffort(),
+                   LandingResult(s.getSequence(), s.getRunningEffort(), pos));
       if (landings.complete()) {
         debug("optimize: landing limit reached (", landings.size(), " landings, ",
               landings.positions(), "/", landings.getTotalPositions(), " positions)");

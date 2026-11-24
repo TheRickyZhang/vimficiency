@@ -96,7 +96,7 @@ int rolledUpRuns(const Scope& scope, const Selection& selection) {
 RunPage pageRuns(const Scope& scope, RunOrder order, int offset, int limit) {
   const Selection selection = chartedSelection(scope);
   vector<ListedRun> listed;
-  for (const Run& session : scope.groups[scope.shown].sessions) {
+  for (const Run& session : scope.sessions.runs) {
     if (matches(selection, session)) listed.push_back({.run = &session});
   }
   for (const SampledRuns& sampled : scope.journal.sampled) {

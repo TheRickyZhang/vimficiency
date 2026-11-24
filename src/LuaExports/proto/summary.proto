@@ -62,14 +62,13 @@ message SummaryRequest {
 
   bytes session_log = 1;
   Stamp stamp = 2;
-  // Which stamp's sessions to reduce: an index into the groups, the current
-  // stamp's first and the rest by their latest session, newest first.
-  int32 shown_group = 3;
+  // Leaves out the sessions and rollups of every other stamp. Journal samples
+  // are always the current params', since the sampler rescores them.
+  bool current_only = 3;
   bytes journal_dir = 4;
   vf.journal.SampleParams sample_params = 5;
   Weight weight = 6;
-  // Narrows every count but `lifetime`, `other_sessions` and
-  // `other_rollup_runs`.
+  // Narrows every count but `lifetime` and `hidden_runs`.
   Filter filter = 7;
   // One of `sample_params.window_sizes`; 0 for the middle one. The filter's
   // window size overrides it.
@@ -109,25 +108,19 @@ message Timing {
   double max = 5;
 }
 
-// The shown stamp's sessions.
 message SessionSummary {
-  string label = 1;
-  bool current = 2;
-  int32 groups = 3;
-  // Sessions under every other stamp.
-  int32 other_sessions = 4;
-  int32 sessions = 5;
-  Score score = 6;
+  int32 sessions = 1;
+  Score score = 2;
   // The last 30 days.
-  repeated DayScore days = 7;
-  int32 no_result = 8;
-  int32 unbeaten = 9;
+  repeated DayScore days = 3;
+  int32 no_result = 4;
+  int32 unbeaten = 5;
   // Scored sessions whose keys cost less than the best sequence found.
-  int32 beats = 10;
+  int32 beats = 6;
   // Of the last 30 days' sessions.
-  Timing timing = 11;
-  Filter no_result_drill = 12;
-  Filter unbeaten_drill = 13;
+  Timing timing = 7;
+  Filter no_result_drill = 8;
+  Filter unbeaten_drill = 9;
 }
 
 message SizeScore {
@@ -142,7 +135,7 @@ message Unscored {
   Filter drill = 3;
 }
 
-// Samples and rollups made under the current settings only.
+// The samples made under the current params, and the rollups in scope.
 message JournalSummary {
   // A journal directory exists.
   bool present = 1;
@@ -160,15 +153,12 @@ message JournalSummary {
   repeated Unscored unscored = 10;
   int32 unbeaten = 11;
   int32 deadline_hit = 12;
-  // Runs rolled up under other settings: their journals are gone, so they are
-  // never rescored.
-  int32 other_rollup_runs = 13;
   // Rolled-up runs of the charted size the filter selects but for its
   // commands, which rollups do not keep; left out of every count.
-  int32 rollup_runs_without_commands = 14;
-  Filter nav_drill = 15;
-  Filter edit_drill = 16;
-  Filter unbeaten_drill = 17;
+  int32 rollup_runs_without_commands = 13;
+  Filter nav_drill = 14;
+  Filter edit_drill = 15;
+  Filter unbeaten_drill = 16;
 }
 
 message CommandRow {
@@ -183,8 +173,8 @@ message CommandRow {
   Filter drill = 6;
 }
 
-// Commands of the scored spans: the shown sessions and the journal runs of
-// the charted size.
+// Commands of the scored spans: the sessions and the journal runs of the
+// charted size.
 message CommandSummary {
   int32 sessions = 1;
   int32 runs = 2;
@@ -199,6 +189,10 @@ message Summary {
   SessionSummary sessions = 2;
   JournalSummary journal = 3;
   CommandSummary commands = 4;
+  // The current stamp's, `scoring <N>·<id>`.
+  string scoring_label = 5;
+  // Sessions and rolled-up runs `current_only` leaves out.
+  int32 hidden_runs = 6;
 }
 
 message RunsRequest {

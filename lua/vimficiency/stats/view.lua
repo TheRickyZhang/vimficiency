@@ -29,7 +29,7 @@ local ns = v.nvim_create_namespace("vimfy_stats")
 
 ---@class VF.Stats.ViewQuery
 ---@field stack { filter: VF.Stats.Filter, label: string }[]   # top: the current filter
----@field shown integer   # 1-based stamp group
+---@field current_only boolean
 ---@field weight VF.Stats.Weight
 ---@field charted_size integer   # 0: the middle window size
 ---@field order VF.Stats.Order
@@ -72,7 +72,7 @@ end
 local function scope(query)
   local top = query.stack[#query.stack]
   return {
-    shown = query.shown,
+    current_only = query.current_only,
     weight = query.weight,
     filter = top and top.filter or {},
     charted_size = query.charted_size,
@@ -104,12 +104,7 @@ local function header_line(view)
   local query, data = view.query, view.data
   local crumbs = { "Stats" }
   for _, entry in ipairs(query.stack) do crumbs[#crumbs + 1] = entry.label end
-  local sessions = data.summary.sessions
-  local scoring = sessions.label
-  if sessions.groups > 1 then
-    scoring = string.format("%s (%s, %d/%d)", scoring, sessions.current and "current" or "older",
-      query.shown, sessions.groups)
-  end
+  local scoring = query.current_only and data.summary.scoring_label or "all scorings"
   local settings = { scoring, "weight: " .. query.weight, "runs of " .. data.summary.journal.charted_size }
   if data.list then
     settings[#settings + 1] = "sort: " .. query.order
@@ -323,8 +318,8 @@ local function set_keymaps(view)
       query.offset = 0
       refresh(view)
     end },
-    { lhs = "<Tab>", desc = "Show the next scoring's sessions", handler = function()
-      query.shown = query.shown % view.data.summary.sessions.groups + 1
+    { lhs = "v", desc = "Toggle the scorings counted: all, current only", handler = function()
+      query.current_only = not query.current_only
       query.offset = 0
       refresh(view)
     end },
@@ -420,7 +415,7 @@ function M.open()
   highlights.refresh()
   local saved_tab, saved_win = v.nvim_get_current_tabpage(), v.nvim_get_current_win()
   ---@type VF.Stats.ViewQuery
-  local query = { stack = {}, shown = 1, weight = config.stats.weight, charted_size = 0, order = "worst", offset = 0 }
+  local query = { stack = {}, current_only = false, weight = config.stats.weight, charted_size = 0, order = "worst", offset = 0 }
   local data = fetch(query)
   ---@type VF.Stats.View
   local view = {

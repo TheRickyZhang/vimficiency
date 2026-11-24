@@ -3,6 +3,7 @@
 
 local config    = require("vimficiency.config")
 local journal   = require("vimficiency.capture.journal")
+local ffi_core  = require("vimficiency.ffi.core")
 local ffi_stats = require("vimficiency.ffi.stats")
 local sampling  = require("vimficiency.stats.sampling")
 local stats_query = require("vimficiency.stats.query")
@@ -44,7 +45,7 @@ local function refresh()
 end
 
 ---@type VF.Stats.Scope
-local TOP = { shown = 1, weight = "effort", filter = {}, charted_size = 0 }
+local TOP = { current_only = false, weight = "effort", filter = {}, charted_size = 0 }
 
 ---@return VF.Stats.JournalSummary
 local function journal_summary()
@@ -121,7 +122,6 @@ test("stats journal section: charts one size and lists every size on one line", 
     days = { { days_ago = 0, score = 75, drill = { days = { first = 20000, last = 20000 } } } },
     unscored = { { outcome = "too_large", runs = 1, drill = {} }, { outcome = "no_result", runs = 2, drill = {} } },
     deadline_hit = 1,
-    other_rollup_runs = 3,
   })
   assert_true(line_with(lines, "Score:    75.0 / 100  (2 runs of 8 commands)") ~= nil)
   assert_true(line_with(lines, "    Run length: 4 (90.0) · [8] (75.0) · 16 (—)   l to switch") ~= nil)
@@ -132,7 +132,6 @@ test("stats journal section: charts one size and lists every size on one line", 
   assert_true(line_with(lines, "Not scored:     1 too large") ~= nil)
   assert_true(line_with(lines, "                2 no result") ~= nil)
   assert_true(line_with(lines, "Search cut short by the deadline: 1 run") ~= nil)
-  assert_true(line_with(lines, "Left out: 3 runs rolled up under other settings") ~= nil)
 end)
 
 test("sampling.refresh: nothing to do without a journal directory", function()
@@ -158,9 +157,10 @@ test("sampling.refresh: scores a journal written by this Neovim, once", function
     assert_eq(j.score.spans, 2)
     assert_eq(j.nav.spans, 2)
     assert_eq(stats_query.summary(TOP).commands.runs, 2)
-    assert_eq(vim.uv.fs_stat(journal.dir() .. "/sampling.lock"), nil)
-
+    local lock = journal.dir() .. "/sampler.lock"
+    local inode = assert(vim.uv.fs_stat(lock)).ino
     assert_eq(refresh(), nil)
+    assert_eq(assert(vim.uv.fs_stat(lock)).ino, inode)
     assert_eq(journal_summary().score.spans, 2)
   end)
 end)
@@ -175,7 +175,7 @@ test("ffi.stats.run: a listed journal run is cut again as it was scored", functi
       scope = {
         session_log = stats_log.path(),
         stamp = stats_log.stamp(),
-        shown_group = 0,
+        current_only = false,
         journal_dir = journal.dir(),
         sample_params = sampling.params(),
         weight = "effort",
@@ -249,7 +249,7 @@ local function in_nav_runs(fn)
     vim.api.nvim_set_current_win(overview)
     vim.api.nvim_win_set_cursor(overview, { nav.row + 1, 0 })
     h.feed("<CR>")
-    local rows = stats_query.runs({ shown = 1, weight = "effort", filter = nav.drill, charted_size = 0 }, "worst", 0, 50).runs
+    local rows = stats_query.runs({ current_only = false, weight = "effort", filter = nav.drill, charted_size = 0 }, "worst", 0, 50).runs
     assert_eq(#rows, 2)
     local runs_win = stats_pane("runs")
     vim.api.nvim_set_current_win(runs_win)
@@ -352,7 +352,7 @@ test("stats view: l switches the charted run length and the narrowed runs follow
 
     h.feed("l")
     local _, header = stats_pane("header")
-    assert_true(header[1]:find("^ Stats › nav    scoring .* · runs of 4 · ") ~= nil, header[1])
+    assert_true(header[1]:find("^ Stats › nav    all scorings · .* · runs of 4 · ") ~= nil, header[1])
     _, runs = stats_pane("runs")
     assert_eq(runs[#runs], "runs 1–1 of 1")
     _, overview = stats_pane("overview")
@@ -442,18 +442,47 @@ test("sampling background: off when journal.sampling.auto is", function()
   sampling.stop_background()
 end)
 
-test("sampling.refresh: yields to a live sampler and takes over a dead one's lock", function()
+test("sampling.refresh: a sampler keeps its lock after its Neovim exits", function()
   h.use_temp_data_home()
   journal_moves(4)
-  local lock = journal.dir() .. "/sampling.lock"
+  local dir = journal.dir()
+  local fifo = dir .. "/000.vfj"
+  assert_eq(vim.system({ "mkfifo", fifo }):wait().code, 0)
+  local tool = vim.fs.joinpath(vim.fs.dirname(ffi_core.lib_path), "vimfy_journal")
+  local request = ffi_core.encode("vf.journal.SampleRequest",
+    { journal_dir = dir, params = sampling.params(), keep_days = config.journal.keep_days })
+  local launch = string.format(
+    "lua local proc = vim.system({%q}, { stdin = vim.base64.decode(%q), stdout = false, stderr = false }, function() end)"
+      .. " vim.wait(5000, function() return vim.uv.fs_stat(%q) ~= nil end) io.stdout:write(proc.pid)",
+    tool, vim.base64.encode(request), dir .. "/sampler.lock")
+  local editor = vim.system({ vim.v.progpath, "--headless", "-u", "NONE", "-i", "NONE",
+    "-c", launch, "-c", "qa!" }, { text = true }):wait(10000)
+  local pid = assert(tonumber(editor.stdout), editor.stderr)
 
-  vim.fn.writefile({ tostring(vim.uv.os_getpid()) }, lock)
-  assert_eq(refresh(), "another Neovim is sampling the journal")
-  assert_true(vim.uv.fs_stat(lock) ~= nil, "a live owner keeps its lock")
+  local writer
+  local flags = bit.bor(vim.uv.constants.O_WRONLY, vim.uv.constants.O_NONBLOCK)
+  local reading = vim.wait(5000, function()
+    writer = vim.uv.fs_open(fifo, flags, 0)
+    return writer ~= nil
+  end)
+  vim.uv.fs_unlink(fifo)
+  local err = reading and refresh()
+  local samples = vim.fn.glob(dir .. "/*.samples", false, true)
+  local killed = vim.uv.kill(pid, "sigkill")
+  if writer then vim.uv.fs_close(writer) end
 
-  local exited = vim.system({ "true" })
-  exited:wait()
-  vim.fn.writefile({ tostring(exited.pid) }, lock)
-  assert_eq(refresh(), nil)
-  assert_eq(vim.uv.fs_stat(lock), nil)
+  assert_eq(editor.code, 0)
+  assert_true(reading, "the sampler reached the journal FIFO")
+  local busy = "another sampler is scoring the journal"
+  assert_eq(err, busy)
+  assert_eq(samples, {})
+  assert_eq(killed, 0)
+
+  for _ = 1, 10 do
+    err = refresh()
+    if err ~= busy then break end
+  end
+  assert_eq(err, nil)
+  local summary = journal_summary()
+  assert_eq(summary.scored_bytes, summary.journal_bytes)
 end)

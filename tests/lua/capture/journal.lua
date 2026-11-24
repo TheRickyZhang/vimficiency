@@ -249,3 +249,35 @@ test("journal: a drained event queue ends the tick on record", function()
   end)
   assert_eq(vim.list_slice(kinds(records), 1, 4), { "header", "snapshot", "atom", "tick_end" })
 end)
+
+test("journal: a same-second restart keeps its file and open tick separate", function()
+  h.use_temp_data_home()
+  local buf = h.new_buf({ "one" })
+  local atom = { keys = "l", kind = "motion", typed = "l", typed_insert = "", buf = buf,
+    win = vim.api.nvim_get_current_win(), lossy = false }
+  local callbacks = {}
+  h.with_patch({
+    { os, "date", function() return "20261123-120000" end },
+    { vim, "schedule", function(fn) callbacks[#callbacks + 1] = fn end },
+  }, function()
+    journal.start()
+    local first_path = assert(journal.path())
+    local close_first_tick = callbacks[1]
+    journal.stop()
+
+    callbacks = {}
+    journal.start()
+    local second_path = assert(journal.path())
+    close_first_tick()
+    journal._for_test.listener(atom, "record")
+    callbacks[1]()
+    journal.stop()
+    vim.api.nvim_buf_delete(buf, { force = true })
+
+    assert_true(first_path ~= second_path)
+    assert_eq(kinds(read_records(first_path)), { "header" })
+    local records = read_records(second_path)
+    assert_eq(kinds(records), { "header", "snapshot", "atom", "tick_end" })
+    assert_eq({ records[1].tick, records[2].tick, records[3].tick }, { 1, 1, 1 })
+  end)
+end)

@@ -5,16 +5,14 @@ import vf.Stats.Run;
 
 export namespace Stats {
 
-// One stamp's logged sessions.
-struct Group {
-  std::string label;
-  bool current = false;
-  int64_t latest = 0;
-  std::vector<Run> sessions;
-};
-
+// The counts are of every stamp's sessions.
 struct SessionHistory {
-  std::vector<Group> groups;
+  // In log order.
+  std::vector<Run> runs;
+  // The current stamp's, `scoring <N>·<id>`.
+  std::string label;
+  // Left out by `currentOnly`.
+  int hidden = 0;
   int sessions = 0;
   int mark = 0;
   int watch = 0;
@@ -24,7 +22,8 @@ struct SessionHistory {
 };
 
 std::expected<SessionHistory, std::string> readSessionLog(const std::string& path,
-                                                        std::string_view stampBytes);
+                                                        std::string_view stampBytes,
+                                                        bool currentOnly);
 
 // Appends a session to the log, writing its stamp first when the log lacks
 // it. `request` is a serialized `vf.stats.AppendSessionRequest`

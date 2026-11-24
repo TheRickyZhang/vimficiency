@@ -135,7 +135,7 @@ AnalyzeOutput analyze(const SearchInputs& in, int resultsCalculated,
     // (sequence, cost), so down-convert to Result for shared output.
     out.results.reserve(navResults.size());
     for (const LandingResult& r : navResults) {
-      out.results.emplace_back(r.getSequence(), r.getCost());
+      out.results.push_back(r);
     }
   } else {
     CompositionOptimizer opt(config);

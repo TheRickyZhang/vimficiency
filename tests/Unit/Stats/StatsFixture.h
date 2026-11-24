@@ -151,12 +151,13 @@ protected:
   }
 
   vf::stats::SummaryRequest request(
-      int shown = 0, vf::stats::SummaryRequest::Weight weight = vf::stats::SummaryRequest::effort,
+      bool currentOnly = false,
+      vf::stats::SummaryRequest::Weight weight = vf::stats::SummaryRequest::effort,
       const std::string& journalDir = "") const {
     vf::stats::SummaryRequest out;
     out.set_session_log(log());
     *out.mutable_stamp() = stamp;
-    out.set_shown_group(shown);
+    out.set_current_only(currentOnly);
     out.set_journal_dir(journalDir.empty() ? (dir / "journal").string() : journalDir);
     *out.mutable_sample_params() = params;
     out.set_weight(weight);
@@ -172,10 +173,10 @@ protected:
     return out;
   }
 
-  vf::stats::Summary summarize(int shown = 0,
+  vf::stats::Summary summarize(bool currentOnly = false,
                                vf::stats::SummaryRequest::Weight weight = vf::stats::SummaryRequest::effort,
                                const std::string& journalDir = "") {
-    return summarize(request(shown, weight, journalDir));
+    return summarize(request(currentOnly, weight, journalDir));
   }
 
   vf::stats::Summary summarize(const vf::stats::Filter& filter) {
@@ -186,9 +187,9 @@ protected:
 
   vf::stats::RunList runs(const vf::stats::Filter& filter,
                           vf::stats::RunsRequest::Order order = vf::stats::RunsRequest::worst,
-                          int offset = 0, int limit = 1000, int shown = 0) {
+                          int offset = 0, int limit = 1000, bool currentOnly = false) {
     vf::stats::RunsRequest req;
-    *req.mutable_scope() = request(shown);
+    *req.mutable_scope() = request(currentOnly);
     *req.mutable_scope()->mutable_filter() = filter;
     req.set_order(order);
     req.set_offset(offset);

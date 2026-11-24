@@ -15,7 +15,7 @@ struct SampledRuns {
   const RunTable* totals = nullptr;
 };
 
-// The journal runs sampled or rolled up under one params.
+// The journal runs sampled under one params, and the rolled-up ones.
 struct JournalRuns {
   // The journal directory exists.
   bool present = false;
@@ -25,12 +25,15 @@ struct JournalRuns {
   // Valid until the next read.
   std::vector<SampledRuns> sampled;
   std::vector<RunTable> rolledUp;
-  // Rolled up under other params: their journals are gone, so they are never rescored.
-  int otherRollupRuns = 0;
+  // Rolled up under other params and left out by `currentOnly`.
+  int hiddenRollupRuns = 0;
 };
 
 // `params` is a serialized, stamped `vf.journal.SampleParams`. Samples files
 // are parsed once per process; each read parses only what was appended since.
-JournalRuns readJournalRuns(const std::string& dir, std::string_view params);
+// Only samples made under `params` are read: the sampler rescores the rest.
+// Rollups are kept under any params unless `currentOnly`, since their
+// journals are gone and can never be rescored.
+JournalRuns readJournalRuns(const std::string& dir, std::string_view params, bool currentOnly);
 
 }  // namespace Stats

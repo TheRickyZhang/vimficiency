@@ -11,7 +11,7 @@ class StatsSummaryTest : public StatsFixture {
 protected:
   // The journal and command sections, less how much journal is on disk.
   string journalPart(vf::stats::SummaryRequest::Weight weight, const string& journalDir = "") {
-    vf::stats::Summary s = summarize(0, weight, journalDir);
+    vf::stats::Summary s = summarize(false, weight, journalDir);
     s.mutable_journal()->clear_scored_bytes();
     s.mutable_journal()->clear_journal_bytes();
     return s.journal().SerializeAsString() + s.commands().SerializeAsString();
@@ -23,39 +23,31 @@ protected:
 TEST_F(StatsSummaryTest, EmptyLogStillHasTheCurrentScoring) {
   const auto summary = summarize();
   EXPECT_EQ(summary.lifetime().sessions(), 0);
-  EXPECT_EQ(summary.sessions().groups(), 1);
-  EXPECT_TRUE(summary.sessions().current());
-  EXPECT_TRUE(summary.sessions().label().starts_with(format("scoring {}·", SCORING_VERSION)));
+  EXPECT_TRUE(summary.scoring_label().starts_with(format("scoring {}·", SCORING_VERSION)));
+  EXPECT_EQ(summary.hidden_runs(), 0);
   EXPECT_EQ(summary.sessions().score().spans(), 0);
   EXPECT_FALSE(summary.sessions().has_timing());
 }
 
-TEST_F(StatsSummaryTest, ScoresOnlyCompareUnderOneStamp) {
+TEST_F(StatsSummaryTest, EveryStampsSessionsCountUnlessCurrentOnly) {
   vf::stats::Stamp other = stamp;
   other.set_slice_padding(9);
   append(other, session(10, 1));
   append(stamp, session(10, 5));
   append(stamp, session(10, 10));
 
-  const auto current = summarize(0);
+  const auto all = summarize();
+  EXPECT_EQ(all.lifetime().sessions(), 3);
+  EXPECT_EQ(all.sessions().sessions(), 3);
+  EXPECT_EQ(all.hidden_runs(), 0);
+  EXPECT_NEAR(all.sessions().score().score(), 100.0 * 16 / 30, 1e-9);
+
+  const auto current = summarize(true);
   EXPECT_EQ(current.lifetime().sessions(), 3);
-  EXPECT_EQ(current.sessions().groups(), 2);
   EXPECT_EQ(current.sessions().sessions(), 2);
-  EXPECT_EQ(current.sessions().other_sessions(), 1);
+  EXPECT_EQ(current.hidden_runs(), 1);
   EXPECT_DOUBLE_EQ(current.sessions().score().score(), 75);
-
-  const auto older = summarize(1);
-  EXPECT_FALSE(older.sessions().current());
-  EXPECT_NE(older.sessions().label(), current.sessions().label());
-  EXPECT_DOUBLE_EQ(older.sessions().score().score(), 10);
-}
-
-TEST_F(StatsSummaryTest, AShownGroupPastTheEndIsAnError) {
-  vf::stats::SummaryRequest request;
-  request.set_session_log(log());
-  request.set_shown_group(1);
-  request.mutable_sample_params()->add_window_sizes(2);
-  EXPECT_FALSE(Stats::summarize(request.SerializeAsString(), NOW));
+  EXPECT_EQ(current.scoring_label(), all.scoring_label());
 }
 
 TEST_F(StatsSummaryTest, OutcomesAreCountedAndOnlySolvedSessionsScore) {
@@ -76,7 +68,7 @@ TEST_F(StatsSummaryTest, OutcomesAreCountedAndOnlySolvedSessionsScore) {
 TEST_F(StatsSummaryTest, UniformWeightingCountsEachSessionOnce) {
   append(stamp, session(30, 0, vf::stats::Session::unbeaten));
   append(stamp, session(10, 5));
-  EXPECT_DOUBLE_EQ(summarize(0, vf::stats::SummaryRequest::uniform).sessions().score().score(), 75);
+  EXPECT_DOUBLE_EQ(summarize(false, vf::stats::SummaryRequest::uniform).sessions().score().score(), 75);
 }
 
 TEST_F(StatsSummaryTest, ChartAndTimingCoverTheLast30Days) {
@@ -276,7 +268,7 @@ TEST_F(StatsSummaryTest, AJournalIsRolledUpOnceEvenWhenItsDeletionWasCutShort) {
   EXPECT_EQ(summarize().journal().score().spans(), 1);
 }
 
-TEST_F(StatsSummaryTest, RollupsUnderOtherParamsAreLeftOutAndCounted) {
+TEST_F(StatsSummaryTest, RollupsUnderOtherParamsCountUnlessCurrentOnly) {
   vf::journal::SampleParams stale = params;
   stale.set_deadline_ms(1);
   journal("old", 10, stale,
@@ -285,11 +277,17 @@ TEST_F(StatsSummaryTest, RollupsUnderOtherParamsAreLeftOutAndCounted) {
   age("old");
   EXPECT_EQ(rollUp(stale), 1);
 
-  const auto j = summarize().journal();
-  EXPECT_EQ(j.other_rollup_runs(), 3);
-  EXPECT_EQ(j.score().spans(), 1);
-  EXPECT_EQ(j.sizes(0).score().spans(), 0);
-  EXPECT_EQ(j.unscored_size(), 0);
+  const auto all = summarize();
+  EXPECT_EQ(all.hidden_runs(), 0);
+  EXPECT_EQ(all.journal().score().spans(), 2);
+  EXPECT_EQ(all.journal().sizes(0).score().spans(), 1);
+  EXPECT_EQ(all.journal().unscored_size(), 1);
+
+  const auto current = summarize(true);
+  EXPECT_EQ(current.hidden_runs(), 3);
+  EXPECT_EQ(current.journal().score().spans(), 1);
+  EXPECT_EQ(current.journal().sizes(0).score().spans(), 0);
+  EXPECT_EQ(current.journal().unscored_size(), 0);
 }
 
 TEST_F(StatsSummaryTest, CachedSamplesGrowWithWhatIsAppended) {
@@ -310,8 +308,8 @@ TEST_F(StatsSummaryTest, CachedSamplesGrowWithWhatIsAppended) {
 
   fs::copy(dir / "journal", dir / "fresh");
   for (const auto weight : {vf::stats::SummaryRequest::effort, vf::stats::SummaryRequest::uniform}) {
-    const auto cached = summarize(0, weight);
-    const auto fresh = summarize(0, weight, (dir / "fresh").string());
+    const auto cached = summarize(false, weight);
+    const auto fresh = summarize(false, weight, (dir / "fresh").string());
     EXPECT_EQ(cached.journal().scored_bytes(), 30);
     EXPECT_EQ(cached.journal().SerializeAsString(), fresh.journal().SerializeAsString());
     EXPECT_EQ(cached.commands().SerializeAsString(), fresh.commands().SerializeAsString());
@@ -387,9 +385,8 @@ TEST_F(StatsFormatTest, ARollupWrittenBeforeFormatsStillReads) {
 TEST_F(StatsFormatTest, ARollupOfANewerFormatIsSkipped) {
   rolledUpJournal();
   setRollupFormat(ROLLUP_FORMAT + 1);
-  const auto j = summarize().journal();
-  EXPECT_EQ(j.score().spans(), 0);
-  EXPECT_EQ(j.other_rollup_runs(), 0);
+  EXPECT_EQ(summarize().journal().score().spans(), 0);
+  EXPECT_EQ(summarize(true).hidden_runs(), 0);
 }
 
 TEST_F(StatsFormatTest, ANewLogStartsWithItsHeaderOnce) {

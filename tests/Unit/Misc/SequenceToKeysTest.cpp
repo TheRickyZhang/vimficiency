@@ -5,6 +5,7 @@
 import std.compat;
 import vf.Keyboard.ToKeys.MovementToKeys;
 import vf.Types.KeyNotation;
+import vf.Utils.Debug;
 
 using namespace std;
 
@@ -76,13 +77,35 @@ TEST(SequenceToKeysTest, ModifiersArePricedByStructure) {
   EXPECT_EQ(tok.tokenize("<M-X>"), PhysicalKeys({Key::Key_Alt, Key::Key_Shift, Key::Key_X}));
 }
 
-// A key the model lacks costs nothing; it is never spelled out letter by letter.
-TEST(SequenceToKeysTest, UnmodelledNamesAddNothing) {
+TEST(SequenceToKeysTest, NamedKeysBeyondTheMainBlock) {
   const auto& tok = globalSequenceToKeys();
-  for (const char* name : {"<F5>", "<PageDown>", "<D-x>", "<C-F5>", "<t_PS>", "<NoSuchKey>"}) {
+  EXPECT_EQ(tok.tokenize("<F5>"), PhysicalKeys({Key::Key_F5}));
+  EXPECT_EQ(tok.tokenize("<C-F5>"), PhysicalKeys({Key::Key_Ctrl, Key::Key_F5}));
+  EXPECT_EQ(tok.tokenize("<PageDown>"), PhysicalKeys({Key::Key_PageDown}));
+  EXPECT_EQ(tok.tokenize("<D-x>"), PhysicalKeys({Key::Key_Cmd, Key::Key_X}));
+  EXPECT_EQ(tok.tokenize("<kEnter>"), PhysicalKeys({Key::Key_Enter}));
+  EXPECT_EQ(tok.tokenize("<xHome>"), PhysicalKeys({Key::Key_Home}));
+}
+
+// A name with no key warns and adds nothing; it is never spelled out letter by letter.
+TEST(SequenceToKeysTest, NamesWithoutAKeyWarn) {
+  const auto& tok = globalSequenceToKeys();
+  consume_warning_output();
+  for (const char* name : {"<F13>", "<Help>", "<T-x>", "<NoSuchKey>"}) {
+    EXPECT_TRUE(tok.tokenize(name).empty()) << name;
+    EXPECT_NE(consume_warning_output().find(name), string::npos) << name;
+  }
+  EXPECT_EQ(tok.tokenize("a<F13>b"), charwise("ab"));
+  consume_warning_output();
+}
+
+TEST(SequenceToKeysTest, NamesThatAreNotKeyPressesAreSilent) {
+  const auto& tok = globalSequenceToKeys();
+  consume_warning_output();
+  for (const char* name : {"<t_PS>", "<t_PE>", "<Plug>", "<Cmd>"}) {
     EXPECT_TRUE(tok.tokenize(name).empty()) << name;
   }
-  EXPECT_EQ(tok.tokenize("a<F5>b"), charwise("ab"));
+  EXPECT_EQ(consume_warning_output(), "");
 }
 
 // The fixture is every name Neovim writes (`tests/lua/key_names.lua` holds it

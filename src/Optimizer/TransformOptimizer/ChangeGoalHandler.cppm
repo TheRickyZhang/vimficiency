@@ -53,12 +53,7 @@ struct ChangeGoalHandler {
   bool isGoalReached(const Lines& lines) const;
   bool isGoalReached(const TransformEditorState& state) const;
 
-  SuffixCacheResult tryUseSuffixCache(const TransformState& s,
-                                      std::vector<std::vector<Result>>& resultsByStart,
-                                      int maxResultsPerStart,
-                                      const std::vector<char>& startActive,
-                                      int& resultsFound,
-                                      int& uniquePositionsCovered);
+  SuffixCacheHit findCachedSuffix(const TransformState& s);
 
   TransformResult finalize(std::vector<std::vector<Result>>&& resultsByStart,
                       const Lines& initialLines, const Lines& goalLines,

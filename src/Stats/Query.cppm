@@ -37,11 +37,10 @@ struct Selection {
 bool matches(const Selection& selection, const RunKey& key);
 bool matches(const Selection& selection, const Run& run);
 
-// What a summary and a run list reduce: the shown group's sessions and the
-// journal runs made under the requested params, narrowed by `selection`.
+// What a summary and a run list reduce: the logged sessions and the journal
+// runs, every stamp's or the current one's only, narrowed by `selection`.
 struct Scope {
-  std::vector<Group> groups;
-  int shown = 0;
+  SessionHistory sessions;
   JournalRuns journal;
   // The requested window sizes, ascending.
   std::vector<int> sizes;

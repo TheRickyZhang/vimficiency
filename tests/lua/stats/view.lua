@@ -1,7 +1,7 @@
 -- tests/lua/stats/view.lua
 -- The `:Vimfy stats` tab over a real session log: what the stats pages draw,
 -- their drill targets, the two layouts, and the keys that narrow, re-sort,
--- re-weight, switch the run length and page. The reduction itself is tested in
+-- re-weight, switch the scorings counted and the run length, and page. The reduction itself is tested in
 -- tests/Unit/Stats/.
 
 local config = require("vimficiency.config")
@@ -39,7 +39,7 @@ end
 local IDLE = { scoring = false }
 
 ---@type VF.Stats.Scope
-local TOP = { shown = 1, weight = "effort", filter = {}, charted_size = 0 }
+local TOP = { current_only = false, weight = "effort", filter = {}, charted_size = 0 }
 
 ---@return VF.Stats.Summary
 local function summary()
@@ -155,7 +155,7 @@ end
 ---@param rest string
 ---@return string
 local function settings(rest)
-  return "    " .. summary().sessions.label .. " · weight: effort · runs of 8" .. rest
+  return "    all scorings · weight: effort · runs of 8" .. rest
 end
 
 ---@param fn fun()
@@ -177,26 +177,17 @@ test("stats pages: with no sessions, Sessions is one line", function()
   assert_line(lines, "No journal recorded")
 end)
 
-test("stats pages: Sessions holds the lifetime counts and counts the other scorings", function()
+test("stats pages: Sessions holds the lifetime counts, and the hidden runs get a line", function()
   h.use_temp_data_home()
   local s = summary()
   s.lifetime = { sessions = 15, mark = 1, watch = 2, recall = 3, suggest = 9, commands = 30 }
-  s.sessions.groups = 3
-  s.sessions.other_sessions = 4
   local lines = build(s)
   assert_line(lines, "    15 sessions  (mark 1 · watch 2 · recall 3 · suggest 9) · 30 commands")
-  assert_line(lines, "    4 sessions under 2 other scorings · <Tab> to switch")
   assert_line(lines, "    Score:    — / 100  (0 scored sessions, weighted by effort)")
   assert_no_line(lines, "Scoring:")
-end)
-
-test("stats pages: under an older scoring the journal is a note", function()
-  h.use_temp_data_home()
-  local s = with_sessions(1)
-  s.sessions.current = false
-  local lines = build(s)
-  assert_line(lines, "    The journal is scored under the current scoring only.")
-  assert_no_line(lines, "No journal recorded")
+  assert_no_line(lines, "hidden")
+  s.hidden_runs = 4
+  assert_line(build(s), "  4 runs from other scorings hidden (v)")
 end)
 
 test("stats pages: failed and unbeaten sessions are shown apart from the score", function()
@@ -458,7 +449,7 @@ test("stats view: <CR> on a command row lists the runs using it, each on a line"
         assert_pattern(runs[i],"^%a%a%a %d%d %d%d:%d%d     3%.0 → 2%.0    −33%%         you: dw   best: de$")
       end
 
-      local _, narrowed = build(stats_query.summary({ shown = 1, weight = "effort", filter = dw.drill, charted_size = 0 }))
+      local _, narrowed = build(stats_query.summary({ current_only = false, weight = "effort", filter = dw.drill, charted_size = 0 }))
       put_cursor_on("overview", target(narrowed, "de (you less)", false))
       press("overview", "<CR>")
       assert_eq(header(), " Stats › dw (you more) › de (you less)" .. settings(" · sort: worst · page 1/1"))
@@ -508,21 +499,17 @@ test("stats view: <CR> on a session run echoes its keys and costs and opens noth
   end)
 end)
 
-test("stats view: s, w and <Tab> re-query", function()
+test("stats view: s, w and v re-query", function()
   seed()
   h.with_patch({ { config, "RESULTS_CALCULATED", config.RESULTS_CALCULATED + 1 } }, function()
     finish("dd", "dd", 3.0, os.time())
     in_view(function()
-      local label = summary().sessions.label
-      assert_match(header(), label .. " (current, 1/2)")
+      assert_match(header(), "    all scorings · ")
+      assert_no_line(text("overview"), "hidden")
       press("overview", "s")
       assert_true(not header():find("sort:", 1, true), "no sort at the top level")
 
-      press("overview", "<Tab>")
-      assert_match(header(), "(older, 2/2)")
-      assert_line(text("overview"), "The journal is scored under the current scoring only.")
-      local older = stats_query.summary({ shown = 2, weight = "effort", filter = {}, charted_size = 0 })
-      put_cursor_on("commands", target(render.build_pages(older, IDLE, "effort", true)[2].targets,
+      put_cursor_on("commands", target(render.build_pages(summary(), IDLE, "effort", true)[2].targets,
         "dw (you more)", false))
       press("commands", "<CR>")
       assert_eq(footer(), "runs 1–12 of 12")
@@ -539,9 +526,13 @@ test("stats view: s, w and <Tab> re-query", function()
       press("header", "w")
       assert_line(text("overview"), "weighted by effort")
 
-      press("overview", "<Tab>")
+      press("overview", "v")
       assert_eq(footer(), "no runs to list of 0")
-      assert_match(header(), "(current, 1/2)")
+      assert_match(header(), "    " .. summary().scoring_label .. " · ")
+      assert_line(text("overview"), "  15 runs from other scorings hidden (v)")
+      press("overview", "v")
+      assert_eq(footer(), "runs 1–12 of 12")
+      assert_match(header(), "    all scorings · ")
     end)
   end)
 end)
@@ -561,8 +552,7 @@ test("stats view: l cycles the charted run length without narrowing", function()
       put_cursor_on("commands", target(pages[2].targets, "dw (you more)", false))
       press("commands", "<CR>")
       press("runs", "l")
-      assert_eq(header(), " Stats › dw (you more)    " .. summary().sessions.label ..
-        " · weight: effort · runs of 8 · sort: worst · page 1/1")
+      assert_eq(header(), " Stats › dw (you more)" .. settings(" · sort: worst · page 1/1"))
       assert_eq(footer(), "runs 1–12 of 12")
     end)
   end)

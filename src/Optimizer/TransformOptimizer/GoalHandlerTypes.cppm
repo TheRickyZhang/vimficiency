@@ -59,10 +59,10 @@ struct ResolvedEditAction {
   }
 };
 
-// tryUseSuffixCache returns hit status and whether the start was capped.
-struct SuffixCacheResult {
-  bool hit = false;
-  bool startCapped = false;
+// A cached completion for the state looked up; both null on a miss.
+struct SuffixCacheHit {
+  const KeyedSequence* suffix = nullptr;
+  const RunningEffort* effort = nullptr;
 };
 
 }  // export

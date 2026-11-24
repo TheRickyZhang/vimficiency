@@ -189,8 +189,10 @@ its start, because every mark in the burst is taken after it.
 ## Journal
 
 `capture/journal.lua` (`config.journal.enabled`, off by default) appends every
-in-scope atom to `stdpath('data')/vimficiency/journal/<timestamp>-<pid>.vfj`,
-one file per `setup()`. It shares recall's scope (`atom_stream.in_live_file_buffer`)
+in-scope atom to `stdpath('data')/vimficiency/journal/<timestamp>-<pid>-<hrtime>.vfj`.
+The `vim.uv.hrtime()` suffix gives each capture its own file when `setup()` or a
+plugin reload restarts journaling in the same process within one second. The
+journal shares recall's scope (`atom_stream.in_live_file_buffer`)
 but keeps `skip` and `abort` atoms, with their decision, so a reader can cut
 sessions itself. That scope leaves out an atom delivered after its buffer left
 every window: it arrives in Neovim's temporary autocmd window, whose buffer may
@@ -212,10 +214,10 @@ have to read it. Rows and line indexes are 0-indexed.
 Every record but `tick_end` has `ms` (monotonic milliseconds since the header)
 and `tick`.
 
-- `header` — `version`, `started_wall_epoch`. A second header in one file is a
-  restart: discard all buffer state. `version` is `JOURNAL_FORMAT`
-  (`src/Versions.cppm`), which Lua reads through `vf_versions`; `Replay` stops
-  at a header of any other version.
+- `header` — `version`, `started_wall_epoch`. For older files with multiple
+  headers, replay clears its buffer state at each header. Lua reads
+  `JOURNAL_FORMAT` (`src/Versions.cppm`) through `vf_versions`. Replay stops at
+  a header of any other version.
 - `snapshot` — `buf`, `bufname`, `filetype`, `lines` (the whole text).
 - `delta` — `buf`, `first`, `old_count`, `lines`: replace `old_count` lines at
   `first` with `lines`. Applies to the text built so far for `buf`.
@@ -231,7 +233,9 @@ and `tick`.
   and in older journals.
 
 The text at an atom is the snapshot plus every delta written before it. Records
-written in one drain of the event queue share a `tick`: deferred delivery means
+written in one drain of the event queue share a `tick`. The scheduled tick close
+belongs to the file that queued it, so a restart preserves the new file's open
+tick when an old callback runs. Deferred delivery means
 every atom of a tick carries the tick's final cursor and the first carries the
 whole delta. Only the last state of a tick is real, so a reader never splits one.
 
@@ -247,7 +251,10 @@ The journal is scored by `vimfy_journal` (`src/Journal/`), which
 grown, at most every `RUN_INTERVAL_MS` (`journal.sampling.auto` turns it off).
 It is a separate process, not a thread, because a failed `CHECK` in a search
 aborts; there that costs one window, recorded as `crashed` and skipped on the
-next run. Stats never start or wait for a run.
+next run. Stats never start or wait for a run. The sampler holds an exclusive
+OS lock on `sampler.lock` through scoring and rollup. The file stays in place
+so all samplers lock the same inode. If Neovim exits first, the worker keeps
+the lock until it finishes or dies.
 
 `Replay` rebuilds the text at every atom and `WindowCutter` cuts back-to-back
 windows of `journal.sampling.window_sizes` recorded atoms, one series per size.
@@ -295,8 +302,8 @@ reduced per local day, window size, nav/edit and outcome (`Stats::RunTotals`,
 `src/Stats/Rollup.cppm`) into a `vf.journal.Rollup` appended to `rollup.vfr`,
 then the journal and its samples are deleted. Rollups merge exactly, so the
 summary feeds them and samples through one reduction. They keep the params they
-were scored under and are never rescored: under other params they only count as
-`other_rollup_runs`.
+were scored under and are never rescored: the stats count them under any params
+unless `current_only`, which counts other params' rollups in `hidden_runs`.
 
 - The rollup names its journal, and a journal already rolled up is only deleted:
   a pass that dies between the append and the deletion is finished by the next,

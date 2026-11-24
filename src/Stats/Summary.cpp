@@ -56,25 +56,14 @@ Selection selectionOf(const Filter& filter) {
 }
 
 // Shared by the summary and the run list, so a row's drill filter lists what it counted.
-expected<Scope, string> openScope(const vf::stats::SummaryRequest& request,
-                                  vf::stats::Lifetime& lifetime) {
+expected<Scope, string> openScope(const vf::stats::SummaryRequest& request) {
   vf::journal::SampleParams params = request.sample_params();
   if (params.window_sizes().empty()) return unexpected("sample_params.window_sizes is empty");
   Scope scope;
-  auto history = readSessionLog(request.session_log(), request.stamp().SerializeAsString());
+  auto history = readSessionLog(request.session_log(), request.stamp().SerializeAsString(),
+                                request.current_only());
   if (!history) return unexpected(history.error());
-  lifetime.set_sessions(history->sessions);
-  lifetime.set_mark(history->mark);
-  lifetime.set_watch(history->watch);
-  lifetime.set_recall(history->recall);
-  lifetime.set_suggest(history->suggest);
-  lifetime.set_commands(history->commands);
-  scope.groups = std::move(history->groups);
-  scope.shown = request.shown_group();
-  if (scope.shown < 0 || scope.shown >= ssize(scope.groups)) {
-    return unexpected(
-        format("shown_group {} is not one of {} groups", scope.shown, scope.groups.size()));
-  }
+  scope.sessions = std::move(*history);
   scope.sizes.assign(params.window_sizes().begin(), params.window_sizes().end());
   ranges::sort(scope.sizes);
   const int requested = request.charted_size();
@@ -86,7 +75,8 @@ expected<Scope, string> openScope(const vf::stats::SummaryRequest& request,
                   : requested != 0 ? requested
                                    : scope.sizes[(scope.sizes.size() - 1) / 2];
   stampSampleParams(params);
-  scope.journal = readJournalRuns(request.journal_dir(), params.SerializeAsString());
+  scope.journal =
+      readJournalRuns(request.journal_dir(), params.SerializeAsString(), request.current_only());
   scope.selection = selectionOf(request.filter());
   return scope;
 }
@@ -166,22 +156,13 @@ struct CommandTally {
 
 void summarizeSessions(vf::stats::SessionSummary& out, const Scope& scope, const Filter& base,
                        Weight weight, int64_t now, CommandTally& commands, int& counted) {
-  const Group& group = scope.groups[scope.shown];
-  out.set_label(group.label);
-  out.set_current(group.current);
-  out.set_groups(ssize(scope.groups));
-  for (int i = 0; i < ssize(scope.groups); i++) {
-    if (i == scope.shown) continue;
-    out.set_other_sessions(out.other_sessions() + ssize(scope.groups[i].sessions));
-  }
-
   const Filter sessions = drillSource(base, Filter::sessions);
   *out.mutable_no_result_drill() = drillOutcomes(sessions, {Sample::no_result});
   *out.mutable_unbeaten_drill() = drillOutcomes(sessions, {Sample::unbeaten});
 
   Scores scores;
   vector<double> times;
-  for (const Run& session : group.sessions) {
+  for (const Run& session : scope.sessions.runs) {
     if (!matches(scope.selection, session)) continue;
     out.set_sessions(out.sessions() + 1);
     const double user = session.userCost;
@@ -214,9 +195,9 @@ void summarizeSessions(vf::stats::SessionSummary& out, const Scope& scope, const
   timing.set_max(times.back());
 }
 
-// The runs of the samples and rollups made under the request's params. A
-// journal whose samples were made under other params counts as unscored until
-// `vimfy_journal` redoes it, so no two scorings are ever mixed.
+// The runs of the samples made under the request's params and of the rollups
+// in scope. A journal whose samples were made under other params counts as
+// unscored until `vimfy_journal` redoes it.
 void summarizeJournal(vf::stats::JournalSummary& out, const Scope& scope, const Filter& base,
                       Weight weight, int64_t now, CommandTally& commands, int& counted) {
   const int charted = scope.charted;
@@ -252,7 +233,6 @@ void summarizeJournal(vf::stats::JournalSummary& out, const Scope& scope, const 
   out.set_present(journal.present);
   out.set_journal_bytes(journal.journalBytes);
   out.set_scored_bytes(journal.scoredBytes);
-  out.set_other_rollup_runs(journal.otherRollupRuns);
   if (!scope.selection.commands.empty()) {
     out.set_rollup_runs_without_commands(rolledUpRuns(scope, chartedSelection(scope)));
   }
@@ -291,9 +271,19 @@ expected<string, string> summarize(string_view requestBytes, int64_t now) {
   if (!request.ParseFromArray(requestBytes.data(), requestBytes.size())) {
     return unexpected("malformed vf.stats.SummaryRequest");
   }
-  vf::stats::Summary out;
-  const auto scope = openScope(request, *out.mutable_lifetime());
+  const auto scope = openScope(request);
   if (!scope) return unexpected(scope.error());
+  const SessionHistory& history = scope->sessions;
+  vf::stats::Summary out;
+  vf::stats::Lifetime& lifetime = *out.mutable_lifetime();
+  lifetime.set_sessions(history.sessions);
+  lifetime.set_mark(history.mark);
+  lifetime.set_watch(history.watch);
+  lifetime.set_recall(history.recall);
+  lifetime.set_suggest(history.suggest);
+  lifetime.set_commands(history.commands);
+  out.set_scoring_label(history.label);
+  out.set_hidden_runs(history.hidden + scope->journal.hiddenRollupRuns);
   const Weight weight =
       request.weight() == vf::stats::SummaryRequest::uniform ? Weight::Uniform : Weight::Effort;
 
@@ -334,8 +324,7 @@ expected<string, string> listRuns(string_view requestBytes) {
   if (request.offset() < 0 || request.limit() < 0) {
     return unexpected("offset and limit must not be negative");
   }
-  vf::stats::Lifetime lifetime;
-  const auto scope = openScope(request.scope(), lifetime);
+  const auto scope = openScope(request.scope());
   if (!scope) return unexpected(scope.error());
   const RunOrder order = request.order() == vf::stats::RunsRequest::newest    ? RunOrder::Newest
                          : request.order() == vf::stats::RunsRequest::slowest ? RunOrder::Slowest

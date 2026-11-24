@@ -165,3 +165,110 @@ TEST(DebugTest, DISABLED_SessionAPartition) {
   show("vimdiff plan", plan.diffs);
   show("merged last line", merged);
 }
+namespace {
+void showComposition(const char* label, const Config& config, const Lines& initial,
+                     CursorPos start, const Lines& goal, CursorPos end, const string& userSeq) {
+  const CompositionOptimizerParams params = CompositionOptimizerParams{}.withMaxResults(8);
+  const VimDiff::CostOptions costOptions{.moveDeleteScale = params.moveDeleteScale,
+                                         .maxPrefixCount = params.maxPrefixCount};
+  cout << "== " << label << "  user=" << VF::prettify(userSeq)
+       << " userEffort=" << getEffort(userSeq, config) << "\n";
+  for (const VimDiff::RegionBreakdown& r :
+       VimDiff::calculateBreakdown(initial, goal, config, costOptions).regions)
+    cout << "   region (" << r.diff.beginPos.line << "," << r.diff.beginPos.col << ") del=["
+         << VF::prettify(r.diff.deletedText) << "] ins=[" << VF::prettify(r.diff.insertedText)
+         << "]  move=" << r.move << " del=" << r.del << " ins=" << r.ins << "\n";
+  CompositionOptimizer opt(config);
+  auto res = opt.optimize(initial, start, goal, end, params, userSeq, NavBoundary(), NavContext(),
+                          SearchControl::NEVER_STOP, nullptr);
+  vector<Result> results = res.getResults();
+  sort(results.begin(), results.end(),
+       [](const Result& a, const Result& b) { return a.getCost() < b.getCost(); });
+  for (const Result& r : results)
+    cout << "   " << r.getCost() << "  " << VF::prettify(r.getSequence().str()) << "\n";
+}
+}  // namespace
+
+TEST(DebugTest, DISABLED_CiNoResults) {
+  showComposition("ci", Config::uniform(), Lines({"]", "n2|~~"}), {1, 4}, Lines({"]~"}), {0, 1},
+                  "");
+  const Lines initial({"]", "n2|~~"});
+  const Config config = Config::uniform();
+  TransformOptimizer topt(config);
+  const TransformBoundary boundary(initial, CursorPos{0, 1}, CursorPos{1, 4});
+  TransformResult tres = topt.optimizePureDeletion(Lines({"", "n2|~"}), boundary,
+                                                   TransformOptimizerParams{}, 0, 1,
+                                                   CursorPos{0, 1});
+  cout << "starts=" << tres.startPositions().size() << "\n";
+  const auto& buckets = tres.getResults();
+  for (size_t i = 0; i < buckets.size(); i++)
+    for (const Result& r : buckets[i])
+      cout << "   start (" << tres.startPositions()[i].line << "," << tres.startPositions()[i].col
+           << ")  " << r.getCost() << "  " << VF::prettify(r.getSequence().str()) << "\n";
+}
+
+TEST(DebugTest, DISABLED_JoinCounts) {
+  for (const Config& config : {Config::uniform(), Config::qwerty()}) {
+    showComposition("5->2 (4+1)", config, Lines({"one", "two", "three", "four", "five"}), {0, 0},
+                    Lines({"one two three four", "five"}), {0, 0}, "");
+    showComposition("5->1", config, Lines({"one", "two", "three", "four", "five"}), {0, 0},
+                    Lines({"one two three four five"}), {0, 0}, "");
+    showComposition("7->1", config, Lines({"a", "b", "c", "d", "e", "f", "g"}), {0, 0},
+                    Lines({"a b c d e f g"}), {0, 0}, "");
+    cout << "plain typing effort: JJJ=" << getEffort("JJJ", config) << " 4J=" << getEffort("4J", config)
+         << " J..=" << getEffort("J..", config) << " 7J=" << getEffort("7J", config)
+         << " JJJJJJ=" << getEffort("JJJJJJ", config) << "\n";
+  }
+}
+
+TEST(DebugTest, DISABLED_EpsilonOmega) {
+  const Lines text({"alpha beta gamma", "delta epsilon", "zeta eta theta", "iota kappa"});
+  Lines goal = text;
+  goal[1] = "delta omega";
+  for (const Config& config : {Config::uniform(), Config::qwerty()}) {
+    showComposition("mid buffer", config, text, {1, 6}, goal, {1, 10}, "Comega\x1b");
+    showComposition("single line", config, Lines({"alpha beta gamma delta epsilon", "second line"}),
+                    {0, 23}, Lines({"alpha beta gamma delta omega", "second line"}), {0, 27},
+                    "Comega\x1b");
+  }
+}
+
+TEST(DebugTest, DISABLED_EpsilonOmegaTransform) {
+  const Lines text({"alpha beta gamma", "delta epsilon", "zeta eta theta", "iota kappa"});
+  const TransformBoundary boundary(text, CursorPos{1, 6}, CursorPos{1, 13});
+  for (const Config& config : {Config::uniform(), Config::qwerty()}) {
+    for (int perStart : {1, 4}) {
+      for (double distanceWeight : {-1.0, 0.0}) {
+        TransformOptimizerParams params =
+            TransformOptimizerParams{}.withMaxResultsPerStartPos(perStart);
+        if (distanceWeight == 0.0) params.withDistanceWeight(0.0);
+        TransformOptimizer opt(config);
+        TransformResult res = opt.optimizeTransform(Lines({"epsilon"}), Lines({"omega"}), boundary,
+                                                    params, 1, 6, CursorPos{1, 10});
+        cout << "== perStart=" << perStart << (distanceWeight == 0.0 ? " dijkstra" : " default")
+             << " nodes=" << res.getStats().nodesExplored() << "\n";
+        const auto& buckets = res.getResults();
+        for (size_t i = 0; i < buckets.size(); i++)
+          for (const Result& r : buckets[i])
+            cout << "   start " << i << "  " << r.getCost() << "  "
+                 << VF::prettify(r.getSequence().str()) << "\n";
+      }
+    }
+  }
+}
+
+TEST(DebugTest, DISABLED_CountPenaltyThroughComposition) {
+  const Lines initial({"one", "two", "three", "four", "five", "six"});
+  const Lines goal({"five", "six"});
+  for (const Config& config : {Config::uniform(), Config::qwerty()}) {
+    TransformOptimizer topt(config);
+    const TransformBoundary boundary(initial, CursorPos{0, 0}, CursorPos{4, 0});
+    TransformResult tres = topt.optimizePureDeletion(
+        Lines({"one", "two", "three", "four", ""}), boundary, TransformOptimizerParams{}, 0, 0,
+        CursorPos{0, 0});
+    if (const Result* r = tres.resultAt(0, 0))
+      cout << "transform alone: " << r->getCost() << "  " << VF::prettify(r->getSequence().str())
+           << "  (plain typing effort " << getEffort(r->getSequence().str(), config) << ")\n";
+    showComposition("4dd", config, initial, {0, 0}, goal, {0, 0}, "");
+  }
+}

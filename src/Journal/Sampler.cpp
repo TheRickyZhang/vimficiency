@@ -1,5 +1,8 @@
 module;
+#include <cerrno>
 #include <csignal>
+#include <fcntl.h>
+#include <sys/file.h>
 #include <unistd.h>
 
 #include "proto/journal.pb.h"
@@ -27,6 +30,18 @@ namespace fs = std::filesystem;
 namespace Journal {
 
 namespace {
+
+class SamplingLock {
+public:
+  explicit SamplingLock(int fd) : fd_(fd) {}
+  ~SamplingLock() { ::close(fd_); }
+
+  SamplingLock(const SamplingLock&) = delete;
+  SamplingLock& operator=(const SamplingLock&) = delete;
+
+private:
+  int fd_;
+};
 
 // The `.inprogress` file of the journal being sampled. Only assigned while
 // `g_evaluating` is clear, so the handler never reads it half written.
@@ -327,8 +342,22 @@ SampleRun sampleJournals(string_view requestBytes) {
   EvaluateParams evaluateParams = evaluateParamsOf(params);
   evaluateParams.overrides = std::move(*overrides);
 
+  const fs::path dir = request.journal_dir();
+  const fs::path lockPath = dir / "sampler.lock";
+  const int fd = ::open(lockPath.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0666);
+  if (fd == -1) {
+    const error_code error(errno, generic_category());
+    return {.error = format("could not open {}: {}", lockPath.string(), error.message())};
+  }
+  const SamplingLock lock(fd);
+  if (::flock(fd, LOCK_EX | LOCK_NB) == -1) {
+    const error_code error(errno, generic_category());
+    if (error == errc::operation_would_block) return {.busy = true};
+    return {.error = format("could not lock {}: {}", lockPath.string(), error.message())};
+  }
+
   vector<fs::path> journals;
-  for (const fs::directory_entry& entry : fs::directory_iterator(request.journal_dir())) {
+  for (const fs::directory_entry& entry : fs::directory_iterator(dir)) {
     if (entry.path().extension() == ".vfj") journals.push_back(entry.path());
   }
   ranges::sort(journals);
@@ -339,7 +368,7 @@ SampleRun sampleJournals(string_view requestBytes) {
     run.journals++;
   }
   const auto rolledUp =
-      rollUpJournals(request.journal_dir(), params.SerializeAsString(), request.keep_days());
+      rollUpJournals(dir, params.SerializeAsString(), request.keep_days());
   if (!rolledUp) return {.error = rolledUp.error()};
   run.rolledUp = *rolledUp;
   return run;

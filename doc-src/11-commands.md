@@ -129,7 +129,7 @@ Opens a tab with a header over two panes, side by side, or stacked on a
 narrow screen:
 
 - **Header** — the current filter as breadcrumbs (`Stats › Nov 20 › cw (you
-  more)`), the scoring shown, the weight and the charted run length; once
+  more)`), the scorings counted, the weight and the charted run length; once
   narrowed, also the run order and the run-list page.
 - **Top level** — the stats in two columns: Sessions and Journal on the left,
   the Commands tables and Dev on the right.
@@ -151,7 +151,7 @@ in every pane:
 | `s`           | Once narrowed, cycle the run order: worst first (your effort minus the best), newest, slowest search. |
 | `w`           | Switch the score weight between effort and uniform for this view. |
 | `l`           | Cycle the journal run length the stats chart and list.        |
-| `<Tab>`       | Show the next scoring's sessions (see below).                 |
+| `v`           | Count every scoring, or only the current one (see below).     |
 | `]` / `[`     | Once narrowed, next / previous page of runs.                  |
 | `q`           | Close the tab.                                                |
 
@@ -185,10 +185,9 @@ Sections:
   into training without manual review. Optimizer time covers the last
   30 days.
 
-Scores are only compared under one scoring: the plugin version and the
-settings a score depends on. Sessions scored otherwise are counted, and
-`<Tab>` switches to them. The journal is only scored under the current
-scoring, so the Journal section is a note while another is shown.
+A scoring is the plugin's scoring version plus the settings a score depends
+on. The stats count sessions and rolled-up journal runs from every scoring.
+`v` counts only the current one; the stats then say how many runs it hides.
 
 ### The Journal section
 
@@ -219,6 +218,8 @@ in progress finishes.
 
 After a settings change, the journal is rescored under the new settings. Until
 that finishes, runs scored under the old settings are left out, never mixed in.
+Rolled-up runs keep the scoring they were rolled up under, since their journal
+is gone.
 `:Vimfy stats refresh` scores right away, which is also how to score with
 `journal.sampling.auto = false`.
 
@@ -228,11 +229,9 @@ Every finished session (mark, watch, recall, suggest) is appended to
 `stdpath("data")/vimficiency/sessions.vfs`, with your keys, its cost and the
 single best sequence found.
 
-Each session is stamped with the plugin version and every setting its score
-depends on: keyboard, effort weights and optimizer overrides. Scores only
-compare under the same stamp, so the Sessions score covers one stamp at a
-time, the current one first. `<Tab>` in the stats tab steps through older
-stamps. The session counts include every stamp.
+Each session is stamped with the scoring version and every setting its score
+depends on: keyboard, effort weights and optimizer overrides. The stats count
+every stamp's sessions; `v` in the stats tab keeps only the current stamp's.
 
 The JSON log of earlier versions, `sessions.jsonl`, predates stamps. It is
 moved to `legacy/sessions.v1.jsonl` and no longer read.

@@ -29,7 +29,8 @@ local STARTUP_DELAY_MS = 30 * 1000
 local RUN_INTERVAL_MS = 5 * 60 * 1000
 local LOWEST_PRIORITY = 19
 
-local LOCKED = "another Neovim is sampling the journal"
+local BUSY_EXIT_CODE = 2
+local LOCKED = "another sampler is scoring the journal"
 
 --- Callbacks of the refresh in flight; nil when none is.
 ---@type (fun(err: string|nil))[]|nil
@@ -45,41 +46,8 @@ local background = {
 }
 local AUGROUP = "VimficiencyJournalSampling"
 
----@param path string
----@return string|nil
-local function read_file(path)
-  local fh = io.open(path, "rb")
-  if not fh then return nil end
-  local bytes = fh:read("*a")
-  fh:close()
-  return bytes
-end
-
 local function tool_path()
   return vim.fs.joinpath(vim.fs.dirname(ffi_core.lib_path), "vimfy_journal")
-end
-
-local function lock_path()
-  return vim.fs.joinpath(journal.dir(), "sampling.lock")
-end
-
---- Two samplers appending to one samples file would interleave, so only one
---- Neovim samples at a time. A lock whose owner has exited is taken over.
----@return boolean
-local function acquire_lock()
-  local path = lock_path()
-  for _ = 1, 2 do
-    local fd = vim.uv.fs_open(path, "wx", 420)
-    if fd then
-      vim.uv.fs_write(fd, tostring(vim.uv.os_getpid()))
-      vim.uv.fs_close(fd)
-      return true
-    end
-    local owner = tonumber(read_file(path))
-    if owner and vim.uv.kill(owner, 0) == 0 then return false end
-    vim.uv.fs_unlink(path)
-  end
-  return false
 end
 
 --- `vf.journal.SampleParams`: what samples are made, and read back, under.
@@ -96,7 +64,6 @@ end
 
 ---@param err string|nil
 local function finish(err)
-  vim.uv.fs_unlink(lock_path())
   local done = waiters --[[@as (fun(err: string|nil))[] ]]
   waiters = nil
   for _, on_done in ipairs(done) do on_done(err) end
@@ -107,7 +74,11 @@ end
 local function spawn(request, crashes)
   local proc = vim.system({ tool_path() }, { stdin = request, text = true }, vim.schedule_wrap(function(result)
     if result.signal == 0 then
-      finish(result.code ~= 0 and vim.trim(result.stderr):gsub("%s*\n%s*", " ") or nil)
+      if result.code == BUSY_EXIT_CODE then
+        finish(LOCKED)
+      else
+        finish(result.code ~= 0 and vim.trim(result.stderr):gsub("%s*\n%s*", " ") or nil)
+      end
     elseif crashes < MAX_CRASHES then
       spawn(request, crashes + 1)
     else
@@ -133,10 +104,6 @@ function M.refresh(on_done)
   end
   if not vim.uv.fs_stat(tool_path()) then
     on_done("vimfy_journal is not installed; run `:Lazy build vimficiency`, or `./scripts/install.sh` in the plugin directory")
-    return
-  end
-  if not acquire_lock() then
-    on_done(LOCKED)
     return
   end
   waiters = { on_done }
@@ -183,7 +150,7 @@ local function maybe_run()
   background.journal_bytes = bytes
   background.last_run_ms = vim.uv.now()
   M.refresh(function(err)
-    -- Another Neovim scoring the same journal is doing this run's work.
+    -- The active sampler is doing this run's work.
     if err ~= LOCKED then background.err = err end
   end)
 end

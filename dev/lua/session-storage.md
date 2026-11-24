@@ -77,17 +77,18 @@ leaves scoring alone keeps the stamp, so its history stays comparable.
 - A record carries the stamp's id, an FNV-1a hash of the serialized stamp. The
   full stamp is written once, before the first session under it, so concurrent
   Neovims need no ordering. A duplicate stamp record from a race is harmless.
-- Lua never sees the id (LuaJIT has no 64-bit integers). The summary groups
-  sessions by stamp, the current stamp's group first, and reduces one group
-  (`shown_group`), labelled `scoring <N>·<id>` (`older·<id>` for stamps from before `scoring_version`).
-- Sessions are never rescored: they keep no buffer text. Stats show one group at
-  a time, so scores made under different stamps never mix.
+- Lua never sees the id (LuaJIT has no 64-bit integers). The summary carries
+  the current stamp's label, `scoring <N>·<id>` (`scoring_label`).
+- Sessions are never rescored: they keep no buffer text. The stats count every
+  stamp's sessions and rollups by default, on the assumption that scoring
+  settles as the tool matures; `current_only` keeps the current stamp's (and
+  the current params' rollups) and counts the rest in `hidden_runs`.
 - The unstamped v1 `sessions.jsonl` is moved to `legacy/sessions.v1.jsonl` on
   the next append and not read.
 
-`vf_stats_summary` (`src/LuaExports/proto/summary.proto`) reduces the shown
-group and the current journal samples and rollups (`dev/lua/atom-stream.md`
-§ Sampling). `stats/render.lua` formats the summary into pages, and
+`vf_stats_summary` (`src/LuaExports/proto/summary.proto`) reduces the sessions
+and rollups in scope and the current params' journal samples
+(`dev/lua/atom-stream.md` § Sampling). `stats/render.lua` formats the summary into pages, and
 `stats/view.lua` lays out the tab and maps its keys. The view
 holds the charted window size (`charted_size`, cycled by `l`) as a setting like
 the weight, not a filter.
@@ -123,8 +124,8 @@ view keeps a stack of them, the top one the current filter.
 - Run rows carry `user_display`/`best_display` (`Stats::displayKeys`): each
   stretch of typed characters as `⟨n⟩`, line breaks and every other key as the
   sequence display renders them.
-- `vf_stats_runs` pages the shown group's sessions and the charted runs of the
-  current params, worst, newest or slowest first; ties go newest first, then by
+- `vf_stats_runs` pages the sessions in scope and the charted runs of the
+  current params' samples, worst, newest or slowest first; ties go newest first, then by
   id. Rolled-up runs count in `total` but have no rows.
 - A journal run's `RunId` is its file, window size and `last_atom`; a session's
   is its index among the log's sessions.

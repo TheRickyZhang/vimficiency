@@ -11,7 +11,7 @@ local sampling = require("vimficiency.stats.sampling")
 
 --- What a summary or run list reduces.
 ---@class VF.Stats.Scope
----@field shown integer   # 1-based stamp group
+---@field current_only boolean
 ---@field weight VF.Stats.Weight
 ---@field filter VF.Stats.Filter
 ---@field charted_size integer   # 0: the middle window size
@@ -22,7 +22,7 @@ local function request(scope)
   return {
     session_log = log.path(),
     stamp = log.stamp(),
-    shown_group = scope.shown - 1,
+    current_only = scope.current_only,
     journal_dir = journal.dir(),
     sample_params = sampling.params(),
     weight = scope.weight,

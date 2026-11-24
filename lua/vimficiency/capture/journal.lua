@@ -62,8 +62,9 @@ end
 --- Ends the open tick, on record in `file` unless the journal has left it.
 ---@param file file*|nil
 local function close_tick(file)
+  if not file or file ~= fh then return end
   tick_open = false
-  if file == fh then append(TICK_END) end
+  append(TICK_END)
 end
 
 --- A callback scheduled now runs after every atom already queued, so the tick
@@ -189,14 +190,16 @@ function M.start()
   if fh then return end
   local dir = M.dir()
   vim.fn.mkdir(dir, "p")
-  local path = string.format("%s/%s-%d.vfj", dir, os.date("%Y%m%d-%H%M%S"), vim.uv.os_getpid())
+  local mono_ns = vim.uv.hrtime()
+  local path = string.format("%s/%s-%d-%d.vfj", dir, os.date("%Y%m%d-%H%M%S"), vim.uv.os_getpid(), mono_ns)
   local handle, err = io.open(path, "ab")
   if not handle then
     error("vimfy journal: could not open " .. path .. ": " .. tostring(err), 0)
   end
   handle:setvbuf("no")
 
-  fh, file_path, started_mono_ns = handle, path, vim.uv.hrtime()
+  fh, file_path, started_mono_ns = handle, path, mono_ns
+  tick = 0
   since_snapshot = {}
   write("header", { version = JOURNAL_FORMAT, started_wall_epoch = os.time() })
 
@@ -222,6 +225,7 @@ function M.stop()
   buffer_history.set_observer(nil)
   fh:close()
   fh, file_path = nil, nil
+  tick_open = false
   since_snapshot = {}
 end
 

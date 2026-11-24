@@ -20,6 +20,6 @@ inline constexpr std::string_view JOURNAL_SCHEMA = "ef2191c274c49759";
 inline constexpr std::string_view SAMPLES_SCHEMA = "14964eff01920ef6";
 inline constexpr std::string_view ROLLUP_SCHEMA = "16fea25bce12ad21";
 inline constexpr std::string_view SESSION_LOG_SCHEMA = "4291f96a7f325b98";
-inline constexpr std::string_view SCORING_SIGNATURE = "12b4a042c3dd3c24";
+inline constexpr std::string_view SCORING_SIGNATURE = "753c9737c59a4e52";
 
 }  // export

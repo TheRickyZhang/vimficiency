@@ -48,9 +48,7 @@ struct DeletionGoalHandler {
     return lines.size() == 1 && lines[0] == preSuf;
   }
 
-  SuffixCacheResult tryUseSuffixCache(const TransformState&,
-                                      vector<vector<Result>>&, int,
-                                      const vector<char>&, int&, int&) { return {}; }
+  SuffixCacheHit findCachedSuffix(const TransformState&) { return {}; }
 
   TransformResult finalize(vector<vector<Result>>&& resultsByStart, const Lines& initialLines,
                       const Lines&, const TransformOptimizerParams&,

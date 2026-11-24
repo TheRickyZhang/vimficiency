@@ -146,10 +146,6 @@ local function push_sessions(out, summary, weight)
   push(out, string.format("    %s  (mark %d · watch %d · recall %d · suggest %d) · %s",
     plural(lifetime.sessions, "session"), lifetime.mark, lifetime.watch, lifetime.recall, lifetime.suggest,
     plural(lifetime.commands, "command")))
-  if sessions.groups > 1 then
-    push(out, string.format("    %s under %s · <Tab> to switch",
-      plural(sessions.other_sessions, "session"), plural(sessions.groups - 1, "other scoring")))
-  end
   push(out, string.format("    Score:    %s / 100  (%s, weighted by %s)", format_score(sessions.score),
     plural(sessions.score.spans, "scored session"), weight))
   if sessions.unbeaten > 0 then
@@ -191,10 +187,6 @@ local function push_journal(out, summary, background)
   end
   if not background.scoring and scored < 100 and not config.journal.sampling.auto then
     push(out, "    Background scoring is off; :Vimfy stats refresh scores the rest.")
-  end
-  if summary.other_rollup_runs > 0 then
-    push(out, string.format("    Left out: %s rolled up under other settings",
-      plural(summary.other_rollup_runs, "run")))
   end
 
   local charted = summary.charted_size
@@ -253,16 +245,16 @@ end
 function M.build_pages(summary, background, weight, split)
   local out = new_page()
   push(out, "")
+  if summary.hidden_runs > 0 then
+    push(out, string.format("  %s from other scorings hidden (v)", plural(summary.hidden_runs, "run")))
+    push(out, "")
+  end
   push_title(out, "  Sessions")
   push_sessions(out, summary, weight)
   push(out, "")
 
   push_title(out, "  Journal")
-  if summary.sessions.current then
-    push_journal(out, summary.journal, background)
-  else
-    push(out, "    The journal is scored under the current scoring only.")
-  end
+  push_journal(out, summary.journal, background)
   push(out, "")
 
   local pages = { out }

@@ -526,16 +526,7 @@ GoalStates ChangeGoalHandler::onJoinGoal(
   return emitEditGoal(afterJn, base, sourceCmd, goalCompletionCmd, typedVariants, isDot);
 }
 
-SuffixCacheResult ChangeGoalHandler::tryUseSuffixCache(
-    const TransformState& s,
-    vector<vector<Result>>& resultsByStart,
-    int maxResultsPerStart,
-    const vector<char>& startActive,
-    int& resultsFound,
-    int& uniquePositionsCovered) {
-  int idx = s.getStartIndex();
-  if (!startActive[idx]) return {};
-
+SuffixCacheHit ChangeGoalHandler::findCachedSuffix(const TransformState& s) {
   SuffixKey sk(
       s.getLinesHash(), static_cast<int>(s.getLines().size()), s.getPos(),
       s.getMode());
@@ -543,36 +534,15 @@ SuffixCacheResult ChangeGoalHandler::tryUseSuffixCache(
   if (cacheIt == suffixCache.end()) return {};
 
   cacheHits++;
-  auto& bucket = resultsByStart[static_cast<size_t>(idx)];
-  if (static_cast<int>(bucket.size()) >= maxResultsPerStart) return {true, false};
-
   const SuffixValue& sv = cacheIt->second;
-
   bool useDot = sv.canUseDot(s.getLastEdit());
   const KeyedSequence& suffix = sv.suffix(useDot);
-  const RunningEffort& suffixEffort = sv.suffixEffort(useDot);
-
-  string seqStr = s.getSeq() + suffix.seq.str();
   debug("suffixCache hit:",
         "prefixSeq='" + s.getSeq() + "'",
         "suffix='" + suffix.seq.str() + "'",
-        "fullSeq='" + seqStr + "'",
         "pos=(" + to_string(s.getPos().line) + "," + to_string(s.getPos().col) + ")",
         "useDot=" + string(useDot ? "true" : "false"));
-  RunningEffort mergedEffort = RunningEffort::merge(s.getRunningEffort(), suffixEffort, config);
-  double totalEffort = mergedEffort.getEffort();
-
-  // The cached suffix was simulated from the column this prefix produced.
-  const bool prefixIgnoresCurswant =
-      s.getPathTail() && s.getEntryCurswant() == EntryCurswant::Ignored;
-  bool firstForStart = bucket.empty();
-  bucket.emplace_back(
-      Sequence(seqStr), totalEffort,
-      prefixIgnoresCurswant ? EntryCurswant::Ignored : EntryCurswant::Required);
-  resultsFound++;
-  if (firstForStart) uniquePositionsCovered++;
-  bool capped = (static_cast<int>(bucket.size()) == maxResultsPerStart);
-  return {true, capped};
+  return {&suffix, &sv.suffixEffort(useDot)};
 }
 
 TransformResult ChangeGoalHandler::finalize(

@@ -96,19 +96,15 @@ Run sessionRun(const vf::stats::Session& session, int index) {
 
 }  // namespace
 
-// The log's sessions by stamp: `current`'s group first, even when empty, then
-// the rest by their latest session, newest first.
-expected<SessionHistory, string> readSessionLog(const string& path, string_view stampBytes) {
+expected<SessionHistory, string> readSessionLog(const string& path, string_view stampBytes,
+                                                bool currentOnly) {
   vf::stats::Stamp stamp;
   if (!stamp.ParseFromArray(stampBytes.data(), stampBytes.size())) {
     return unexpected("malformed vf.stats.Stamp");
   }
-  stamp.set_scoring_version(SCORING_VERSION);
+  const uint64_t currentId = stampId(versioned(stamp));
   SessionHistory history;
-  const uint64_t currentId = stampId(stamp);
-  unordered_map<uint64_t, int> versions{{currentId, stamp.scoring_version()}};
-  unordered_map<uint64_t, Group> byId;
-  byId[currentId].current = true;
+  history.label = format("scoring {}·{:08x}", SCORING_VERSION, currentId >> 32);
 
   const string bytes = readFrom(path, 0);
   string_view rest = bytes;
@@ -118,15 +114,14 @@ expected<SessionHistory, string> readSessionLog(const string& path, string_view 
     if (record.has_header() && record.header().format() > SESSION_LOG_FORMAT) {
       return unexpected(newerFormat(path, record.header().format()));
     }
-    if (record.has_stamp()) {
-      versions[record.stamp_id()] = record.stamp().scoring_version();
-      continue;
-    }
     if (!record.has_session()) continue;
     const vf::stats::Session& session = record.session();
-    Group& group = byId[record.stamp_id()];
-    group.latest = max(group.latest, session.finished_wall_epoch());
-    group.sessions.push_back(sessionRun(session, history.sessions++));
+    const int index = history.sessions++;
+    if (currentOnly && record.stamp_id() != currentId) {
+      history.hidden++;
+    } else {
+      history.runs.push_back(sessionRun(session, index));
+    }
 
     history.commands += session.key_count();
     const string& kind = session.kind();
@@ -140,17 +135,6 @@ expected<SessionHistory, string> readSessionLog(const string& path, string_view 
       ++history.recall;
     }
   }
-
-  for (auto& [id, group] : byId) {
-    const int version = versions[id];
-    group.label = version == 0 ? format("older·{:08x}", id >> 32)
-                               : format("scoring {}·{:08x}", version, id >> 32);
-    history.groups.push_back(std::move(group));
-  }
-  ranges::sort(history.groups, [](const Group& a, const Group& b) {
-    if (a.current != b.current) return a.current;
-    return a.latest > b.latest;
-  });
   return history;
 }
 

@@ -40,6 +40,7 @@ bool SequenceToKeys::appendName(string_view name, PhysicalKeys &out) const {
       case 'S': keys.push_back(Key::Key_Shift); break;
       case 'M':
       case 'A': keys.push_back(Key::Key_Alt); break;
+      case 'D': keys.push_back(Key::Key_Cmd); break;
       default: return false;
     }
     held.remove_prefix(2);
@@ -71,7 +72,10 @@ PhysicalKeys SequenceToKeys::tokenize(string_view s) const {
     if (s[i] == '<') {
       const size_t close = s.find_first_of("<>", i + 1);
       if (close != string_view::npos && s[close] == '>' && close > i + 1) {
-        appendName(s.substr(i, close + 1 - i), out);
+        const string_view name = s.substr(i, close + 1 - i);
+        if (!appendName(name, out)) {
+          warning("SequenceToKeys::tokenize: no key for", name, "; it is not counted");
+        }
         i = close + 1;
         continue;
       }

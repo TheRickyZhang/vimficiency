@@ -44,7 +44,7 @@ using TransformCostMap = std::unordered_map<TransformStateKey, double, Transform
 // TransformTransitionDispatcher.
 //
 //   isGoalReached     — test whether the buffer has reached the goal state
-//   tryUseSuffixCache — attempt suffix-cache lookup (no-op for deletion mode)
+//   findCachedSuffix  — suffix-cache lookup (always a miss for deletion mode)
 //   finalize          — post-process results after the A* loop completes
 template<class T>
 concept GoalHandlerCore = requires(
@@ -62,8 +62,7 @@ concept GoalHandlerCore = requires(
     TransformSearchStats stats,
     std::vector<std::vector<CursorPos>>&& cursorGoals) {
   { constHandler.isGoalReached(lines) } -> std::same_as<bool>;
-  { handler.tryUseSuffixCache(state, results, intVal, startActive,
-                              intRef, intRef) } -> std::same_as<SuffixCacheResult>;
+  { handler.findCachedSuffix(state) } -> std::same_as<SuffixCacheHit>;
   { handler.finalize(std::move(movedResults), lines, lines, params,
                      intVal, intVal, goalPos,
                      std::move(stats),

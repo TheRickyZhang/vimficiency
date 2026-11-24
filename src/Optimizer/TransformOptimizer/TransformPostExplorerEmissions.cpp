@@ -75,7 +75,7 @@ std::optional<Result> tryReplacement(
   double totalEffort = effort.getEffort();
   if (totalEffort > maxEffort) return std::nullopt;
 
-  return Result(std::move(ks.seq), totalEffort);
+  return Result(std::move(ks.seq), effort);
 }
 
 std::optional<VisualDeleteResult> tryVisualDelete(
@@ -133,7 +133,7 @@ std::optional<VisualDeleteResult> tryVisualDelete(
   static const PhysicalKeys dKey = {Key::Key_D};
   RunningEffort effort(vKey, config);
   effort.append(motion.keys, config);
-  double totalEffort = effort.append(dKey, config);
+  effort.append(dKey, config);
 
   Lines replayLines = effectiveLines;
   CursorPos replayPos = beginPos;
@@ -143,7 +143,7 @@ std::optional<VisualDeleteResult> tryVisualDelete(
 
   return VisualDeleteResult{
       // `j`/`k` inside the selection land by the entry curswant.
-      .result = Result(std::move(visualSeq), totalEffort,
+      .result = Result(std::move(visualSeq), effort,
                        lineDelta != 0 ? EntryCurswant::Required : EntryCurswant::Ignored),
       .goalPos = replayPos,
   };
