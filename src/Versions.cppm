@@ -13,13 +13,13 @@ inline constexpr int ROLLUP_FORMAT = 1;
 // Bump when a session log record changes meaning; a newer log is an error.
 inline constexpr int SESSION_LOG_FORMAT = 1;
 // Bump when an optimizer or effort-model change moves costs.
-inline constexpr int SCORING_VERSION = 3;
+inline constexpr int SCORING_VERSION = 6;
 
 // Recorded signatures of what each version above guards.
 inline constexpr std::string_view JOURNAL_SCHEMA = "ef2191c274c49759";
 inline constexpr std::string_view SAMPLES_SCHEMA = "797f4614d2cbf12b";
 inline constexpr std::string_view ROLLUP_SCHEMA = "16fea25bce12ad21";
 inline constexpr std::string_view SESSION_LOG_SCHEMA = "4291f96a7f325b98";
-inline constexpr std::string_view SCORING_SIGNATURE = "e042960e955e69f8";
+inline constexpr std::string_view SCORING_SIGNATURE = "179843d124931949";
 
 }  // export

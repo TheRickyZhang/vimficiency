@@ -14,6 +14,7 @@ local sampling = require("vimficiency.stats.sampling")
 ---@field current_only boolean
 ---@field weight VF.Stats.Weight
 ---@field filter VF.Stats.Filter
+---@field chart_unit? string
 ---@field charted_size integer   # 0: the middle window size
 
 ---@param scope VF.Stats.Scope
@@ -27,6 +28,7 @@ local function request(scope)
     sample_params = sampling.params(),
     weight = scope.weight,
     filter = scope.filter,
+    chart_unit = scope.chart_unit,
     charted_size = scope.charted_size,
   }
 end

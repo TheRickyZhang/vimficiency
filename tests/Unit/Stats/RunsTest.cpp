@@ -268,6 +268,33 @@ TEST_F(StatsRunsTest, CommandsMatchOnTheirSide) {
   EXPECT_EQ(runs(both).total(), 2);
 }
 
+TEST_F(StatsRunsTest, OverTypedListsTheRunsThatTypedMoreAndTypedOrdersByTheExcess) {
+  populate();
+  Filter sessions;
+  sessions.set_source(Filter::sessions);
+  Filter overTyped = sessions;
+  overTyped.set_over_typed(true);
+  // The odd sessions type `bar`; of those, 3 and 9 are answered with `cwbar<Esc>`.
+  const auto list = runs(overTyped);
+  EXPECT_EQ(list.total(), 4);
+  for (const auto& row : list.runs()) {
+    EXPECT_EQ(row.user_typed_chars(), 3);
+    EXPECT_EQ(row.best_typed_chars(), 0);
+  }
+
+  const auto drill = summarize().commands().typed_drill();
+  EXPECT_TRUE(drill.over_typed());
+  ASSERT_EQ(drill.outcomes_size(), 1);
+  EXPECT_EQ(drill.outcomes(0), Sample::scored);
+
+  const auto ordered = runs(sessions, RunsRequest::typed);
+  ASSERT_EQ(ordered.runs_size(), 14);
+  for (int i = 0; i < 4; i++) EXPECT_EQ(ordered.runs(i).user_typed_chars(), 3) << i;
+  for (int i = 0; i < 4; i++) EXPECT_EQ(ordered.runs(i).best_typed_chars(), 0) << i;
+  // The session with no result has no excess, so it is last.
+  EXPECT_EQ(ordered.runs(13).outcome(), Sample::no_result);
+}
+
 TEST_F(StatsRunsTest, EveryDrillFilterListsWhatItsRowCounted) {
   populate();
   for (const Filter& base : {Filter{}, days(today() - 1, today())}) {

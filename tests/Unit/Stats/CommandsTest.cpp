@@ -101,6 +101,8 @@ TEST(StatsCommands, RatiosCompareSharesAndOrderByDistance) {
   EXPECT_EQ(compared.less[0].text, "b");
   EXPECT_EQ(compared.less[0].ratio, 0);
   EXPECT_EQ(compared.less[1].text, "e");
+  EXPECT_DOUBLE_EQ(compared.less[1].userShare, 0.5);
+  EXPECT_DOUBLE_EQ(compared.less[1].optimizerShare, 2.0 / 3);
   EXPECT_DOUBLE_EQ(compared.less[1].ratio, 0.75);
 }
 

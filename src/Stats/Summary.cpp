@@ -24,7 +24,7 @@ namespace {
 using vf::journal::Sample;
 using vf::stats::Filter;
 
-constexpr int CHART_DAYS = 30;
+constexpr int CHART_BUCKETS = 30;
 constexpr int64_t DAY_SECONDS = 86400;
 
 Selection selectionOf(const Filter& filter) {
@@ -37,10 +37,15 @@ Selection selectionOf(const Filter& filter) {
                 : filter.kind() == Filter::edit ? Change::Edit
                                                 : Change::Any,
   };
+  if (filter.has_epoch_seconds()) {
+    selection.epochSeconds.emplace(filter.epoch_seconds().first(), filter.epoch_seconds().last());
+  }
   if (filter.has_days()) {
     selection.firstDay = filter.days().first();
     selection.lastDay = filter.days().last();
   }
+  selection.overTyped = filter.over_typed();
+  selection.beats = filter.beats();
   for (const int outcome : filter.outcomes()) selection.outcomes |= 1u << outcome;
   for (const Filter::Commands& commands : filter.commands()) {
     CommandMatch& match = selection.commands.emplace_back();
@@ -98,19 +103,31 @@ Filter drillSource(Filter filter, Filter::Source source) {
   return filter;
 }
 
-// A score and its per-day chart.
+struct Chart {
+  vf::stats::ChartUnit unit;
+  int64_t now;
+
+  bool subday() const { return unit == vf::stats::minutes || unit == vf::stats::hours; }
+  int seconds() const { return unit == vf::stats::minutes ? 60 : 3600; }
+  int64_t bucket(int64_t day, int64_t epoch) const {
+    if (subday()) return epoch / seconds();
+    return unit == vf::stats::weeks ? (day + 3) / 7 : day;
+  }
+};
+
 struct Scores {
   ScoreTotals all;
-  map<int64_t, ScoreTotals> byDay;
+  array<ScoreTotals, CHART_BUCKETS> buckets;
+  int64_t current;
 
-  void add(int64_t day, double userCost, double bestCost, Weight weight) {
-    all.add(userCost, bestCost, weight);
-    byDay[day].add(userCost, bestCost, weight);
+  ScoreTotals* at(int64_t bucket) {
+    const int64_t ago = current - bucket;
+    return ago >= 0 && ago < CHART_BUCKETS ? &buckets[ago] : nullptr;
   }
 
-  void merge(int64_t day, const ScoreTotals& totals) {
-    all.merge(totals);
-    byDay[day].merge(totals);
+  void add(int64_t bucket, double userCost, double bestCost, Weight weight) {
+    all.add(userCost, bestCost, weight);
+    if (auto* totals = at(bucket)) totals->add(userCost, bestCost, weight);
   }
 };
 
@@ -121,17 +138,33 @@ void fillScore(vf::stats::Score& out, const ScoreTotals& totals) {
 
 // `drill` selects the runs the score counts.
 template <typename Section>
-void fillDays(Section& out, const Scores& scores, int64_t today, const Filter& drill) {
-  for (const auto& [day, totals] : scores.byDay) {
-    const int64_t ago = today - day;
-    if (ago < 0 || ago >= CHART_DAYS) continue;
+void fillChart(Section& out, const Scores& scores, Chart chart, const Filter& drill) {
+  ScoreTotals visible;
+  for (int ago = CHART_BUCKETS - 1; ago >= 0; --ago) {
+    const auto& totals = scores.buckets[ago];
+    if (totals.spans == 0) continue;
+    const auto bucket = scores.current - ago;
     vf::stats::DayScore& entry = *out.add_days();
     entry.set_days_ago(ago);
     entry.set_score(totals.score());
+    entry.set_spans(totals.spans);
     *entry.mutable_drill() = drill;
-    entry.mutable_drill()->mutable_days()->set_first(day);
-    entry.mutable_drill()->mutable_days()->set_last(day);
+    visible.merge(totals);
+    if (chart.subday()) {
+      auto& range = *entry.mutable_drill()->mutable_epoch_seconds();
+      const auto first = bucket * chart.seconds();
+      const auto last = first + chart.seconds() - 1;
+      range.set_first(drill.has_epoch_seconds() ? max(first, drill.epoch_seconds().first()) : first);
+      range.set_last(drill.has_epoch_seconds() ? min(last, drill.epoch_seconds().last()) : last);
+      continue;
+    }
+    const auto first = chart.unit == vf::stats::weeks ? bucket * 7 - 3 : bucket;
+    const auto last = first + (chart.unit == vf::stats::weeks ? 6 : 0);
+    auto& range = *entry.mutable_drill()->mutable_days();
+    range.set_first(drill.has_days() ? max(first, drill.days().first()) : first);
+    range.set_last(drill.has_days() ? min(last, drill.days().last()) : last);
   }
+  fillScore(*out.mutable_chart_score(), visible);
 }
 
 // Nearest rank.
@@ -155,12 +188,14 @@ struct CommandTally {
 };
 
 void summarizeSessions(vf::stats::SessionSummary& out, const Scope& scope, const Filter& base,
-                       Weight weight, int64_t now, CommandTally& commands, int& counted) {
+                       Weight weight, Chart chart, CommandTally& commands, int& counted) {
   const Filter sessions = drillSource(base, Filter::sessions);
   *out.mutable_no_result_drill() = drillOutcomes(sessions, {Sample::no_result});
   *out.mutable_unbeaten_drill() = drillOutcomes(sessions, {Sample::unbeaten});
+  *out.mutable_beats_drill() = drillOutcomes(sessions, {Sample::scored});
+  out.mutable_beats_drill()->set_beats(true);
 
-  Scores scores;
+  Scores scores{.current = chart.bucket(localDay(chart.now), chart.now)};
   vector<double> times;
   for (const Run& session : scope.sessions.runs) {
     if (!matches(scope.selection, session)) continue;
@@ -172,18 +207,18 @@ void summarizeSessions(vf::stats::SessionSummary& out, const Scope& scope, const
         break;
       case Sample::unbeaten:
         out.set_unbeaten(out.unbeaten() + 1);
-        if (user > 0) scores.add(session.day, user, user, weight);
+        if (user > 0) scores.add(chart.bucket(session.day, session.wallEpoch), user, user, weight);
         break;
       default:
         if (user < session.bestCost) out.set_beats(out.beats() + 1);
-        if (user > 0) scores.add(session.day, user, session.bestCost, weight);
+        if (user > 0) scores.add(chart.bucket(session.day, session.wallEpoch), user, session.bestCost, weight);
         commands.add(session);
         counted++;
     }
-    if (now - session.wallEpoch < CHART_DAYS * DAY_SECONDS) times.push_back(session.analyzeMs);
+    if (chart.now - session.wallEpoch < 30 * DAY_SECONDS) times.push_back(session.analyzeMs);
   }
   fillScore(*out.mutable_score(), scores.all);
-  fillDays(out, scores, localDay(now), drillOutcomes(sessions, {Sample::scored, Sample::unbeaten}));
+  fillChart(out, scores, chart, drillOutcomes(sessions, {Sample::scored, Sample::unbeaten}));
 
   if (times.empty()) return;
   ranges::sort(times);
@@ -199,12 +234,12 @@ void summarizeSessions(vf::stats::SessionSummary& out, const Scope& scope, const
 // in scope. A journal whose samples were made under other params counts as
 // unscored until `vimfy_journal` redoes it.
 void summarizeJournal(vf::stats::JournalSummary& out, const Scope& scope, const Filter& base,
-                      Weight weight, int64_t now, CommandTally& commands, int& counted) {
+                      Weight weight, Chart chart, CommandTally& commands, int& counted) {
   const int charted = scope.charted;
   out.set_charted_size(charted);
 
   map<int, ScoreTotals> bySize;
-  Scores scores;
+  Scores scores{.current = chart.bucket(localDay(chart.now), chart.now)};
   ScoreTotals nav;
   ScoreTotals edit;
   map<int, int> unscored;
@@ -218,7 +253,10 @@ void summarizeJournal(vf::stats::JournalSummary& out, const Scope& scope, const 
     bySize[key.windowSize].merge(score);
     if (!isCharted) return;
 
-    scores.merge(key.day, score);
+    scores.all.merge(score);
+    if (!chart.subday()) {
+      if (auto* bucket = scores.at(chart.bucket(key.day, 0))) bucket->merge(score);
+    }
     (key.navOnly ? nav : edit).merge(score);
     out.set_deadline_hit(out.deadline_hit() + totals.deadlineHit);
     if (key.outcome == Sample::unbeaten) {
@@ -229,11 +267,23 @@ void summarizeJournal(vf::stats::JournalSummary& out, const Scope& scope, const 
     counted += totals.runs;
   });
 
+  if (chart.subday()) {
+    for (const auto& sampled : scope.journal.sampled) {
+      for (const Run& run : sampled.runs) {
+        if (run.windowSize == charted && isScoring(run.outcome) && run.userCost > 0 &&
+            matches(scope.selection, run)) {
+          if (auto* bucket = scores.at(chart.bucket(run.day, run.wallEpoch))) {
+            bucket->add(run.userCost, run.bestCost, weight);
+          }
+        }
+      }
+    }
+  }
   const JournalRuns& journal = scope.journal;
   out.set_present(journal.present);
   out.set_journal_bytes(journal.journalBytes);
   out.set_scored_bytes(journal.scoredBytes);
-  if (!scope.selection.commands.empty()) {
+  if (scope.selection.readsRuns()) {
     out.set_rollup_runs_without_commands(rolledUpRuns(scope, chartedSelection(scope)));
   }
 
@@ -252,7 +302,7 @@ void summarizeJournal(vf::stats::JournalSummary& out, const Scope& scope, const 
   out.mutable_edit_drill()->set_kind(Filter::edit);
 
   const Filter runs = drillSource(base, Filter::journal);
-  fillDays(out, scores, localDay(now), drillOutcomes(runs, {Sample::scored, Sample::unbeaten}));
+  fillChart(out, scores, chart, drillOutcomes(runs, {Sample::scored, Sample::unbeaten}));
   *out.mutable_unbeaten_drill() = drillOutcomes(runs, {Sample::unbeaten});
   for (const Sample::Outcome outcome : UNSCORED) {
     const auto it = unscored.find(outcome);
@@ -275,6 +325,8 @@ expected<string, string> summarize(string_view requestBytes, int64_t now) {
   if (!scope) return unexpected(scope.error());
   const SessionHistory& history = scope->sessions;
   vf::stats::Summary out;
+  const Chart chart{request.chart_unit(), now};
+  out.set_chart_unit(chart.unit);
   vf::stats::Lifetime& lifetime = *out.mutable_lifetime();
   lifetime.set_sessions(history.sessions);
   lifetime.set_mark(history.mark);
@@ -290,9 +342,9 @@ expected<string, string> summarize(string_view requestBytes, int64_t now) {
   CommandTally commands;
   int sessions = 0;
   int runs = 0;
-  summarizeSessions(*out.mutable_sessions(), *scope, request.filter(), weight, now, commands,
+  summarizeSessions(*out.mutable_sessions(), *scope, request.filter(), weight, chart, commands,
                     sessions);
-  summarizeJournal(*out.mutable_journal(), *scope, request.filter(), weight, now, commands, runs);
+  summarizeJournal(*out.mutable_journal(), *scope, request.filter(), weight, chart, commands, runs);
 
   vf::stats::CommandSummary& table = *out.mutable_commands();
   table.set_sessions(sessions);
@@ -300,10 +352,14 @@ expected<string, string> summarize(string_view requestBytes, int64_t now) {
   table.set_user_typed_chars(commands.user.typedChars);
   table.set_optimizer_typed_chars(commands.optimizer.typedChars);
   const Filter scored = drillOutcomes(request.filter(), {Sample::scored});
+  *table.mutable_typed_drill() = scored;
+  table.mutable_typed_drill()->set_over_typed(true);
   auto fillRow = [&](vf::stats::CommandRow& entry, const CommandRow& row) {
     entry.set_text(row.text);
     entry.set_user(row.user);
     entry.set_optimizer(row.optimizer);
+    entry.set_user_share(row.userShare);
+    entry.set_optimizer_share(row.optimizerShare);
     entry.set_ratio(row.ratio);
     entry.set_split(row.split);
     *entry.mutable_drill() = scored;
@@ -357,6 +413,8 @@ expected<string, string> listRuns(string_view requestBytes) {
     row.set_analyze_ms(run.analyzeMs);
     row.set_user_display(displayKeys(run.userKeys));
     row.set_best_display(displayKeys(run.bestSeq));
+    row.set_user_typed_chars(run.user.typedChars);
+    row.set_best_typed_chars(run.optimizer.typedChars);
   }
   return out.SerializeAsString();
 }

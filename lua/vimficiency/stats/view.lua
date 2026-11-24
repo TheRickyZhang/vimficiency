@@ -1,8 +1,7 @@
--- The `:Vimfy stats` tab: a header over two panes of stats
--- (render.build_pages), Sessions and Journal on the left, Commands and Dev on
--- the right. <CR> on a stats row or chart day lists its runs in a float
--- (stats/run_list.lua) under the filter C++ attached to it; nothing here builds
--- or edits a filter.
+-- The `:Vimfy stats` tab: a header over the stats (render.build_page). <CR>
+-- opens a float over it: a chart on its own (stats/chart_view.lua), or the runs
+-- of a row or of a chart's day (stats/run_list.lua) under the filter C++
+-- attached to it; nothing here builds or edits a filter.
 
 ---@class (exact) VF.StatsView
 ---@field open fun()
@@ -10,8 +9,11 @@ local M = {}
 
 local v = vim.api
 local buf_window = require("vimficiency.ui.buf_window")
+local chart_view = require("vimficiency.stats.chart_view")
 local config = require("vimficiency.config")
 local highlights = require("vimficiency.ui.highlights")
+local item_nav = require("vimficiency.ui.item_nav")
+local log = require("vimficiency.stats.log")
 local run_list = require("vimficiency.stats.run_list")
 local sampling = require("vimficiency.stats.sampling")
 local stats_query = require("vimficiency.stats.query")
@@ -19,18 +21,13 @@ local render = require("vimficiency.stats.render")
 local ui_windows = require("vimficiency.ui.windows")
 local util = require("vimficiency.util")
 
--- Any narrower beside the stats and the right pane goes below them instead.
-local MIN_SIDE_WIDTH = 60
 local ns = v.nvim_create_namespace("vimfy_stats")
 
 ---@class VF.Stats.ViewQuery
 ---@field current_only boolean
 ---@field weight VF.Stats.Weight
+---@field chart_unit? string
 ---@field charted_size integer   # 0: the middle window size
-
----@class VF.Stats.ViewData
----@field summary VF.Stats.Summary
----@field pages VF.Stats.Page[]   # the left pane's, then the right pane's
 
 ---@class VF.Stats.Pane
 ---@field buf integer
@@ -39,13 +36,14 @@ local ns = v.nvim_create_namespace("vimfy_stats")
 ---@class VF.Stats.ViewPanes
 ---@field tab integer
 ---@field header VF.Stats.Pane
----@field overview VF.Stats.Pane   # left
----@field commands VF.Stats.Pane   # right
----@field side_by_side boolean
+---@field overview VF.Stats.Pane
 
 ---@class VF.Stats.View
 ---@field query VF.Stats.ViewQuery
----@field data VF.Stats.ViewData
+---@field summary VF.Stats.Summary
+---@field chart? VF.Stats.ChartView   # the last chart opened
+---@field page VF.Stats.Page   # as last drawn
+---@field nav VF.Ui.ItemNav
 ---@field panes VF.Stats.ViewPanes
 ---@field runs? VF.Stats.RunListView   # the last run list opened
 ---@field saved_tab integer
@@ -60,35 +58,21 @@ local function scope(query, filter)
     current_only = query.current_only,
     weight = query.weight,
     filter = filter,
+    chart_unit = query.chart_unit,
     charted_size = query.charted_size,
   }
 end
 
----@param query VF.Stats.ViewQuery
----@return VF.Stats.ViewData
-local function fetch(query)
-  local summary = stats_query.summary(scope(query, {}))
-  return {
-    summary = summary,
-    pages = render.build_pages(summary, { scoring = sampling.running(), err = sampling.last_error() }, query.weight),
-  }
-end
-
 ---@param view VF.Stats.View
----@return string
-local function header_line(view)
-  local query, data = view.query, view.data
-  local scoring = query.current_only and data.summary.scoring_label or "all scorings"
-  local settings = { scoring, "weight: " .. query.weight, "runs of " .. data.summary.journal.charted_size }
-  return string.format(" Stats    %s", table.concat(settings, " · "))
-end
-
----@param lines string[]
----@return integer
-local function page_width(lines)
-  local width = 0
-  for _, line in ipairs(lines) do width = math.max(width, vim.fn.strdisplaywidth(line)) end
-  return width + 1
+---@return string[]
+local function header_lines(view)
+  local query, summary = view.query, view.summary
+  local scoring = query.current_only and summary.scoring_label or "all scorings"
+  local settings = { scoring, "weight: " .. query.weight, "runs of " .. summary.journal.charted_size }
+  return {
+    string.format(" Stats    %s", table.concat(settings, " · ")),
+    string.format(" Log      %s", vim.fn.fnamemodify(log.path(), ":~")),
+  }
 end
 
 ---@param buf integer
@@ -99,46 +83,39 @@ local function set_lines(buf, lines)
   vim.bo[buf].modifiable = false
 end
 
----@param pane VF.Stats.Pane
----@param page VF.Stats.Page
-local function draw_page(pane, page)
-  local cursor = v.nvim_win_get_cursor(pane.win)
-  set_lines(pane.buf, page.lines)
-  v.nvim_buf_clear_namespace(pane.buf, ns, 0, -1)
-  for _, row in ipairs(page.title_rows) do
-    v.nvim_buf_set_extmark(pane.buf, ns, row, 0, {
-      end_row = row + 1, end_col = 0, hl_group = highlights.STATS_SECTION_TITLE, hl_eol = true,
-    })
-  end
-  for _, target in ipairs(page.targets) do
-    if not target.cols then
-      local line = page.lines[target.row + 1]
-      v.nvim_buf_set_extmark(pane.buf, ns, target.row, line:find("%S") - 1, {
-        end_col = #line, hl_group = highlights.STATS_DRILL,
-      })
-    end
-  end
-  v.nvim_win_set_cursor(pane.win, { math.min(cursor[1], #page.lines), cursor[2] })
-end
-
 local watch_scoring
 
 ---@param view VF.Stats.View
 local function draw(view)
-  local panes, data = view.panes, view.data
-  set_lines(panes.header.buf, { header_line(view) })
-  draw_page(panes.overview, data.pages[1])
-  if panes.side_by_side then
-    v.nvim_win_resize(panes.overview.win, page_width(data.pages[1].lines), -1)
+  local panes = view.panes
+  local win, buf = panes.overview.win, panes.overview.buf
+  local page = render.build_page(view.summary, { scoring = sampling.running(), err = sampling.last_error() },
+    v.nvim_win_get_width(win))
+  local header = header_lines(view)
+  local rows = #header
+  page.lines = vim.list_extend(header, page.lines)
+  for _, item in ipairs(page.items) do
+    item.row, item.last_row, item.cursor[1] = item.row + rows, item.last_row + rows, item.cursor[1] + rows
+    for _, span in ipairs(item.spans or {}) do span[1] = span[1] + rows end
   end
-  draw_page(panes.commands, data.pages[2])
+  for _, mark in ipairs(page.marks) do mark.row = mark.row + rows end
+  view.page = page
+  set_lines(buf, page.lines)
+  v.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  for _, mark in ipairs(page.marks) do
+    v.nvim_buf_set_extmark(buf, ns, mark.row, mark.col, {
+      end_col = mark.end_col, hl_group = mark.hl, priority = mark.priority,
+    })
+  end
+  view.nav.sync()
   watch_scoring(view)
 end
 
 ---@param view VF.Stats.View
 local function refresh(view)
-  view.data = fetch(view.query)
+  view.summary = stats_query.summary(scope(view.query, {}))
   draw(view)
+  if view.chart and v.nvim_win_is_valid(view.chart.win) then view.chart.redraw() end
 end
 
 --- Redraws once the scoring run in flight finishes, if the view is still open.
@@ -153,17 +130,74 @@ function watch_scoring(view)
   end))
 end
 
----@param page VF.Stats.Page
----@param win integer
----@return VF.Stats.DrillTarget|nil
-local function target_at_cursor(page, win)
-  local cursor = v.nvim_win_get_cursor(win)
-  local row, col = cursor[1] - 1, cursor[2]
-  for _, target in ipairs(page.targets) do
-    if target.row == row and (not target.cols or (col >= target.cols[1] and col < target.cols[2])) then
-      return target
-    end
+--- What <CR> does to the current item.
+---@param view VF.Stats.View
+---@param item VF.Stats.Item
+local function enter(view, item)
+  if item.drill then
+    view.runs = run_list.open(scope(view.query, item.drill), item.label)
+  elseif item.kind == "chart" then
+    view.chart = chart_view.open(item.chart == "journal" and "Journal" or "Sessions",
+      function(width, height) return render.chart_page(view.summary, item.chart, width, height) end,
+      ---@param listed VF.Stats.Item
+      function(listed) view.runs = run_list.open(scope(view.query, listed.drill), listed.label) end)
   end
+end
+
+---@param view VF.Stats.View
+---@param item VF.Stats.Item
+---@param offset integer
+---@return boolean
+local function adjust(view, item, offset)
+  local selector = item.selector
+  if not selector then return false end
+  local index = math.max(1, math.min(#selector.values, selector.index + offset))
+  if index == selector.index then return true end
+  local value = selector.values[index]
+  if type(value) == "string" then
+    view.query.chart_unit = value
+  else
+    view.query.charted_size = value
+  end
+  refresh(view)
+  return true
+end
+
+--- Where a move off the edge of one side of the page lands on the other: `l`
+--- on the first Commands row, `h` on the journal's chart, else the sessions'.
+---@param page VF.Stats.Page
+---@param item VF.Stats.Item
+---@param key "h"|"j"|"k"|"l"
+---@return string|nil
+local function across(page, item, key)
+  if item.group == "left" and key == "l" then
+    for _, other in ipairs(page.items) do
+      if other.group == "right" then return other.id end
+    end
+  elseif item.group == "right" and key == "h" then
+    local chart
+    for _, other in ipairs(page.items) do
+      if other.kind == "chart" and (not chart or chart.chart ~= "journal") then chart = other end
+    end
+    return chart and chart.id
+  end
+end
+
+--- `view_of` returns the view being built around the result.
+---@param panes VF.Stats.ViewPanes
+---@param view_of fun(): VF.Stats.View
+---@return VF.Ui.ItemNav
+local function attach_nav(panes, view_of)
+  return item_nav.attach(panes.overview.buf, {
+    win = function() return panes.overview.win end,
+    items = function() return view_of().page.items end,
+    ---@param item VF.Stats.Item
+    enter = function(item) enter(view_of(), item) end,
+    ---@param item VF.Stats.Item
+    adjust = function(item, offset) return adjust(view_of(), item, offset) end,
+    ---@param item VF.Stats.Item
+    leave = function(item, key) return across(view_of().page, item, key) end,
+  })
 end
 
 ---@param view VF.Stats.View
@@ -178,12 +212,16 @@ local function close(view)
   if v.nvim_win_is_valid(view.saved_win) then v.nvim_set_current_win(view.saved_win) end
 end
 
---- The panes only work together, so closing one closes the view.
 ---@param view VF.Stats.View
-local function close_with_any_pane(view)
+local function watch_view(view)
   local panes = view.panes
   local group = v.nvim_create_augroup("vimfy_stats_" .. panes.tab, {})
-  for _, win in ipairs({ panes.header.win, panes.overview.win, panes.commands.win }) do
+  v.nvim_create_autocmd("User", {
+    group = group,
+    pattern = "VimficiencyJournalScoringStarted",
+    callback = util.entry(function() draw(view) end),
+  })
+  for _, win in ipairs({ panes.overview.win }) do
     v.nvim_create_autocmd("WinClosed", {
       group = group,
       pattern = tostring(win),
@@ -203,18 +241,8 @@ local function set_keymaps(view)
   local query = view.query
   ---@type VF.Keymap[]
   local view_keys = {
-    { lhs = "w", desc = "Toggle the score weight: effort, uniform", handler = function()
+    { lhs = "w", desc = "Toggle the efficiency weight: effort, uniform", handler = function()
       query.weight = query.weight == "effort" and "uniform" or "effort"
-      refresh(view)
-    end },
-    { lhs = "l", desc = "Cycle the journal run length the stats chart", handler = function()
-      local journal = view.data.summary.journal
-      for i, size in ipairs(journal.sizes) do
-        if size.size == journal.charted_size then
-          query.charted_size = journal.sizes[i % #journal.sizes + 1].size
-          break
-        end
-      end
       refresh(view)
     end },
     { lhs = "v", desc = "Toggle the scorings counted: all, current only", handler = function()
@@ -223,23 +251,10 @@ local function set_keymaps(view)
     end },
     { lhs = "q", desc = "Close stats", handler = function() close(view) end },
   }
-  ---@param page_index integer
-  ---@param pane VF.Stats.Pane
-  ---@return VF.Keymap
-  local function drill_key(page_index, pane)
-    return { lhs = "<CR>", desc = "List the runs of the row or chart day under the cursor", handler = function()
-      local target = target_at_cursor(view.data.pages[page_index], pane.win)
-      if not target then return end
-      view.runs = run_list.open(scope(query, target.drill), target.label)
-    end }
-  end
-  local opts = { title = "Vimfy Stats Keys" }
   local panes = view.panes
+  local opts = { title = "Vimfy Stats Keys" }
   ui_windows.set_buffer_keymaps(panes.overview.buf, ui_windows.with_standard_ui_keymaps(
-    vim.list_extend({ drill_key(1, panes.overview) }, view_keys), opts))
-  ui_windows.set_buffer_keymaps(panes.commands.buf, ui_windows.with_standard_ui_keymaps(
-    vim.list_extend({ drill_key(2, panes.commands) }, view_keys), opts))
-  ui_windows.set_buffer_keymaps(panes.header.buf, ui_windows.with_standard_ui_keymaps(view_keys, opts))
+    vim.list_extend(vim.deepcopy(view.nav.keymaps), view_keys), opts))
 end
 
 ---@param tab integer
@@ -250,11 +265,9 @@ local function pane_buffer(tab, name)
     { filetype = "vimficiency_stats" })
 end
 
---- A new tab: the header across the top, the left page `width` wide and the
---- right one beside it, or below it when the screen is too narrow.
----@param width integer
+--- A new tab: the header over the stats.
 ---@return VF.Stats.ViewPanes
-local function open_panes(width)
+local function open_panes()
   vim.cmd.tabnew()
   local tab = v.nvim_get_current_tabpage()
   local placeholder = v.nvim_get_current_buf()
@@ -262,19 +275,8 @@ local function open_panes(width)
   v.nvim_win_set_buf(overview.win, overview.buf)
   v.nvim_buf_delete(placeholder, { force = true })
 
-  local header_buf = pane_buffer(tab, "header")
-  local header = { buf = header_buf,
-    win = v.nvim_open_win(header_buf, false, { split = "above", win = overview.win, height = 1 }) }
-  ui_windows.configure_scratch_window(header.win, { winfixheight = true })
-
-  local side_by_side = vim.o.columns >= width + MIN_SIDE_WIDTH
-  local commands_buf = pane_buffer(tab, "commands")
-  local commands = { buf = commands_buf,
-    win = v.nvim_open_win(commands_buf, false, { split = side_by_side and "right" or "below", win = overview.win }) }
-  ui_windows.configure_scratch_window(overview.win, { cursorline = true, winfixwidth = side_by_side })
-  ui_windows.configure_scratch_window(commands.win, { cursorline = true })
-  v.nvim_win_resize(header.win, -1, 1)
-  return { tab = tab, header = header, overview = overview, commands = commands, side_by_side = side_by_side }
+  ui_windows.configure_scratch_window(overview.win)
+  return { tab = tab, header = overview, overview = overview }
 end
 
 function M.open()
@@ -282,18 +284,21 @@ function M.open()
   local saved_tab, saved_win = v.nvim_get_current_tabpage(), v.nvim_get_current_win()
   ---@type VF.Stats.ViewQuery
   local query = { current_only = false, weight = config.stats.weight, charted_size = 0 }
-  local data = fetch(query)
+  local panes = open_panes()
   ---@type VF.Stats.View
-  local view = {
+  local view
+  view = {
     query = query,
-    data = data,
-    panes = open_panes(page_width(data.pages[1].lines)),
+    summary = stats_query.summary(scope(query, {})),
+    page = { lines = {}, marks = {}, items = {} },
+    nav = attach_nav(panes, function() return view end),
+    panes = panes,
     saved_tab = saved_tab,
     saved_win = saved_win,
     waiting = false,
   }
   set_keymaps(view)
-  close_with_any_pane(view)
+  watch_view(view)
   draw(view)
 end
 

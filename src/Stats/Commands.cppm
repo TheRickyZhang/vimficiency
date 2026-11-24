@@ -54,8 +54,10 @@ struct CommandRow {
   std::string text;
   int user = 0;
   int optimizer = 0;
-  // The command's share of the user's commands over its share of the
-  // optimizer's; infinity when the optimizer never uses it.
+  // The fraction of each side's commands the row makes up.
+  double userShare = 0;
+  double optimizerShare = 0;
+  // `userShare` over `optimizerShare`; infinity when the optimizer never uses it.
   double ratio = 0;
   // A merged row's user counts per variant (`ce 5 · cw 7`); empty otherwise.
   std::string split;

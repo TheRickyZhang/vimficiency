@@ -100,7 +100,7 @@ Our distance heuristics are generally **inadmissible** (overestimates true cost)
 
 However, if we use pure effort, with no distance heuristic, then we can have a guaranteed correct Dijkstra exploration.
 
-We expose distanceWeight and effortWeight in baseOptimzerParams to get a balance between these two.
+We expose distanceWeight and effortWeight in baseOptimzerParams to get a balance between these two. Transform's `distanceWeight` defaults to 0.35 instead of the shared 1; see `transform-optimizer.md`.
 
 ## Search Stats Policy
 

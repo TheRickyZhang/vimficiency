@@ -18,6 +18,8 @@ bool matchesDayAndOutcome(const Selection& selection, int64_t day, int outcome) 
 }
 
 bool matchesCommands(const Selection& selection, const Run& run) {
+  if (selection.overTyped && run.user.typedChars <= run.optimizer.typedChars) return false;
+  if (selection.beats && (!isScoring(run.outcome) || run.userCost >= run.bestCost)) return false;
   return ranges::all_of(selection.commands, [&](const CommandMatch& match) {
     return ranges::any_of(match.commands, [&](int command) {
       return (match.side != Side::Optimizer && run.user.uses(command)) ||
@@ -43,6 +45,8 @@ double orderKey(const Run& run, RunOrder order) {
     case RunOrder::Saved:
       return isScoring(run.outcome) && run.userCost > 0 ? (run.userCost - run.bestCost) / run.userCost
                                                         : none;
+    case RunOrder::Typed:
+      return isScoring(run.outcome) ? run.user.typedChars - run.optimizer.typedChars : none;
   }
   return 0;
 }
@@ -56,6 +60,8 @@ bool matches(const Selection& selection, const RunKey& key) {
 }
 
 bool matches(const Selection& selection, const Run& run) {
+  if (selection.epochSeconds && (run.wallEpoch < selection.epochSeconds->first ||
+                                 run.wallEpoch > selection.epochSeconds->second)) return false;
   if (run.source == Source::Session) {
     if (!selection.sessions || !matchesDayAndOutcome(selection, run.day, run.outcome)) return false;
   } else if (!matches(selection, keyOf(run))) {
@@ -72,7 +78,7 @@ Selection chartedSelection(const Scope& scope) {
 
 void visitJournal(const Scope& scope, const Selection& selection,
                   const function<void(const RunKey&, const RunTotals&)>& visit) {
-  if (selection.commands.empty()) {
+  if (!selection.readsRuns() && !selection.epochSeconds) {
     auto visitTable = [&](const RunTable& table) {
       for (const auto& [key, totals] : table) {
         if (matches(selection, key)) visit(key, totals);
@@ -92,6 +98,7 @@ void visitJournal(const Scope& scope, const Selection& selection,
 }
 
 int rolledUpRuns(const Scope& scope, const Selection& selection) {
+  if (selection.epochSeconds) return 0;
   int runs = 0;
   for (const RunTable& rolled : scope.journal.rolledUp) {
     for (const auto& [key, totals] : rolled) {
@@ -115,7 +122,7 @@ RunPage pageRuns(const Scope& scope, RunOrder order, bool ascending, int offset,
 
   RunPage page;
   const int rolled = rolledUpRuns(scope, selection);
-  (selection.commands.empty() ? page.rolledUp : page.rollupRunsWithoutCommands) = rolled;
+  (selection.readsRuns() ? page.rollupRunsWithoutCommands : page.rolledUp) = rolled;
   page.total = ssize(listed) + page.rolledUp;
 
   auto before = [order, ascending](const ListedRun& a, const ListedRun& b) {

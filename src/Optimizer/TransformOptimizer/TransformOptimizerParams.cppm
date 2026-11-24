@@ -12,6 +12,9 @@ struct TransformOptimizerParams : OptimizerParamsBase {
   TRANSFORM_FIELDS(VF_PARAMS_DECLARE_OWN_FIELD)
   enum class Field { TRANSFORM_ALL_FIELDS(VF_PARAMS_FIELD_ENUM) COUNT };
 
+  // The base default is tuned to Nav's and Composition's distances; this one counts characters.
+  inline TransformOptimizerParams() { distanceWeight = 0.35; }
+
 #define VF_PARAMS_SELF TransformOptimizerParams
   TRANSFORM_ALL_FIELDS(VF_PARAMS_WITH_SETTER)
 #undef VF_PARAMS_SELF

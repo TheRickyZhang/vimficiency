@@ -2,7 +2,8 @@
 - Historical name retained. Conceptually this is the transform optimizer: it searches for buffer/mode-changing transitions from any valid start position to a goal state.
 - It is broader than direct "edit commands" in the glossary. Replace, paste, and join-style changes still belong to the transform layer even when they are not direct edits.
 - The current implementation mostly models transforms as deleting all initial text and typing all goal text (with minor exceptions).
-- Heuristic: How much left to delete, sum(effective columns) + 2 * sum(additional lines) (+ effort)
+- Heuristic: `distanceWeight` × how much is left to delete, sum(effective columns) + 2 * sum(additional lines), plus the effort of typing the goal text (`typedWeight`) (+ effort)
+- Goal states already carry the typing effort. Without the typed term, a finished answer waits behind every unfinished state within that effort.
 
 ## Result Structure
 There are special transform shapes we note:
@@ -34,10 +35,34 @@ A start with no solution would otherwise search its whole space; a 13-position r
 
 The default is 8. On generated multi-line deletions, 4 lost no results and 3 did, and 8 costs about 5% more nodes than 4.
 
+## Distance Weight
+
+`TransformOptimizerParams` replaces the shared `distanceWeight` default of 1 with 0.35. Clearing a character costs well under one unit of effort, so at weight 1 a finished answer pops before cheaper paths that are one command short. A four-line delete returned `4dd` (5.5 on `qwerty`) and never reached `dj.` (3.8).
+
+On the user's history (`HeuristicShapes.Policy`, `uniform` / `qwerty`), with loss as mean effort above the best known answer per edit:
+
+| Weight | Loss | ms per edit | Slowest edit (ms) |
+|---|---|---|---|
+| 1 | 0.275 / 0.238 | 0.7 / 0.6 | 63 / 62 |
+| 0.35 | 0.135 / 0.094 | 1.1 / 1.7 | 80 / 334 |
+| 0.12 | 0.079 / 0.049 | 6.0 / 5.3 | 577 / 553 |
+
+The step to 0.35 costs 6–18 ms of search per unit of effort saved; the next step, to 0.25, costs about 35. The extra search sits in multi-line regions that begin and end mid-line, and most other edits would still gain from a lighter weight.
+
+Measured and not adopted:
+- A weight per size band: no gain on held-out edits.
+- Concave shapes (`colExponent` or `breakExponent` below 1): more nodes for the same answers.
+- A lighter weight for regions starting at column 0: it holds out, but only as a stand-in for "the light search is cheap here".
+- Another `breakCost`: 1.2 to 2 are indistinguishable, and loss rises just above 2.
+- Not built: try a lighter weight first and rerun at 0.35 when it exceeds a node budget. Simulated, 0.18 under a 5k-node budget gives 0.080 / 0.059 loss at 2.3 / 3.6 ms per edit, against 1.0 / 1.7 ms for 0.35 in that run.
+
+`shared:` overrides do not reach a planned edit's transform search, only `transform:` ones do, so the `optimizer` config table leaves this weight alone.
+
 ## State Hashing (CostMap Keys)
 
-The A* search tracks visited states in an `unordered_map<TransformStateKey, double>` (the costmap). Each state is keyed by `(buffer content, cursor position, mode, startIndex)`. Since the buffer mutates during search (deletions, joins), the key must capture buffer identity.
+The A* search tracks queued states in an `unordered_map<TransformStateKey, QueuedCost>` (the costmap): the best cost queued for a state, and how many arrivals at that cost were admitted. Each state is keyed by `(buffer content, cursor position, mode, startIndex)`. Since the buffer mutates during search (deletions, joins), the key must capture buffer identity.
 
+A state admits at most `maxResultsPerStartPos` arrivals at its best cost, since more cannot give the start another result. Admitting all of them expands every ordering of equal-cost commands (`x`, `X`, `.`), which triples per depth.
 
 `TransformEditorState` carries the editor snapshot used by both simulation and search: `Lines`, cursor, mode, and a precomputed 64-bit FNV-1a hash over all buffer content. This hash is:
 - Computed when an editor snapshot is constructed
@@ -80,18 +105,26 @@ Consumers apply the class through `TransformResult::forEachEditFrom`; see Compos
 
 ## Suffix Cache
 
-When a search path reaches the goal, the suffix cache walks the structured `TransformPathStep` chain recorded on the search state, caching the remaining suffix at each intermediate buffer state. This avoids reparsing/replaying generated command strings inside the optimizer.
+When a goal state pops, the suffix cache walks the structured `TransformPathStep` chain recorded on it, caching the remaining suffix at each intermediate buffer state. This avoids reparsing/replaying generated command strings inside the optimizer.
+
+### Filled when a goal pops
+
+A state keeps the first suffix cached for it, so the walk waits until the search has ranked the goal first. Goals are generated in exploration order: filling at generation leaves each state with whichever completion its expansion tried first, and every later start that hits the state inherits it.
+
+On the user's history at `distanceWeight` 1, filling at pop instead of at generation cut mean effort above the best known answer from 0.36 to 0.29 per edit (`uniform`) and from 0.37 to 0.25 (`qwerty`), for 1% more nodes. On edits that type, starts answered exactly as a search without the cache answers them rose from 79–92% to 97–99%.
+
+The goal carries what the walk needs as a `GoalCompletion` on its last path step: the plain completion command, its penalty, and the typed text. A normal goal and its dot variant share one record, because the cache stores the plain completion whichever of the two pops. A goal without a record (a start already on the cleared shell) caches nothing.
 
 ### Path-walking cost model
 
-Every `TransformState` carries a `std::shared_ptr<const TransformPathStep>` chain recording the search edges that produced it. Each step stores only cache-key-relevant metadata: `linesHashAfter`, `lineCountAfter`, `posAfter`, `modeAfter`, `lastEditCountAfter`, `lastEditBaseAfter`, and the emitted command string. No full `Lines` snapshot is held.
+Every `TransformState` carries a `std::shared_ptr<const TransformPathStep>` chain recording the search edges that produced it. Each step stores only cache-key-relevant metadata: `linesHashAfter`, `lineCountAfter`, `posAfter`, `modeAfter`, `lastEditAfter`, and the emitted command string. No full `Lines` snapshot is held.
 
-The chain is a tree, not a linear list: branches that share a parent share the upstream nodes by reference count. As losing branches are discarded by the search, their leaf `shared_ptr`s drop and unreferenced parents free. Only goal-reaching paths pay the full walk cost (one walk per finalized goal, populating intermediate suffix-cache entries).
+The chain is a tree, not a linear list: branches that share a parent share the upstream nodes by reference count. As losing branches are discarded by the search, their leaf `shared_ptr`s drop and unreferenced parents free. Only popped goals pay the full walk cost (one walk each, populating intermediate suffix-cache entries).
 
 Cost characteristics:
 
 - **Per-state overhead**: ~one small heap allocation + ~3 strings of bounded length. Allocated at successor-state creation regardless of whether the state ever wins.
-- **Goal-reaching walk**: O(path length) suffix-cache entries per finalized goal. Only fires when a goal is accepted; never during exploration.
+- **Goal-reaching walk**: O(path length) suffix-cache entries per popped goal. Never fires during exploration.
 - **Memory churn during search**: bounded by live states; goes back as branches die.
 
 Replacing the chain with replay (parse the generated sequence, simulate via the interpreter) was considered and rejected: replay requires a second interpretation layer for what the optimizer already has structurally, and the state metadata is cheaper than parsing.

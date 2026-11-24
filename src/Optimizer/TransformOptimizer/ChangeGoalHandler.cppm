@@ -55,6 +55,10 @@ struct ChangeGoalHandler {
 
   SuffixCacheHit findCachedSuffix(const TransformState& s);
 
+  // Call when `goal` pops. A goal's path is only worth remembering once the
+  // search has ranked it first; see dev/optimizer/transform-optimizer.md.
+  void cacheSuffixesOfGoal(const TransformState& goal);
+
   TransformResult finalize(std::vector<std::vector<Result>>&& resultsByStart,
                       const Lines& initialLines, const Lines& goalLines,
                       const TransformOptimizerParams& params,
@@ -136,11 +140,6 @@ private:
       const std::vector<RunningEffort>& rawSuffixEfforts,
       int nextIndex,
       const DotRepeat& lastEdit) const;
-  void cacheSuffixesForPath(const TransformState& base,
-                            const KeyedSequence& completionSuffix,
-                            double completionPenalty,
-                            const KeyedSequence& typedSuffix,
-                            const RunningEffort& typedSuffixEffort);
 
   // Core goal emission — returns states instead of calling back.
   GoalStates emitEditGoal(const TransformEditorState& postCompletionState,

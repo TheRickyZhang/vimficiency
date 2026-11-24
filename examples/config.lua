@@ -130,6 +130,7 @@ return {
     end
 
     cmd_map("<leader>vl", "list", "Vimfy list")
+    cmd_map("<leader>vd", "stats", "Vimfy stats")
     cmd_map("<leader>vz", "suggest toggle", "Toggle auto-suggest")
     cmd_map("<leader>vu", "play @", "Play last finished session")
 

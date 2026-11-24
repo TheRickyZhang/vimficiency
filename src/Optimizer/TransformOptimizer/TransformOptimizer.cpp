@@ -240,7 +240,7 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
     if (!startActive[activeStart]) continue;
 
     auto costIt = costMap.find(s.getKey());
-    if (costIt != costMap.end() && costIt->second < s.getCost() - 1e-9) {
+    if (costIt != costMap.end() && costIt->second.cost < s.getCost() - 1e-9) {
       stats.incrementStatesSkipped();
       ::maybeMarkStartExhausted(pendingByStart, startActive, terminalStarts, activeStart);
       continue;
@@ -249,6 +249,7 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
     nodesByStart[activeStart]++;
     if (uniquePositionsCovered > 0 &&
         nodesByStart[activeStart] > params.startWorkFactor * hardestSolvedNodes) {
+      transformTraceSink(TransformTraceEvent::WorkCutoff, s);
       startActive[activeStart] = false;
       terminalStarts++;
       continue;
@@ -267,9 +268,11 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
     }
 
     if (reachedGoal) {
+      transformTraceSink(TransformTraceEvent::Goal, s);
       if constexpr (PureDeletion) {
         recordResult(s, Result(Sequence(s.getSeq()), s.getRunningEffort()), true);
       } else {
+        mode.cacheSuffixesOfGoal(s);
         // emitEditGoal-pushed states already contain the typed completion in
         // their seq (and set lastEdit_). Initial / nav-only states whose
         // source already matched the cleared shell have not typed yet.
@@ -290,6 +293,7 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
     // other starts' work. So the hit is only a trigger. A goal already queued
     // for this start that beats the cached completion is recorded in its place.
     if (SuffixCacheHit cached = mode.findCachedSuffix(s); cached.suffix) {
+      transformTraceSink(TransformTraceEvent::CacheHit, s);
       // The cached suffix was simulated from the column this prefix produced.
       const bool prefixIgnoresCurswant =
           s.getPathTail() && s.getEntryCurswant() == EntryCurswant::Ignored;
@@ -304,12 +308,14 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
       ::maybeMarkStartExhausted(pendingByStart, startActive, terminalStarts, activeStart);
       continue;
     }
+    transformTraceSink(TransformTraceEvent::Expand, s);
     DispatchType dispatch{
         mode,         s,           stats,         pq,
         costMap,      pendingByStart, startActive, bank,
         transformBoundary, states,   heuristic,
         leftColOffset, rightColOffset, params.allowLinewisePureDeletion,
-        cheapestQueuedGoalByStart};
+        cheapestQueuedGoalByStart,
+        params.maxResultsPerStartPos};
 
     auto onDeletion = [&](const ResolvedEditAction& action,
                           const SequenceBinding& cmd) {

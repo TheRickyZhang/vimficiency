@@ -5,6 +5,7 @@ import vf.Utils.HashCombine;
 export import vf.Keyboard.Config;
 export import vf.Effort.RunningEffort;
 export import vf.Interpreter.EditInterpreter;
+export import vf.Keyboard.KeyedSequence;
 export import vf.Optimizer.Result;
 export import vf.Optimizer.SequenceBinding;
 export import vf.Types.CharLineRange;
@@ -126,6 +127,16 @@ public:
   inline uint64_t getLinesHash() const { return linesHash_; }
 };
 
+// What a goal's path is remembered by once the goal pops: the plain completion,
+// also for a goal that itself ends in a dot repeat. The typed text stays with
+// the goal handler.
+struct GoalCompletion {
+  KeyedSequence command;
+  double penalty;
+  const KeyedSequence& typed;
+  const RunningEffort& typedEffort;
+};
+
 struct TransformPathStep {
   std::shared_ptr<const TransformPathStep> prev;
   uint64_t linesHashAfter = 0;
@@ -136,6 +147,8 @@ struct TransformPathStep {
   std::string command;
   bool isDotRepeat = false;
   bool updatesDotRepeat = false;
+  // Set only on the step that completes the edit.
+  std::shared_ptr<const GoalCompletion> goalCompletion;
 
   inline TransformPathStep(std::shared_ptr<const TransformPathStep> prev,
                     const TransformEditorState& editorAfter,
@@ -385,23 +398,26 @@ public:
     return state;
   }
 
-  [[nodiscard]] inline TransformState afterCommandWithLastEdit(
+  // A state whose `cmd` completes the edit, so nothing is left to estimate.
+  [[nodiscard]] inline TransformState afterGoalCommand(
       const TransformState& base,
       TransformEditorState editor,
       std::string_view cmd,
       const RunningEffort& precomputed,
-      double heuristicCost,
       DotRepeat lastEdit,
-      EntryCurswant entryCurswant) const {
+      EntryCurswant entryCurswant,
+      std::shared_ptr<const GoalCompletion> completion) const {
     TransformState state = base;
     state.editor = std::move(editor);
     state.entryCurswant_ = extendEntryCurswant(base, entryCurswant);
-    appendCommand(state, cmd, precomputed, heuristicCost);
+    appendCommand(state, cmd, precomputed, 0.0);
     bool hasEdit = !lastEdit.empty();
     state.lastEdit_ = std::move(lastEdit);
-    state.pathTail_ = std::make_shared<TransformPathStep>(
+    auto step = std::make_shared<TransformPathStep>(
         base.pathTail_, state.editor, state.lastEdit_,
         std::string(cmd), cmd == ".", hasEdit);
+    step->goalCompletion = std::move(completion);
+    state.pathTail_ = std::move(step);
     return state;
   }
 };

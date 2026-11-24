@@ -88,9 +88,9 @@ leaves scoring alone keeps the stamp, so its history stays comparable.
 
 `vf_stats_summary` (`src/LuaExports/proto/summary.proto`) reduces the sessions
 and rollups in scope and the current params' journal samples
-(`dev/lua/atom-stream.md` § Sampling). `stats/render.lua` formats the summary into pages, and
+(`dev/lua/atom-stream.md` § Sampling). `stats/render.lua` formats the summary into one page, and
 `stats/view.lua` lays out the tab and maps its keys. The view
-holds the charted window size (`charted_size`, cycled by `l`) as a setting like
+holds the charted window size (`charted_size`, set by `<CR>` on a run-length item) as a setting like
 the weight, not a filter.
 
 - A score is `Σ w·min(best/user, 1) / Σ w` over scored spans, with `w` the
@@ -115,21 +115,44 @@ the weight, not a filter.
 
 Both exports narrow by one `vf.stats.Filter` (`src/Stats/Query.cpp` applies it)
 and read the same scope, so a row's `drill` filter lists exactly the runs it
-counted. Lua copies `drill` verbatim and never builds a filter: `build_pages`
-returns each drillable row and daily chart column with its `drill`, and the
-view opens `stats/run_list.lua`'s float over the one under the cursor.
+counted. Lua copies `drill` verbatim and never builds a filter: `build_page`
+returns each drillable row, and `chart_page` each day of a chart, as an item
+with its `drill`, and the view opens `stats/run_list.lua`'s float over the
+current one.
+
+The stats page is laid out as items (`ui/item_nav.lua`). An item is a block of
+rows, optionally a span of display columns, with the cells to highlight.
+
+- `h`/`j`/`k`/`l` move to the nearest item that way; `<CR>` and `<Esc>` act on
+  the current one, which is highlighted with the cursor hidden.
+- With the width for it, `build_page` puts the Commands tables beside Sessions
+  and Journal, still in one buffer. Each side is an item `group`: a move stays
+  inside its group, and the view's `leave` says where a move off its edge
+  lands (`l` on the first command, `h` on the chart).
+- The cursor always rests inside the current item, so the item is found from
+  the cursor; the remembered id only carries it across a redraw.
+- `<CR>` never redraws the page in place: it opens a float over the tab. A
+  chart opens in `stats/chart_view.lua`, drawn by `chart_page` to the float's
+  size, its days listed most recent first, which is the one it opens on.
+- The stats keep a section to its headline (the Sessions score, the Journal's
+  run lengths) and its chart. `chart_page` puts the rest under the chart: the
+  counts, the scored share, and every row of the section that lists runs.
+- A chart spreads its 30 days over the columns it is given, so day widths
+  differ by one when the width is no multiple of 30.
 
 - A field a source lacks leaves it out: a window size or nav/edit leaves
   sessions out; commands leave rollups out, counted as
   `rollup_runs_without_commands`.
 - The charted size is the filter's window size, else the request's
   `charted_size`, else the middle one. No drill sets a window size, so a drill
-  made before `l` follows the switch. Window size 0 is the charted size
+  made before the run length changes follows the switch. Window size 0 is the charted size
   everywhere but the per-size scores.
 - Run rows carry `user_display`/`best_display` (`Stats::displayKeys`): each
   stretch of typed characters as `⟨n⟩`, line breaks and every other key as the
   sequence display renders them. Nothing in Lua reads them: the run list's
-  preview renders the keys in full.
+  preview renders the keys themselves, cut to two lines. For a journal run
+  those are the detail's resolved `keys`, which tokenize where typed keys such
+  as `gj` do not.
 - `vf_stats_runs` pages the sessions in scope and the charted runs of the
   current params' samples by one `Order` column, largest first unless
   `ascending`; a run with no value in that column goes last either way, and

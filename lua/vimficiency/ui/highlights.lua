@@ -49,6 +49,11 @@ M.VIEW_CURSOR_END   = "VimficiencyViewCursorEnd"   -- end cursor cell (final pan
 -- Stats view (`:Vimfy stats`)
 M.STATS_SECTION_TITLE = "VimficiencyStatsSectionTitle" -- overview section titles
 M.STATS_DRILL         = "VimficiencyStatsDrill"        -- overview rows <CR> narrows to
+M.STATS_EFFICIENCY    = "VimficiencyStatsEfficiency"   -- a line chart's scores
+M.STATS_VOLUME        = "VimficiencyStatsVolume"       -- a line chart's sample counts
+
+-- Item navigation (`ui/item_nav.lua`)
+M.NAV_CURRENT = "VimficiencyNavCurrent" -- the item the keys act on
 
 -- Shared settings modal
 M.SETTINGS_ACTION_ACTIVE = "VimficiencySettingsActionActive" -- selected action row
@@ -81,10 +86,28 @@ function M.refresh()
 
   v.nvim_set_hl(0, M.STATS_SECTION_TITLE, { link = "Title",      default = true })
   v.nvim_set_hl(0, M.STATS_DRILL,         { link = "Identifier", default = true })
+  v.nvim_set_hl(0, M.STATS_EFFICIENCY,    { link = "String",     default = true })
+  v.nvim_set_hl(0, M.STATS_VOLUME,        { link = "Comment",    default = true })
+
+  -- Half of Visual's background over the editor's: CursorLine is too faint to
+  -- see in many themes, and Visual reads as a selection.
+  local visual = v.nvim_get_hl(0, { name = "Visual", link = false }).bg
+  if visual then
+    local base = v.nvim_get_hl(0, { name = "Normal", link = false }).bg
+      or (vim.o.background == "dark" and 0x000000 or 0xffffff)
+    local mixed = 0
+    for shift = 16, 0, -8 do
+      local channel = bit.rshift(bit.band(visual, bit.lshift(0xff, shift)) + bit.band(base, bit.lshift(0xff, shift)), 1)
+      mixed = mixed + bit.band(channel, bit.lshift(0xff, shift))
+    end
+    v.nvim_set_hl(0, M.NAV_CURRENT, { bg = mixed, default = true })
+  else
+    v.nvim_set_hl(0, M.NAV_CURRENT, { link = "Visual", default = true })
+  end
 
   v.nvim_set_hl(0, M.SETTINGS_ACTION_ACTIVE, { bold = true, default = true })
   -- `blend = 100` makes the cursor cell fully transparent. Combined with the
-  -- guicursor swap installed by `settings_window.hide_cursor`, the terminal
+  -- guicursor swap installed by `ui.windows.hide_cursor_while_active`, the terminal
   -- cursor disappears in modern TUIs; in older ones the cursor remains the
   -- terminal default but the row-selection extmark still indicates state.
   v.nvim_set_hl(0, M.SETTINGS_CURSOR_HIDDEN, { blend = 100, default = true })

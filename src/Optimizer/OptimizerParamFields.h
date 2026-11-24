@@ -31,11 +31,12 @@
     F(int, maxResultsPerStartPos, withMaxResultsPerStartPos, 1)                         \
     F(double, startWorkFactor, withStartWorkFactor, 8.0)                                \
     /* Heuristic = distanceWeight * (sum of cols^colExponent per line                   \
-       + breakCost * breaks^breakExponent) + typedWeight * effort of the goal text. */  \
+       + breakCost * breaks^breakExponent) + typedWeight * effort of the goal text.     \
+       TransformOptimizerParams replaces the base distanceWeight default with 0.35. */  \
     F(double, colExponent,   withColExponent,   1.0)                                    \
     F(double, breakCost,     withBreakCost,     2.0)                                    \
     F(double, breakExponent, withBreakExponent, 1.0)                                    \
-    F(double, typedWeight,   withTypedWeight,   0.0)                                    \
+    F(double, typedWeight,   withTypedWeight,   1.0)                                    \
     F(bool, allowLinewisePureDeletion, withLinewisePureDeletion, true)
 
 #define COMPOSITION_OWN_FIELDS(F)                                                          \

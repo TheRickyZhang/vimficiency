@@ -2,6 +2,7 @@
 ---@field DEFAULT_SIDE_PANE_WIDTH    integer
 ---@field configure_scratch_window   fun(win: integer, overrides?: table<string, any>)
 ---@field configure_side_pane        fun(win: integer, overrides?: table<string, any>)
+---@field hide_cursor_while_active   fun(win: integer, buf: integer): fun()
 ---@field centered_popup_geometry    fun(content_width: integer, content_height: integer, opts?: { min_width?: integer, min_height?: integer }): integer, integer, integer, integer
 ---@field show_output                fun(title: string, text?: string, opts?: { ui_keys?: VF.StandardUiKeyOpts, help_tag?: string, help_title?: string }): integer, integer
 ---@field DEFAULT_HELP_TAG           string
@@ -11,6 +12,7 @@
 ---@field with_standard_ui_keymaps   fun(keymaps: VF.Keymap[], opts: VF.StandardUiKeyOpts): VF.Keymap[]
 local M = {}
 
+local highlights = require("vimficiency.ui.highlights")
 local util = require("vimficiency.util")
 local v = vim.api
 
@@ -63,6 +65,70 @@ function M.configure_side_pane(win, overrides)
   if overrides.winfixwidth == nil then overrides.winfixwidth = true end
   v.nvim_win_resize(win, width, -1)
   M.configure_scratch_window(win, overrides)
+end
+
+---Swap `guicursor` to a `blend = 100` highlight while `buf` is active in
+---`win`, so a view that marks its own selection shows no cursor cell.
+---Returns a `cleanup()` callback that restores the saved guicursor and
+---tears down the autocmds; BufWipeout also fires it.
+---@param win integer
+---@param buf integer
+---@return fun()
+function M.hide_cursor_while_active(win, buf)
+  local saved
+  local closed = false
+  local group = v.nvim_create_augroup("vimficiency_hidden_cursor_" .. buf, { clear = true })
+
+  local function active_here()
+    return not closed
+      and v.nvim_win_is_valid(win)
+      and v.nvim_get_current_win() == win
+      and v.nvim_win_get_buf(win) == buf
+  end
+
+  local function activate()
+    if closed or saved then return end
+    saved = vim.go.guicursor
+    -- Normal and visual only: the command line keeps its cursor.
+    vim.go.guicursor = saved .. ",n-v:" .. highlights.SETTINGS_CURSOR_HIDDEN
+  end
+
+  local function deactivate()
+    if not saved then return end
+    vim.go.guicursor = saved
+    saved = nil
+  end
+
+  local function cleanup()
+    if closed then return end
+    closed = true
+    deactivate()
+    v.nvim_del_augroup_by_id(group)
+  end
+
+  v.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
+    group = group,
+    buffer = buf,
+    callback = function()
+      if active_here() then activate() end
+    end,
+    desc = "vimfy: hide cursor",
+  })
+  v.nvim_create_autocmd({ "BufLeave", "WinLeave" }, {
+    group = group,
+    buffer = buf,
+    callback = deactivate,
+    desc = "vimfy: restore cursor",
+  })
+  v.nvim_create_autocmd("BufWipeout", {
+    group = group,
+    buffer = buf,
+    callback = cleanup,
+    desc = "vimfy: clean cursor hooks",
+  })
+
+  if active_here() then activate() end
+  return cleanup
 end
 
 ---@class VF.Keymap

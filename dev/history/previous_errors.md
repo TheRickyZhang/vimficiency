@@ -345,3 +345,7 @@ Explore treated delete-prefix replacement intermediates as undo checkpoints. In 
 ## Composition dead-ended with the cursor inside a diff region
 
 Composition's motion search targeted the whole diff region, the same mistake Explore made above. A cursor inside the region but past the solved starts had no edit, and NavOptimizer returned only the empty landing, because it never expands a start already in its goal. The search ended with no result. The whole-buffer fallback hid this until it was removed. Motions now target the solved starts, split at the cursor.
+
+## Transform suffix cache was filled when a goal was generated
+
+The cache kept the first suffix written for a state, and it was written when a goal was generated, in exploration order. Results were recorded at pop time, but a cache hit bypassed that: it handed a later start whichever completion the state's expansion had tried first. No test failed, because the answers were valid and only dearer. The cache is now filled when the goal pops (`dev/optimizer/transform-optimizer.md` § Suffix Cache).

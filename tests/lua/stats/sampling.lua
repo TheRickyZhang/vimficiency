@@ -21,7 +21,7 @@ local function line_with(lines, needle)
   end
 end
 
---- The open stats view's pane `name` (header, overview, commands or runs).
+--- The open stats view's pane `name` (overview, chart, runs or preview).
 ---@param name string
 ---@return integer win
 ---@return string[] lines
@@ -33,6 +33,38 @@ local function stats_pane(name)
     end
   end
   error("no stats pane " .. name)
+end
+
+--- The open stats view's header: the first line of its overview.
+---@return string
+local function stats_header()
+  return select(2, stats_pane("overview"))[1]
+end
+
+--- Presses <CR> on the line of pane `name` holding `text`.
+---@param name string
+---@param text string
+local function enter_line(name, text)
+  local win, lines = stats_pane(name)
+  vim.api.nvim_set_current_win(win)
+  for row, line in ipairs(lines) do
+    if line:find(text, 1, true) then
+      vim.api.nvim_win_set_cursor(win, { row, 4 })
+      h.feed("<CR>")
+      return
+    end
+  end
+  error("no line with " .. text .. " in " .. name)
+end
+
+local JOURNAL_ROWS = { nav = "Movement only:", edit = "With edits:" }
+
+--- From the stats, opens the journal's chart and lists the runs of its row
+--- `kind`. <Esc> twice comes back to the stats.
+---@param kind "nav"|"edit"
+local function open_journal_runs(kind)
+  enter_line("overview", "Daily percent efficiency")
+  enter_line("chart", JOURNAL_ROWS[kind])
 end
 
 --- Runs a refresh to completion.
@@ -52,21 +84,11 @@ local function journal_summary()
   return stats_query.summary(TOP).journal
 end
 
---- Both stats pages as one, every section on it.
 ---@param summary VF.Stats.Summary
 ---@param background VF.Stats.Background
 ---@return VF.Stats.Page
 local function page_of(summary, background)
-  local pages = render.build_pages(summary, background, "effort")
-  local page = pages[1]
-  local offset = #page.lines
-  vim.list_extend(page.lines, pages[2].lines)
-  for _, row in ipairs(pages[2].title_rows) do page.title_rows[#page.title_rows + 1] = row + offset end
-  for _, target in ipairs(pages[2].targets) do
-    target.row = target.row + offset
-    page.targets[#page.targets + 1] = target
-  end
-  return page
+  return render.build_page(summary, background)
 end
 
 --- Journals `count` single-`l` atoms over one line, one tick each, after a
@@ -92,13 +114,14 @@ end
 --- Lines of a summary with no sessions and the journal fields overridden.
 ---@param fields table
 ---@param background? VF.Stats.Background
----@return string[]
+---@return string[] lines     # the stats
+---@return string[] details   # the journal chart's own page
 local function lines_with_journal(fields, background)
   h.use_temp_data_home()
   local summary = stats_query.summary(TOP)
   summary.journal = vim.tbl_extend("force", summary.journal,
     { present = true, scored_bytes = 100, journal_bytes = 100 }, fields)
-  return page_of(summary, background or { scoring = false }).lines
+  return page_of(summary, background or { scoring = false }).lines, render.chart_page(summary, "journal", 80, 30).lines
 end
 
 test("stats journal section: shows progress and never waits for scoring", function()
@@ -106,41 +129,51 @@ test("stats journal section: shows progress and never waits for scoring", functi
   assert_true(line_with(page_of(stats_query.summary(TOP), { scoring = false }).lines,
     "journal = { enabled = true }") ~= nil)
   local lines = lines_with_journal({ scored_bytes = 25 }, { scoring = true })
-  assert_true(line_with(lines,
-    "Scored under the current settings: 25% of the journal · scoring in the background…") ~= nil)
-  assert_true(line_with(lines, "No scored runs of 8 commands yet") ~= nil)
-  assert_true(line_with(lines_with_journal({}, { scoring = false, err = "boom" }),
+  assert_true(line_with(lines, "Scoring journal…") ~= nil)
+  assert_eq(line_with(lines, "average |"), nil)
+  assert_eq(line_with(lines, "No scored runs"), nil)
+  -- Scoring that needs nothing is not in the stats.
+  assert_eq(line_with(lines_with_journal({ scored_bytes = 25 }), "of the journal"), nil)
+  assert_true(line_with((lines_with_journal({}, { scoring = false, err = "boom" })),
     "Last background scoring failed: boom") ~= nil)
   h.with_patch({ { config.journal.sampling, "auto", false } }, function()
-    assert_true(line_with(lines_with_journal({ scored_bytes = 0 }),
+    assert_true(line_with((lines_with_journal({ scored_bytes = 0 })),
       ":Vimfy stats refresh scores the rest") ~= nil)
   end)
 end)
 
 test("stats journal section: charts one size and lists every size on one line", function()
-  local lines = lines_with_journal({
+  local lines, details = lines_with_journal({
     charted_size = 8,
     sizes = {
       { size = 4, score = { spans = 1, score = 90 } },
       { size = 8, score = { spans = 2, score = 75 } },
       { size = 16, score = { spans = 0, score = 0 } },
     },
-    score = { spans = 2, score = 75 },
+    score = { spans = 2, score = 75 }, chart_score = { spans = 2, score = 75 },
     nav = { spans = 1, score = 100 },
     edit = { spans = 1, score = 50 },
-    days = { { days_ago = 0, score = 75, drill = { days = { first = 20000, last = 20000 } } } },
+    days = { { days_ago = 0, score = 75, spans = 2, drill = { days = { first = 20000, last = 20000 } } } },
     unscored = { { outcome = "too_large", runs = 1, drill = {} }, { outcome = "no_result", runs = 2, drill = {} } },
     deadline_hit = 1,
   })
-  assert_true(line_with(lines, "Score:    75.0 / 100  (2 runs of 8 commands)") ~= nil)
-  assert_true(line_with(lines, "    Run length: 4 (90.0) · [8] (75.0) · 16 (—)   l to switch") ~= nil)
-  assert_true(line_with(lines, "    Daily score") ~= nil)
+  assert_true(line_with(lines, "    Run length: [4] [8] [16]") ~= nil)
+  assert_true(line_with(lines, "    Daily percent efficiency") ~= nil)
+  assert_true(line_with(lines, "    75.0% average | 2 samples") ~= nil)
   assert_eq(line_with(lines, "By run length"), nil)
-  assert_true(line_with(lines, "Movement only:  100.0 (1 run)") ~= nil)
-  assert_true(line_with(lines, "With edits:     50.0 (1 run)") ~= nil)
-  assert_true(line_with(lines, "Not scored:     1 too large") ~= nil)
-  assert_true(line_with(lines, "                2 no result") ~= nil)
-  assert_true(line_with(lines, "Search cut short by the deadline: 1 run") ~= nil)
+  -- The rest of the section is on the chart's own page.
+  local rest = {
+    "Efficiency:     75.0%  (2 runs of 8 commands)",
+    "Movement only:  100.0% (1 run)",
+    "With edits:     50.0% (1 run)",
+    "Not scored:     1 too large",
+    "                2 no result",
+    "Search cut short by the deadline: 1 run",
+  }
+  for _, text in ipairs(rest) do
+    assert_eq(line_with(lines, text), nil, text)
+    assert_true(line_with(details, text) ~= nil, text)
+  end
 end)
 
 test("sampling.refresh: nothing to do without a journal directory", function()
@@ -227,18 +260,10 @@ test("stats view: narrows to the movement-only journal runs", function()
 
   h.with_patch({ { config.journal.sampling, "window_sizes", { 2 } } }, function()
     assert_eq(refresh(), nil)
-    local targets = render.build_pages(stats_query.summary(TOP), { scoring = false }, "effort")[1].targets
     stats_view.open()
     local runs
     for _, kind in ipairs({ "nav", "edit" }) do
-      for _, t in ipairs(targets) do
-        if t.label == kind then
-          local overview = stats_pane("overview")
-          vim.api.nvim_set_current_win(overview)
-          vim.api.nvim_win_set_cursor(overview, { t.row + 1, 0 })
-          h.feed("<CR>")
-        end
-      end
+      open_journal_runs(kind)
       local runs_win
       runs_win, runs = stats_pane("runs")
       local title = vim.api.nvim_win_get_config(runs_win).title[1][1]
@@ -247,11 +272,12 @@ test("stats view: narrows to the movement-only journal runs", function()
       local _, preview = stats_pane("preview")
       if kind == "nav" then
         assert_eq(preview[1], " you:   l l")
-        assert_true(line_with(preview, " before · cursor 1:") ~= nil, "the text before")
-        assert_true(line_with(preview, " │ after · cursor 1:") ~= nil, "the text after")
+        assert_true(line_with(preview, " before ") ~= nil, "the text before")
+        assert_true(line_with(preview, " │ after ") ~= nil, "the text after")
       else
         assert_eq(preview, { "" })
       end
+      h.feed("<Esc>")
       h.feed("<Esc>")
     end
     vim.cmd("silent! tabonly")
@@ -266,16 +292,10 @@ local function in_nav_runs(fn)
   journal_moves(6, "lua")
   h.with_patch({ { config.journal.sampling, "window_sizes", { 2 } } }, function()
     assert_eq(refresh(), nil)
-    local nav
-    for _, t in ipairs(render.build_pages(stats_query.summary(TOP), { scoring = false }, "effort")[1].targets) do
-      if t.label == "nav" then nav = t end
-    end
+    local nav_drill = stats_query.summary(TOP).journal.nav_drill
     stats_view.open()
-    local overview = stats_pane("overview")
-    vim.api.nvim_set_current_win(overview)
-    vim.api.nvim_win_set_cursor(overview, { nav.row + 1, 0 })
-    h.feed("<CR>")
-    local rows = stats_query.runs({ current_only = false, weight = "effort", filter = nav.drill, charted_size = 0 }, "worst", false, 0, 50).runs
+    open_journal_runs("nav")
+    local rows = stats_query.runs({ current_only = false, weight = "effort", filter = nav_drill, charted_size = 0 }, "worst", false, 0, 50).runs
     assert_eq(#rows, 3)
     local runs_win = stats_pane("runs")
     vim.api.nvim_set_current_win(runs_win)
@@ -298,18 +318,10 @@ test("stats view: <CR> on a journal run replays it, and q comes back to the same
   in_nav_runs(function(runs_win, rows)
     local stats_tab = vim.api.nvim_get_current_tabpage()
     local tabs = #vim.api.nvim_list_tabpages()
-    local _, header = stats_pane("header")
+    local header = stats_header()
     local row = rows[2]
     assert_true(row.best_seq ~= "", "the run has a best sequence")
     local detail = assert(stats_query.run(row.id))
-
-    -- The column header, the blank line and the footer open nothing.
-    for _, line in ipairs({ 1, #rows + 2, #rows + 3 }) do
-      vim.api.nvim_win_set_cursor(runs_win, { line, 0 })
-      h.feed("<CR>")
-      vim.wait(50)
-      assert_eq(#vim.api.nvim_list_tabpages(), tabs, "row " .. line)
-    end
 
     vim.api.nvim_win_set_cursor(runs_win, { 3, 0 })
     h.silence_notify(function() h.feed("<CR>") end)
@@ -330,10 +342,10 @@ test("stats view: <CR> on a journal run replays it, and q comes back to the same
     h.feed("q")
     assert_eq(vim.api.nvim_get_current_tabpage(), stats_tab)
     assert_eq(vim.api.nvim_get_current_win(), runs_win)
-    assert_eq(vim.api.nvim_win_get_cursor(runs_win), { 3, 0 })
+    assert_eq(vim.api.nvim_win_get_cursor(runs_win), { 3, 1 })
     assert_eq(#vim.api.nvim_list_tabpages(), tabs)
-    for _, name in ipairs({ "header", "overview", "runs" }) do stats_pane(name) end
-    assert_eq(select(2, stats_pane("header")), header)
+    for _, name in ipairs({ "overview", "runs" }) do stats_pane(name) end
+    assert_eq(stats_header(), header)
   end)
 end)
 
@@ -357,37 +369,36 @@ test("stats view: <CR> on a run whose journal is gone warns and opens nothing", 
   end)
 end)
 
-test("stats view: l switches the charted run length and the runs listed after it follow", function()
+test("stats view: right on the run length row switches the chart and runs", function()
   h.use_temp_data_home()
   journal_moves(6)
 
   h.with_patch({ { config.journal.sampling, "window_sizes", { 2, 4 } } }, function()
     assert_eq(refresh(), nil)
-    local targets = render.build_pages(stats_query.summary(TOP), { scoring = false }, "effort")[1].targets
+    local targets = render.build_page(stats_query.summary(TOP), { scoring = false }).items
     stats_view.open()
     local overview_win, overview = stats_pane("overview")
-    assert_true(line_with(overview, "    Run length: [2] (") ~= nil)
+    assert_true(line_with(overview, "    Run length: [2] [4]") ~= nil)
     ---@return string footer
     local function nav_runs()
-      for _, t in ipairs(targets) do
-        if t.label == "nav" then
-          vim.api.nvim_set_current_win(overview_win)
-          vim.api.nvim_win_set_cursor(overview_win, { t.row + 1, 0 })
-          h.feed("<CR>")
-        end
-      end
+      open_journal_runs("nav")
       local _, runs = stats_pane("runs")
+      h.feed("<Esc>")
       h.feed("<Esc>")
       return runs[#runs]
     end
     assert_eq(nav_runs(), "runs 1–3 of 3")
 
+    for _, t in ipairs(targets) do
+      -- The page's rows are under the two header lines.
+      if t.id == "run_length" then vim.api.nvim_win_set_cursor(overview_win, { t.cursor[1] + 3, t.cursor[2] }) end
+    end
     h.feed("l")
-    local _, header = stats_pane("header")
-    assert_true(header[1]:find("^ Stats    all scorings · .* · runs of 4$") ~= nil, header[1])
+    local header = stats_header()
+    assert_true(header:find("^ Stats    all scorings · .* · runs of 4$") ~= nil, header)
     assert_eq(nav_runs(), "runs 1–1 of 1")
     _, overview = stats_pane("overview")
-    assert_true(line_with(overview, " · [4] (") ~= nil)
+    assert_true(line_with(overview, " [4]") ~= nil)
     vim.cmd("silent! tabonly")
   end)
 end)
@@ -438,14 +449,17 @@ end)
 
 test("sampling background: scores new journal content, then waits out the interval", function()
   h.use_temp_data_home()
-  journal_moves(6)
+  journal_moves(16)
   sampling.start_background()
-
-  sampling._for_test.maybe_run()
-  assert_true(sampling.running(), "a run started")
   stats_view.open()
   local _, overview = stats_pane("overview")
-  assert_true(line_with(overview, "scoring in the background…") ~= nil)
+  assert_true(line_with(overview, "average | 0 samples") ~= nil)
+
+  vim.api.nvim_exec_autocmds("CursorHold", { group = "VimficiencyJournalSampling", modeline = false })
+  assert_true(sampling.running(), "a run started")
+  _, overview = stats_pane("overview")
+  assert_true(line_with(overview, "Scoring journal…") ~= nil)
+  assert_eq(line_with(overview, "average |"), nil)
   local done = false
   assert_true(sampling.when_done(function() done = true end))
   assert_true(vim.wait(30000, function() return done end), "run finished")
@@ -453,7 +467,8 @@ test("sampling background: scores new journal content, then waits out the interv
   assert_eq(sampling.last_error(), nil)
   -- The open view redrew in place.
   _, overview = stats_pane("overview")
-  assert_eq(line_with(overview, "scoring in the background…"), nil)
+  assert_eq(line_with(overview, "Scoring journal…"), nil)
+  assert_true(line_with(overview, "average | 2 samples") ~= nil)
   vim.cmd("silent! tabonly")
 
   journal_moves(4)

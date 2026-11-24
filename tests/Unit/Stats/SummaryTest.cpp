@@ -60,6 +60,7 @@ TEST_F(StatsSummaryTest, OutcomesAreCountedAndOnlySolvedSessionsScore) {
   EXPECT_EQ(s.no_result(), 1);
   EXPECT_EQ(s.unbeaten(), 1);
   EXPECT_EQ(s.beats(), 1);
+  EXPECT_EQ(runs(s.beats_drill()).total(), 1);
   EXPECT_EQ(s.score().spans(), 3);
   // (30 + 10 + 5) / (30 + 10 + 10).
   EXPECT_DOUBLE_EQ(s.score().score(), 90);
@@ -84,6 +85,25 @@ TEST_F(StatsSummaryTest, ChartAndTimingCoverTheLast30Days) {
   EXPECT_DOUBLE_EQ(s.days(0).score(), 100);
   EXPECT_EQ(s.timing().n(), 1);
   EXPECT_DOUBLE_EQ(s.timing().max(), 10);
+}
+
+TEST_F(StatsSummaryTest, ChartUnitsGroupTimestampedSamplesAndDrillIntoTheirBucket) {
+  auto recent = sample(4, 10, 5);
+  recent.set_wall_epoch(NOW);
+  auto older = sample(4, 10, 10);
+  older.set_wall_epoch(NOW - 35 * 60);
+  journal("a", 100, params, {recent, older});
+  auto req = request();
+  for (auto unit : {vf::stats::minutes, vf::stats::hours, vf::stats::days, vf::stats::weeks}) {
+    req.set_chart_unit(unit);
+    const auto chart = summarize(req).journal();
+    const bool minutes = unit == vf::stats::minutes;
+    EXPECT_EQ(chart.chart_score().spans(), minutes ? 1 : 2);
+    EXPECT_DOUBLE_EQ(chart.chart_score().score(), minutes ? 50 : 75);
+    int listed = 0;
+    for (const auto& bucket : chart.days()) listed += runs(bucket.drill()).total();
+    EXPECT_EQ(listed, chart.chart_score().spans());
+  }
 }
 
 TEST_F(StatsSummaryTest, JournalChartsTheMiddleSizeAndListsEvery) {

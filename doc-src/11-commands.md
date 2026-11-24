@@ -24,7 +24,7 @@ title: "Commands reference"
 | `:Vimfy stats refresh`                     | Score the journal now, without opening the stats.    |
 | `:Vimfy suggest <on\|off\|toggle>`         | Runtime toggle for auto-suggest (works with zero config). |
 | `:Vimfy config`                            | Show the current configuration.                      |
-| `:Vimfy reload`                            | Rebuild the C++ library (needs restart).             |
+| `:Vimfy reload`                            | Rebuild and hot-reload Vimfy with live build output. |
 | `:Vimfy version`                           | Show the plugin version.                             |
 | `:Vimfy help`                              | Show the command list.                               |
 
@@ -125,75 +125,109 @@ Watch's idle trigger fire) and try again.
 
 ## Session stats (`:Vimfy stats`)
 
-Opens a tab with a header over two panes, side by side, or stacked on a
-narrow screen:
+Opens a tab with a header over one full-width pane:
 
-- **Header** — the scorings counted, the weight and the charted run length.
-- **Stats** — two columns: Sessions and Journal on the left, the Commands
-  tables and Dev on the right.
+- **Header** — the scorings counted, the weight and the charted run length,
+  over the path of the session log the stats are read from.
+- **Stats** — Sessions, Journal, the Commands tables, then Dev.
+
+In a wide window the Commands tables sit to the right of Sessions and Journal.
+`l` past the right edge of the left side goes to the first command, and `h`
+from any command goes back to the chart.
+
+The stats are laid out as items: each row that lists runs, each chart,
+and each selector row. One item is always current. It is highlighted whole and
+the cursor itself is hidden.
+
+`h`, `j`, `k` and `l` move to the item on that side, and the other keys act on
+the current one. Any other motion takes the nearest item.
 
 Keys in the stats (`?` lists them):
 
-| Key           | Action                                                        |
-|---------------|---------------------------------------------------------------|
-| `<CR>`        | On a highlighted row or a day in a daily chart: list its runs. |
-| `w`           | Switch the score weight between effort and uniform for this view. |
-| `l`           | Cycle the journal run length the stats chart and list.        |
-| `v`           | Count every scoring, or only the current one (see below).     |
-| `q`           | Close the tab.                                                |
+| Key             | Action                                                      |
+|-----------------|-------------------------------------------------------------|
+| `j` / `k`       | The item below / above; a count moves that many.            |
+| `h` / `l`       | Change the active option on a selector row, or move to the item to the left / right. The arrow keys work the same way. |
+| `<CR>`          | Open the runs for a result row or expand a chart over the whole screen. |
+| `w`             | Switch the efficiency weight between effort and uniform for this view. |
+| `v`             | Count every scoring, or only the current one (see below).   |
+| `q`             | Close the tab.                                              |
+
+`<Esc>` or `q` closes the float opened by `<CR>`. A
+chart fills its column in the stats and the whole screen in its float.
+
+The stats keep each section to its headline: the Sessions efficiency, the Journal's
+run lengths, and a chart each. The rest of a section is under the chart in its
+float.
+
+The float's chart is as tall as the screen allows and draws two lines:
+the efficiency, solid, against the left axis, and the number of samples
+behind it, dotted, against the right. Each bucket's own value is a larger dot, placed to the nearest row, and
+the lines only join them; the float's title has the exact value. A line breaks where there are no samples. Their colors
+are `VimficiencyStatsEfficiency` and `VimficiencyStatsVolume`.
+
+In the chart's float each day with runs is an item, named with its efficiency in the
+title. `h` and `l` move between the days and `<CR>` lists a day's runs. The
+rows under the chart list their runs the same way.
 
 The run list floats over the tab at its full width, one line per session or
-journal run: when, your effort, the best found, the saving and the search
-time. Its title holds the row it came from, the sort and the page.
+journal run: when, your effort, the best found, the saving, the extra
+characters you typed in insert mode and the search time. Its title holds the row it came from, the sort and the page. It takes
+two fifths of the screen and the preview under it the rest.
 
-Under it, a preview follows the cursor: your keys and the best sequence in
-full, then the run's text before and after, side by side, with the changed
-lines marked. A session keeps no text, so its preview is the keys alone.
+The preview follows the current run. It shows your keys and the best sequence,
+spaced by command and cut to two lines each. Under them is the run's text
+before and after, side by side, with the changed lines marked and the cursor's
+place shaded in each.
 
-Runs older than `journal.keep_days` are rolled up: they count in the total but
-are not listed.
+A session keeps no text, so its preview is the keys alone. Runs older than
+`journal.keep_days` are rolled up: they count in the total but are not listed.
 
-Keys in the run list; every motion works, so the cursor can sit in any column:
+Every cell of the list is an item, as in the stats:
 
 | Key           | Action                                                        |
 |---------------|---------------------------------------------------------------|
-| `s`           | Sort by the column under the cursor: largest first, then smallest first, then off. Unsorted, the worst runs come first (your effort minus the best). |
+| `j` / `k`     | The run below / above, in the same column.                    |
+| `h` / `l`     | The column to the left / right. The arrow keys move the same way. |
+| `s`           | Sort by the current column: largest first, then smallest first, then off. Unsorted, the worst runs come first (your effort minus the best). |
 | `<CR>`        | On a journal run: replay it as `:Vimfy play` does, your keys beside the best sequence, highlighted as the file was. `q` there returns to the list. |
 | `]` / `[`     | Next / previous page of runs.                                 |
 | `<Esc>` / `q` | Back to the stats.                                            |
 
 Sections:
 
-- **Sessions** — total finished sessions, broken down by type (mark /
-  watch / recall / suggest), and the commands recorded in them. Then a score
-  out of 100: the best effort found over the effort you spent,
-  `min(best / yours, 1)`, averaged over sessions. By default each session
-  counts by the effort you spent on it, so long sessions count more; set
-  `stats.weight = "uniform"` to count each once (see
-  [configuration](09-configuration.md)). Sessions with no solution are
-  counted but not scored. The daily score below covers the last 30 days in
-  local time (▁ = 0, █ = 100; blanks = no sessions that day).
-- **Journal** — the same score over everything you typed, not only
+- **Sessions** — your percent efficiency: the best effort found over the effort
+  you spent, `min(best / yours, 1)`, averaged over sessions. It never passes
+  100%: a session that beats the optimizer counts as 100%. By default each
+  session counts by the effort you spent on it, so long sessions count more;
+  set `stats.weight = "uniform"` to count each once (see
+  [configuration](09-configuration.md)). Look back groups the chart into 30 minutes, hours, days, or weeks. The average and sample count above the chart cover that period.
+  Its float adds the total finished sessions by type (mark / watch / recall /
+  suggest), the commands recorded in them, and the sessions that were
+  unbeaten or had no solution, which are counted but not scored.
+  *You beat the optimizer* counts the scored sessions where your keys cost
+  less than the best sequence found, and `<CR>` lists them. Each is a
+  sequence the search missed or one the cost model underprices.
+- **Journal** — the same efficiency over everything you typed, not only
   finished sessions. Needs the [journal](09-configuration.md) turned on.
   See below.
 - **Commands** — for every command that appears at least ten times
   combined across your scored sessions and journal runs and the
   optimizer's best sequences for them, the ratio
-  `your_share / optimizer_share`. Three lists: what you use *more* than
-  the optimizer (potential inefficient habits), what you use and the
-  optimizer *never* does (the five you use most), and what you use *less*
-  (candidates to practice). The target of `f`/`F`/`t`/`T`/`r`/`R` is
+  `your_share / optimizer_share`, with the two shares beside it. Three
+  lists: *Underused commands*, which you use less than the optimizer
+  (candidates to practice); *Overused commands*, which you use more
+  (potential inefficient habits); and *Never used by the optimizer* (the
+  five you use most). The target of `f`/`F`/`t`/`T`/`r`/`R` is
   collapsed to `_`, an insert counts its entry command and editing keys
   such as `<BS>` (typed characters are only totalled), and `ce`/`cw`
-  share a row, as do `cE`/`cW`, with your split shown. A `gj` or `gk`
+  share a row, as do `cE`/`cW`; the row's run list names your split. A `gj` or `gk`
   that crossed to another line shares a row with `j` or `k`; one that
   moved along a wrapped line is listed apart, as `gj (same line)`.
-- **Dev — Optimizer beats queued** — count of finished sessions where
-  your sequence came in cheaper than the optimizer's best result.
-  **Beats are interesting-to-study, not ground truth**: many are
-  cost-model artifacts or unexplored regions, so they are *not* fed back
-  into training without manual review. Optimizer time covers the last
-  30 days.
+  Under the lists, *Extra typed text* is how much more you typed in insert
+  mode than the best sequences did; `<CR>` lists the runs where you typed
+  more.
+- **Dev** — how long the optimizer took per session over the last 30 days.
 
 A scoring is the plugin's scoring version plus the settings a score depends
 on. The stats count sessions and rolled-up journal runs from every scoring.
@@ -205,12 +239,18 @@ The journal is cut into back-to-back runs of 4, 8 and 16 commands, and each
 run is scored as if you had ended a session there. A run's score is the
 effort of the best sequence found over the effort of what you typed.
 
-- **Score** — the Sessions score, for runs of the charted length (8 commands
-  until `l` switches it). A run that ends where it started counts as all
-  waste.
-- **Run length** — the score at each run length, the charted one bracketed.
-  Longer runs give the optimizer more to merge, so they usually score lower.
-- **Daily score** — the charted length's score per day.
+In the stats:
+
+- **Run length** — each available length in brackets, with the selected length in bold
+  (8 commands by default). Use `h` or `l` on the row to switch lengths. Longer runs give the
+  optimizer more to merge, so they usually score lower.
+- **Percent efficiency** — the selected length’s average and sample count for the visible period. Minute and hour bars use timestamped samples. Archived daily totals also contribute to day and week bars.
+
+Under the chart in its float:
+
+- **Efficiency** — the Sessions efficiency, for runs of the charted length, and how
+  many runs it covers. A run that ends where it started counts as all waste.
+- **Scored under the current settings** — how much of the journal that is.
 - **Movement only / With edits** — the charted runs split by whether the
   text changed.
 - **Not scored** — runs left out of the score: the changed region was too
@@ -220,11 +260,11 @@ A run is dropped, not scored, when the journal cannot account for everything
 in it: you switched buffer or window, an ex command or mouse click changed
 something, or you paused for more than 30 seconds.
 
-The journal is scored in the background at low priority: once shortly after
-startup, then whenever Neovim is idle and the journal has grown, at most every
-five minutes. Opening the stats never waits for it. The section shows what is
-scored so far and how much of the journal that covers, and redraws when a run
-in progress finishes.
+The first background scoring check runs 30 seconds after startup or on an
+earlier idle event. After that, Neovim checks for new journal data when idle
+and starts another low-priority run at most once every five minutes.
+The Journal section shows `Scoring journal…` in place of the average while
+the worker runs and refreshes the average when it finishes.
 
 After a settings change, the journal is rescored under the new settings. Until
 that finishes, runs scored under the old settings are left out, never mixed in.

@@ -26,11 +26,19 @@ struct Selection {
   int64_t lastDay = std::numeric_limits<int64_t>::max();
   // Of journal runs; 0 for any.
   int windowSize = 0;
+  std::optional<std::pair<int64_t, int64_t>> epochSeconds;
   Change change = Change::Any;
   // A bit per `vf.journal.Sample.Outcome`; 0 for every one.
   uint32_t outcomes = 0;
   // Each must hold.
   std::vector<CommandMatch> commands;
+  // Only runs whose user typed more insert text than the best sequence.
+  bool overTyped = false;
+  // Only runs whose keys cost less than the best sequence found.
+  bool beats = false;
+
+  // Whether it reads each run on its own, which rollups do not keep.
+  inline bool readsRuns() const { return !commands.empty() || overTyped || beats; }
 };
 
 // A journal total's fields; commands are not checked.
@@ -73,6 +81,8 @@ enum class RunOrder : uint8_t {
   BestCost,
   // The share of the user's cost the best sequence saves.
   Saved,
+  // Characters the user typed in insert mode − the best sequence's.
+  Typed,
 };
 
 struct ListedRun {

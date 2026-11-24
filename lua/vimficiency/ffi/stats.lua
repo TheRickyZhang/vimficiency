@@ -25,17 +25,20 @@ local lib = core.lib
 
 ---@alias VF.Stats.Outcome "scored"|"too_large"|"no_result"|"crashed"|"unsupported"|"unbeaten"
 ---@alias VF.Stats.Weight "effort"|"uniform"
----@alias VF.Stats.Order "worst"|"newest"|"slowest"|"user_cost"|"best_cost"|"saved"
+---@alias VF.Stats.Order "worst"|"newest"|"slowest"|"user_cost"|"best_cost"|"saved"|"typed"
 
 --- `vf.stats.Filter` (src/LuaExports/proto/summary.proto). Every field is
 --- optional; Lua copies a row's `drill` rather than building one.
 ---@class VF.Stats.Filter
 ---@field source? "both"|"journal"|"sessions"
+---@field epoch_seconds? { first: integer, last: integer }
 ---@field days? { first: integer, last: integer }   # inclusive local days since 1970-01-01
 ---@field window_size? integer   # 0: the charted size
 ---@field kind? "any"|"nav"|"edit"
 ---@field outcomes? VF.Stats.Outcome[]
 ---@field commands? { tokens: string[], side: "either"|"user"|"optimizer" }[]
+---@field over_typed? boolean    # only runs where the user typed more than the best sequence
+---@field beats? boolean         # only runs whose keys cost less than the best sequence
 
 --- `vf.stats.SummaryRequest` (src/LuaExports/proto/summary.proto).
 ---@class VF.Stats.SummaryRequest
@@ -46,6 +49,7 @@ local lib = core.lib
 ---@field sample_params table
 ---@field weight VF.Stats.Weight
 ---@field filter VF.Stats.Filter
+---@field chart_unit? string
 ---@field charted_size integer   # 0: the middle window size
 
 ---@class VF.Stats.Score
@@ -55,9 +59,11 @@ local lib = core.lib
 ---@class VF.Stats.DayScore
 ---@field days_ago integer
 ---@field score number
+---@field spans integer   # the runs the score is over
 ---@field drill VF.Stats.Filter
 
 ---@class VF.Stats.Summary
+---@field chart_unit string
 ---@field lifetime { sessions: integer, mark: integer, watch: integer, recall: integer, suggest: integer, commands: integer }
 ---@field sessions VF.Stats.SessionSummary
 ---@field journal VF.Stats.JournalSummary
@@ -68,6 +74,7 @@ local lib = core.lib
 ---@class VF.Stats.SessionSummary
 ---@field sessions integer
 ---@field score VF.Stats.Score
+---@field chart_score VF.Stats.Score
 ---@field days VF.Stats.DayScore[]
 ---@field no_result integer
 ---@field unbeaten integer
@@ -75,6 +82,7 @@ local lib = core.lib
 ---@field timing? { n: integer, p50: number, p95: number, p99: number, max: number }
 ---@field no_result_drill VF.Stats.Filter
 ---@field unbeaten_drill VF.Stats.Filter
+---@field beats_drill VF.Stats.Filter
 
 ---@class VF.Stats.JournalSummary
 ---@field present boolean
@@ -85,6 +93,7 @@ local lib = core.lib
 ---@field score VF.Stats.Score
 ---@field nav VF.Stats.Score
 ---@field edit VF.Stats.Score
+---@field chart_score VF.Stats.Score
 ---@field days VF.Stats.DayScore[]
 ---@field unscored { outcome: VF.Stats.Outcome, runs: integer, drill: VF.Stats.Filter }[]
 ---@field unbeaten integer
@@ -98,7 +107,9 @@ local lib = core.lib
 ---@field text string
 ---@field user integer
 ---@field optimizer integer
----@field ratio number
+---@field user_share number        # Fraction of the user's commands
+---@field optimizer_share number   # Fraction of the optimizer's commands
+---@field ratio number             # user_share / optimizer_share
 ---@field split string
 ---@field drill VF.Stats.Filter
 
@@ -111,6 +122,7 @@ local lib = core.lib
 ---@field never_cut integer             # How many more of those there are
 ---@field user_typed_chars integer
 ---@field optimizer_typed_chars integer
+---@field typed_drill VF.Stats.Filter   # the runs where the user typed more
 
 --- `vf.stats.RunsRequest` (src/LuaExports/proto/summary.proto).
 ---@class VF.Stats.RunsRequest
@@ -139,6 +151,8 @@ local lib = core.lib
 ---@field analyze_ms number
 ---@field user_display string   # typed text collapsed to ⟨n⟩
 ---@field best_display string
+---@field user_typed_chars integer   # typed in insert mode
+---@field best_typed_chars integer
 
 ---@class VF.Stats.RunList
 ---@field total integer   # rolled-up runs included

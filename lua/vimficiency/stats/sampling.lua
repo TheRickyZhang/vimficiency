@@ -2,7 +2,7 @@
 -- (src/Journal/), a separate low-priority process run in the background; this
 -- module starts it, and src/Stats/ reads the `vf.journal.SampleFile` it leaves
 -- beside each journal and the rollups of the old journals it deletes. Stats
--- never wait for it: they show what is scored so far.
+-- show the scoring status until the worker finishes.
 
 ---@class (exact) VF.StatsSampling
 ---@field refresh          fun(on_done: fun(err: string|nil))
@@ -115,6 +115,9 @@ function M.refresh(on_done)
     { journal_dir = journal.dir(), params = M.params(), keep_days = config.journal.keep_days })
   waiters = { on_done }
   spawn(request, 0)
+  if waiters then
+    vim.api.nvim_exec_autocmds("User", { pattern = "VimficiencyJournalScoringStarted", modeline = false })
+  end
 end
 
 ---@return boolean

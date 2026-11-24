@@ -930,8 +930,8 @@ C++ source (`cpp/effort_model.*`) is the spec.
 
   :Vimfy config                             Show the current configuration.
 
-  :Vimfy reload                             Rebuild the C++ library (needs
-                                            restart).
+  :Vimfy reload                             Rebuild and hot-reload Vimfy with
+                                            live build output.
 
   :Vimfy version                            Show the plugin version.
 
@@ -1054,9 +1054,11 @@ Sections:
     watch / recall / suggest), and total captured commands.
 - **Efficiency** — a score out of 100, defined per session as
     `min(best_optimizer_cost / user_cost, 1) × 100` (capped at 100 so a
-    beat doesn’t inflate the average). Aggregated as a geometric mean.
-    The 30-day block below the score is a sparkline of the daily
-    geometric mean (▁ = 0, █ = 100; blanks = no sessions that day).
+    beat doesn’t inflate the average). Use `h` or `l` on Look back to select
+    30 minutes, hours, days, or weeks or on Run length to change the journal
+    sample size. The active option is bold. The chart shows the average and
+    sample count for the selected period, weighted by effort or uniformly
+    according to the stats setting.
 - **Motions** — for every motion molecule that appears at least ten
     times combined across your sequences and the optimizer’s best
     suggestions, the ratio `your_proportion / optimizer_proportion`. Two

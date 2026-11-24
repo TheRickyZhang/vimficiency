@@ -217,7 +217,7 @@ return {
 
   -- Plugin-related
   reload = {
-    desc = "Rebuild the C++ library",
+    desc = "Rebuild and hot-reload Vimfy with live build output",
     usage = "reload",
     run = dev_reload.run,
   },

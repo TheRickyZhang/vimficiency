@@ -10,6 +10,13 @@ import "stats.proto";
 
 option optimize_for = LITE_RUNTIME;
 
+enum ChartUnit {
+  days = 0;
+  minutes = 1;
+  hours = 2;
+  weeks = 3;
+}
+
 // Narrows the runs a summary or run list reduces. A field at its default
 // narrows nothing; a field a source lacks leaves that source out.
 message Filter {
@@ -28,8 +35,7 @@ message Filter {
     user = 1;
     optimizer = 2;
   }
-  // Inclusive, in days since 1970-01-01, local time.
-  message Days {
+  message InclusiveRange {
     int64 first = 1;
     int64 last = 2;
   }
@@ -40,8 +46,8 @@ message Filter {
   }
 
   Source source = 1;
-  // Unset: every day.
-  Days days = 2;
+  // Days since 1970-01-01, local time. Unset selects every day.
+  InclusiveRange days = 2;
   // Leaves sessions out. 0 is every size in the summary's `sizes` and the
   // charted size everywhere else.
   int32 window_size = 3;
@@ -51,6 +57,13 @@ message Filter {
   repeated vf.journal.Sample.Outcome outcomes = 5;
   // Each must hold. Leaves rollups out: they keep no per-run commands.
   repeated Commands commands = 6;
+  InclusiveRange epoch_seconds = 7; // Inclusive Unix timestamps.
+  // Only runs whose user typed more insert text than the best sequence does.
+  // Leaves rollups out, as `commands` does.
+  bool over_typed = 8;
+  // Only runs whose keys cost less than the best sequence found. Leaves
+  // rollups out, as `commands` does.
+  bool beats = 9;
 }
 
 message SummaryRequest {
@@ -73,6 +86,7 @@ message SummaryRequest {
   // One of `sample_params.window_sizes`; 0 for the middle one. The filter's
   // window size overrides it.
   int32 charted_size = 8;
+  ChartUnit chart_unit = 9;
 }
 
 // Σ w·min(best/user, 1) / Σ w × 100 over `spans`; `score` is unset when there
@@ -84,10 +98,12 @@ message Score {
 
 // Every `drill` is the request's filter narrowed to the runs its row counts.
 message DayScore {
-  // 0 is today, local time.
+  // Offset in chart units, zero for the current bucket.
   int32 days_ago = 1;
   double score = 2;
   Filter drill = 3;
+  // The runs the score is over.
+  int32 spans = 4;
 }
 
 // Every stamp's sessions.
@@ -111,7 +127,7 @@ message Timing {
 message SessionSummary {
   int32 sessions = 1;
   Score score = 2;
-  // The last 30 days.
+  // The last 30 chart buckets.
   repeated DayScore days = 3;
   int32 no_result = 4;
   int32 unbeaten = 5;
@@ -121,6 +137,8 @@ message SessionSummary {
   Timing timing = 7;
   Filter no_result_drill = 8;
   Filter unbeaten_drill = 9;
+  Score chart_score = 10;
+  Filter beats_drill = 11;
 }
 
 message SizeScore {
@@ -159,6 +177,7 @@ message JournalSummary {
   Filter nav_drill = 14;
   Filter edit_drill = 15;
   Filter unbeaten_drill = 16;
+  Score chart_score = 17;
 }
 
 message CommandRow {
@@ -171,6 +190,9 @@ message CommandRow {
   string split = 5;
   // The runs with any of the row's variants on either side.
   Filter drill = 6;
+  // The fraction of each side's commands the row makes up; `ratio` is their quotient.
+  double user_share = 7;
+  double optimizer_share = 8;
 }
 
 // Commands of the scored spans: the sessions and the journal runs of the
@@ -186,9 +208,12 @@ message CommandSummary {
   repeated CommandRow never = 7;
   // How many more of those there are.
   int32 never_cut = 8;
+  // The runs where the user typed more than the best sequence.
+  Filter typed_drill = 9;
 }
 
 message Summary {
+  ChartUnit chart_unit = 30;
   Lifetime lifetime = 1;
   SessionSummary sessions = 2;
   JournalSummary journal = 3;
@@ -211,6 +236,8 @@ message RunsRequest {
     best_cost = 4;
     // By the share of user_cost that best_cost saves.
     saved = 5;
+    // By user_typed_chars − best_typed_chars.
+    typed = 6;
   }
 
   // Lists the sessions and charted-size journal runs this summary reduces;
@@ -255,6 +282,9 @@ message RunRow {
   // `user_keys` and `best_seq` as the run list shows them (`Stats::displayKeys`).
   string user_display = 11;
   string best_display = 12;
+  // Characters typed in insert mode, as the command tables total them.
+  int64 user_typed_chars = 13;
+  int64 best_typed_chars = 14;
 }
 
 message RunList {

@@ -51,6 +51,9 @@ The distance heuristic is intentionally inadmissible (it can overestimate), so
 a higher `distanceWeight` searches faster but may miss the cheapest sequence;
 `distanceWeight = 0` recovers optimality at the cost of speed.
 
+The search for each individual edit has its own `distanceWeight`, `0.35`, which
+this key does not change.
+
 ## Recall and session safety
 
 [Recall](05-recall.md) keeps a rolling ring of recent commands so you can
@@ -80,7 +83,7 @@ require('vimficiency').setup({ journal = { enabled = true } })
 | `journal.snapshot_every` | `500` | Commands per buffer between full-text snapshots. Text changes are recorded exactly either way; a lower value only makes a file quicker to read from the middle. |
 | `journal.keep_days` | `90` | Once a file has gone this many days unchanged and is fully scored, its scores are kept as daily totals and the file is deleted. |
 | `journal.sampling.auto` | `true` | Score new journal content in the background, at low priority. When off, only `:Vimfy stats refresh` scores it. |
-| `journal.sampling.window_sizes` | `{ 4, 8, 16 }` | Run lengths, in commands, that [`:Vimfy stats`](11-commands.md) scores. The middle one is charted until `l` switches it. |
+| `journal.sampling.window_sizes` | `{ 4, 8, 16 }` | Run lengths, in commands, that [`:Vimfy stats`](11-commands.md) scores. The middle one is charted until `<CR>` on another in the stats switches it. |
 | `journal.sampling.deadline_ms` | `2000` | Search budget per run. `0` lets every search run to its natural caps. |
 | `journal.sampling.idle_gap_ms` | `30000` | A pause this long between commands ends a run, so one run never spans a break. |
 

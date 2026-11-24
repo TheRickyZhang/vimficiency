@@ -308,20 +308,20 @@ SuffixValue ChangeGoalHandler::buildSuffixValueForNextIndex(
       expectedDotCmd, nextIndex, rawSuffixEfforts[nextIndex]);
 }
 
-void ChangeGoalHandler::cacheSuffixesForPath(
-    const TransformState& base,
-    const KeyedSequence& completionSuffix,
-    double completionPenalty,
-    const KeyedSequence& typedSuffix,
-    const RunningEffort& typedSuffixEffort) {
+void ChangeGoalHandler::cacheSuffixesOfGoal(const TransformState& goal) {
+  const shared_ptr<const TransformPathStep> goalStep = goal.getPathTail();
+  // A state already on the cleared shell is a goal no completion produced.
+  if (!goalStep || !goalStep->goalCompletion) return;
+  const GoalCompletion& completion = *goalStep->goalCompletion;
+
+  vector<const TransformPathStep*> path = collectPath(goalStep->prev);
   // Suffix cache is populated only from completed Normal-mode goal paths.
   // The path-step chain's initial state is the search start (no preceding
   // command), which is always Normal.
-  CHECK(base.getMode() == Mode::Normal,
-        "cacheSuffixesForPath called from a non-Normal base state");
+  CHECK(path.empty() || path.back()->modeAfter == Mode::Normal,
+        "cacheSuffixesOfGoal called for a goal completed from a non-Normal state");
   cachePopulations++;
 
-  vector<const TransformPathStep*> path = collectPath(base.getPathTail());
   vector<KeyedSequence> commands;
   vector<SuffixCommandInfo> commandInfos;
   commands.reserve(path.size() + 1);
@@ -332,27 +332,27 @@ void ChangeGoalHandler::cacheSuffixesForPath(
     commandInfos.push_back(SuffixCommandInfo{
         step->isDotRepeat, step->updatesDotRepeat});
   }
-  commands.push_back(completionSuffix);
+  commands.push_back(completion.command);
   commandInfos.push_back(SuffixCommandInfo{
       false, true});
 
   int prefixCommandCount = static_cast<int>(path.size());
   int programCommandCount = static_cast<int>(commands.size());
-  auto suffixProgram = make_shared<SuffixProgram>(std::move(commands), typedSuffix);
+  auto suffixProgram = make_shared<SuffixProgram>(std::move(commands), completion.typed);
 
   vector<RunningEffort> rawSuffixEfforts =
-      buildRawSuffixEfforts(*suffixProgram, typedSuffixEffort,
-                            prefixCommandCount, completionPenalty);
+      buildRawSuffixEfforts(*suffixProgram, completion.typedEffort,
+                            prefixCommandCount, completion.penalty);
 
   uint64_t initialHash = hashLines(effectiveLines);
   int initialLineCount = static_cast<int>(effectiveLines.size());
   CursorPos initialPos =
-      seedPositionForStart(base.getStartIndex(), initialLines, leftColOffset);
+      seedPositionForStart(goal.getStartIndex(), initialLines, leftColOffset);
   for (int nextIndex = 0; nextIndex < programCommandCount; nextIndex++) {
     uint64_t linesHash = initialHash;
     int lineCount = initialLineCount;
     CursorPos replayPos = initialPos;
-    Mode replayMode = base.getMode();
+    Mode replayMode = Mode::Normal;
     DotRepeat lastEdit;
     if (nextIndex > 0) {
       const TransformPathStep* previous = path[static_cast<size_t>(nextIndex - 1)];
@@ -397,15 +397,15 @@ GoalStates ChangeGoalHandler::emitEditGoal(
 
   debug("emitEditGoal: fullNormalSeq='" + normalSeq.seq.str() + "'");
 
-  cacheSuffixesForPath(base, goalCompletionCmd, completionPenalty,
-                       typedVariants.normalTyped.sequence,
-                       typedVariants.normalTyped.effort);
+  auto completion = make_shared<const GoalCompletion>(GoalCompletion{
+      goalCompletionCmd, completionPenalty, typedVariants.normalTyped.sequence,
+      typedVariants.normalTyped.effort});
 
   TransformStateFactory states(config, effortWeight);
-  TransformState normalState = states.afterCommandWithLastEdit(
-      base, postCompletionState, normalSeq.seq.view(), normalEffort, 0.0,
+  TransformState normalState = states.afterGoalCommand(
+      base, postCompletionState, normalSeq.seq.view(), normalEffort,
       DotRepeat{string(sourceCmd.base.seq.view()), sourceCmd.count},
-      EntryCurswant::Ignored);
+      EntryCurswant::Ignored, completion);
 
   GoalStates result{std::move(normalState), nullopt};
 
@@ -420,9 +420,9 @@ GoalStates ChangeGoalHandler::emitEditGoal(
     RunningEffort dotEffort = RunningEffort::merge(dotPrefixEffort, typedVariants.dotTyped.effort, config);
     dotSeq += typedVariants.dotTyped.sequence;
 
-    result.dotVariant = states.afterCommand(
-        base, postCompletionState, dotSeq.seq.view(), dotEffort, 0.0,
-        EntryCurswant::Ignored);
+    result.dotVariant = states.afterGoalCommand(
+        base, postCompletionState, dotSeq.seq.view(), dotEffort, base.getLastEdit(),
+        EntryCurswant::Ignored, completion);
   }
 
   return result;

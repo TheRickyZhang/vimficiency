@@ -17,11 +17,13 @@ Plugin entry points and domain modules:
 | `simulate/settings.lua` | Play-screen settings and modal wiring. |
 | `stats/query.lua` | Builds requests for stats summaries, run lists, and run details. |
 | `stats/render.lua` | Formats summary pages, charts, drill targets, and run rows. |
-| `stats/view.lua` | The `:Vimfy stats` tab: header and two stat columns; weight/length/scoring keys, and `<CR>` on a row or chart day opens its run list. |
-| `stats/run_list.lua` | The floating run list and its preview float: sort by the column under the cursor, page, and `<CR>` on a journal run replays it. |
+| `stats/view.lua` | The `:Vimfy stats` tab: header over one full-width stats pane; weight/length/scoring keys, and `<CR>` opens a float: a command row's run list, or a chart's own view. |
+| `ui/item_nav.lua` | Item navigation for a rendered buffer: `h`/`j`/`k`/`l` between a view's items (blocks of rows and columns), the current one highlighted whole with the cursor hidden, `<CR>`/`<Esc>` acting on it. Used by the stats tab; the model for new views. |
+| `stats/chart_view.lua` | One daily chart in a full-screen float over the rest of its section; each day and each row that lists runs is an item, and `<CR>` opens its run list. |
+| `stats/run_list.lua` | The floating run list (each cell an item) and its preview float: sort by the current column, page, and `<CR>` on a journal run replays it. |
 | `stats/sampling.lua` | Runs `vimfy_journal` over the journal in the background. See `dev/lua/atom-stream.md` § Sampling. |
 | `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, run) per `:Vimfy` verb. Depends on the domain modules; only `init.lua` depends on it. |
-| `dev_reload.lua` | `:Vimfy reload`: cmake rebuild, then hot-reload the `.so` and every Lua module. |
+| `dev_reload.lua` | `:Vimfy reload`: stream the CMake build in a floating window, then hot-reload the `.so` and every Lua module. |
 | `config/init.lua` | Shared configuration constants (Lua-side only). |
 | `config/validate.lua` | Validators for the structured `watch` and `auto_suggest` blocks; the shape itself stays in `config/init.lua`. |
 | `ffi/init.lua` | Compatibility surface for LuaJIT FFI bindings to `libvimficiency.so`. |
@@ -296,5 +298,5 @@ resolve; without it LuaLS treats `vim` as untyped and misses real mismatches.
 :Vimfy list             -- Show active/saved sessions
 :Vimfy suggest <on|off|toggle> -- Toggle auto-suggest (needs `auto_suggest = {...}` in setup)
 :Vimfy config           -- Show C++ config state
-:Vimfy reload           -- Rebuild C++ library
+:Vimfy reload           -- Rebuild and hot-reload Vimfy with live build output
 ```

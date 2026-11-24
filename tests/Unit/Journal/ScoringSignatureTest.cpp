@@ -188,12 +188,19 @@ vector<Case> referenceCases() {
       {"edit_r", {"zeta eta theta"}, {"zeta pta theta"}, {0, 5}, {0, 5}, "rp"},
       // minPrefixCount: 3x would beat vlld
       {"edit_3x", {"abcdefgh"}, {"abcgh"}, {0, 3}, {0, 3}, "3x"},
-      // minPrefixCount: 4dd; transformMaxResultsPerStartPos
+      // minPrefixCount: 4x beats vllld
+      {"edit_4x", {"abcdefghi"}, {"abchi"}, {0, 3}, {0, 3}, "4x"},
+      // transform distanceWeight: dj. beats 4dd
       {"edit_4dd", {"a1", "b2", "c3", "d4", "e5", "f6"}, {"a1", "f6"}, {1, 0}, {1, 0}, "4dd"},
+      // transformMaxResultsPerStartPos: a second answer per start would find dj..
+      {"edit_6dd", {"a1", "b2", "c3", "d4", "e5", "f6", "g7", "h8"}, {"a1", "h8"}, {1, 0}, {1, 0},
+       "6dd"},
       // maxPrefixCount: 16dd
       {"edit_16dd", tall, sixteenDeleted, {1, 0}, {1, 0}, "16dd"},
       // .
       {"edit_dot", {"aa aa qq"}, {"qq"}, {0, 0}, {0, 0}, "dw."},
+      // suffix cache: a state remembers the ending of the first goal popped through it
+      {"edit_remembered_ending", {"a, b, c, d"}, {"a, z, d"}, {0, 6}, {0, 3}, "Fbcfcz<Esc>", true},
 
       // i
       {"ins_i", {"foo(a)"}, {"foo(b, a)"}, {0, 4}, {0, 6}, "ib, <Esc>"},

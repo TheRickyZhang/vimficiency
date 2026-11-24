@@ -37,7 +37,12 @@ struct TransformStateComparator {
 };
 
 using TransformPriorityQueue = std::priority_queue<TransformState, std::vector<TransformState>, TransformStateComparator>;
-using TransformCostMap = std::unordered_map<TransformStateKey, double, TransformStateKeyHash>;
+// Best cost queued for a state, and how many arrivals at that cost were admitted.
+struct QueuedCost {
+  double cost;
+  int arrivals;
+};
+using TransformCostMap = std::unordered_map<TransformStateKey, QueuedCost, TransformStateKeyHash>;
 
 // GoalHandlerCore: the shared contract between DeletionGoalHandler and
 // ChangeGoalHandler.  Both are consumed by optimizeImpl and
@@ -123,6 +128,21 @@ struct TransformHeuristic {
   }
 };
 
+enum class TransformTraceEvent { Expand, Goal, CacheHit, WorkCutoff };
+
+// Debug-only observer of every popped state; compiled out unless VIMF_TRACK_STATES.
+struct TransformTraceSink {
+  void (*fn)(void* ctx, TransformTraceEvent event, const TransformState& state) = nullptr;
+  void* ctx = nullptr;
+
+  inline void operator()(TransformTraceEvent event, const TransformState& state) const {
+    if constexpr (SEARCH_TRACE_STATS_ENABLED) {
+      if (fn) fn(ctx, event, state);
+    }
+  }
+};
+inline TransformTraceSink transformTraceSink;
+
 template<bool PureDeletion, GoalHandlerCore ModePolicy>
   requires (PureDeletion || ChangeGoalEmitter<ModePolicy>)
 struct TransformTransitionDispatcher {
@@ -142,11 +162,12 @@ struct TransformTransitionDispatcher {
   bool allowLinewisePureDeletion;
   // Cheapest complete solution queued so far per start; empty sequence = none.
   std::vector<Result>& cheapestQueuedGoalByStart;
+  int maxEqualArrivals;
 
   void emitState(TransformState&& state) {
     stats.incrementMotionsEmitted();
     Search::enqueueImprovedTransformState(
-        std::move(state), pq, costMap, pendingByStart, startActive);
+        std::move(state), pq, costMap, pendingByStart, startActive, maxEqualArrivals);
   }
 
   // deleteLineRangeAndUpdatePos lands at min(curswant, lastCol) under nostartofline.

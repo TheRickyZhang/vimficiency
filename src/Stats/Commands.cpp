@@ -194,6 +194,8 @@ CommandComparison compareCommands(const CommandCounts& user, const CommandCounts
     CommandRow entry{.text = row.variants.size() == 1 ? *row.variants.begin() : text,
                      .user = row.user,
                      .optimizer = row.optimizer,
+                     .userShare = userShare,
+                     .optimizerShare = optimizerShare,
                      .variants = {row.variants.begin(), row.variants.end()}};
     entry.ratio = optimizerShare > 0 ? userShare / optimizerShare
                   : userShare > 0    ? numeric_limits<double>::infinity()
