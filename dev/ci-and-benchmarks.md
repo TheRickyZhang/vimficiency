@@ -5,10 +5,14 @@ hardware so changes between commits are interpretable.
 
 ## Correctness CI
 
-On pull requests and pushes to `main`, the build jobs use the GCC container, Ninja, and a
+On pull requests and pushes to `main`, the correctness jobs use the GCC container, Ninja, and a
 pinned CMake. Dependency lint checks module edges and in-class inline definitions. Lua lint
 uses Neovim nightly's runtime types. Doc lint checks that frontmatter titles match chapter
 headings. [CI workflow](../.github/workflows/bench.yml)
+
+PRs that affect the native build, Lua FFI, or release tooling also build the library and journal
+scorer and run both smoke tests on Linux x86_64, Linux arm64, and macOS arm64. Pushing a
+`v*` tag publishes the release after all three builds pass. [Release workflow](../.github/workflows/release.yml)
 
 | Build | What it verifies |
 |---|---|

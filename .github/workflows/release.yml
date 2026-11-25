@@ -1,9 +1,22 @@
 name: Release
 on:
+  pull_request:
+    paths:
+      - 'CMakeLists.txt'
+      - 'src/**'
+      - 'lua/vimficiency/ffi/**'
+      - 'scripts/embed-binary.cmake'
+      - 'scripts/install.sh'
+      - '.github/actions/setup-cmake/**'
+      - '.github/actions/setup-ci-deps/**'
+      - '.github/workflows/release.yml'
   push:
     tags: ['v*']
   # Manual runs build and smoke-test every platform without publishing.
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   NEOVIM_VERSION: v0.11.5
@@ -100,11 +113,13 @@ jobs:
           build/vimfy_journal < smoke-request
 
       - name: Stage assets
+        if: github.event_name != 'pull_request'
         run: |
           cp "build/${{ matrix.lib }}" "${{ matrix.asset }}"
           cp build/vimfy_journal "${{ matrix.tool_asset }}"
 
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: ${{ matrix.asset }}
           path: |
@@ -114,7 +129,7 @@ jobs:
 
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write

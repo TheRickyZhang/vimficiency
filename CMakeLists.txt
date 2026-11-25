@@ -355,6 +355,13 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(protobuf)
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  # zero_copy_stream_impl.cc requests POSIX headers, hiding quick_exit from libstdc++.
+  target_compile_definitions(libprotobuf-lite PRIVATE _DARWIN_C_SOURCE)
+  if(TARGET libprotobuf)
+    target_compile_definitions(libprotobuf PRIVATE _DARWIN_C_SOURCE)
+  endif()
+endif()
 include(${protobuf_SOURCE_DIR}/cmake/protobuf-generate.cmake)
 
 set(_vimfy_proto_dir ${CMAKE_CURRENT_SOURCE_DIR}/src/LuaExports/proto)
