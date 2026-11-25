@@ -37,14 +37,19 @@ struct TransformStateComparator {
 };
 
 using TransformPriorityQueue = std::priority_queue<TransformState, std::vector<TransformState>, TransformStateComparator>;
-using TransformCostMap = std::unordered_map<TransformStateKey, double, TransformStateKeyHash>;
+// Best cost queued for a state, and how many arrivals at that cost were admitted.
+struct QueuedCost {
+  double cost;
+  int arrivals;
+};
+using TransformCostMap = std::unordered_map<TransformStateKey, QueuedCost, TransformStateKeyHash>;
 
 // GoalHandlerCore: the shared contract between DeletionGoalHandler and
 // ChangeGoalHandler.  Both are consumed by optimizeImpl and
 // TransformTransitionDispatcher.
 //
 //   isGoalReached     — test whether the buffer has reached the goal state
-//   tryUseSuffixCache — attempt suffix-cache lookup (no-op for deletion mode)
+//   findCachedSuffix  — suffix-cache lookup (always a miss for deletion mode)
 //   finalize          — post-process results after the A* loop completes
 template<class T>
 concept GoalHandlerCore = requires(
@@ -62,8 +67,7 @@ concept GoalHandlerCore = requires(
     TransformSearchStats stats,
     std::vector<std::vector<CursorPos>>&& cursorGoals) {
   { constHandler.isGoalReached(lines) } -> std::same_as<bool>;
-  { handler.tryUseSuffixCache(state, results, intVal, startActive,
-                              intRef, intRef) } -> std::same_as<SuffixCacheResult>;
+  { handler.findCachedSuffix(state) } -> std::same_as<SuffixCacheHit>;
   { handler.finalize(std::move(movedResults), lines, lines, params,
                      intVal, intVal, goalPos,
                      std::move(stats),
@@ -79,18 +83,60 @@ concept ChangeGoalEmitter = requires(
     T handler,
     const TransformEditorState& editorState,
     const TransformState& constState,
-    const CharRange& charRange,
-    const CharLineRange& charLineRange,
-    const LineCharRange& lineCharRange,
+    const TransformEditorState* repeatLanding,
     LineRange lineRange,
     const SequenceBinding& cmd) {
-  { handler.onDeletionGoal(editorState, constState, charRange, cmd) } -> std::same_as<GoalStates>;
-  { handler.onDeletionGoal(editorState, constState, charLineRange, cmd) } -> std::same_as<GoalStates>;
-  { handler.onDeletionGoal(editorState, constState, lineCharRange, cmd) } -> std::same_as<GoalStates>;
-  { handler.onLinewiseGoal(editorState, constState, lineRange, cmd) } -> std::same_as<GoalStates>;
-  { handler.onCountedLinewiseGoal(editorState, constState, lineRange, cmd) } -> std::same_as<GoalStates>;
+  { handler.onDeletionGoal(editorState, constState, cmd, repeatLanding) } -> std::same_as<GoalStates>;
+  { handler.onLinewiseGoal(editorState, constState, lineRange, cmd, repeatLanding) } -> std::same_as<GoalStates>;
   { handler.onJoinGoal(editorState, constState, cmd) } -> std::same_as<GoalStates>;
 };
+
+// Remaining-work estimate for a non-goal state. `typedTerm` is the same for
+// every such state, so it only orders them against queued goals.
+struct TransformHeuristic {
+  double distanceWeight;
+  double colExponent;
+  double breakCost;
+  double breakExponent;
+  double typedTerm;
+  int leftColOffset;
+  int rightColOffset;
+
+  static inline double shaped(int n, double exponent) {
+    if (exponent == 1.0) return n;
+    if (exponent == 0.5) return std::sqrt(n);
+    return n == 0 ? 0.0 : std::pow(n, exponent);
+  }
+
+  inline double operator()(const Lines& lines) const {
+    if (lines.empty()) return typedTerm;
+    double distance = 0.0;
+    const int lastLine = std::ssize(lines) - 1;
+    for (int i = 0; i <= lastLine; i++) {
+      int lineLen = lines[i].size();
+      if (i == 0) lineLen -= leftColOffset;
+      if (i == lastLine) lineLen -= rightColOffset;
+      distance += shaped(std::max(0, lineLen), colExponent);
+    }
+    distance += breakCost * shaped(lastLine, breakExponent);
+    return distanceWeight * distance + typedTerm;
+  }
+};
+
+enum class TransformTraceEvent { Expand, Goal, CacheHit, WorkCutoff };
+
+// Debug-only observer of every popped state; compiled out unless VIMF_TRACK_STATES.
+struct TransformTraceSink {
+  void (*fn)(void* ctx, TransformTraceEvent event, const TransformState& state) = nullptr;
+  void* ctx = nullptr;
+
+  inline void operator()(TransformTraceEvent event, const TransformState& state) const {
+    if constexpr (SEARCH_TRACE_STATS_ENABLED) {
+      if (fn) fn(ctx, event, state);
+    }
+  }
+};
+inline TransformTraceSink transformTraceSink;
 
 template<bool PureDeletion, GoalHandlerCore ModePolicy>
   requires (PureDeletion || ChangeGoalEmitter<ModePolicy>)
@@ -105,15 +151,18 @@ struct TransformTransitionDispatcher {
   const EffortBank& bank;
   const TransformBoundary& transformBoundary;
   const TransformStateFactory& states;
-  double distanceWeight;
+  const TransformHeuristic& heuristic;
   int leftColOffset;
   int rightColOffset;
-  bool allowLinewisePureDeletion;
+  int maxLinewiseDeleteCount;
+  // Cheapest complete solution queued so far per start; empty sequence = none.
+  std::vector<Result>& cheapestQueuedGoalByStart;
+  int maxEqualArrivals;
 
   void emitState(TransformState&& state) {
     stats.incrementMotionsEmitted();
     Search::enqueueImprovedTransformState(
-        std::move(state), pq, costMap, pendingByStart, startActive);
+        std::move(state), pq, costMap, pendingByStart, startActive, maxEqualArrivals);
   }
 
   // deleteLineRangeAndUpdatePos lands at min(curswant, lastCol) under nostartofline.
@@ -127,6 +176,30 @@ struct TransformTransitionDispatcher {
     return deleteEffect.linewiseCursorPolicy ==
                VimCore::LinewiseDeleteCursorPolicy::LinewiseCommand
         ? LINEWISE_COMMAND_CURSWANT : EntryCurswant::Required;
+  }
+
+  // A first delete that a motion promoted to linewise either ignores the entry
+  // curswant or clamps it like dd; replaying it from an end-of-line curswant
+  // tells which. Oracle probe: ClampedLinewiseDelete in tests/Debug.
+  EntryCurswant promotedLinewiseCurswant(const VimCore::ResolvedDeleteRange& deleteEffect,
+                                         const TransformEditorState& afterDeletion) const {
+    const CursorPos entry = baseState.getPos();
+    const CursorPos landing = afterDeletion.getPos();
+    const Lines& lines = afterDeletion.getLines();
+    if (landing.line < 0 || landing.line > lines.lastLine()) return EntryCurswant::Required;
+
+    const CursorPos fromEol = TransformSimulator::afterResolvedDeletion(
+        TransformSimulator::withPos(baseState.getEditorState(),
+                                    CursorPos(entry.line, entry.col, TARGETCOL_EOL)),
+        deleteEffect, lineDeleteContext(transformBoundary)).getPos();
+    if (fromEol.pos() == landing.pos() && fromEol.targetCol == landing.targetCol) {
+      return EntryCurswant::Ignored;
+    }
+    const int lastCol = lines[landing.line].lastCol();
+    const bool clampsLikeDd = fromEol.line == landing.line && fromEol.col == lastCol &&
+                              fromEol.targetCol == TARGETCOL_EOL &&
+                              landing.col == std::min(entry.col, lastCol);
+    return clampsLikeDd ? LINEWISE_COMMAND_CURSWANT : EntryCurswant::Required;
   }
 
   void continueWithEdit(TransformEditorState&& next, const SequenceBinding& sourceCmd,
@@ -152,27 +225,23 @@ struct TransformTransitionDispatcher {
         baseState.getEditorState(), newPos);
     emitState(states.afterCommand(
         baseState, std::move(next), motionCmd.base.seq.view(), motionCmd.effort,
-        distanceWeight * textDistanceEstimate(baseState.getLines(), leftColOffset,
-                                              rightColOffset),
-        entryCurswant));
+        heuristic(baseState.getLines()), entryCurswant));
   }
 
   void emitChangeGoalForResolved(const TransformEditorState& afterDeletion,
                                  const VimCore::ResolvedDeleteRange& resolved,
-                                 const SequenceBinding& sourceCmd) {
+                                 const SequenceBinding& sourceCmd,
+                                 const TransformEditorState* repeatLanding) {
     if constexpr (!PureDeletion) {
       switch (resolved.kind) {
         case VimCore::ResolvedDeleteRangeKind::Characterwise:
-          emitGoalStates(mode.onDeletionGoal(
-              afterDeletion, baseState, resolved.charRange, sourceCmd));
-          return;
         case VimCore::ResolvedDeleteRangeKind::LineChar:
           emitGoalStates(mode.onDeletionGoal(
-              afterDeletion, baseState, resolved.lineCharRange, sourceCmd));
+              afterDeletion, baseState, sourceCmd, repeatLanding));
           return;
         case VimCore::ResolvedDeleteRangeKind::Linewise:
           emitGoalStates(mode.onLinewiseGoal(
-              afterDeletion, baseState, resolved.lineRange, sourceCmd));
+              afterDeletion, baseState, resolved.lineRange, sourceCmd, repeatLanding));
           return;
       }
     }
@@ -186,16 +255,19 @@ struct TransformTransitionDispatcher {
     }
     if constexpr (PureDeletion) {
       if (deleteEffect.kind == VimCore::ResolvedDeleteRangeKind::Linewise &&
-          !allowLinewisePureDeletion) {
+          deleteEffect.lineRange.lineCount() > maxLinewiseDeleteCount) {
         return;
       }
     }
-    const EntryCurswant entryCurswant = entryCurswantOf(deleteEffect);
+    EntryCurswant entryCurswant = entryCurswantOf(deleteEffect);
     std::optional<TransformEditorState> afterDeletion;
     bool deleteReachedGoal = false;
     if (action.deleteEffectValid) {
       afterDeletion = TransformSimulator::afterResolvedDeletion(
           baseState.getEditorState(), deleteEffect, lineDeleteContext(transformBoundary));
+      if (entryCurswant == EntryCurswant::Required && !baseState.getPathTail()) {
+        entryCurswant = promotedLinewiseCurswant(deleteEffect, *afterDeletion);
+      }
       deleteReachedGoal = finishTransition(*afterDeletion, sourceCmd, entryCurswant);
     }
     if constexpr (PureDeletion) {
@@ -209,19 +281,20 @@ struct TransformTransitionDispatcher {
             TransformSimulator::afterResolvedChangeDeletion(
                 baseState.getEditorState(), changeEffect, lineDeleteContext(transformBoundary));
         if (canEmitGoalFrom(afterChangeDeletion)) {
-          emitChangeGoalForResolved(afterChangeDeletion, changeEffect, sourceCmd);
+          emitChangeGoalForResolved(afterChangeDeletion, changeEffect, sourceCmd,
+                                    deleteReachedGoal ? &*afterDeletion : nullptr);
           return;
         }
       }
       if (action.changeEffect) return;
       if (!deleteReachedGoal) return;
-      emitChangeGoalForResolved(*afterDeletion, deleteEffect, sourceCmd);
+      emitChangeGoalForResolved(*afterDeletion, deleteEffect, sourceCmd, &*afterDeletion);
     }
   }
 
   void deleteCountedLinewise(LineRange range, const SequenceBinding& sourceCmd) {
     if constexpr (PureDeletion) {
-      if (!allowLinewisePureDeletion) return;
+      if (range.lineCount() > maxLinewiseDeleteCount) return;
     }
     TransformEditorState afterDeletion =
         TransformSimulator::afterMultiLinewiseDeletion(
@@ -230,7 +303,7 @@ struct TransformTransitionDispatcher {
     if constexpr (PureDeletion) {
       continueWithEdit(std::move(afterDeletion), sourceCmd, 0.0, LINEWISE_COMMAND_CURSWANT);
     } else {
-      emitGoalStates(mode.onCountedLinewiseGoal(afterDeletion, baseState, range, sourceCmd));
+      emitGoalStates(mode.onLinewiseGoal(afterDeletion, baseState, range, sourceCmd, &afterDeletion));
     }
   }
 
@@ -259,8 +332,21 @@ struct TransformTransitionDispatcher {
 
 private:
   void emitGoalStates(GoalStates&& goals) {
+    noteQueuedGoal(goals.primary);
     emitState(std::move(goals.primary));
-    if (goals.dotVariant) emitState(std::move(*goals.dotVariant));
+    if (goals.dotVariant) {
+      noteQueuedGoal(*goals.dotVariant);
+      emitState(std::move(*goals.dotVariant));
+    }
+  }
+
+  void noteQueuedGoal(const TransformState& goal) {
+    Result& best = cheapestQueuedGoalByStart[goal.getStartIndex()];
+    if (!best.getSequence().empty() && best.getCost() <= goal.getEffort()) return;
+    // Change-mode goals land on the fixed goalPos, which cannot follow curswant.
+    EntryCurswant entryCurswant = goal.getEntryCurswant();
+    if (entryCurswant == EntryCurswant::Followed) entryCurswant = EntryCurswant::Required;
+    best = Result(Sequence(goal.getSeq()), goal.getRunningEffort(), entryCurswant);
   }
 
   bool finishTransition(TransformEditorState& next, const SequenceBinding& sourceCmd,
@@ -271,13 +357,12 @@ private:
     if (!protectedTextPreserved(next)) return false;
     if (stateReachedGoal(next)) return !lineOutOfBounds;
     if (lineOutOfBounds) return false;
-    if (cursorOutsideEditableRegion(next)) return false;
+    if (cursorOutsideEditableRegion(next) && !restsOnProtectedLine(next)) return false;
 
     continueWithEdit(
         std::move(next),
         sourceCmd,
-        distanceWeight * textDistanceEstimate(nextLines, leftColOffset, rightColOffset),
-        entryCurswant);
+        heuristic(nextLines), entryCurswant);
     return false;
   }
 
@@ -307,6 +392,15 @@ private:
       return true;
     }
     return false;
+  }
+
+  // A protected line can still border an editable newline.
+  bool restsOnProtectedLine(const TransformEditorState& state) const {
+    const Lines& lines = state.getLines();
+    if (lines.size() < 2) return false;
+    const int line = state.getPos().line;
+    if (line == 0) return std::ssize(lines[0]) == leftColOffset;
+    return line == lines.lastLine() && std::ssize(lines[line]) == rightColOffset;
   }
 
   bool protectedTextPreserved(const TransformEditorState& state) const {

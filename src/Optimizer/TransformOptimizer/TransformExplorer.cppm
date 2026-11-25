@@ -56,6 +56,13 @@ public:
         leftColOffset_(leftColOffset),
         rightColOffset_(rightColOffset) {}
 
+  inline int maxLinewiseDeleteCount(const Lines& lines) const {
+    if (!params_.allowLinewisePureDeletion) return 0;
+    // Only deleting the entire real buffer leaves an empty line behind.
+    return boundary_.hasLinesAbove() || boundary_.hasLinesBelow()
+        ? lines.lastLine() : lines.lastLine() + 1;
+  }
+
   template<class State, class OnDeletion, class OnJoin>
   void exploreAllDeletions(const State& state,
                            OnDeletion&& onDeletion,

@@ -95,6 +95,25 @@ Config Config::qwerty() {
 
   set_key(Key::Key_Ctrl,  Hand::Left, Finger::Lp, 2.5);
   set_key(Key::Key_Shift, Hand::Left, Finger::Lp, 1.2);
+  set_key(Key::Key_Alt,   Hand::Left, Finger::Lt, 1.8);
+  set_key(Key::Key_Cmd,   Hand::Left, Finger::Lt, 1.8);
+
+  set_key(Key::Key_PageUp,   Hand::Right, Finger::Ri, 3.0);
+  set_key(Key::Key_PageDown, Hand::Right, Finger::Ri, 3.0);
+  set_key(Key::Key_Insert,   Hand::Right, Finger::Ri, 3.0);
+
+  set_key(Key::Key_F1,  Hand::Left,  Finger::Lp, 3.0);
+  set_key(Key::Key_F2,  Hand::Left,  Finger::Lr, 3.0);
+  set_key(Key::Key_F3,  Hand::Left,  Finger::Lm, 3.0);
+  set_key(Key::Key_F4,  Hand::Left,  Finger::Li, 3.0);
+  set_key(Key::Key_F5,  Hand::Left,  Finger::Li, 3.0);
+  set_key(Key::Key_F6,  Hand::Right, Finger::Ri, 3.0);
+  set_key(Key::Key_F7,  Hand::Right, Finger::Ri, 3.0);
+  set_key(Key::Key_F8,  Hand::Right, Finger::Rm, 3.0);
+  set_key(Key::Key_F9,  Hand::Right, Finger::Rr, 3.0);
+  set_key(Key::Key_F10, Hand::Right, Finger::Rp, 3.0);
+  set_key(Key::Key_F11, Hand::Right, Finger::Rp, 3.0);
+  set_key(Key::Key_F12, Hand::Right, Finger::Rp, 3.0);
 
   set_key(Key::Key_Home, Hand::Right, Finger::Ri, 3.0);
   set_key(Key::Key_End,  Hand::Right, Finger::Ri, 3.0);
@@ -199,6 +218,25 @@ Config Config::colemakDh() {
 
   set_key(Key::Key_Ctrl,  Hand::Left, Finger::Lp, 1.2);
   set_key(Key::Key_Shift, Hand::Left, Finger::Lp, 1.2);
+  set_key(Key::Key_Alt,   Hand::Left, Finger::Lt, 1.8);
+  set_key(Key::Key_Cmd,   Hand::Left, Finger::Lt, 1.8);
+
+  set_key(Key::Key_PageUp,   Hand::Right, Finger::Ri, 3.0);
+  set_key(Key::Key_PageDown, Hand::Right, Finger::Ri, 3.0);
+  set_key(Key::Key_Insert,   Hand::Right, Finger::Ri, 3.0);
+
+  set_key(Key::Key_F1,  Hand::Left,  Finger::Lp, 3.0);
+  set_key(Key::Key_F2,  Hand::Left,  Finger::Lr, 3.0);
+  set_key(Key::Key_F3,  Hand::Left,  Finger::Lm, 3.0);
+  set_key(Key::Key_F4,  Hand::Left,  Finger::Li, 3.0);
+  set_key(Key::Key_F5,  Hand::Left,  Finger::Li, 3.0);
+  set_key(Key::Key_F6,  Hand::Right, Finger::Ri, 3.0);
+  set_key(Key::Key_F7,  Hand::Right, Finger::Ri, 3.0);
+  set_key(Key::Key_F8,  Hand::Right, Finger::Rm, 3.0);
+  set_key(Key::Key_F9,  Hand::Right, Finger::Rr, 3.0);
+  set_key(Key::Key_F10, Hand::Right, Finger::Rp, 3.0);
+  set_key(Key::Key_F11, Hand::Right, Finger::Rp, 3.0);
+  set_key(Key::Key_F12, Hand::Right, Finger::Rp, 3.0);
 
   set_key(Key::Key_Home, Hand::Right, Finger::Ri, 3.0);
   set_key(Key::Key_End,  Hand::Right, Finger::Ri, 3.0);
@@ -216,7 +254,7 @@ Config Config::uniform() {
   for (auto& ki : cfg.keyInfo) {
     ki.base_cost = 1.0;
   }
-  for (Key k : {Key::Key_Shift, Key::Key_Ctrl}) {
+  for (Key k : {Key::Key_Shift, Key::Key_Ctrl, Key::Key_Alt, Key::Key_Cmd}) {
     cfg.keyInfo[static_cast<uint8_t>(k)].base_cost = 0.0;
   }
   return cfg;

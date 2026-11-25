@@ -16,6 +16,8 @@ struct NavFrontierQuery : FrontierQuery {
   CharRange targetRange;
   const NavBoundary& boundary;
   const NavContext& navContext;
+  int maxCount;
+  SuggestionSortMode sortMode;
 };
 
 // Depth-1 live expansion from `query.cursor` toward `query.targetRange`.

@@ -12,7 +12,7 @@ export interface FoundResultEntry {
 
 // Chunked format (composition optimizer)
 export interface SequenceChunk {
-  type: 'motion' | 'edit';
+  type: 'movement' | 'motion' | 'edit';
   text: string;
   tokens: string[];
   contentId?: number;
@@ -39,6 +39,7 @@ export interface DiffRegion {
   insertedText: string;
   // Per-diff edit exploration data (when trackExploredStates=true)
   editStates?: ExploredStateEntry[];
+  transformResults?: FoundResultEntry[];
   editResults?: FoundResultEntry[];
 }
 
@@ -56,18 +57,24 @@ export interface BufferContext {
   hasLinesBelow?: boolean;
 }
 
-export interface ExplorationCase {
+interface CaseContext {
   name: string;
   nodesExplored: number;
   context?: BufferContext;
-  // Flat format (motion/edit)
-  results: FoundResultEntry[];
-  states: ExploredStateEntry[];
-  // Chunked format (composition) — presence of contents indicates chunked mode
-  contents?: string[];
-  // Character-level diffs (composition optimizer)
   diffs?: DiffRegion[];
 }
+
+export interface ChunkedCase extends CaseContext {
+  contents: string[];
+  states: ChunkedStateEntry[];
+  results: ChunkedResultEntry[];
+}
+
+export type ExplorationCase = ChunkedCase | (CaseContext & {
+  contents?: undefined;
+  states: ExploredStateEntry[];
+  results: FoundResultEntry[];
+});
 
 export interface ExplorationCommitEntry {
   commit: BenchmarkCommit;

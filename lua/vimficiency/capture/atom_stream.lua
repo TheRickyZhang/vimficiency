@@ -2,19 +2,19 @@
 
 -- `##CmdAtom` (Neovim 0.13-dev+) fires once per atomic user action, after the
 -- action has run, carrying the resolved post-mapping `keys` alongside the
--- as-typed `lhs`.--
+-- as-typed `lhs`.
 
 -- The event is *deferred*: under fast typeahead every atom for a burst of input
 -- arrives back-to-back once control returns to the main loop, by which point the
 -- buffer is already at its final state. Subscribers that need pre-action buffer
--- state must therefore shift (atom i's start == atom i-1's end), not read it at
--- atom time. See `dev/lua/atom-stream.md`.
+-- state use the preceding delivery's mark. See `dev/lua/atom-stream.md`.
 
 ---@class (exact) VF.AtomStream
 ---@field supported       fun(): boolean
 ---@field add_listener    fun(name: string, listener: fun(atom: VF.Atom, decision: VF.Atom.Decision)): boolean
 ---@field remove_listener fun(name: string)
 ---@field shutdown        fun()
+---@field in_live_file_buffer fun(buf: integer, win: integer): boolean
 --- Test-only: exercise the decision table without driving real input, and
 --- assert that sessions and shutdown detach their listeners.
 ---@field _classify       fun(atom_type: string, keys_raw: string|nil, keys_norm: string, changed: boolean, moved: boolean): VF.Atom.Decision
@@ -23,7 +23,9 @@
 ---@field _has_listener   fun(name: string): boolean
 local M = {}
 local config = require("vimficiency.config")
+local ffi_session = require("vimficiency.ffi.session")
 local keynorm = require("vimficiency.capture.keynorm")
+local capture_state = require("vimficiency.capture.state")
 local util = require("vimficiency.util")
 
 --------------------------------------------------------------------------------
@@ -31,13 +33,19 @@ local util = require("vimficiency.util")
 --------------------------------------------------------------------------------
 
 --- One completed user action: the replayable keys plus the scope they fired in.
---- The event's other fields (`type`, `lhs`, `count`, `changed`, `moved`) are
---- consumed by `classify`, `describe_abort` and `strip_synthetic_count` and not forwarded.
+--- The event's other fields (`lhs`, `count`, `changed`, `moved`) are consumed by
+--- `classify`, `describe_abort` and `strip_synthetic_count` and not forwarded.
 ---@class VF.Atom
+---@field visited_rows? integer[]   # Extremes of CmdAtom's reported starting rows, including subatoms.
+---@field tick? integer
+---@field mark? VF.Session.RecallMark
 ---@field keys         string        # Replayable post-mapping sequence (notation); "" when unavailable. Feed this to the simulator/optimizer.
+---@field kind         string        # The event's `type`: operator, insert, motion, normal, visual, jump, scroll, excmd, mouse or mapping.
+---@field typed        string        # Physical keys pressed since the previous atom (notation). Cost the user by these; never replay them. Atoms delivered together cannot be told apart, so an earlier one carries the keys of a later one, which gets "".
+---@field typed_insert string        # Of `typed`, the insert text: keys pressed in an insert that did not end it. `keys` also holds what mappings typed there.
 ---@field buf          integer       # Buffer the atom fired for (`ev.buf`).
 ---@field win          integer       # Focused window at atom time.
----@field lossy        boolean       # `keys` is the typed lhs of a Lua-callback mapping (lossy_mappings ~= "drop"); replay may diverge.
+---@field lossy        boolean       # `keys` is the typed lhs of a Lua callback; its expansion is unknown.
 ---@field abort_reason string|nil    # Only for "abort": what made the atom unreplayable and what it did, for the user-facing drop notice.
 
 -- What we tag this atom as, informing our decision
@@ -122,11 +130,190 @@ local function strip_synthetic_count(s, count)
   return s
 end
 
+--------------------------------------------------------------------------------
+-- Pressed keys
+--------------------------------------------------------------------------------
+
+local on_key_ns = vim.api.nvim_create_namespace("vimfy_atom_typed")
+
+-- What Neovim read as typed since the last atom, in order: `vim.on_key`'s
+-- `typed`, plus what plugins read themselves with getchar(), which on_key never
+-- sees. Keys a plugin fed as typed are read again, so they are kept as `fed`.
+-- `insert` is whether a press is insert text (`VF.Atom.typed_insert`).
+---@alias VF.AtomStream.Input { keys: string, fed: boolean, insert: boolean }
+---@type VF.AtomStream.Input[]
+local inputs = {}
+local any_fed = false
+-- The latest press that may be insert text, until the mode after it is seen.
+---@type VF.AtomStream.Input|nil
+local unsettled = nil
+-- Whether the latest mapping ran in Visual mode. Atoms are deferred; `on_key` is not.
+local last_mapping_in_visual = false
+
+local function reset_pressed()
+  inputs, any_fed, unsettled = {}, false, nil
+end
+
+---@param raw string
+---@param fed boolean
+---@return VF.AtomStream.Input|nil
+local function add_input(raw, fed)
+  local keys = keynorm.without_mouse(keynorm.normalize(raw))
+  if keys == "" then return end
+  local input = { keys = keys, fed = fed, insert = false }
+  inputs[#inputs + 1] = input
+  any_fed = any_fed or fed
+  return input
+end
+
+-- A key read here can become text: Insert, Replace, or Select, where a
+-- printable key replaces the selection and starts an insert.
+---@param mode string  `nvim_get_mode().mode`
+---@return boolean
+local function reads_text(mode)
+  local lead = mode:sub(1, 1)
+  return capture_state.is_insert_mode(mode) or lead == "s" or lead == "S" or lead == "\19"
+end
+
+-- The insert has not ended: Insert, Replace, or the one command `<C-o>` lends.
+---@param mode string  `nvim_get_mode().mode`
+---@return boolean
+local function inserting(mode)
+  return capture_state.is_insert_mode(mode) or mode:sub(1, 2) == "ni"
+end
+
+-- A press is insert text when Neovim is still inserting once it has run.
+local function settle()
+  if not unsettled then return end
+  unsettled.insert = inserting(vim.api.nvim_get_mode().mode)
+  unsettled = nil
+end
+
+---@param raw string
+---@param mode string  the mode Neovim read the key in
+local function add_pressed(raw, mode)
+  settle()
+  local input = add_input(raw, false)
+  if input and reads_text(mode) then
+    unsettled = input
+    -- Runs once the key is handled, so a later exit that no key caused is not
+    -- blamed on it. Nothing scheduled runs between keys queued together or
+    -- inside a command, which is what the other two `settle` calls are for.
+    vim.schedule(function()
+      if unsettled == input then settle() end
+    end)
+  end
+end
+
+---@param key string
+---@param typed string
+local function on_key(key, typed)
+  local mode = vim.api.nvim_get_mode().mode
+  -- Terminal-mode keys never end in an atom, so they would pile onto the next one.
+  if mode == "t" then return end
+  if key ~= typed then
+    local lead = mode:sub(1, 1)
+    last_mapping_in_visual = lead == "v" or lead == "V" or lead == "\22"
+  end
+  if typed ~= "" then add_pressed(typed, mode) end
+end
+
+---@class VF.AtomStream.InputHooks
+---@field record (fun(raw: string, fed: boolean))|nil
+
+-- getchar(1) only peeks; getchar(0) returns 0 or "" when nothing is pending.
+---@param hooks VF.AtomStream.InputHooks
+local function wrap_getchar(getchar, hooks)
+  return function(...)
+    local ret = getchar(...)
+    local expr = ...
+    if hooks.record and expr ~= 1 and expr ~= true and ret ~= 0 and ret ~= "" then
+      hooks.record(type(ret) == "number" and vim.fn.nr2char(ret) or ret, false)
+    end
+    return ret
+  end
+end
+
+---@param hooks VF.AtomStream.InputHooks
+local function wrap_feedkeys(feedkeys, hooks)
+  return function(keys, mode, ...)
+    if hooks.record and mode and mode:find("t", 1, true) then hooks.record(keys, true) end
+    return feedkeys(keys, mode, ...)
+  end
+end
+
+-- Installed once per Neovim process; another plugin may wrap ours.
+---@type VF.AtomStream.InputHooks|nil
+local input_hooks = _G.__vimficiency_input_hooks
+
+local function wrap_input_functions()
+  if input_hooks then return input_hooks end
+  ---@type VF.AtomStream.InputHooks
+  local hooks = {}
+  vim.fn.getchar = wrap_getchar(vim.fn.getchar, hooks)
+  vim.fn.getcharstr = wrap_getchar(vim.fn.getcharstr, hooks)
+  vim.fn.feedkeys = wrap_feedkeys(vim.fn.feedkeys, hooks)
+  vim.api.nvim_feedkeys = wrap_feedkeys(vim.api.nvim_feedkeys, hooks)
+  input_hooks = hooks
+  _G.__vimficiency_input_hooks = hooks
+  return hooks
+end
+
+---@param raw string
+---@param fed boolean
+local function record_input(raw, fed)
+  if fed then
+    add_input(raw, true)
+  else
+    add_pressed(raw, vim.api.nvim_get_mode().mode)
+  end
+end
+
+--- The keys pressed for the atom being dispatched and, of those, the insert
+--- text; forgets them.
+---@return string typed
+---@return string typed_insert
+local function take_pressed()
+  settle()
+  local taken, fed = inputs, any_fed
+  reset_pressed()
+  if fed then
+    local pressed = ffi_session.typed_keys(taken)
+    return pressed.typed, pressed.typed_insert
+  end
+  local typed, typed_insert = {}, {}
+  for i, input in ipairs(taken) do
+    typed[i] = input.keys
+    if input.insert then typed_insert[#typed_insert + 1] = input.keys end
+  end
+  return table.concat(typed), table.concat(typed_insert)
+end
+
+local tick = 0
+local tick_open = false
+
+local function visited_rows(data, rows)
+  if data.pos and data.pos[1] > 0 then
+    local row = data.pos[1] - 1
+    rows[1], rows[2] = math.min(rows[1] or row, row), math.max(rows[2] or row, row)
+  end
+  if data.atoms then
+    for _, child in ipairs(data.atoms) do visited_rows(child, rows) end
+  end
+  return rows
+end
+
 local function dispatch(ev)
   local d = ev.data
   local keys_raw = d.keys
+  -- An operator over a Lua-mapped motion arrives with keys, unlike the bare
+  -- mapping, but they hold the callback and are as lossy as its nil.
+  if keys_raw and d.type ~= "excmd" and keynorm.has_callback(keys_raw) then keys_raw = nil end
   local keys_norm = strip_synthetic_count(keynorm.normalize(keys_raw), d.count)
   local changed, moved = d.changed == true, d.moved == true
+  -- Neovim reports a mapped move inside a selection twice: alone with nil keys,
+  -- then within the Visual atom's keys. The first is a no-op to us.
+  if d.type == "mapping" and keys_raw == nil and not changed and last_mapping_in_visual then moved = false end
   local lhs_norm = keynorm.normalize(d.lhs)
   local lossy = lossy_passthrough(keys_raw, lhs_norm, changed, moved, config.lossy_mappings ~= "drop")
   if lossy then
@@ -135,10 +322,23 @@ local function dispatch(ev)
     keys_norm = (d.count and d.count > 1 and tostring(d.count) or "") .. lhs_norm
   end
   local decision = classify(d.type, keys_raw, keys_norm, changed, moved)
+  local typed, typed_insert = take_pressed()
+  local rows = visited_rows(d, {})
+  if rows[2] == rows[1] then rows[2] = nil end
+  if not tick_open then
+    tick = tick + 1
+    tick_open = true
+    vim.schedule(function() tick_open = false end)
+  end
 
   ---@type VF.Atom
   local atom = {
+    visited_rows = rows,
+    tick = tick,
     keys  = keys_norm,
+    kind  = d.type,
+    typed = typed,
+    typed_insert = typed_insert,
     buf   = ev.buf,
     win   = vim.api.nvim_get_current_win(),
     lossy = lossy,
@@ -154,11 +354,23 @@ end
 
 local function ensure_autocmd()
   if autocmd_id then return end
+  reset_pressed()
   augroup = vim.api.nvim_create_augroup("VimficiencyAtoms", { clear = true })
   autocmd_id = vim.api.nvim_create_autocmd("CmdAtom", {
     group = augroup,
     callback = util.entry(dispatch),
   })
+  vim.on_key(on_key, on_key_ns)
+  wrap_input_functions().record = record_input
+end
+
+local function stop_autocmd()
+  if not autocmd_id then return end
+  vim.api.nvim_del_autocmd(autocmd_id)
+  autocmd_id = nil
+  vim.on_key(nil, on_key_ns)
+  if input_hooks and input_hooks.record == record_input then input_hooks.record = nil end
+  reset_pressed()
 end
 
 --- Attach a named atom listener
@@ -167,9 +379,9 @@ end
 ---@return boolean success
 function M.add_listener(name, listener)
   if listener_by_name[name] then return false end
+  ensure_autocmd()
   listener_by_name[name] = listener
   listener_count = listener_count + 1
-  ensure_autocmd()
   return true
 end
 
@@ -179,25 +391,33 @@ function M.remove_listener(name)
   if not listener_by_name[name] then return end
   listener_by_name[name] = nil
   listener_count = listener_count - 1
-  if listener_count == 0 and autocmd_id then
-    -- removes the autocmd when the last one leaves
-    vim.api.nvim_del_autocmd(autocmd_id)
-    autocmd_id = nil
-  end
+  if listener_count == 0 then stop_autocmd() end
 end
 
 --- Tear down the autocmd and drop every listener.
 function M.shutdown()
-  if autocmd_id then
-    vim.api.nvim_del_autocmd(autocmd_id)
-    autocmd_id = nil
-  end
+  stop_autocmd()
   if augroup then
     vim.api.nvim_del_augroup_by_id(augroup)
     augroup = nil
   end
   listener_by_name = {}
   listener_count = 0
+end
+
+--- Scope shared by the whole-stream listeners (recall, journal). An atom
+--- delivered after its buffer left every window arrives in Neovim's temporary
+--- autocmd window, whose cursor is not the user's and whose buffer may already
+--- be unloaded.
+---@param buf integer
+---@param win integer
+---@return boolean
+function M.in_live_file_buffer(buf, win)
+  return vim.api.nvim_buf_is_valid(buf)
+    and vim.bo[buf].buftype == ""
+    and vim.api.nvim_win_is_valid(win)
+    and vim.api.nvim_win_get_buf(win) == buf
+    and vim.fn.win_gettype(win) ~= "autocmd"
 end
 
 M._classify = classify

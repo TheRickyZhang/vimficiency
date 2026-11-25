@@ -43,12 +43,16 @@ test("disk.validate rejects empty lines and malformed optimal_results", function
   end
 end)
 
-test("disk.decode round-trips the current version and rejects any other", function()
+test("disk.decode accepts the current recording and the previous endpoint-only format", function()
   local result = h.fake_result()
   local function encode(version)
     return vim.json.encode(vim.tbl_extend("force", result, { version = version }))
   end
 
+  assert_true(disk.decode(encode(1)) ~= nil)
+  local _, recording_err = disk.decode(encode(disk.FORMAT_VERSION))
+  assert_match(recording_err or "", "recording")
+  result.recording = { row = result.start_row, col = result.start_col, mode = "n", steps = disk.empty_array() }
   local data, err = disk.decode(encode(disk.FORMAT_VERSION))
   assert_eq(err, nil)
   data = assert(data)

@@ -178,19 +178,13 @@ test("workspace/storage: save overwrite-warns but does not refuse", function()
   end)
 end)
 
-test("workspace/storage: save preserves capture_debug extras", function()
+test("workspace/storage: save preserves the command list", function()
   local tmp = h.use_temp_data_home()
   h.silence_notify(function()
-    local seeded = fake_result("debug-seq")
-    seeded.capture_debug = {
-      version = 1,
-      event_count = 1,
-      raw_joined = "debug-seq",
-      reduced_sequence = "debug-seq",
-      normalized_sequence = "debug-seq",
-      events = {
-        { index = 1, mode = "n", key_typed = "d" },
-      },
+    local seeded = fake_result("dwj")
+    seeded.commands = {
+      { keys = "dw", kind = "operator" },
+      { keys = "j", kind = "motion" },
     }
     local id = session_store.register_fetched_result("dbg", seeded)
     assert_true(id, "seed failed")
@@ -199,8 +193,7 @@ test("workspace/storage: save preserves capture_debug extras", function()
 
     local path = tmp .. "/nvim/vimficiency/saved/dbg.json"
     local decoded = vim.json.decode(table.concat(vim.fn.readfile(path), "\n"))
-    assert_eq(decoded.capture_debug.raw_joined, "debug-seq")
-    assert_eq(decoded.capture_debug.events[1].mode, "n")
+    assert_eq(decoded.commands, seeded.commands)
 
     remove_alias("dbg")
   end)

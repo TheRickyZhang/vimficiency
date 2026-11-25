@@ -15,11 +15,7 @@ namespace VF::LuaExports {
 // Dropping a job whose worker is still running (the cancel path) blocks until the search observes the flag and returns, so the worker
 // can never outlive what it reads or writes. The join is bounded by the
 // search's polling granularity: per pop, and between composition setup phases.
-//
-// Invariant: VimOptions::shiftwidth (the one runtime-mutable VimCore global the
-// search reads) must not be reconfigured while a worker is live. The session
-// sets it once at setup; single-flight on the suggest side keeps at most one
-// suggest worker alive.
+
 template <typename State>
 class AsyncJob {
  public:

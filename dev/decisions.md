@@ -78,7 +78,7 @@ to deeper docs when needed.
 
 ## Dot repeat uses a structured `DotRepeat`, not a re-parsed text command
 - `Edit::applyEdit` previously took `std::string* lastEditCmd` holding a formatted text command like `"5de"`. On every `.`, it called `parseEdits(*lastEditCmd)` to split count and base again. The optimizer side already carried `(lastEditCount_, lastEditBase_)` as separate fields, so the two sides described the same concept in two incompatible shapes — and `formatCountedCommand` + `matchesCountedCmd` existed solely to bridge them via text.
-- Now there's one shape: `struct DotRepeat { std::string base; int count; }` in `EditInterpreter.cppm` (next to `ParsedEdit`). `applyEdit` takes `DotRepeat* lastEdit`; on `.`, it constructs `ParsedEdit{base, count}` directly via `asEdit()` — no parse round-trip. `TransformState`/`TransformPathStep` store a `DotRepeat lastEdit_`. `ChangeGoalHandler::isDotRepeat`, `SuffixCache::canUseDot`, `TransformTransitionDispatcher::continueWithEdit`, and `afterCommandWithLastEdit` all consume `DotRepeat` instead of `(int, string_view)` pairs.
+- Now there's one shape: `struct DotRepeat { std::string base; int count; }` in `EditInterpreter.cppm` (next to `ParsedEdit`). `applyEdit` takes `DotRepeat* lastEdit`; on `.`, it constructs `ParsedEdit{base, count}` directly via `asEdit()` — no parse round-trip. `TransformState`/`TransformPathStep` store a `DotRepeat lastEdit_`. `ChangeGoalHandler::isDotRepeat`, `SuffixCache::canUseDot`, `TransformTransitionDispatcher::continueWithEdit`, and `afterGoalCommand` all consume `DotRepeat` instead of `(int, string_view)` pairs.
 - `countedCommandString` (`SequenceBinding.cppm`, formerly `ChangeGoalHandler::formatCountedCommand`) stays — `SuffixCache::matchesCountedCmd` still compares against an existing text token inside the program. That's a text↔text comparison, not a parse round-trip.
 - Verified by `Verify_DotRepeat.cpp` (oracle-pinned `.` after each of `x/dw/dW/de/dE/db/dB/dge/dgE` + controlled motion).
 
@@ -120,7 +120,7 @@ to deeper docs when needed.
 
 ## Scroll commands: search `<C-d>`/`<C-u>` (oracle-exact), exclude `<C-f>`/`<C-b>` (viewport-dependent)
 - The NavOptimizer search emits only `<C-d>`/`<C-u>` (`MovementToSpec.cpp` `SCROLL_MOTIONS`). Their cursor lands at `min/max(cursor ± 'scroll', buffer-edge)` — a fixed offset independent of the window's topline — so they match Vim exactly. `Verify_ScrollMotions.cpp` oracle-fuzzes them (small buffers, counts, varying scroll) and passes.
-- `<C-f>`/`<C-b>` are deliberately NOT searched: full-page scroll places the cursor relative to the window's **topline** (e.g. with the whole buffer visible, `<C-b>` doesn't move), which the minimal-state model doesn't track. The interpreter still *parses* and *approximates* them (jump ~one height, clamp) for replaying captured sessions — fine because the captured cursor is ground truth — but the approximation is not exact (caveat comment in `MovementInterpreter.cpp`).
+- Full-page scroll places the cursor relative to the window's **topline**, which the search model omits. The interpreter approximates `<C-f>`/`<C-b>` by a clamped jump of about one window height. Search excludes both commands. Play shows the observed cursor for captured scrolls.
 - Why not model topline to make all four exact: `line('w0')` is already captured in Lua (`util.lua`) but intentionally not plumbed to `NavContext` (its `topRow`/`bottomRow` fields stay commented out). A nowrap topline port (`onepage`/`halfpage`/`update_topline`) is tractable, but Neovim's default `'wrap'` makes scroll operate on *screen* lines, requiring window width + `plines_win` (tabs, double-width, number/sign/fold columns) — effectively Vim's display engine, which contradicts the minimal-state design. Scroll suggestions are also low-value (any vertical jump has a view-independent alternative like `NG`/`Nj`), so the cost/benefit didn't justify it.
 - Oracle harness: `NeovimOracle::simulateScroll` sets window-local `'scroll'` (clamped to height in the lua) for one call; `windowHeight()` queries the real height. Headless nvim **can't resize its sole window** (`nvim_win_set_height` is a no-op there), so the property test uses the fixed headless height and mirrors it into `NavContext` rather than varying it. Trip wire: `Verify_ScrollMotions.ScrollMotionsMatchOracle`.
 - Migration note: this replaced the hand-written `CountedMiscMotions`/`ScrollMotions` unit tests (removed). `EXPLORABLE_MOTIONS` was found to be vestigial for search (only feeds `ALL_MOTIONS` parsing); doc corrected in `dev/core/keyboard.md`.
@@ -157,10 +157,43 @@ to deeper docs when needed.
 - `mxcnt` is the symbol for the shared count cap in code and docs (`cap` was ambiguous). Complexity per block is `O(n·(n+m)·mxcnt)`, bounded by changed text.
 
 ## Algorithm explainer moved to the docs site with wasm-backed widgets (2026-11-02)
-- The README's "How it works" walkthrough (tables, the seal-gate inequality, the complexity formula) was hard to read as static GitHub markdown. It is now six chapters under `doc-src/how-it-works/` on the Starlight site; the README keeps a summary, the two videos, and a link.
+- The README's "How it works" walkthrough (tables, the seal-gate inequality, the complexity formula) was hard to read as static GitHub markdown. It is now six chapters under `doc-src/how-it-works/` on the Starlight site; the README keeps a summary and shows both walkthroughs inline.
 - The widgets run the real planner compiled to WebAssembly (`VIMF_WASM`, `src/Wasm/PlannerExports.cpp`) rather than a TypeScript re-implementation, so they cannot drift from `src/Optimizer/DiffPlanner/`. CI builds the module (ubuntu PR check and the macOS main deploy); it is never committed.
-- Two read-only surfaces were added to core for the widgets: `TilingCost::cover` (chunk backpointers on `Arrival`) and `VimDiff::trace` (tables, path, blocks). `VimDiffTraceExport` now dumps the trace instead of re-running a naive DP; the committed animation traces still render, regenerating would need the scene adjusted (`anim/dp-walkthrough/README.md`).
+- Two read-only surfaces were added to core for the widgets: `TilingCost::cover` (chunk backpointers on `Arrival`) and `VimDiff::trace` (tables, path, blocks). `VimDiffTraceExport` dumps the same trace for the [planner walkthrough](../anim/dp-walkthrough/README.md).
 - Fixed on the way: the Guide sidebar was empty because `autogenerate: { directory: '.' }` never matched the glob loader's root-relative file paths. See `dev/web/how-it-works-site.md`.
+
+## The user is costed by the keys pressed, the search runs on the keys that ran (2026-11-20)
+- Every atom carries `keys` (resolved, after mappings) and `typed` (pressed). Scoring costs `typed` and uses `keys` for the search bound. Play labels observed states with the resolved keys. The optimizer can compare the observed endpoints even when a plugin's key sequence underdescribes its edits.
+- Before this, `keys` did both jobs, so a two-key mapping was charged as its whole expansion and `j`→`gj` needed a costing special case.
+- A mapping that beats the optimizer's best is real, not an artifact; the normalized score is capped at 100.
+- `typed` comes from `vim.on_key` plus wrappers around `vim.fn.getchar`/`getcharstr` and the feedkeys functions (`logic::typedKeys` cancels keys plugins fed as typed). Neovim has no complete source: `on_key` skips `getchar()` input and CmdAtom `lhs` is a rebuilt label. An `lhs`-based merge was tried first and replaced: it guessed alignments and double counted which-key's re-fed keys. `dev/lua/atom-stream.md` has the measurements.
+- Wrapping global functions is deliberate: flash, mini.ai, mini.surround and which-key all look up `vim.fn.getcharstr` at call time.
+- Sequences shown to the user are still `keys`. The optimizer suggesting a user's own mappings stays open (`dev/architecture/todo.md` item 7).
+
+## Insert text is counted by the keys pressed in Insert mode (2026-11-22)
+- The command tables read commands from `keys`: it is the only stream with command structure, and it shares the optimizer's vocabulary. Inside an insert session `keys` also holds what mappings typed (autopairs runs `()<C-g>U<Left>` for `(`), which showed up as commands the user never pressed.
+- So the user's insert text (typed characters and keys such as `<BS>`) is counted from `typed_insert`, the keys pressed in an insert that did not end it. Capture takes both from the mode before and after each press; nothing downstream knows about any plugin.
+- The press that ends an insert is found by the mode after it, not by its key (2026-11-23). Matching `<Esc>` counted a `jk` exit as two typed characters and `<C-c>` as a command. An `InsertLeave` or `ModeChanged` autocmd was rejected: a mapping that leaves Insert mode and returns would count as an exit.
+- Naming `<C-\><C-n>` to drop its first key was rejected for the same reason as `<Esc>`. The only sign that a read is the second key of a command is that Neovim did not go idle before it, and that is equally true of keys queued together (a held key, a paste).
+- Counting everything from `typed` was rejected: it has no command structure, so a mapped key parses as the builtin it shadows. Filtering known expansions out of `keys` was rejected as one patch per plugin.
+- Sessions and journal atoms recorded before `typed_insert` count no insert text on either side, instead of keeping the old counting beside the new.
+
+## An empty search can mean the user won (2026-11-21)
+- With no whole-buffer fallback, a search can end empty. When the queue drained and the only drops were states over `exploreFactor` × user effort, no modeled sequence comes close to the user's keys (typically `p`, `u`, `:s`). That is `unbeaten`: scored 100 and counted apart, in sessions and journal samples alike.
+- An empty search with no effort-cap drops is a model gap (such as the pure-newline deletion) and counts as failed. A gap masked by cap drops would be misread as unbeaten; telling them apart needs an uncapped rerun, which is not worth its cost.
+
+## Scores carry a stamp; only equal stamps compare (2026-11-21)
+- A stamp is `SCORING_VERSION` plus every scoring setting. File-format versions stay separate, since old files must stay readable whatever the scoring.
+- The stamp first carried the plugin version, to avoid relying on a manual bump (2026-11-23: reversed). Every UI-only release then split the stats history. The `ScoringSignature` unit test now catches a missed bump by hashing the best costs of a fixed reference set.
+- Journal samples are rescored under a new stamp; sessions cannot be (no buffer text), so stats show one stamp's sessions at a time instead of hiding older ones.
+- Session records carry a hashed stamp id, with the full stamp written once per log. A stamp record per change was rejected: with several Neovims appending, the last stamp written may be another process's.
+- Sessions and journal runs share one score, `Σ w·min(best/user, 1) / Σ w` with `w` the user's effort by default, reduced in C++ (`src/Stats/`). It replaced the sessions' geometric mean, which let many tiny sessions outweigh the long ones and disagreed with the journal's ratio of sums.
+
+## Stats are reduced per source, never pooled (2026-11-24)
+- Sessions and the journal each have their own score, command tables and optimizer times, one band of the stats page each. Sessions are the cases the user chose to look at, with real goal boundaries; the journal is everything typed, cut into fixed windows.
+- One command table over both was dropped. Shares are raw counts, so it was the journal's table in all but name, and the journal already holds the keys typed during a session, which it counted twice.
+- A page-level source selector was considered; both bands on one page, Sessions over Journal, was chosen instead.
+- The session log records no `query_size`, so only the journal's search times are bucketed by it.
 
 ## FFI boundary: protobuf both ways (2026-11-15)
 - Every request and result is a message from `src/LuaExports/proto/`; `Api.def` keeps one struct (`VFByteSlice`) and plain ints for ids. See `dev/lua/ffi-payloads.md`.

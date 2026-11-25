@@ -5,14 +5,12 @@ export module vf.LuaExports.Common;
 
 import std.compat;
 import vf.LuaExports.AsyncJobRegistry;
-import vf.Boundary.NavBoundary;
 import vf.Keyboard.Config;
-import vf.Types.Lines;
 
 export {
 
 // Shared by every LuaExports/*.cpp: error/result types, the config global
-// (defined in lua_exports.cpp), and request/result marshaling. Generated
+// (defined in ConfigState.cpp), and request/result marshaling. Generated
 // protobuf headers cannot be included here, so the helpers that touch a
 // message are templates instantiated by the including .cpp.
 namespace VF::LuaExports {
@@ -37,17 +35,16 @@ enum DEFAULT_KEYBOARD {
 
 extern Config g_config_internal;
 
+// Merges a serialized `vf.config.Config` (proto/config.proto) into what is
+// configured so far, then rebuilds `g_config_internal` and the other
+// process-global state every search reads.
+Expected<void> applyConfig(std::string_view serialized);
+void resetConfig();
+std::string describeConfig();
+std::span<const char* const> countClassNames();
+
 inline std::unexpected<ExportError> unexpectedError(std::string message) {
   return std::unexpected<ExportError>{ExportError{std::move(message)}};
-}
-
-// Boundary for a sliced buffer. The slice is the whole edit region, so there is
-// no horizontal prefix or suffix; only the lines cut off above and below vary.
-inline NavBoundary sliceBoundary(const Lines& lines, bool hasLinesAbove, bool hasLinesBelow) {
-  const int lastLine = lines.lastLine();
-  return NavBoundary(lines, CursorPos(0, 0),
-                     CursorPos(lastLine, lines.getSize(lastLine)),
-                     hasLinesAbove, hasLinesBelow);
 }
 
 inline VFByteSlice byteSlice(const std::string& storage) {

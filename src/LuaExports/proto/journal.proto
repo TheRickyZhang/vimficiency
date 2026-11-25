@@ -1,0 +1,241 @@
+// The capture journal (lua/vimficiency/capture/journal.lua) and the samples
+// vimfy_journal derives from it (src/Journal/). See dev/lua/atom-stream.md.
+syntax = "proto3";
+
+package vf.journal;
+
+import "stats.proto";
+
+import "common.proto";
+
+option optimize_for = LITE_RUNTIME;
+
+// Cursor and viewport of the focused window. Rows and columns are 0-indexed.
+message ViewState {
+  int32 row = 1;
+  int32 col = 2;
+  int32 top_row = 3;
+  int32 bottom_row = 4;
+  int32 window_height = 5;
+  int32 scroll_amount = 6;
+  vf.IndentOptions indent = 7;
+}
+
+message Header {
+  int32 version = 1;
+  int64 started_wall_epoch = 2;
+}
+
+// The whole text of `buf`. Replaces whatever was built for it so far.
+message Snapshot {
+  int32 buf = 1;
+  bytes bufname = 2;
+  string filetype = 3;
+  repeated bytes lines = 4;
+}
+
+// Replace `old_count` lines at 0-indexed `first` with `lines`.
+message Delta {
+  int32 buf = 1;
+  int32 first = 2;
+  int32 old_count = 3;
+  repeated bytes lines = 4;
+  // Smallest buffer height across the on_lines notifications folded into this delta.
+  optional int32 min_height = 5;
+}
+
+// The state of a window that no atom accounts for: a window or buffer was
+// entered, or the cursor or text changed with no command behind it. Always
+// taken in Normal mode.
+message Resync {
+  int32 buf = 1;
+  int32 win = 2;
+  ViewState view = 3;
+}
+
+// One CmdAtom and the state after it.
+message Atom {
+  enum Decision {
+    record = 0;
+    skip = 1;
+    abort = 2;
+  }
+  int32 buf = 1;
+  int32 win = 2;
+  // Resolved keys: what ran, after mappings.
+  bytes keys = 3;
+  // CmdAtom's `type` (operator, insert, motion, ...); kept as text so a type
+  // Neovim adds later is recorded, not rejected. Empty in older journals.
+  string kind = 10;
+  // Physical keys pressed since the previous atom. Atoms delivered together
+  // cannot be told apart, so an earlier one carries the keys of a later one.
+  bytes typed = 9;
+  // Of `typed`, the insert text: keys pressed in an insert that did not end it.
+  // `keys` cannot tell them from what a mapping typed there. Unset in older
+  // journals.
+  optional bytes typed_insert = 12;
+  // `typed_insert` while it still held the press that left Insert mode.
+  reserved 11;
+  Decision decision = 4;
+  bool lossy = 5;
+  bytes abort_reason = 6;
+  // `nvim_get_mode().mode` at delivery.
+  string mode = 7;
+  ViewState view = 8;
+  // Extremes of the starting rows reported by this atom and its subatoms.
+  repeated int32 visited_rows = 13;
+}
+
+// The tick of the records before it is complete. Absent after a tick the
+// writer did not outlive, and in older journals.
+message TickEnd {}
+
+message Record {
+  // Monotonic milliseconds since the header. Unset on a `tick_end`.
+  int64 ms = 1;
+  // Records written in one drain of Neovim's event queue share a tick. Atoms
+  // sharing one were delivered together, so only the last one's state is real.
+  // Unset on a `tick_end`.
+  int32 tick = 2;
+  oneof body {
+    Header header = 3;
+    Snapshot snapshot = 4;
+    Delta delta = 5;
+    Resync resync = 6;
+    Atom atom = 7;
+    TickEnd tick_end = 8;
+  }
+}
+
+// A journal file is one single-record `File` appended per record; serialized
+// messages concatenate into their merge.
+message File {
+  repeated Record records = 1;
+}
+
+// Everything a sample's value depends on. A samples file whose stored params
+// differ from the requested ones is recomputed.
+message SampleParams {
+  reserved 2, 3, 4, 7, 8, 9;
+  // Window sizes, in recorded atoms.
+  repeated int32 window_sizes = 1;
+  // Per-window search budget; 0 runs to the natural caps.
+  int32 deadline_ms = 5;
+  // A pause this long between commands ends a run.
+  int32 idle_gap_ms = 6;
+  vf.stats.Stamp stamp = 10;
+  // Filled by the C++ that writes or reads samples (`SAMPLES_FORMAT`).
+  int32 samples_format = 11;
+}
+
+message SampleRequest {
+  bytes journal_dir = 1;
+  SampleParams params = 2;
+  // A closed journal untouched this many days is rolled up once fully scored, then
+  // deleted with its samples. Not a param: samples do not depend on it.
+  int32 keep_days = 3;
+}
+
+// One evaluated window: `atom_count` recorded atoms ending at journal atom
+// `last_atom` (0-indexed among the file's atom records).
+message Sample {
+  enum Outcome {
+    scored = 0;
+    // The changed region is taller than max_search_lines.
+    too_large = 1;
+    // The search found no sequence.
+    no_result = 2;
+    // The evaluator died on this window in an earlier run.
+    crashed = 3;
+    // A line holds a newline or NUL byte.
+    unsupported = 4;
+    // The search ran to completion without finding any modeled sequence
+    // within exploreFactor × user_cost; scores as 100%.
+    unbeaten = 5;
+  }
+  int32 window_size = 1;
+  int32 first_atom = 2;
+  int32 last_atom = 3;
+  int32 atom_count = 4;
+  int64 wall_epoch = 5;
+  Outcome outcome = 6;
+  double user_cost = 7;
+  double best_cost = 8;
+  // The text is the same at both ends.
+  bool nav_only = 9;
+  // The text and the cursor are the same at both ends.
+  bool net_zero = 10;
+  bool deadline_hit = 11;
+  bool lossy = 12;
+  double analyze_ms = 13;
+  repeated vf.stats.Command commands = 14;
+  // Scored only.
+  bytes best_seq = 15;
+  // The window's `Atom.typed_insert`s; unset when any of its atoms has none.
+  optional bytes typed_insert = 16;
+  // Indices of the `commands` that are a gj/gk which moved the cursor along
+  // its buffer line. Every other gj/gk counts as j/k.
+  repeated int32 within_line = 17;
+  int32 query_size = 18;
+}
+
+message SampleRecord {
+  oneof body {
+    SampleParams params = 1;
+    Sample sample = 2;
+    // Every window of the journal's first `journal_size` bytes is sampled.
+    int64 journal_size = 3;
+  }
+}
+
+// Appended like `File`.
+message SampleFile {
+  repeated SampleRecord records = 1;
+}
+
+// `Stats::CommandCounts`.
+message CommandCount {
+  bytes command = 1;
+  int32 count = 2;
+}
+
+message CommandTally {
+  repeated CommandCount commands = 1;
+  int64 typed_chars = 2;
+}
+
+// The samples of one local day, window size, nav/edit and outcome, reduced so
+// that entries merge exactly. Like the summary, it leaves out scored and
+// unbeaten samples with no user cost.
+message RollupEntry {
+  // Days since 1970-01-01, local time.
+  int64 day = 1;
+  int32 window_size = 2;
+  bool nav_only = 3;
+  Sample.Outcome outcome = 4;
+  int32 runs = 5;
+  // Σ w·min(best/user, 1) and Σ w, with w the user's effort or 1.
+  double effort_weighted = 6;
+  double effort_weights = 7;
+  double uniform_weighted = 8;
+  double uniform_weights = 9;
+  int32 deadline_hit = 10;
+  // Of `scored` samples only.
+  CommandTally user = 11;
+  CommandTally optimizer = 12;
+}
+
+// A journal's samples, kept after the journal and its samples are deleted.
+message Rollup {
+  // The journal's file name: a journal is rolled up once.
+  bytes journal = 1;
+  SampleParams params = 2;
+  repeated RollupEntry entries = 3;
+  // `ROLLUP_FORMAT`; 0 in rollups written before it, which are format 1.
+  int32 format = 4;
+}
+
+// `rollup.vfr` in the journal directory, appended like `File`.
+message RollupFile {
+  repeated Rollup records = 1;
+}

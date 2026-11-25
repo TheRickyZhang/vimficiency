@@ -9,15 +9,15 @@ import vf.LuaExports.Payload;
 import vf.LuaExports.AsyncJob;
 import vf.LuaExports.AsyncJobRegistry;
 import vf.Keyboard.Config;
-import vf.Optimizer.CompositionOptimizer.CompositionOptimizer;
+import vf.Optimizer.Analyze;
 import vf.Optimizer.DiffPlanner.DiffState;
-import vf.Optimizer.NavOptimizer.NavOptimizer;
+import vf.Optimizer.Result;
 import vf.Optimizer.SearchControl;
+import vf.Types.Lines;
 import vf.Utils.Debug;
 
 using namespace std;
 using namespace VF::LuaExports;
-using logic::SearchInputs;
 
 namespace {
 
@@ -32,51 +32,7 @@ void setSpan(vf::search::Span* out, const CursorPos& begin,
 // Synchronous run of the full analyze entry point.
 Proto runAnalyze(const SearchInputs& in, int resultsCalculated,
                  const Config& config, const SearchControl& control) {
-  vector<Result> results;
-  vector<DiffState> diffs;
-
-  if (in.initialLines == in.goalLines) {
-    NavOptimizer opt(config);
-
-    const NavOptimizerParams navParams =
-        in.overrides.resolved(NavOptimizerParams{}
-                                  .withMaxResults(resultsCalculated)
-                                  .withMaxResultsPerEndPos(resultsCalculated));
-
-    const vector<LandingResult> navResults =
-        opt.optimize(in.initialLines, in.initialPos, in.goalPos, navParams,
-                     in.userSeq, in.boundary, in.navContext, control)
-            .getResults();
-
-    // NavOptimizer returns LandingResult (with goalPos); for analyze we only
-    // surface (sequence, cost), so down-convert to Result for shared output.
-    results.reserve(navResults.size());
-    for (const LandingResult& r : navResults) {
-      results.emplace_back(r.getSequence(), r.getCost());
-    }
-  } else {
-    CompositionOptimizer opt(config);
-
-    const CompositionOptimizerParams compParams = in.overrides.resolved(
-        CompositionOptimizerParams{}.withMaxResults(resultsCalculated));
-
-    const CompositionResult composed = opt.optimize(
-        in.initialLines, in.initialPos, in.goalLines, in.goalPos, compParams,
-        in.userSeq, in.boundary, in.navContext, control);
-    results = composed.getResults();
-    diffs = composed.getDiffs();
-  }
-
-  const double userCost = getEffort(in.userSeq, config);
-
-  // Erase empty sequences so that "no action" can be recognized by lua to mean
-  // "no recommendations"
-  erase_if(results, [](const Result& r) { return r.getSequence().empty(); });
-
-  // Sort results by cost
-  sort(results.begin(), results.end(), [](const Result& a, const Result& b) {
-    return a.getCost() < b.getCost();
-  });
+  const AnalyzeOutput analyzed = analyze(in, resultsCalculated, config, control);
 
   // The worker thread's debug stream is thread-local, so it has to travel in
   // the result.
@@ -86,14 +42,15 @@ Proto runAnalyze(const SearchInputs& in, int resultsCalculated,
   }
 
   vf::search::AnalyzeResult msg;
-  for (const Result& result : results) {
+  for (const Result& result : analyzed.results) {
     vf::search::Result* out = msg.add_results();
     out->set_seq(result.getSequence().view());
     out->set_cost(result.getCost());
   }
-  msg.set_user_cost(userCost);
+  msg.set_user_cost(analyzed.userCost);
+  msg.set_unbeaten(analyzed.unbeaten);
   // Both spans share begin (the common prefix is identical in both buffers).
-  for (const DiffState& d : diffs) {
+  for (const DiffState& d : analyzed.diffs) {
     vf::search::DiffRegion* region = msg.add_diffs();
     setSpan(region->mutable_init(), d.beginPos, d.endPos);
     setSpan(region->mutable_goal(), d.beginPos,
@@ -119,6 +76,58 @@ JobRegistry<AnalyzeJob> g_analyze_jobs;
 } // namespace
 
 extern "C" {
+
+VFByteSlice vf_build_search_request(const char* request, size_t request_len) {
+  static string storage;
+  return guardedRequest<vf::search::BuildSearchRequest>(
+      storage, request, request_len,
+      [](const vf::search::BuildSearchRequest& req) -> ProtoResult {
+        auto initialLines = payload::linesFrom(req.initial_lines());
+        if (!initialLines) return unexpected(initialLines.error());
+        auto goalLines = payload::linesFrom(req.goal_lines());
+        if (!goalLines) return unexpected(goalLines.error());
+
+        auto indent = logic::decodeIndentOptions(req);
+        if (!indent) return unexpected(indent.error());
+        UntouchedRows untouched;
+        if (req.has_untouched_above()) untouched.above = req.untouched_above();
+        if (req.has_untouched_below()) untouched.below = req.untouched_below();
+        if (untouched.above < 0 || untouched.below < 0) return unexpectedError("negative untouched rows");
+        const SearchRegion region = computeSearchRegion(
+            req.start_row(), req.end_row(), *initialLines, *goalLines, req.padding(), untouched);
+        if (region.paddedHeight() - 1 > req.max_search_lines())
+          return unexpectedError("search range exceeds MAX_SEARCH_LINES");
+
+        const SearchSlice slice = sliceSearch(
+            *initialLines, *goalLines,
+            SessionEnds{
+                .startRow = req.start_row(),
+                .startCol = req.start_col(),
+                .endRow = req.end_row(),
+                .endCol = req.end_col(),
+                .windowHeight = req.window_height(),
+                .scrollAmount = req.scroll_amount(),
+                .indent = *indent,
+            },
+            req.user_seq(), req.user_typed(), region);
+
+        vf::search::SearchRequest msg;
+        for (const Line& line : slice.initialLines) msg.add_initial_lines(line);
+        for (const Line& line : slice.goalLines) msg.add_goal_lines(line);
+        msg.set_start_row(slice.ends.startRow);
+        msg.set_start_col(slice.ends.startCol);
+        msg.set_end_row(slice.ends.endRow);
+        msg.set_end_col(slice.ends.endCol);
+        msg.set_has_lines_above(slice.hasLinesAbove);
+        msg.set_has_lines_below(slice.hasLinesBelow);
+        msg.set_window_height(slice.ends.windowHeight);
+        msg.set_scroll_amount(slice.ends.scrollAmount);
+        if (req.has_indent()) *msg.mutable_indent() = req.indent();
+        msg.set_user_seq(slice.userSeq);
+        msg.set_user_typed(slice.userTyped);
+        return proto(msg);
+      });
+}
 
 VFByteSlice vf_analyze(const char* request, size_t request_len) {
   static string storage;

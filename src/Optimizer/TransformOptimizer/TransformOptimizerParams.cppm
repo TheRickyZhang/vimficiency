@@ -5,12 +5,17 @@ export module vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
 
 import std.compat;
 export import vf.Optimizer.OptimizerParamsBase;
+export import vf.VimCore.VimOptions;
 
 export {
 
 struct TransformOptimizerParams : OptimizerParamsBase {
+  IndentOptions indent;
   TRANSFORM_FIELDS(VF_PARAMS_DECLARE_OWN_FIELD)
   enum class Field { TRANSFORM_ALL_FIELDS(VF_PARAMS_FIELD_ENUM) COUNT };
+
+  // The base default is tuned to Nav's and Composition's distances; this one counts characters.
+  inline TransformOptimizerParams() { distanceWeight = 0.35; }
 
 #define VF_PARAMS_SELF TransformOptimizerParams
   TRANSFORM_ALL_FIELDS(VF_PARAMS_WITH_SETTER)
@@ -20,7 +25,8 @@ struct TransformOptimizerParams : OptimizerParamsBase {
     return TransformOptimizerParams{}
         .withMaxResults(maxResults)
         .withMaxNodesPopped(maxNodesPopped)
-        .withDistanceWeight(0.0);
+        .withDistanceWeight(0.0)
+        .withTypedWeight(0.0);
   }
 };
 

@@ -93,6 +93,21 @@ TEST_F(TextObjectContextTest, InnerQuote_SecondPair) {
       {"aaa \"first\" bbb \"X\" ccc"}, '"');
 }
 
+TEST_F(TextObjectContextTest, AroundQuoteConsumesTrailingWhitespaceOrFallsBackToLeading) {
+  for (char quote : QuoteFlags::ALL_QUOTES) {
+    const string object = quote + "value"s + quote;
+    for (auto [line, goal] : {pair{"a  " + object + " \tb", "a  Xb"s},
+                              pair{"a \t" + object + "b", "aXb"s}}) {
+      const Lines initial{line}, expected{goal};
+      auto ctx = makeContext(initial, expected);
+      ASSERT_EQ(ctx.totalEdits(), 1);
+      const auto& edit = ctx.edits[0];
+      ASSERT_TRUE(edit.bracketQuoteContext.useAroundQuote.seen(quote));
+      validateMask(initial, expected, edit.bracketQuoteContext, edit.diffState, quote);
+    }
+  }
+}
+
 // Inner bracket: basic single pair
 TEST_F(TextObjectContextTest, InnerBracket_SinglePair) {
   validateSingleEdit({"foo (hello) bar"}, {"foo (X) bar"}, '(');
@@ -101,6 +116,52 @@ TEST_F(TextObjectContextTest, InnerBracket_SinglePair) {
 // Nested brackets: edit targets innermost pair
 TEST_F(TextObjectContextTest, InnerBracket_Nested) {
   validateSingleEdit({"a ((hello)) c"}, {"a ((X)) c"}, '(');
+}
+
+TEST_F(TextObjectContextTest, EscapedAndNestedBracketsAgreeWithNeovimAtEveryColumn) {
+  validateSingleEdit({R"(\(hello) tail)"}, {R"(\(X) tail)"}, '(');
+  validateSingleEdit({R"(\\(hello) tail)"}, {R"(\\(X) tail)"}, '(');
+  validateSingleEdit({R"((a\)b) tail)"}, {"(X) tail"}, '(');
+  validateSingleEdit({"(a(b)c) tail"}, {"(X) tail"}, '(');
+}
+
+TEST_F(TextObjectContextTest, BracketOpenerIgnoresQuotesAndCloserRespectsThem) {
+  validateSingleEdit({R"src("(x)")src"}, {R"src("(Y)")src"}, '(');
+  validateSingleEdit({R"src(f(a ")" b)z)src"}, {"f(Y)z"}, '(');
+  validateSingleEdit({R"src(f(a "(" b)z)src"}, {"f(Y)z"}, '(');
+  validateSingleEdit({R"src(f(a ')' b)z)src"}, {"f(Y)z"}, '(');
+}
+
+TEST_F(TextObjectContextTest, ForwardBracketEntryRespectsAnEarlierEnclosingBlock) {
+  for (const string& first : {"before ( outer"s, "before (balanced)"s}) {
+    validateSingleEdit({first, "abc (x) z", ")"}, {first, "abc Y z", ")"}, '(');
+  }
+  validateSingleEdit({"outside {", "  {x} tail", "}"}, {"outside {", "  Y tail", "}"}, '{');
+  validateSingleEdit({R"(\((x) tail)"}, {R"(\(Y tail)"}, '(');
+}
+
+TEST_F(TextObjectContextTest, QuoteObjectsRespectEscapesFromEveryColumn) {
+  validateSingleEdit({R"(5'b\'! tail)"}, {"5'X'! tail"}, '\'');
+  for (char q : QuoteFlags::ALL_QUOTES) {
+    const string plain = "a "s + q;
+    const string escaped = "a \\"s + q;
+    const string tail = q + " z"s;
+    validateSingleEdit({plain + "b\\" + q + "c" + tail}, {plain + "X" + tail}, q);
+    validateSingleEdit({escaped + "bc" + tail}, {escaped + "X" + tail}, q);
+    validateSingleEdit({"a"s + q + "p" + q + escaped + "bc" + tail},
+                       {"a"s + q + "p" + q + escaped + "X" + tail}, q);
+    validateSingleEdit({plain + "bc\\\\" + tail}, {plain + "X" + tail}, q);
+  }
+}
+
+TEST_F(TextObjectContextTest, HiddenEarlierLinesOnlyExcludeForwardBracketStarts) {
+  const Lines slice{"abc (x) z"};
+  const CursorPos begin{0, 4}, end{0, 7};
+  const DiffState diff(begin, end, "(x)", "", TransformBoundary(slice, begin, end));
+  const auto ctx = computeTextObjectContextForDiff(diff, slice, true);
+  ASSERT_GT(ctx.validBracketMask.size(), 6u);
+  EXPECT_FALSE(ctx.validBracketMask[1].seen('('));
+  for (int col = 4; col <= 6; ++col) EXPECT_TRUE(ctx.validBracketMask[col].seen('('));
 }
 
 // No delimiters present: nothing should be valid

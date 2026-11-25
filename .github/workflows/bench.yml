@@ -185,7 +185,8 @@ jobs:
             -DVIMF_TRACK_STATES=OFF
           # Only what the gate runs; debug-build compiles every target.
           cmake --build build -j$(nproc) --target \
-            vimfy_unit_tests vimfy_approval_tests vimfy_property_tests vimfy_safety_tests vimficiency
+            vimfy_unit_tests vimfy_approval_tests vimfy_property_tests vimfy_safety_tests vimficiency \
+            vimfy_journal
 
       - name: Record source index
         run: scripts/ci-build-cache.sh record

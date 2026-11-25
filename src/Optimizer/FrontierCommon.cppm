@@ -118,8 +118,6 @@ struct FrontierQuery {
   const Lines& lines;
   CursorPos cursor;
   std::string_view seq = {};
-  int maxCount = 0;
-  SuggestionSortMode sortMode = SuggestionSortMode::Effort;
   // Null means C++ optimizer defaults.
   const OptimizerParamOverrides* overrides = nullptr;
 };
@@ -162,19 +160,17 @@ inline bool cursorInInsertionRange(CursorPos cursor, int targetLine,
          cursor.col >= beginCol && cursor.col < endCol;
 }
 
-// Bare `J` that makes progress on `diff` without exactly reaching the
-// post-edit fencepost; the fencepost-equal case is owned by TransformFrontier's
-// explorer J lane, so the two lanes stay disjoint. Callers own the activation
-// gate (which line the cursor must be on).
+// Transform's explorer emits completing joins itself. Composition includes them here.
 inline void emitProgressJoin(const Lines& lines, CursorPos cursor,
-                             const DiffState& diff, SuggestionEmitter& emitter) {
+                             const DiffState& diff, SuggestionEmitter& emitter,
+                             bool includeCompletion = false) {
   if (cursor.line < 0 || cursor.line + 1 >= static_cast<int>(lines.size())) return;
 
   Lines afterLines = lines;
   CursorPos afterPos = cursor;
   VimCore::joinLineRange(afterLines, afterPos, 2, /*addSpace=*/true);
   if (afterLines == lines) return;
-  if (afterLines == MyersDiff::applyDiffState(diff, lines)) return;
+  if (!includeCompletion && afterLines == MyersDiff::applyDiffState(diff, lines)) return;
 
   const double remaining = residualDistanceAfter(lines, afterLines, diff);
   if (remaining >= diffDistance(diff)) return;

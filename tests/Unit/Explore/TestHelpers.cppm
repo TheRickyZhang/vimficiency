@@ -9,7 +9,7 @@ export import vf.Effort.RunningEffort;
 export import vf.Explore.Explore;
 export import vf.Interpreter.SequenceParser;
 export import vf.Keyboard.Config;
-export import vf.LuaExports.Common;
+export import vf.Optimizer.Analyze;
 export import vf.Optimizer.CompositionOptimizer.CompositionOptimizerParams;
 export import vf.Optimizer.NavOptimizer.NavOptimizer;
 export import vf.Optimizer.NavOptimizer.NavRangeConversion;
@@ -29,7 +29,7 @@ protected:
 
   Explore::View makeView(Lines initial, CursorPos initialPos, Lines goal,
                          CursorPos goalPos) {
-    NavBoundary boundary = VF::LuaExports::sliceBoundary(
+    NavBoundary boundary = sliceBoundary(
         initial,
         /*hasLinesAbove=*/false,
         /*hasLinesBelow=*/false);

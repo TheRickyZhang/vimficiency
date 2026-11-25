@@ -184,10 +184,257 @@ local function run_cases()
     eq(captured[1].atom.win, win, "atom.win")
   end)
 
+  check("an atom carries the event's type as its kind", function()
+    for typed, kind in pairs({ dw = "operator", w = "motion", ["ifoo<Esc>"] = "insert" }) do
+      reset_buf(); feed(typed)
+      eq(#captured, 1, typed .. ": one atom")
+      eq(captured[1].atom.kind, kind, typed .. ": kind")
+    end
+  end)
+
+  check("a nested reindent with reported keys preserves the capture", function()
+    local buf = reset_buf()
+    vim.keymap.set("i", "<F5>", "<CR>```<Cmd>normal! ====<CR><Up><End><CR>", { buffer = buf })
+    feed("o```cpp<F5><Esc>")
+    truthy(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"):find("```cpp", 1, true),
+      "the buffer contains the fence")
+    eq(captured[#captured].verdict, "record", "keep the event and the observed result")
+  end)
+
   check("synthetic count=1 is stripped; genuine counts kept", function()
     reset_buf(); feed("ifoo<Esc>");  eq(recorded_keys(), "ifoo<Esc>", "no synthetic 1i")
     reset_buf(); feed("2ifoo<Esc>"); eq(recorded_keys(), "2ifoo<Esc>", "genuine count kept")
     reset_buf(); feed("i1<Esc>");    eq(recorded_keys(), "i1<Esc>", "content digit kept")
+  end)
+
+  local config = require("vimficiency.config")
+  local lossy_mappings = config.lossy_mappings
+  vim.keymap.set("o", "Q", function() vim.fn.search("gamma") end)
+  vim.keymap.set("o", "Z", "<Cmd>call search('gamma')<CR>")
+
+  check("an operator over a Lua-mapped motion is recorded as typed, flagged lossy", function()
+    config.lossy_mappings = "allow"
+    for _, typed in ipairs({ "dQ", "dZ", "cQxy<Esc>" }) do
+      reset_buf(); feed(typed)
+      eq(#captured, 1, typed .. ": one atom")
+      eq(captured[1].verdict, "record", typed .. ": verdict")
+      eq(captured[1].atom.keys, typed, typed .. ": keys")
+      eq(captured[1].atom.lossy, true, typed .. ": lossy")
+    end
+    reset_buf(); feed("2dQ")
+    eq(captured[1].atom.keys, "2dQ", "count re-prefixed")
+  end)
+
+  check("an operator over a Lua-mapped motion aborts under lossy_mappings = drop", function()
+    config.lossy_mappings = "drop"
+    reset_buf(); feed("dQ")
+    eq(captured[1].verdict, "abort", "verdict")
+    eq(captured[1].atom.keys, "", "no keys")
+    truthy(captured[1].atom.abort_reason:find("Lua mapping `dQ`", 1, true), captured[1].atom.abort_reason)
+  end)
+
+  config.lossy_mappings = lossy_mappings
+  vim.keymap.del("o", "Q")
+  vim.keymap.del("o", "Z")
+
+  ---@return string  every atom's pressed keys, in order
+  local function pressed_keys()
+    local parts = {}
+    for _, e in ipairs(captured) do parts[#parts + 1] = e.atom.typed end
+    return table.concat(parts)
+  end
+
+  check("typed is what was pressed where keys is what ran", function()
+    for typed, keys in pairs({ ["3x"] = "3dl", ["d2w"] = "2dw", ["J"] = "2J", ["ifoo<Esc>"] = "ifoo<Esc>" }) do
+      reset_buf(); feed(typed)
+      eq(#captured, 1, typed .. ": one atom")
+      eq(captured[1].atom.typed, typed, typed .. ": typed")
+      eq(captured[1].atom.keys, keys, typed .. ": keys")
+    end
+  end)
+
+  check("typed keeps a mapping's own keys, its count, and text as pressed", function()
+    vim.keymap.set("n", "gQ", "dw")
+    vim.keymap.set("i", "(", "()<Left>")
+    reset_buf(); feed("2gQ")
+    eq(captured[1].atom.typed, "2gQ", "mapping with a count")
+    eq(captured[1].atom.keys, "2dw", "resolved")
+    reset_buf(); feed("ia(b<Esc>")
+    eq(captured[1].atom.typed, "ia(b<Esc>", "insert mapping not expanded")
+    eq(captured[1].atom.keys, "ia()<Left>b<Esc>", "resolved")
+    vim.keymap.del("n", "gQ")
+    vim.keymap.del("i", "(")
+  end)
+
+  check("typed_insert is the keys pressed inside an insert session", function()
+    vim.keymap.set("i", "(", "()<Left>")
+    vim.keymap.set("n", "gQ", "ofoo<Esc>")
+    for typed, typed_insert in pairs({
+      ["dw"] = "",
+      ["ifoo<Esc>"] = "foo",
+      ["cwa<BS>b<Esc>"] = "a<BS>b",
+      ["ia(b<Left><Esc>"] = "a(b<Left>",
+      ["Rxy<Esc>"] = "xy",
+      -- The mapping typed its text; the user pressed nothing in Insert mode.
+      ["gQ"] = "",
+    }) do
+      reset_buf(); feed(typed)
+      eq(#captured, 1, typed .. ": one atom")
+      eq(captured[1].atom.typed, typed, typed .. ": typed")
+      eq(captured[1].atom.typed_insert, typed_insert, typed .. ": typed_insert")
+    end
+    vim.keymap.del("i", "(")
+    vim.keymap.del("n", "gQ")
+  end)
+
+  ---@return string  every atom's insert text, in order
+  local function pressed_insert()
+    local parts = {}
+    for _, e in ipairs(captured) do parts[#parts + 1] = e.atom.typed_insert end
+    return table.concat(parts)
+  end
+
+  check("typed_insert leaves out whichever press left Insert mode", function()
+    vim.keymap.set("i", "jk", "<Esc>")
+    vim.keymap.set("i", "<F2>", "<C-o>0")
+    vim.keymap.set("i", "<F3>", function() vim.cmd("stopinsert") end)
+    for typed, typed_insert in pairs({
+      ["ifoojk"] = "foo",
+      ["ia<F3>"] = "a",
+      -- Back in Insert mode by the next press, so still a key pressed in it.
+      ["ia<F2>b<Esc>"] = "a<F2>b",
+      -- `<C-o>` lends one Normal command; the insert goes on after `w`.
+      ["ia<C-o>wb<Esc>"] = "a<C-o>b",
+      -- Delivered together: the first `<Esc>` is followed by a Normal-mode read.
+      ["ifoo<Esc>ibar<Esc>"] = "foobar",
+      -- `x` is read in Select mode and starts the insert. Neovim reports no atom
+      -- for it, so the keys arrive with `l`.
+      ["ghxy<Esc>l"] = "xy",
+    }) do
+      reset_buf(); feed(typed)
+      eq(pressed_insert(), typed_insert, typed)
+    end
+    vim.keymap.del("i", "jk")
+    vim.keymap.del("i", "<F2>")
+    vim.keymap.del("i", "<F3>")
+
+    -- Sent apart: an interrupt discards input still queued ahead of it.
+    reset_buf(); feed("ifoo"); feed("<C-c>")
+    eq(pressed_insert(), "foo", "<C-c>")
+
+    -- No key caused this exit, so the text before it stays.
+    reset_buf(); feed("ia"); vim.cmd("stopinsert"); sleep(80)
+    eq(pressed_insert(), "a", "stopinsert from outside")
+  end)
+
+  -- flash.nvim's `f` and mini.ai's `i` read their target with getchar(), which
+  -- `vim.on_key` never sees.
+  check("typed includes keys a mapping read with getchar()", function()
+    config.lossy_mappings = "allow"
+    vim.keymap.set({ "n", "o", "x" }, "gF", function() vim.fn.search(vim.fn.getcharstr()) end)
+    vim.keymap.set({ "o", "x" }, "gI", function() return "i" .. vim.fn.getcharstr() end, { expr = true })
+    for _, typed in ipairs({ "gFg", "3gFa", "dgFg", "2dgFa", "vgFgd" }) do
+      reset_buf(); feed(typed)
+      eq(pressed_keys(), typed, typed)
+    end
+    -- Tripwire: Neovim gives on_key no `typed` for an expr mapping that calls
+    -- getchar(), so its own keys are lost. Fails once Neovim reports them.
+    for typed, pressed in pairs({ ygIw = "yw", vgIwd = "vwd", ["cgIwx<Esc>"] = "cwx<Esc>" }) do
+      reset_buf(); feed(typed)
+      eq(pressed_keys(), pressed, typed)
+    end
+    vim.keymap.del({ "n", "o", "x" }, "gF")
+    vim.keymap.del({ "o", "x" }, "gI")
+    config.lossy_mappings = lossy_mappings
+  end)
+
+  -- which-key reads the keys after a trigger with getchar() and feeds them back
+  -- as typed, so Neovim reads them twice.
+  check("typed counts keys a plugin read and fed back once", function()
+    vim.keymap.set("n", "Z", function()
+      local count = vim.v.count > 0 and tostring(vim.v.count) or ""
+      vim.api.nvim_feedkeys(count .. "d" .. vim.fn.getcharstr(), "mit", false)
+    end)
+    for typed, keys in pairs({ Zw = "dw", ["2Zw"] = "2dw" }) do
+      reset_buf(); feed(typed)
+      eq(pressed_keys(), typed, typed .. ": typed")
+      eq(recorded_keys(), keys, typed .. ": keys")
+    end
+    vim.keymap.del("n", "Z")
+  end)
+
+  check("atoms delivered together leave their pressed keys on the first", function()
+    reset_buf(); feed("dwdw")
+    eq(#captured, 2, "two atoms")
+    eq(captured[1].atom.typed, "dwdw", "first carries the burst")
+    eq(captured[2].atom.typed, "", "second carries none")
+  end)
+
+  check("recorded replay and search share visited lines and complete input bursts", function()
+    local buf = reset_buf()
+    local lines = {}
+    for i = 1, 40 do lines[i] = "line " .. i end
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.api.nvim_win_set_cursor(0, { 8, 0 })
+    local session = require("vimficiency.session")
+    local store = require("vimficiency.session.store")
+    local compute = require("vimficiency.session.compute")
+    local disk = require("vimficiency.session.disk")
+    require("vimficiency.capture.recall").start_continuous_capture()
+    session.start("observed")
+    feed("30G")
+    feed("Vd")
+    feed("u")
+    feed("8G")
+    feed("G8Gx")
+    feed("ll")
+    local recall = assert(store.get_active("1"))
+    eq(#recall.atoms, 2, "recall inside a burst includes both commands")
+    eq(recall.start_state.col, 0, "start before the burst")
+    local active = assert(store.get_active("observed"))
+    local result = compute.compute_result_for_active(active, compute.capture_end_state(active))
+    local recording = assert(result.recording)
+    eq(#recording.steps, 6, "one frame per delivered burst")
+    eq(recording.steps[2].keys, "Vd", "record visual delete directly")
+    eq(recording.steps[6].keys, "ll", "keep the burst together")
+    eq(recording.steps[6].col, 2, "only the observed landing")
+    eq(result.lines[#result.lines], "line 40", "visit and return within an editing burst")
+    eq(result.lines[recording.steps[1].row + 1], "line 30", "the search includes the excursion")
+    local user = assert(require("vimficiency.simulate.pool").build({
+      user = { recording = recording }, suggestions = {},
+    }, result.lines).user)
+    local local_row = recording.steps[1].row + 1
+    eq(user.states[3].lines[local_row], "line 31", "line after the visual deletion")
+    eq(user.states[4].lines[local_row], "line 30", "undo restores the deleted line")
+    eq(user.states[7].lines, result.goal_lines, "recorded final slice")
+    result.kind = "mark"
+    disk.save("observed", result)
+    eq(assert(disk.load("observed")).recording, recording, "archive preserves the steps")
+    session.close("observed")
+  end)
+
+  -- Neovim emits a nil-keys `mapping` atom for a mapped move inside a selection,
+  -- then a Visual atom whose keys already hold every move.
+  check("a mapping run inside Visual is recorded once", function()
+    vim.keymap.set({ "n", "x" }, "j", "v:count == 0 ? 'gj' : 'j'", { expr = true })
+    for _, policy in ipairs({ "allow", "drop" }) do
+      config.lossy_mappings = policy
+      reset_buf(); feed("Vjjy")
+      eq(recorded_keys(), "Vgjgjy", policy .. ", burst: keys")
+      eq(pressed_keys(), "Vjjy", policy .. ", burst: typed")
+
+      reset_buf()
+      captured = {}
+      for key in ("Vjjy"):gmatch(".") do
+        vim.api.nvim_input(key)
+        sleep(40)
+      end
+      eq(recorded_keys(), "Vgjgjy", policy .. ", typed slowly: keys")
+      eq(pressed_keys(), "Vjjy", policy .. ", typed slowly: typed")
+      for _, e in ipairs(captured) do truthy(e.verdict ~= "abort", policy .. ": no abort") end
+    end
+    vim.keymap.del({ "n", "x" }, "j")
+    config.lossy_mappings = lossy_mappings
   end)
 
   finish()

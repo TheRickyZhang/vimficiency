@@ -19,7 +19,7 @@ local function call_new_active(kind)
   local win = vim.api.nvim_get_current_win()
   local buf = vim.api.nvim_get_current_buf()
   return session_store.new_active_session(
-    "id1", nil, win, buf, require("vimficiency.util").capture_state(buf, win), kind)
+    "id1", nil, win, buf, require("vimficiency.capture.state").capture_state(buf, win), kind)
 end
 
 test("new_active_session: accepts only creatable kinds", function()

@@ -14,7 +14,6 @@ import {
   isTestSuiteSlug,
   loadTestSuiteBenchmarkData,
   binaryTotalSeries,
-  testSuiteKind,
   getTestSuite,
   type TestSuiteKind,
 } from './utils/testSuites';
@@ -28,42 +27,31 @@ export const rootRoute = createRootRoute({
   component: RootLayout,
 });
 
-export interface HomeLoaderData {
-  optimizers: {
-    slug: OptimizerSlug;
-    data: BenchmarkData;
-  }[];
-  coverage: CoverageData | null;
+async function fetchJson<T>(path: string): Promise<T | null> {
+  try {
+    const response = await fetch(`${base}${path}?_=${Date.now()}`);
+    return response.ok ? await response.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+function benchmarkSearch(search: Record<string, unknown>) {
+  return { cat: (search.cat as string) || undefined, bench: (search.bench as string) || undefined };
 }
 
 export const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  loader: async (): Promise<HomeLoaderData> => {
+  loader: async () => {
     const [results, coverage] = await Promise.all([
-      Promise.all(
-        VALID_OPTIMIZERS.map(async (slug) => {
-          try {
-            const res = await fetch(`${base}${slug}/data.json?_=${Date.now()}`);
-            if (!res.ok) return null;
-            const data: BenchmarkData = await res.json();
-            return { slug, data };
-          } catch {
-            return null;
-          }
-        }),
-      ),
-      (async (): Promise<CoverageData | null> => {
-        try {
-          const res = await fetch(`${base}tests/coverage.json?_=${Date.now()}`);
-          if (!res.ok) return null;
-          return await res.json();
-        } catch {
-          return null;
-        }
-      })(),
+      Promise.all(VALID_OPTIMIZERS.map(async slug => {
+        const data = await fetchJson<BenchmarkData>(`${slug}/data.json`);
+        return data && { slug, data };
+      })),
+      fetchJson<CoverageData>('tests/coverage.json'),
     ]);
-    return { optimizers: results.filter((r) => r !== null), coverage };
+    return { optimizers: results.filter(r => r !== null), coverage };
   },
   component: HomePage,
 });
@@ -93,29 +81,13 @@ function emptyOptimizerData(): OptimizerLoaderData {
   return { data: null, categories: {}, optimizerName: 'Benchmarks', repoUrl: '', exploreCategories: null };
 }
 
-// External-JSON boundary: res.json() is `any`, so casting to ExplorationData is
-// an unchecked assertion — TS types are erased at runtime and enforce nothing on
-// fetched data. Validate the one invariant the app relies on (entries[]) so a
-// malformed file degrades to the same null/empty state as a missing file,
-// instead of crashing downstream with an opaque `undefined.length`.
-async function fetchExplorationData(optimizer: string): Promise<ExplorationData | null> {
-  try {
-    const res = await fetch(`${base}${optimizer}/explore.json?_=${Date.now()}`);
-    if (!res.ok) return null;
-    const json = await res.json();
-    if (!json || !Array.isArray(json.entries)) {
-      console.warn(`explore.json for "${optimizer}" is malformed (missing entries[]); ignoring`);
-      return null;
-    }
-    return json as ExplorationData;
-  } catch {
+async function fetchExplorationData({ params }: { params: { optimizer: string } }) {
+  const data = await fetchJson<ExplorationData>(`${params.optimizer}/explore.json`);
+  if (data && !Array.isArray(data.entries)) {
+    console.warn(`explore.json for "${params.optimizer}" is malformed (missing entries[]); ignoring`);
     return null;
   }
-}
-
-async function loadExploreCategories(optimizer: string): Promise<string[] | null> {
-  const data = await fetchExplorationData(optimizer);
-  return data ? exploreCategoryNames(data) : null;
+  return data;
 }
 
 export const optimizerIndexRoute = createRoute({
@@ -124,12 +96,12 @@ export const optimizerIndexRoute = createRoute({
   loader: async ({ params }): Promise<OptimizerLoaderData> => {
     const isTests = params.optimizer === 'tests';
     try {
-      const [res, exploreCategories] = await Promise.all([
-        fetch(`${base}${params.optimizer}/data.json?_=${Date.now()}`),
-        isTests ? Promise.resolve<string[] | null>(null) : loadExploreCategories(params.optimizer),
+      const [raw, exploration] = await Promise.all([
+        fetchJson<BenchmarkData>(`${params.optimizer}/data.json`),
+        isTests ? null : fetchExplorationData({ params }),
       ]);
-      if (!res.ok) return emptyOptimizerData();
-      const raw: BenchmarkData = await res.json();
+      if (!raw) return emptyOptimizerData();
+      const exploreCategories = exploration && exploreCategoryNames(exploration);
       const data = isTests
         ? loadTestSuiteBenchmarkData(raw, 'unit')
         : loadBenchmarkData(raw);
@@ -146,10 +118,7 @@ export const optimizerIndexRoute = createRoute({
       return emptyOptimizerData();
     }
   },
-  validateSearch: (search: Record<string, unknown>) => ({
-    cat: (search['cat'] as string) || undefined,
-    bench: (search['bench'] as string) || undefined,
-  }),
+  validateSearch: benchmarkSearch,
   component: OptimizerPage,
 });
 
@@ -179,54 +148,45 @@ export const testSuiteRoute = createRoute({
     const slug = params.testSuite;
     if (!isTestSuiteSlug(slug)) return emptyTestSuiteData('timing', 'Tests');
 
-    const kind = testSuiteKind(slug);
-    const optimizerName = getTestSuite(slug).title;
-
+    const { kind, title, label } = getTestSuite(slug);
+    const empty = emptyTestSuiteData(kind, title);
     try {
       if (kind === 'coverage') {
-        const res = await fetch(`${base}tests/coverage.json?_=${Date.now()}`);
-        if (!res.ok) return emptyTestSuiteData(kind, optimizerName);
-        const cov: CoverageData = await res.json();
-        return {
-          ...emptyTestSuiteData(kind, optimizerName),
-          coverage: cov.binaries[getTestSuite(slug).label] ?? null,
-        };
+        const snapshot = await fetchJson<CoverageData>('tests/coverage.json');
+        return { ...empty, coverage: snapshot?.binaries[label] ?? null };
       }
 
-      const res = await fetch(`${base}tests/data.json?_=${Date.now()}`);
-      if (!res.ok) return emptyTestSuiteData(kind, optimizerName);
-      const raw: BenchmarkData = await res.json();
+      const raw = await fetchJson<BenchmarkData>('tests/data.json');
+      if (!raw) return empty;
       const data = loadTestSuiteBenchmarkData(raw, slug);
       return {
-        kind,
-        optimizerName,
+        ...empty,
         repoUrl: raw.repoUrl,
         data: data.length > 0 ? data : null,
         categories: discoverCategories(data),
         binaryTotal: binaryTotalSeries(raw, slug, raw.repoUrl),
-        coverage: null,
       };
     } catch {
-      return emptyTestSuiteData(kind, optimizerName);
+      return empty;
     }
   },
-  validateSearch: (search: Record<string, unknown>) => ({
-    cat: (search['cat'] as string) || undefined,
-    bench: (search['bench'] as string) || undefined,
-  }),
+  validateSearch: benchmarkSearch,
   component: TestSuitePage,
 });
 
-export const exploreRoute = createRoute({
+const exploreOptions = {
   getParentRoute: () => optimizerLayoutRoute,
-  path: '/explore',
-  beforeLoad: ({ params }) => {
+  beforeLoad: ({ params }: { params: { optimizer: string } }) => {
     if (params.optimizer === 'tests') {
       throw redirect({ to: '/$optimizer', params: { optimizer: 'tests' }, search: { cat: undefined, bench: undefined } });
     }
   },
-  loader: async ({ params }): Promise<ExplorationData | null> =>
-    fetchExplorationData(params.optimizer),
+  loader: fetchExplorationData,
+};
+
+export const exploreRoute = createRoute({
+  ...exploreOptions,
+  path: '/explore',
   validateSearch: (search: Record<string, unknown>) => ({
     case: (search['case'] as string) || undefined,
   }),
@@ -234,15 +194,8 @@ export const exploreRoute = createRoute({
 });
 
 export const chunkDetailRoute = createRoute({
-  getParentRoute: () => optimizerLayoutRoute,
+  ...exploreOptions,
   path: '/explore/chunk',
-  beforeLoad: ({ params }) => {
-    if (params.optimizer === 'tests') {
-      throw redirect({ to: '/$optimizer', params: { optimizer: 'tests' }, search: { cat: undefined, bench: undefined } });
-    }
-  },
-  loader: async ({ params }): Promise<ExplorationData | null> =>
-    fetchExplorationData(params.optimizer),
   validateSearch: (search: Record<string, unknown>) => ({
     case: (search['case'] as string) || undefined,
     chunkIndex: search['chunkIndex'] != null ? Number(search['chunkIndex']) : undefined,

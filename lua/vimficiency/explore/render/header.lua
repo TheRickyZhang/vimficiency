@@ -3,9 +3,9 @@
 -- virtual rows: no focus model to fight, no width redistribution, no
 -- separate windows or buffers.
 local v = vim.api
-local chunks_util = require("vimficiency.chunks")
+local chunks_util = require("vimficiency.ui.chunks")
 local insert_helpers = require("vimficiency.explore.insert_helpers")
-local sequence_display = require("vimficiency.sequence_display")
+local sequence_display = require("vimficiency.ui.sequence_display")
 
 local M = {}
 
@@ -266,7 +266,7 @@ end
 ---even when the buffer fills the window. Without this, virt_lines on
 ---row 0 with `virt_lines_above` are silently dropped whenever the
 ---buffer is tall enough to fill the window vertically — same trick the
----play panes use (see simulate.lua's apply_virt_lines).
+---play panes use (see simulate/init.lua's apply_virt_lines).
 ---@param win integer
 ---@param count integer
 local function reserve_topfill(win, count)

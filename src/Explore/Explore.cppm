@@ -159,7 +159,7 @@ public:
   // `vim.fn.keytrans` before crossing the FFI.
   Outcome applyMovement(std::string_view movementText);
   Outcome acceptCursorMove(CursorPos newCursor, std::string_view rawKeys);
-  Outcome applyEdit(std::string_view text);
+  Outcome applyEdit(std::string_view text, const OptimizerParamOverrides* overrides = nullptr);
   Outcome acceptBufferState(const Lines& newLines, CursorPos newCursor,
                             std::string_view rawKeys);
   Outcome beginInsert();
@@ -231,21 +231,15 @@ private:
       const Lines& lines,
       CursorPos cursor) const;
 
-  FrontierQuery makeFrontierQuery(
-      int maxCount,
-      const OptimizerParamOverrides* overrides,
-      SuggestionSortMode sortMode) const;
+  FrontierQuery makeFrontierQuery(const OptimizerParamOverrides* overrides) const;
 
   std::vector<Suggestion> recommendNavigate(
       int navIndex,
       int maxCount,
       const OptimizerParamOverrides* overrides,
       SuggestionSortMode sortMode) const;
-  std::vector<Suggestion> recommendTransform(
-      int editIndex,
-      int maxCount,
-      const OptimizerParamOverrides* overrides,
-      SuggestionSortMode sortMode) const;
+  std::vector<Suggestion> compositionEdits(const DiffState& diff, const FrontierQuery& query) const;
+  std::vector<Suggestion> transformEdits(const DiffState& diff, const FrontierQuery& query) const;
   // Insert emits the canonical typed text (no trailing <Esc>).
   std::vector<Suggestion> recommendInsert(
       int editIndex,

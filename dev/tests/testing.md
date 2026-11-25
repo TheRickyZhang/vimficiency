@@ -1,515 +1,125 @@
 # Testing Guide
 
-## Test Methodology Model
+## Where new tests belong
 
-The primary axis is *how* a test produces evidence, not what feature it covers.
-Methodology determines the runner, runtime, compiler flags, and CI policy;
-features (oracle conformance, optimizer replay, parser invariants, etc.) are a
-sub-layer that show up *within* a methodology — sometimes under more than one,
-when the methodologies prove different things about the same feature.
+Choose the suite by the evidence you need. The same motion can have a unit test for a known
+regression and a property test comparing generated cases with Neovim.
 
-| Methodology | How it proves something | Runner | Default gate | Command |
-|-------------|-------------------------|--------|--------------|---------|
-| Unit/assert | Hand-written deterministic check of a fixed case | `vimfy_unit_tests` | Yes | `scripts/vimfy_tests unit` |
-| Approval | Curated C++ output compared to a reviewed snapshot fixture | `vimfy_approval_tests` | Yes | `scripts/vimfy_tests approval` |
-| Property | Semantic invariant over generated structured project inputs | `vimfy_property_tests` | CI: fixed seed | `scripts/vimfy_tests property` |
-| Safety | Safe failure or bounded behavior over adversarial inputs | `vimfy_safety_tests` | CI: fixed seed | `scripts/vimfy_tests safety` |
-| Lua integration | Real-Neovim plugin/FFI scenarios | `scripts/vimfy_tests lua` | Yes | `scripts/vimfy_tests lua` |
-| Benchmark | Timing and search-counter trends on fixed fixtures | `vimfy_benchmarks` | No | `./build-release/tests/vimfy_benchmarks` |
-| Debug/manual | Scratch repros, noisy traces, human-approval exploration | `vimfy_debug` or disabled tests | No | `./build/tests/vimfy_debug` |
+| Suite | Location | What it checks |
+|---|---|---|
+| Unit | `tests/Unit/<feature>/` | A concrete expected result or named regression. |
+| Approval | `tests/Approval/` | Reviewed snapshots of production C++ text formats and diagnostics. |
+| Property | `tests/Property/` | Semantic invariants over structured inputs, including oracle conformance, optimizer replay, and effort identities. |
+| Safety | `tests/Safety/` | Clean failure or bounded behavior for malformed inputs and resource limits at public boundaries. |
+| Lua | `tests/lua/` | Plugin lifecycle, session storage, views, and the Lua/FFI boundary in real Neovim. |
+| Benchmarks | `tests/Benchmarks/` | Timing and search counters on fixed fixtures. |
+| Debug | `tests/Debug/` | Scratch investigations and noisy traces. |
 
-`scripts/vimfy_tests` is the fast local correctness gate: unit, approval,
-exploratory property, exploratory safety, and Lua integration. CI calls the same
-script with `seed` so generated tests are deterministic there. Property and
-safety tests both use Google FuzzTest declarations and domains, but the
-category boundary is the input contract and invariant, not the framework.
+Place a VimCore movement regression in `tests/Unit/Commands/`, an edit primitive beside
+[EditPrimitiveTest](../../tests/Unit/Misc/EditPrimitiveTest.cpp), or an optimizer regression
+under its optimizer in `tests/Unit/`.
 
-### What each methodology covers
+Shared infrastructure lives in `tests/Utils/`. Use subject-and-role filenames such as
+`ParserBoundarySafety.cpp`. Give fixture classes a `Test` suffix. A fixture with the same name
+as a production type can violate the C++ one-definition rule and silently corrupt memory. Run
+`scripts/check-test-fixture-names.sh` to check for collisions.
 
-Feature areas usually map to one methodology. Where a feature appears under
-more than one, the methodologies are checking different things about it (e.g.
-unit/assert pins regressions; property checks the universal invariant).
+## Running tests
 
-- **Unit/assert** — named-bug regressions, canonical-semantic documentation,
-  and specific-output assertions for VimCore commands and operators
-  (`tests/Unit/Commands/`, `tests/Unit/Operator/`); fixed-case optimizer replay
-  regressions and small heuristic/API checks
-  (`tests/Unit/NavOptimizer/`, `tests/Unit/TransformOptimizer/`,
-  `tests/Unit/CompositionOptimizer/`, `tests/Unit/Optimizer/`); parser error cases, cost
-  math, range and position helpers, config defaults, data-structure invariants
-  (`tests/Unit/Misc/`); explore-flow tests (`tests/Unit/Explore/`). Bare oracle
-  conformance (ours == oracle on hand-picked inputs) lives under `Property/`
-  instead.
-- **Property** — semantic invariants over structured generated project inputs:
-  oracle conformance over generated motion/operator inputs, optimizer replay
-  over generated edit/nav problems, structural invariants of parsed types,
-  effort-model identities (`tests/Property/`).
-- **Approval** — ApprovalTests.cpp snapshots for production C++ text formats
-  and diagnostics (`tests/Approval/`). Lua adapters can call those formatters
-  through FFI, but Neovim-owned UI behavior stays in Lua integration tests.
-- **Safety** — adversarial, malformed, external-boundary, and resource-stress
-  inputs whose primary contract is safe failure or bounded behavior
-  (`tests/Safety/`).
-- **Lua integration** — plugin lifecycle, session storage, view flows, FFI
-  smoke, key-capture probes (`tests/lua/`).
-- **Benchmark** — optimizer time/space/search-counter trends on fixed fixture
-  seeds (`tests/Benchmarks/`).
-- **Debug/manual** — scratch investigation; not gated.
-
-Google FuzzTest is the framework for both property and safety generated tests.
-It provides domains, seeds, shrinking, corpus handling, and optional
-coverage-guided campaigns. Fuzzing is an execution/search mode; it is not the
-directory taxonomy.
-
-### Randomness Policy
-
-Local property and safety runs default to FuzzTest exploration. That means
-FuzzTest samples additional values from `.WithDomains(...)` and, unless
-`FUZZTEST_PRNG_SEED` is already set, chooses a fresh runner seed for each run.
-That runner seed controls FuzzTest's generated input stream; it is the knob for
-"randomized locally, reproducible when needed."
-
-`.WithSeeds(...)` is different: those values are explicit corpus inputs that
-always run. Omit them by default; add them only for intentional smoke coverage
-or pinned regressions.
-
-CI runs the same exploration process with a fixed runner seed. The runners set:
+From the repo root, configure once and build after C++ changes. The wrapper accepts `unit`,
+`approval`, `property`, `safety`, and `lua`. The default runs all five. Supply a gtest filter
+or a Lua filename to run a focused check.
 
 ```bash
-FUZZTEST_PRNG_SEED=OffQXb8u5_vZtH4-7wgVOLu_HNAhPIbLz7CFF13u3nk
-```
-
-Leaving `FUZZTEST_FUZZ_FOR` unset keeps FuzzTest's normal unit-test exploration
-loop, currently about one second per `FUZZ_TEST`. The fixed runner seed makes
-that exploration deterministic in CI.
-
-This is not an exact fixed-work contract: expensive generated tests can hit the
-time cap before FuzzTest's internal iteration cap. For gate tests that need
-strict work-based behavior, prefer explicit deterministic loops or checked-in
-corpus seeds. Use fixed-time campaign runs for bug hunting, and measure their
-throughput only when the target exposes meaningful work counters.
-
-FuzzTest also prints `FUZZTEST_PRNG_SEED` to stderr whenever its runtime starts.
-The wrapper filters that line in fixed `seed` mode on success, because the seed
-is already pinned above and repeated lines are noise. If a fixed-seed run fails,
-the wrapper prints the seed once with the failure output. Exploratory and
-campaign runs leave FuzzTest's seed output intact so random failures, crashes,
-timeouts, or interrupted runs remain reproducible.
-
-CTest-discovered FuzzTest cases are registered with the same environment.
-
-`scripts/vimfy_tests`, `scripts/vimfy_tests property`, and
-`scripts/vimfy_tests safety` all default to exploration so local runs keep
-searching for new cases. Treat those exploration runs as bug-hunting checks: a
-failure should be reproduced with the printed
-`FUZZTEST_PRNG_SEED`, reduced if needed in `tests/Debug`, and then pinned as a
-unit regression or, when a FuzzTest corpus input is the clearest fit, a
-checked-in `.WithSeeds(...)` value. Pass `seed` explicitly when you want the CI
-behavior:
-
-```bash
-scripts/vimfy_tests all seed
-scripts/vimfy_tests property seed
-scripts/vimfy_tests property "DiffStateGeneratedPropertyTest.*" explore
-
-env FUZZTEST_PRNG_SEED=<printed-seed> \
-  scripts/vimfy_tests property "DiffStateGeneratedPropertyTest.*" explore
-```
-
-When exploratory property testing finds a real bug, add the reduced/concrete
-case as a manual regression test or a checked-in `.WithSeeds(...)` corpus input
-before relying on random exploration to find it again.
-
-Recommended local cadence:
-
-```bash
-# Fast local gate, with generated tests exploring fresh values.
-scripts/vimfy_tests
-
-# CI-equivalent fixed runner seed.
-scripts/vimfy_tests all seed
-scripts/vimfy_tests property seed
-
-# Randomized local exploration. Run this when you want new counterexamples.
-scripts/vimfy_tests property
-
-# Reproduce one exploratory failure.
-env FUZZTEST_PRNG_SEED=<printed-seed> \
-  scripts/vimfy_tests property "InterpreterMatchesOracle.MovementSequences"
-```
-
-Prefer broadening a semantic domain or running a targeted campaign over adding
-manual inner random loops. Inner loops hide the generated case from FuzzTest,
-which makes shrinking much less useful.
-
-### How Property, Safety, And Fuzzing Relate
-
-Property and safety tests use the same `FUZZ_TEST` declarations and domains.
-The difference is the input domain and invariant:
-- Property: structured project inputs, semantic correctness invariant.
-- Safety: adversarial or malformed inputs, safe-failure or bounded-behavior
-  invariant.
-
-Fuzzing is a mode for searching either kind of property:
-- Seed mode: gtest-compatible local exploration with a fixed runner seed, used
-  in CI.
-- Explore mode: gtest-compatible local exploration with a fresh runner seed.
-- Campaign mode: coverage-guided, one selected test, sanitizer and coverage
-  flags, manual runtime budget.
-
-## Test Runners
-
-| Binary/script | Purpose | Location | Run command |
-|---------------|---------|----------|-------------|
-| `vimfy_tests` | Fast local correctness gate | `scripts/vimfy_tests` | `scripts/vimfy_tests` |
-| `vimfy_unit_tests` | Deterministic C++ correctness: unit, oracle, replay | `build/tests/vimfy_unit_tests` | `scripts/vimfy_tests unit` |
-| `vimfy_approval_tests` | ApprovalTests.cpp C++ output snapshots | `build/tests/vimfy_approval_tests` | `scripts/vimfy_tests approval` |
-| `vimfy_property_tests` | Structured semantic properties | `build/tests/vimfy_property_tests` | `scripts/vimfy_tests property` |
-| `vimfy_safety_tests` | Adversarial-input safety properties | `build/tests/vimfy_safety_tests` | `scripts/vimfy_tests safety` |
-| `scripts/vimfy_tests lua` | Lua/Neovim integration | repo root | `scripts/vimfy_tests lua` |
-| `vimfy_benchmarks` | Google Benchmark suites | `build-release/tests/vimfy_benchmarks` | `./build-release/tests/vimfy_benchmarks` |
-| `vimfy_debug` | Scratch/debug tests | `build/tests/vimfy_debug` | `./build/tests/vimfy_debug` |
-
-FuzzTest is part of the normal test build. Property and safety tests should be
-available anywhere the C++ test suite is built.
-
-## Running Tests
-
-```bash
-# Build the normal tree
+cmake -G Ninja -B build -DVIMF_BUILD_TESTS=ON
 cmake --build build -j
-
-# Run deterministic C++ correctness tests
-scripts/vimfy_tests unit
-
-# Run Lua integration tests
-scripts/vimfy_tests lua
-
-# Run all default correctness checks through the helper script
-scripts/vimfy_tests
-
-# Run all benchmarks — from a Release tree; `build/` is Debug and its timings
-# are not meaningful (see dev/ci-and-benchmarks.md for the configure recipe)
-./build-release/tests/vimfy_benchmarks
-
-# Run debug scratch tests
-./build/tests/vimfy_debug
+scripts/vimfy_tests unit 'EditPrimitiveTest.*'
+scripts/vimfy_tests approval 'VimDiffApproval.*'
+scripts/vimfy_tests lua tests/lua/session/store_invariants.lua
+scripts/vimfy_tests all seed
 ```
 
-It is reasonable to run one test type during local iteration:
+For approval changes, inspect the `.received.*` files in `tests/Approval/fixtures/` before
+running `scripts/vimfy_tests approval 'VimDiffApproval.*' --approve`. On failure the helper
+copies **all** outstanding received fixtures to their approved counterparts before rerunning
+the filter. Use `--gtest_list_tests` on a binary under `build/tests/` to find a suite name.
 
-```bash
-# Approval snapshots
-scripts/vimfy_tests approval
-
-# Accept approval snapshot changes, then rerun the same approval tests
-scripts/vimfy_tests approval --approve
-scripts/vimfy_tests approval "VimDiffApproval.*" --approve
-
-# Oracle/conformance tests, where suite names have been migrated
-scripts/vimfy_tests unit "*OracleConformanceTest.*"
-
-# Generated properties with CI-equivalent fixed runner seed
-scripts/vimfy_tests property "*GeneratedProperty*" seed
-
-# All generated properties with CI-equivalent fixed runner seed
-scripts/vimfy_tests property seed
-
-# One generated-property suite with local exploration, also the direct default
-scripts/vimfy_tests property "TransformOptimizerGeneratedPropertyTest.*" explore
-```
-
-The suite is only partially migrated to type-first names. For older files, check:
-
-```bash
-./build/tests/vimfy_unit_tests --gtest_list_tests
-./build/tests/vimfy_property_tests --gtest_list_tests
-./build/tests/vimfy_safety_tests --gtest_list_tests
-```
-
-### Editor Helper
-
-Neovim-local test running support lives in
-`dev/editor/vimfy-test-helper.lua`. It maps the current file to the narrow
-CMake target, then runs through `scripts/vimfy_tests` so seed and runner policy
-stay centralized. It recognizes the common `TEST*`, `TYPED_TEST*`, and
-`FUZZ_TEST*` macros.
-
-Load it from personal config and bind it there:
+The optional editor helper builds the narrow target and runs the test at the cursor through
+the same wrapper.
 
 ```lua
-local vimfy_tests = dofile("/path/to/vimficiency/dev/editor/vimfy-test-helper.lua")
-vim.keymap.set("n", "<leader>tt", vimfy_tests.run_gtest_here)
+local tests = dofile("/path/to/vimficiency/dev/editor/vimfy-test-helper.lua")
+vim.keymap.set("n", "<leader>tt", tests.run_gtest_here)
 ```
 
-## Fuzz Campaigns
+## Generated tests and seeds
 
-Fuzz campaigns use the same property or safety source files, but the build must
-be configured in FuzzTest fuzzing mode with Clang:
+Property and safety use Google FuzzTest. Let the domain generate the semantic parts of a case
+directly, such as lines, cursor, command, and goal. That lets FuzzTest shrink the actual
+failure. An inner random loop hides those values. Print the converted case when a check fails.
+See [the diff round-trip property](../../tests/Property/DiffStateProperty.cpp).
+
+Local runs explore with a fresh `FUZZTEST_PRNG_SEED`. CI and CTest use a fixed seed. The seed
+determines the input stream, while a time budget can change how far the run gets. Use
+`--for 500ms`, for example, to set the per-property budget. A bare positive integer in the
+wrapper's filter slot sets that budget in seconds.
 
 ```bash
-cmake -G Ninja -S . -B build-fuzz \
-  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  -DCMAKE_C_COMPILER=clang \
-  -DCMAKE_CXX_COMPILER=clang++ \
-  -DFUZZTEST_FUZZING_MODE=ON \
-  -DVIMF_BUILD_TESTS=ON
-
-cmake --build build-fuzz -j --target vimfy_safety_tests
-
-VIMFY_BUILD_DIR=build-fuzz \
-  scripts/vimfy_tests safety \
-  ParserBoundarySafetyTest.MovementParserRejectsInvalidInputOrReturnsBorrowedTokens \
-  campaign
+scripts/vimfy_tests property 'InterpreterMatchesOracle.*' --for 500ms
+FUZZTEST_PRNG_SEED="$printed_seed" scripts/vimfy_tests property 'InterpreterMatchesOracle.*'
 ```
 
-Keep fuzz targets narrow and deterministic. Good targets are fallible parser,
-payload, snapshot, and FFI-boundary APIs where arbitrary input should either be
-accepted into a valid object or rejected cleanly. Do not fuzz APIs whose contract
-is "trusted internal caller only" until a fallible boundary has been introduced.
-
-## Writing FuzzTest Properties
-
-Prefer direct FuzzTest domains for new or migrated properties:
-
-```cpp
-void RoundTripAndStructureAcrossBufferStyles(
-    const PropertyDomains::DiffCaseSpec& spec) {
-  Lines initial(spec.initial);
-  Lines goal = spec.identity ? initial : Lines(spec.goal);
-  EXPECT_EQ(MyersDiff::applyAllDiffState(MyersDiff::calculate(initial, goal), initial),
-            goal);
-}
-
-FUZZ_TEST(DiffStateGeneratedPropertyTest, RoundTripAndStructureAcrossBufferStyles)
-    .WithDomains(PropertyDomains::DiffCaseSpecDomain());
-```
-
-For optimizer replay and oracle-conformance properties, prefer a shrinkable
-case-spec struct over a seed-driver loop. Put the semantic pieces FuzzTest
-should shrink directly into the domain: lines, cursor indices, command tokens,
-edit/mutation descriptors, boundary shape, and goal text. The test can still
-build richer project objects from that spec, but failure output should print
-the converted semantic case.
-
-Direct semantic domains give FuzzTest better mutation and shrinking behavior.
-In either style, omit `.WithSeeds(...)` by default. Add it only for intentional
-checked-in corpus inputs, such as reduced regressions or rare smoke cases that
-the generator might not hit quickly.
-
-## Directory Structure
-
-```
-tests/
-├── Commands/              # unit/assert: VimCore motion regressions, semantic docs, specific-output cases
-├── Operator/              # unit/assert: VimCore edit/operator regressions, semantic docs, specific-output cases
-├── NavOptimizer/          # unit/assert: NavOptimizer regressions, replay, cost/heuristic checks
-├── TransformOptimizer/    # unit/assert: TransformOptimizer regressions, replay, cost checks
-├── CompositionOptimizer/  # unit/assert: CompositionOptimizer regressions, replay
-├── Optimizer/             # unit/assert: cross-optimizer parameter tests
-├── Explore/               # unit/assert: explore-flow tests
-├── Misc/                  # unit/assert: parser errors, cost math, config, helpers
-├── Property/              # property: structured semantic generated-input invariants
-├── Safety/                # safety: adversarial-input safe-failure and bounded-behavior checks
-├── Approval/              # approval: ApprovalTests.cpp C++ output snapshots
-├── Benchmarks/            # benchmark: Google Benchmark binary sources
-├── Debug/                 # debug: scratch/debug binary sources
-├── lua/                   # lua integration: Lua/Neovim plugin tests
-└── Utils/                 # shared test infrastructure
-```
-
-We keep tests centralized under `tests/` because build wiring, shared
-NeovimOracle infrastructure, and methodology-specific runners matter more here
-than colocating tests next to implementation files.
-
-Naming uses singular methodology directories: `Property/`, `Safety/`,
-`Approval/`. Files in those directories use `SubjectRole.cpp`, such as
-`NavOptimizerProperty.cpp` or `ParserBoundarySafety.cpp`, so editor tabs and
-build output do not collide with production basenames.
-
-### Placement Rule
-
-**A test file's location is determined by its methodology.**
-
-- Methodology-named top-level directories (`Property/`, `Safety/`, `Approval/`,
-  `Benchmarks/`, `Debug/`, `lua/`) hold *only* that methodology's tests. No
-  exceptions.
-- Feature-named top-level directories (`Commands/`, `Operator/`, the optimizer
-  dirs, `Explore/`, `Misc/`) hold *only* unit/assert tests. Unit/assert is the
-  implicit default — it doesn't get its own labeled directory because feature
-  co-location matters more than re-labeling the default.
-- A property test for a word motion goes in `tests/Property/`, never in
-  `tests/Unit/Commands/`. A unit test for a word motion goes in `tests/Unit/Commands/`,
-  never in `tests/Property/`.
-
-`Utils/` is shared infrastructure and not subject to the rule.
-
-## Where New Tests Belong
-
-Decide methodology first, then pick the feature or methodology dir per the
-placement rule.
-
-- **Unit/assert** — pick the closest feature dir.
-  - VimCore command/operator regressions or specific-output cases → `Commands/` or `Operator/`.
-  - Optimizer regressions, replay assertions, cost/heuristic checks → matching optimizer dir.
-  - Parser errors, cost math, config, data-structure invariants, helpers → `Misc/`.
-  - Explore-flow tests → `Explore/`.
-- **Property** — `tests/Property/`. Structured generated-input invariants
-  against the oracle, optimizer replay, structural invariants, identity
-  properties.
-- **Safety** — `tests/Safety/`. Adversarial, malformed, external-boundary, and
-  resource-stress inputs that must fail safely or remain bounded.
-- **Approval** — `tests/Approval/`. ApprovalTests.cpp snapshots for production
-  C++ text formats and diagnostics. Lua adapters to those formatters stay
-  covered by Lua integration tests.
-- **Lua integration** — `tests/lua/`.
-- **Benchmark** — `tests/Benchmarks/`.
-- **Debug/manual** — `tests/Debug/`, not the correctness suite.
+Set `printed_seed` to the seed from the failing run. The wrapper prints a fixed seed on
+failure and leaves exploratory seed output visible. Reduce the case in `tests/Debug/` and pin
+it as a unit regression or a `.WithSeeds(...)` corpus input. Explicit corpus seeds also cover
+rare inputs that should run every time. For an instrumented Clang build, campaign budgets, and
+reproducer files, see [Coverage-guided fuzzing](fuzzing.md).
 
 ## NeovimOracle
 
-All VimCore behavior should match Neovim. Use `tests/Utils/NeovimOracle` to get
-ground truth from an embedded `nvim --embed --headless` process. Internal C++
-positions are 0-indexed; the FFI boundary handles conversion to Neovim's
-1-indexed API.
+Compare Vimficiency and embedded Neovim side by side in `tests/Debug/Debug.cpp`. Compare
+buffer, cursor, and mode at the first divergent command. The C++ oracle API takes and returns
+zero-based positions. Fixtures can reuse an oracle across cases. `simulate()` manages
+subprocess restarts automatically. [Oracle implementation](../../tests/Utils/NeovimOracle.cpp)
 
-The oracle is intentionally reused across calls, but it has a stability limit.
-After roughly 800 buffer operations, call `restart()`. Oracle-heavy generated
-properties should keep case counts small and avoid shrink patterns that can call
-the oracle hundreds of extra times for one failure.
+Use `OracleReplay::matches` for an exact replay and
+`OptimizerResultChecks::expectTopResultsReplay` to check a bucket of optimizer results against
+the goal. For search traces, configure with `-DVIMF_TRACK_STATES=ON` and run the focused repro
+through `build/tests/vimfy_debug`.
 
-```cpp
-class MyOracleConformanceTest : public ::testing::Test {
- protected:
-  static unique_ptr<NeovimOracle> oracle;
+## Scoring signature
 
-  static void SetUpTestSuite() {
-    oracle = make_unique<NeovimOracle>();
-  }
+`ScoringSignature` hashes the effort model and the best costs, outcomes, and stop reasons of
+reference search windows. Stats compare scores within one `SCORING_VERSION`. An intended
+change to those costs requires updating both the version and the printed `SCORING_SIGNATURE`
+in `src/Versions.cppm`. Investigate unexpected changes before updating the signature.
 
-  static void TearDownTestSuite() {
-    oracle.reset();
-  }
-};
+The effort section covers built-in configs, key modifiers, sequence bindings, printable Insert
+input, and count penalties. Add a search window when a component can determine the winning
+cost there and existing windows miss it. Keep cases below the node caps and require agreement
+between Debug and Release. The test pins costs and outcomes while allowing equivalent winning
+sequences. [Scoring signature test](../../tests/Unit/Journal/ScoringSignatureTest.cpp)
 
-unique_ptr<NeovimOracle> MyOracleConformanceTest::oracle;
+## Lua tests
 
-TEST_F(MyOracleConformanceTest, WordMotionStopsAtExpectedColumn) {
-  Lines lines = {"hello world"};
-  auto result = oracle->simulate(lines, 0, 0, "w");
-  EXPECT_EQ(result.row, 0);
-  EXPECT_EQ(result.col, 6);
-}
-```
+The main batch shares one headless Neovim and resets plugin state between files. The harness
+runs `simulate/integration.lua` and `capture/atom_stream.lua` in separate processes for their
+async window and real-input behavior. Shared Explore flow helpers live in
+`tests/lua/explore/_helpers.lua`. [Lua harness](../../tests/lua/run.sh)
 
-For optimizer replay, prefer the shared helpers:
-
-- `OracleReplay::matches(...)` for exact sequence replay checks.
-- `OptimizerResultChecks::expectTopResultsReplay(...)` for optimizer result
-  buckets that should reach a goal through Neovim.
-
-## Seed Management
-
-There are two seed systems:
-
-| System | Used by | Replay mechanism |
-|--------|---------|------------------|
-| FuzzTest | `FUZZ_TEST` generated properties and fuzz campaigns | `.WithSeeds(...)` corpus inputs, `FUZZTEST_PRNG_SEED`, reproducer files |
-| `SeedManager` | Benchmarks and any remaining non-FuzzTest random fixtures | `VIMFY_SEED_MODE`, `tests/.last_seeds.txt` |
-
-For FuzzTest, the normal workflow is:
-
-```bash
-# Deterministic replay of the normal exploration loop
-env FUZZTEST_PRNG_SEED=OffQXb8u5_vZtH4-7wgVOLu_HNAhPIbLz7CFF13u3nk \
-  ./build/tests/vimfy_property_tests
-
-# Replay a local exploratory run
-env FUZZTEST_PRNG_SEED=<printed-seed> ./build/tests/vimfy_property_tests
-```
-
-For benchmarks:
-
-```bash
-# Fixed seeds; this is also the benchmark default
-./build-release/tests/vimfy_benchmarks
-VIMFY_SEED_MODE=fixed ./build-release/tests/vimfy_benchmarks
-
-# Replay seeds from tests/.last_seeds.txt
-VIMFY_SEED_MODE=replay ./build-release/tests/vimfy_benchmarks
-
-# Rotate fixture seeds locally
-VIMFY_SEED_MODE=random ./build-release/tests/vimfy_benchmarks
-```
-
-## Lua Tests
-
-The Lua layer has its own harness at `tests/lua/runner.lua`.
-
-```bash
-# Run the whole Lua suite
-scripts/vimfy_tests lua
-
-# Run one Lua file
-scripts/vimfy_tests lua tests/lua/session/store_invariants.lua
-```
-
-The main batch reuses one headless Neovim process and calls `reset_state()`
-between files. Two entry-point files are deliberately isolated:
-
-- `simulate/integration.lua`: async coroutine and tab/window state.
-- `capture/atom_stream.lua`: standalone async script that drives real input
-  through the main loop for CmdAtom.
-
-Explore flow tests are split under `tests/lua/explore/flow_*.lua`; shared
-helpers belong in `tests/lua/explore/_helpers.lua`.
+`tests/lua/proto_schemas.lua` hashes the messages and enums reachable from each stored format.
+For an additive change, update the printed `*_SCHEMA` in `src/Versions.cppm`. Also bump the
+corresponding `*_FORMAT` when a field changes meaning.
 
 ## Benchmarks
 
-Benchmarks prebuild fixed fixture sets and let Google Benchmark control the
-measured iteration loop. For deeper local analysis:
+Benchmark fixtures use a separate `SeedManager`. Fixed seeds are the default.
+`VIMFY_SEED_MODE=random` records seeds in `tests/.last_seeds.txt`, and
+`VIMFY_SEED_MODE=replay` reuses them. For comparable timings, run a Release build and let
+Google Benchmark control the measured iterations.
+[Build and dashboard publishing](../ci-and-benchmarks.md)
 
 ```bash
-./build-release/tests/vimfy_benchmarks \
-  --benchmark_repetitions=9 \
-  --benchmark_enable_random_interleaving=true \
-  --benchmark_out=bench.json \
-  --benchmark_out_format=json
-```
-
-Benchmark publishing is handled by the local pipeline documented in
-`dev/ci-and-benchmarks.md`.
-
-## Debugging
-
-Use `tests/Debug/Debug.cpp` for scratch investigation. Do not add noisy print
-probes to the correctness suite when a focused debug test would answer the
-question faster.
-
-For search stats/codegen checks:
-
-```bash
-cmake --build build -j --target vimfy_debug
-nm -C build/tests/vimfy_debug | rg 'searchStatsHotLoop'
-llvm-objdump -d -C build/tests/vimfy_debug | rg -A40 'searchStatsHotLoop<false>|searchStatsHotLoop<true>'
-```
-
-## Fixture Naming
-
-Test fixture names must not collide with production `struct` or `class` names.
-C++ ODR violations from same-named test fixtures can produce silent memory
-corruption.
-
-```cpp
-// Bad: may collide with a production type.
-class TextObjectContext : public ::testing::Test {};
-
-// Good: clearly a test fixture.
-class TextObjectContextTest : public ::testing::Test {};
-```
-
-Check this with:
-
-```bash
-scripts/check-test-fixture-names.sh
+./build-release/tests/vimfy_benchmarks --benchmark_repetitions=9 \
+  --benchmark_enable_random_interleaving=true --benchmark_out=bench.json --benchmark_out_format=json
 ```

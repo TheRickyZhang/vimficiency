@@ -42,18 +42,156 @@ sorted keys: `lines`, `goal_lines`, `start_row/col`, `end_row/col`,
 the file's only clock), and
 `kind` ∈ `{mark, watch, recall, suggest_idle, suggest_keys, suggest_cost}`.
 
-`disk.decode` rejects any `version` other than the current one, including
-unversioned files, and strips it before validating; there is no migration.
-Bump `FORMAT_VERSION` on any change that old files cannot satisfy. All fields
-are required except the debug-only `capture_debug` and `analyze_ms`, and
-`optimizer_overrides` and `results_calculated`, which complete the replayable
-`VF.SearchRequest` and are absent from files saved before 0.3.0.
+`disk.decode` accepts v2 and legacy v1. V2 adds `recording`, a starting
+cursor/mode and a list of steps with resolved keys, post-step cursor/mode
+and changed line ranges. Coordinates refer to the same slice as `lines`.
+Play warns when opening a v1 result and shows its two recorded endpoints.
+Saving that result again preserves v1. Unknown or missing versions are rejected. All fields
+are required except these:
+- `analyze_ms`, debug-only.
+- `user_typed`, the pressed keys behind `user_cost` (`user_seq` is what ran).
+- `user_typed_insert`, the insert text in `user_typed` (`atom.typed_insert`,
+  see `atom-stream.md`). The session log copies it as `typed_insert`.
+- `optimizer_overrides` and `results_calculated`, which complete the replayable
+  `VF.SearchRequest` and are absent from files saved before 0.3.0.
+- `commands`, the `{keys, kind}` atoms `user_seq` concatenates, and `unbeaten`,
+  both absent from older files. Older files may carry a debug `capture_debug`
+  instead of `commands`.
 
 The persisted clock is wall time because `hrtime` values from another boot are
 not comparable; the workspace keeps its own `*_mono_ns` stamps on the record
-instead. The stats log (`stats/log.lua`) copies this value into its
-`finish_epoch` rather than reading the clock again, so a saved file and its log
-row always agree.
+instead. The session log (`stats/log.lua`) copies this value into its
+`finished_wall_epoch` rather than reading the clock again, so a saved file and
+its log record always agree.
+
+### The session log
+
+`sessions.vfs` is a `vf.stats.SessionLog` (`src/LuaExports/proto/stats.proto`),
+appended through `vf_append_session` and read only by `vf_stats_summary` and
+`vf_stats_runs` (`src/Stats/Summary.cpp`). Each session is logged under the stamp it was scored
+with: `SCORING_VERSION` (`src/Versions.cppm`) plus every setting a score depends on
+(`stats_log.stamp()`, which the journal sampler sends too). A release that
+leaves scoring alone keeps the stamp, so its history stays comparable.
+
+- A new log opens with a `header` record holding `SESSION_LOG_FORMAT`
+  (`src/Versions.cppm`); a log without one is format 1. A newer format fails
+  both the summary and the append, rather than being misread.
+- A record carries the stamp's id, an FNV-1a hash of the serialized stamp. The
+  full stamp is written once, before the first session under it, so concurrent
+  Neovims need no ordering. A duplicate stamp record from a race is harmless.
+- Lua never sees the id (LuaJIT has no 64-bit integers). The summary carries
+  the current stamp's label, `scoring <N>·<id>` (`scoring_label`).
+- Sessions are never rescored: they keep no buffer text. The stats count every
+  stamp's sessions and rollups by default, on the assumption that scoring
+  settles as the tool matures; `current_only` keeps the current stamp's (and
+  the current params' rollups) and counts the rest in `hidden_runs`.
+- The unstamped v1 `sessions.jsonl` is moved to `legacy/sessions.v1.jsonl` on
+  the next append and not read.
+
+`vf_stats_summary` (`src/LuaExports/proto/summary.proto`) reduces the sessions
+and rollups in scope and the current params' journal samples
+(`dev/lua/atom-stream.md` § Sampling). `stats/render.lua` formats the summary into one page, and
+`stats/view.lua` lays out the tab and maps its keys. The view
+holds the run length (`charted_size`) and Look back unit (`chart_unit`) as
+settings alongside weight. Use `h`/`l` on the corresponding selector to
+change either setting.
+
+- A score is `Σ w·min(best/user, 1) / Σ w` over scored spans, with `w` the
+  user's effort by default (`stats.weight = "effort"`, so it equals
+  `Σ min(best, user) / Σ user`) or 1 (`"uniform"`). `unbeaten` spans score
+  `best = user`; `no_result` spans are counted, never scored.
+- Day buckets break at local midnight. Minute and hour buckets use epoch
+  timestamps. Session timing covers the last 30 days independently of
+  Look back. Journal timing groups retained runs of the selected length
+  with a positive finite duration and a recorded query size.
+- Command tables count each stored command (`Stats::countKeys`): a parser token
+  with `f`/`t`/`r` targets collapsed to `_`, an unparsed command as itself, and
+  an insert split into its entry command, editing keys such as `<BS>`, and a
+  typed-character count. `ce`/`cw` and `cE`/`cW` share a row.
+- Each source has its own tables: `SessionSummary.commands` covers the scored
+  sessions, `JournalSummary.commands` the scored journal runs of the charted
+  size. The two are never added together (`dev/decisions.md`).
+- The tables cover the overview chart's Look back buckets and use the
+  `scored` outcome. `chart_score` also includes `unbeaten` spans with positive
+  user effort. Journal day and week buckets include archived daily command
+  tallies. Minute and hour buckets use individual timestamped runs.
+- `gj`/`gk` share a row with `j`/`k`, except a journal sample's `within_line`
+  commands (`Stats::countWithinLine`): the window cutter marks a `gj`/`gk`
+  alone in its tick that moved the cursor without leaving its row.
+- A command the optimizer never used is listed in `never`, by the user's
+  count, and kept out of `more`.
+- The user's insert text is counted from `typed_insert` (`Stats::countInsertKeys`),
+  not from the commands, whose keys also hold what mappings typed. A session or
+  run without `typed_insert` counts no insert text on either side.
+
+Both exports apply a `vf.stats.Filter` through `src/Stats/Query.cpp`. A row's
+`drill` selects matching retained runs. Lua passes the filter from the
+rendered item to the run list float in `stats/run_list.lua`.
+
+The stats page is laid out as items (`ui/item_nav.lua`). An item is a block of
+rows, optionally a span of display columns, with the cells to highlight.
+
+- `h`/`j`/`k`/`l` move to the nearest item that way; `<CR>` and `<Esc>` act on
+  the current one, which is highlighted with the cursor hidden.
+- `build_page` stacks a band per source, Sessions over Journal with a rule
+  between: its score, chart and optimizer times, and its Commands tables. With the width for it the
+  tables go beside the chart, still in one buffer; else under it. A source
+  with nothing recorded has no tables.
+- Each side is an item `group`, shared by both bands, so `j`/`k` run down a
+  column across them. The view's `leave` says where a move off a side's edge
+  lands: `l` on the band's first command, `h` on its chart. An item carries
+  its band's `source` for that, and to keep ids apart (`sessions:dw (you only)`).
+- The cursor always rests inside the current item, so the item is found from
+  the cursor; the remembered id only carries it across a redraw.
+- `<CR>` expands or collapses a command list, or opens a chart or run list
+  in a float. `chart_page` draws the chart to the float's size and starts on
+  the most recent history bucket or the smallest timing bucket.
+- The stats keep a section to its headline (the Sessions score, the Journal's
+  run lengths), its chart and its optimizer times. `chart_page` puts the rest under the chart: the
+  counts, the scored share, and every row of the section that lists runs.
+- The overview uses 30 history buckets. `+`/`-` in a history float change
+  its own range without changing the overview's Look back setting.
+  Timing floats group journal searches into fixed size buckets.
+- The Journal's float draws its scored runs as a bar by kind over a bar by
+  query size (`push_kind_bars`), every segment an item with its own `drill`.
+  A `TimingBucket`'s `score` and `drill` cover its scoring runs, timed or not,
+  while its `timing` covers the timed ones of any outcome.
+- A kind's rolled-up runs kept no query size. They are drawn as the rest of
+  its bar and are no item, since no filter lists them.
+- The run list is the one page a drill opens, from any float: `view.lua`'s
+  `list_runs` hands `stats/run_list.lua` the item's `drill`, `label` and
+  `order`. A new breakdown adds items with a `drill`, never a page of its own.
+
+- Command filters need individual retained runs. Eligible rolled-up runs
+  are reported separately in `rollup_runs_without_commands` because their
+  tallies cannot identify which individual runs used the command.
+- The charted size is the filter's window size, else the request's
+  `charted_size`, else the middle one. No drill sets a window size, so a drill
+  made before the run length changes follows the switch. Window size 0 is the charted size
+  everywhere but the per-size scores.
+- Run rows carry `user_display`/`best_display` (`Stats::displayKeys`): each
+  stretch of typed characters as `⟨n⟩`, line breaks and every other key as the
+  sequence display renders them. Nothing in Lua reads them: the run list's
+  preview renders the keys themselves, cut to two lines. For a journal run
+  those are the detail's resolved `keys`, which tokenize where typed keys such
+  as `gj` do not.
+- `vf_stats_runs` pages the sessions in scope and the charted runs of the
+  current params' samples by one `Order` column, largest first unless
+  `ascending`; a run with no value in that column goes last either way, and
+  ties go newest first, then by id. Rolled-up runs count in `total` but have
+  no rows.
+- A journal run's `RunId` is its file, window size and `last_atom`; a session's
+  is its index among the log's sessions.
+- `vf_stats_run` (`Journal::runDetail`) cuts a journal run's window again under
+  the request's `sample_params` and returns it sliced as its search saw it
+  (`Journal::sliceWindow`, shared with `evaluate`); `keys` are the sliced
+  `userSeq`, gj/gk approximated as in a session's `user_seq`. A session's id, a
+  run without a slice, a deleted journal, or params that no longer cut that
+  window are errors, which `ffi/stats.run` returns rather than raises.
+- `<CR>` on a journal run feeds the detail to `simulate.simulate_compare`
+  with a step per complete recorded tick. The journal is read on demand.
+  `filetype` highlights only the visible panes. The preview shows the same
+  detail's `lines` beside its `goal_lines`; a session has neither.
 
 `diffs` is the planner's own partition (half-open, 0-indexed spans per side), so
 the viewer highlights exactly the regions the search ran against; `disk.validate`

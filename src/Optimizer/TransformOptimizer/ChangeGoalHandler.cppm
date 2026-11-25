@@ -40,7 +40,8 @@ struct ChangeGoalHandler {
   int cacheHits = 0;
   int cachePopulations = 0;
 
-  int goalFirstIndentLen = 0;
+  IndentOptions indent;
+  std::string_view goalFirstIndent;
   KeyedSequence typedAfterIndent;
   RunningEffort afterIndentEffort;
 
@@ -48,17 +49,16 @@ struct ChangeGoalHandler {
                     double effortWeight, const Config& config,
                     const TransformBoundary& transformBoundary, const Lines& initialLines,
                     const Lines& goalLines, const std::string& pre,
-                    const std::string& suf, const std::string& preSuf);
+                    const std::string& suf, const std::string& preSuf, const IndentOptions& indent);
 
   bool isGoalReached(const Lines& lines) const;
   bool isGoalReached(const TransformEditorState& state) const;
 
-  SuffixCacheResult tryUseSuffixCache(const TransformState& s,
-                                      std::vector<std::vector<Result>>& resultsByStart,
-                                      int maxResultsPerStart,
-                                      const std::vector<char>& startActive,
-                                      int& resultsFound,
-                                      int& uniquePositionsCovered);
+  SuffixCacheHit findCachedSuffix(const TransformState& s);
+
+  // Call when `goal` pops. A goal's path is only worth remembering once the
+  // search has ranked it first; see dev/optimizer/transform-optimizer.md.
+  void cacheSuffixesOfGoal(const TransformState& goal);
 
   TransformResult finalize(std::vector<std::vector<Result>>&& resultsByStart,
                       const Lines& initialLines, const Lines& goalLines,
@@ -71,15 +71,12 @@ struct ChangeGoalHandler {
 
   // Goal emission methods — return states for the dispatcher to emit.
   // Only called in change mode (not pure deletion).
-  template<class RangeT>
   GoalStates onDeletionGoal(const TransformEditorState& afterDel, const TransformState& base,
-                            const RangeT& range, const SequenceBinding& sourceCmd);
+                            const SequenceBinding& sourceCmd, const TransformEditorState* repeatLanding);
 
   GoalStates onLinewiseGoal(const TransformEditorState& afterDel, const TransformState& base,
-                            LineRange range, const SequenceBinding& sourceCmd);
-
-  GoalStates onCountedLinewiseGoal(const TransformEditorState& afterDel, const TransformState& base,
-                                   LineRange range, const SequenceBinding& sourceCmd);
+                            LineRange range, const SequenceBinding& sourceCmd,
+                            const TransformEditorState* repeatLanding);
 
   GoalStates onJoinGoal(const TransformEditorState& afterJn, const TransformState& base,
                         const SequenceBinding& sourceCmd);
@@ -93,13 +90,9 @@ struct ChangeGoalHandler {
   // with leading whitespace) and counted variants.
   static KeyedSequence deleteToChangeChar(const SequenceBinding& sourceCmd);
   static KeyedSequence deleteToChangeLine(const SequenceBinding& sourceCmd,
-                                          std::string_view lineContent);
+                                          std::string_view lineContent, bool autoindent);
 
-  // Cleared-shell collapse helpers — exposed so primitive property tests can
-  // verify the entry+collapse contract directly against the oracle. See the
-  // implementation in ChangeGoalHandler.cpp for the cleared-shell invariant.
-  static KeyedSequence buildCollapseSequence(int totalLines, int cursorLine);
-  static KeyedSequence buildClearedShellEntry(int totalLines, int cursorLine, int cursorCol);
+  static void enterAndCollapseClearedShell(KeyedSequence& keys, const Lines& lines, CursorPos pos);
 
   struct SuffixCommandInfo {
     bool isDotRepeat = false;
@@ -141,11 +134,6 @@ private:
       const std::vector<RunningEffort>& rawSuffixEfforts,
       int nextIndex,
       const DotRepeat& lastEdit) const;
-  void cacheSuffixesForPath(const TransformState& base,
-                            const KeyedSequence& completionSuffix,
-                            double completionPenalty,
-                            const KeyedSequence& typedSuffix,
-                            const RunningEffort& typedSuffixEffort);
 
   // Core goal emission — returns states instead of calling back.
   GoalStates emitEditGoal(const TransformEditorState& postCompletionState,
@@ -153,29 +141,9 @@ private:
                           const SequenceBinding& sourceCmd,
                           const KeyedSequence& goalCompletionCmd,
                           const TypedGoalVariants& typedVariants,
-                          bool allowDotGoalPath);
-
-  GoalStates emitLinewiseChangeGoal(const TransformEditorState& afterDel,
-                                    const TransformState& base,
-                                    const SequenceBinding& sourceCmd, int line,
-                                    int ccLineCount, const KeyedSequence& changeCmd,
-                                    bool applyAutoindent);
+                          const TransformEditorState* repeatLanding);
 
   static CursorPos seedPositionForStart(int startIndex, const Lines& initialLines, int leftColOffset);
 };
 
 }  // export
-
-// The range type only selects the ChangeGoalEmitter overload; the change
-// prefix depends solely on the post-deletion state.
-template<class RangeT>
-GoalStates ChangeGoalHandler::onDeletionGoal(
-    const TransformEditorState& afterDel, const TransformState& base, const RangeT&,
-    const SequenceBinding& sourceCmd) {
-  bool isDot = isDotRepeat(base, sourceCmd);
-  KeyedSequence goalCompletionCmd =
-      buildChangePrefix(sourceCmd, afterDel.getLines(), afterDel.getPos());
-  TypedGoalVariants typedVariants{{typed, typedEffort}, {typed, typedEffort}};
-  return emitEditGoal(afterDel, base, sourceCmd, goalCompletionCmd, typedVariants, isDot);
-}
-

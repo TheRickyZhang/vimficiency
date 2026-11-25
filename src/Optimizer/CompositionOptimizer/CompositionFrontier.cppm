@@ -3,6 +3,7 @@ export module vf.Optimizer.CompositionOptimizer.CompositionFrontier;
 import std.compat;
 export import vf.Boundary.NavBoundary;
 export import vf.Keyboard.Config;
+export import vf.Optimizer.CompositionOptimizer.CompositionOptimizerParams;
 export import vf.Optimizer.DiffPlanner.DiffState;
 export import vf.Optimizer.FrontierCommon;
 export import vf.Types.NavContext;
@@ -20,10 +21,8 @@ export {
 //     cursor inside the strategy's insertion column range.
 //   - Bracket/quote text objects: `di" / da{ / ci( / ca[ / ...`. Activation:
 //     cursor at the enumerated `(line, col)` of a visible bracket/quote.
-//   - Join shortcut: bare `J`. Activation: cursor on the join plan's entry
-//     line AND one `J` makes progress on the planned diff (without
-//     reaching the fencepost — that case is owned by TransformFrontier's
-//     explorer J lane).
+//   - Join shortcut: bare `J` from the join plan's entry line when it
+//     makes progress on the planned diff, including completion.
 //
 // Invariant: every emitted Suggestion's `token` is a single immediately
 // executable Vim action. No motion prefix. No typed insert payload. No
@@ -42,11 +41,9 @@ struct CompositionFrontierQuery : FrontierQuery {
   const NavContext& navContext;
 };
 
-// Depth-1 enumeration of composition actions for `query.diff`. Returns up
-// to `query.maxCount` Suggestions sorted by cost (cheapest first). Empty
-// when the diff has no composition shortcuts available from this cursor.
-std::vector<Suggestion> rankCompositionFrontier(
+// Composition actions available from the current cursor before ranking.
+std::vector<Suggestion> collectCompositionEdits(
     const CompositionFrontierQuery& query,
-    const Config& config);
+    const CompositionOptimizerParams& params, const Config& config);
 
 }  // export

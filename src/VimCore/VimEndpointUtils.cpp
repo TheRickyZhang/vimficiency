@@ -533,25 +533,28 @@ static bool crossesColumnBoundary(CharRange range, const Lines& lines,
   return false;
 }
 
-// Port of Neovim's find_next_quote (textobject.c:1489). Returns -1 if not found.
-// Escape character handling (b_p_qe) omitted; we treat all quotes as unescaped.
-static int findNextQuote(const string& line, int col, char quote) {
-  int len = static_cast<int>(line.size());
-  while (col < len) {
-    if (line[col] == quote) return col;
-    col++;
-  }
-  return -1;
+bool isBackslashEscaped(string_view line, int col) {
+  int begin = col;
+  while (begin > 0 && line[begin - 1] == '\\') --begin;
+  return (col - begin) % 2 != 0;
 }
 
-// Port of Neovim's find_prev_quote (textobject.c:1515). Returns 0 if not found
-// (caller must check line[result] == quote to distinguish).
-static int findPrevQuote(const string& line, int colStart, char quote) {
-  while (colStart > 0) {
-    colStart--;
-    if (line[colStart] == quote) break;
+size_t nextUnescapedQuote(string_view line, size_t from, char quote) {
+  size_t col = line.find(quote, from);
+  while (col != string_view::npos && isBackslashEscaped(line, col))
+    col = line.find(quote, col + 1);
+  return col;
+}
+
+CharRange quotePairRange(string_view line, Pos open, int closeCol, bool isInner) {
+  if (isInner) return {CursorPos(open.line, open.col + 1), CursorPos(open.line, closeCol)};
+
+  int end = closeCol + 1;
+  while (end < ssize(line) && CharMask::isWhitespace(line[end])) ++end;
+  if (end == closeCol + 1) {
+    while (open.col > 0 && CharMask::isWhitespace(line[open.col - 1])) --open.col;
   }
-  return colStart;
+  return {CursorPos(open.line, open.col), CursorPos(open.line, end)};
 }
 
 // Port of Neovim's current_quote (textobject.c:1542), non-Visual operator path,
@@ -563,150 +566,165 @@ CharRange quoteTextObjectRange(CursorPos cursor, const Lines& lines, bool isInne
   int len = static_cast<int>(ln.size());
   if (len == 0) return CHAR_RANGE_OUTSIDE_BOUNDARY;
 
-  int colStart = std::clamp(cursor.col, 0, len - 1);
-  int colEnd = -1;
-
-  if (ln[colStart] == quote) {
-    // Cursor on a quote: search line start to find which pair contains it.
-    int firstCol = colStart;
-    colStart = 0;
-    while (true) {
-      colStart = findNextQuote(ln, colStart, quote);
-      if (colStart < 0 || colStart > firstCol) return CHAR_RANGE_OUTSIDE_BOUNDARY;
-      colEnd = findNextQuote(ln, colStart + 1, quote);
-      if (colEnd < 0) return CHAR_RANGE_OUTSIDE_BOUNDARY;
-      if (colStart <= firstCol && firstCol <= colEnd) break;
-      colStart = colEnd + 1;
-    }
+  const size_t pivot = std::clamp(cursor.col, 0, len - 1);
+  size_t open, close;
+  if (ln[pivot] == quote) {
+    size_t from = 0;
+    do {
+      open = ln.find(quote, from);
+      if (open > pivot) return CHAR_RANGE_OUTSIDE_BOUNDARY;
+      close = nextUnescapedQuote(ln, open + 1, quote);
+      if (close == string::npos) return CHAR_RANGE_OUTSIDE_BOUNDARY;
+      from = close + 1;
+    } while (close < pivot);
   } else {
-    // Search backward for opening quote, fall back to forward.
-    colStart = findPrevQuote(ln, colStart, quote);
-    if (colStart >= len || ln[colStart] != quote) {
-      colStart = findNextQuote(ln, colStart, quote);
-      if (colStart < 0) return CHAR_RANGE_OUTSIDE_BOUNDARY;
-    }
-    colEnd = findNextQuote(ln, colStart + 1, quote);
-    if (colEnd < 0) return CHAR_RANGE_OUTSIDE_BOUNDARY;
+    open = pivot ? ln.rfind(quote, pivot - 1) : string::npos;
+    while (open != string::npos && isBackslashEscaped(ln, open))
+      open = ln.rfind(quote, open - 1);
+    if (open == string::npos) open = ln.find(quote);
+    if (open == string::npos) return CHAR_RANGE_OUTSIDE_BOUNDARY;
+    close = nextUnescapedQuote(ln, open + 1, quote);
+    if (close == string::npos) return CHAR_RANGE_OUTSIDE_BOUNDARY;
   }
 
-  // Around: extend through trailing whitespace, or leading if no trailing.
-  if (!isInner) {
-    if (colEnd + 1 < len && CharMask::isWhitespace(ln[colEnd + 1])) {
-      while (colEnd + 1 < len && CharMask::isWhitespace(ln[colEnd + 1])) colEnd++;
-    } else {
-      while (colStart > 0 && CharMask::isWhitespace(ln[colStart - 1])) colStart--;
-    }
-  }
-
-  // Inner with count<2 and no Visual: advance past opening quote.
-  if (isInner) colStart++;
-
-  // End is inclusive at colEnd; inc_cursor==2 (past EOL) sets inclusive flag.
-  // For around (or inner with quotes adjacent at EOL after inc), motion ends
-  // inclusive — half-open is [colStart, colEnd+1). For inner exclusive, it is
-  // [colStart, colEnd). For around, inc_cursor on the closing quote: returns 2
-  // only if colEnd is at the last char position. We model: around always
-  // includes the closing quote (inclusive), inner excludes it.
-  int endExclusive = isInner ? colEnd : colEnd + 1;
-
-  CharRange range(CursorPos(lineIdx, colStart), CursorPos(lineIdx, endExclusive));
+  CharRange range = quotePairRange(ln, {lineIdx, static_cast<int>(open)}, close, isInner);
   if (crossesColumnBoundary(range, lines, leftColOffset, rightColOffset)) {
     return CHAR_RANGE_OUTSIDE_BOUNDARY;
   }
   return range;
 }
 
-static pair<CursorPos, CursorPos> findMatchingBrackets(
-    const Lines& lines, CursorPos pos, char open, char close) {
-  int n = static_cast<int>(lines.size());
-  CursorPos openPos(-1, -1);
-  CursorPos closePos(-1, -1);
+char textObjectBracketAt(string_view line, int col, char open, char close) {
+  const char c = line[col];
+  return (c == open || c == close) && !isBackslashEscaped(line, col) ? c : 0;
+}
 
-  int line = pos.line;
-  int col = pos.col;
+static CursorPos precedingBracketOpen(const Lines& lines, Pos before, char open, char close) {
   int depth = 0;
-  bool cursorOnClose = false;
-  if (line >= 0 && line < n && col >= 0 &&
-      col < static_cast<int>(lines[line].size())) {
-    char c = lines[line][col];
-    if (c == open) depth = 1;
-    else if (c == close) cursorOnClose = true;
-  }
-
-  int searchLine = pos.line;
-  int searchCol = pos.col - (cursorOnClose ? 1 : 0);
-  if (depth == 0) {
-    depth = cursorOnClose ? 1 : 0;
-    while (searchLine >= 0) {
-      const string& ln = lines[searchLine];
-      int startCol = searchLine == pos.line
-          ? searchCol
-          : static_cast<int>(ln.size()) - 1;
-
-      for (int c = startCol; c >= 0; c--) {
-        if (ln[c] == close) {
-          depth++;
-        } else if (ln[c] == open) {
-          if (depth == 0) {
-            openPos = CursorPos(searchLine, c);
-            goto foundOpen;
-          }
-          depth--;
-          if (cursorOnClose && depth == 0) {
-            openPos = CursorPos(searchLine, c);
-            goto foundOpen;
-          }
-        }
-      }
-      searchLine--;
-    }
-  } else {
-    openPos = CursorPos(line, col);
-  }
-
-foundOpen:
-  if (openPos.line < 0) {
-    searchLine = std::max(0, pos.line);
-    while (searchLine < n) {
-      const string& ln = lines[searchLine];
-      int startCol = searchLine == pos.line ? std::max(0, pos.col) : 0;
-
-      for (int c = startCol; c < static_cast<int>(ln.size()); c++) {
-        if (ln[c] == open) {
-          openPos = CursorPos(searchLine, c);
-          goto foundOpenForward;
-        }
-      }
-      searchLine++;
-    }
-  }
-
-foundOpenForward:
-  if (openPos.line < 0) return {CursorPos(-1, -1), CursorPos(-1, -1)};
-
-  depth = 1;
-  searchLine = openPos.line;
-  searchCol = openPos.col + 1;
-
-  while (searchLine < n) {
-    const string& ln = lines[searchLine];
-    int startCol = searchLine == openPos.line ? searchCol : 0;
-
-    for (int c = startCol; c < static_cast<int>(ln.size()); c++) {
-      if (ln[c] == open) {
-        depth++;
-      } else if (ln[c] == close) {
-        depth--;
-        if (depth == 0) {
-          closePos = CursorPos(searchLine, c);
-          return {openPos, closePos};
-        }
+  for (int row = before.line; row >= 0; --row) {
+    const int end = row == before.line ? before.col : lines.getSize(row);
+    const string_view prefix(lines[row].data(), end);
+    if (prefix.find(open) == string_view::npos && prefix.find(close) == string_view::npos) continue;
+    for (int col = end - 1; col >= 0; --col) {
+      const char bracket = textObjectBracketAt(lines[row], col, open, close);
+      if (bracket == close) ++depth;
+      else if (bracket == open) {
+        if (depth == 0) return {row, col};
+        --depth;
       }
     }
-    searchLine++;
   }
 
-  return {CursorPos(-1, -1), CursorPos(-1, -1)};
+  return POSITION_OUTSIDE_BOUNDARY;
+}
+
+static int bracketSearchOrigin(const Line& line, int col, char open) {
+  col = std::clamp(col, 0, static_cast<int>(line.size()));
+  if (col == ssize(line)) return col;
+  if (open == '{' && CharMask::isWhitespace(line[col]))
+    col = max(col, firstNonBlankColInLine(line));
+  return col + (line[col] == open);
+}
+
+pair<int, int> bracketForwardEntryColumns(const Lines& lines, Pos opener, char close,
+                                       bool hasHiddenLinesAbove) {
+  const Line& line = lines[opener.line];
+  const int left = opener.col;
+  const char open = line[left];
+  if (left == 0 || (hasHiddenLinesAbove && open != '{')) return {left, left};
+
+  int first = left;
+  while (first > 0 && !textObjectBracketAt(line, first - 1, open, close)) --first;
+  if (first == left) return {left, left};
+
+  const int origin = bracketSearchOrigin(line, left - 1, open);
+  if (origin > left) return {first, left};
+  if (hasHiddenLinesAbove || precedingBracketOpen(lines, {opener.line, first}, open, close).line >= 0)
+    return {left, left};
+  return {first, origin == left ? left - 1 : left};
+}
+
+static CursorPos findBracketOpen(const Lines& lines, CursorPos pos, char open, char close) {
+  if (pos.line < 0 || pos.line > lines.lastLine()) return POSITION_OUTSIDE_BOUNDARY;
+  const int start = bracketSearchOrigin(lines[pos.line], pos.col, open);
+  const CursorPos preceding = precedingBracketOpen(lines, {pos.line, start}, open, close);
+  if (preceding.line >= 0) return preceding;
+
+  int depth = 0;
+  for (int row = pos.line; row <= lines.lastLine(); ++row) {
+    const int first = row == pos.line ? max(0, start + 1) : 0;
+    for (int col = first; col < lines.getSize(row); ++col) {
+      const char bracket = textObjectBracketAt(lines[row], col, open, close);
+      if (bracket == close) ++depth;
+      else if (bracket == open) {
+        if (depth == 0) return {row, col};
+        --depth;
+      }
+    }
+  }
+  return POSITION_OUTSIDE_BOUNDARY;
+}
+
+static bool hasOddQuoteCount(string_view line, int end) {
+  bool odd = false;
+  const auto prefix = line.substr(0, end);
+  for (size_t col = prefix.find('"'); col != string_view::npos; col = prefix.find('"', col + 1)) {
+    const bool charLiteral = col > 0 && col + 1 < line.size() &&
+                             line[col - 1] == '\'' && line[col + 1] == '\'';
+    if (!charLiteral && !isBackslashEscaped(line, col)) odd = !odd;
+  }
+  return odd;
+}
+
+CursorPos matchingBracketClose(const Lines& lines, CursorPos opener, char close, int lastLine) {
+  const char open = lines[opener.line][opener.col];
+  int depth = 1;
+  bool inQuote = false;
+  bool startedInQuote = false;
+  for (int row = opener.line; row <= lastLine; ++row) {
+    const Line& line = lines[row];
+    const int end = lines.getSize(row);
+    const int first = row == opener.line ? opener.col + 1 : 0;
+    const bool fromPrevious = row > 0 && lines[row - 1].ends_with('\\');
+    const bool continues = line.ends_with('\\');
+    optional<bool> matchQuotes;
+    if (fromPrevious || continues) {
+      matchQuotes = true;
+      if (hasOddQuoteCount(line, end)) {
+        if (row == opener.line) {
+          startedInQuote = first == end || !hasOddQuoteCount(line, first);
+          inQuote = startedInQuote;
+        } else {
+          inQuote = fromPrevious;
+        }
+      }
+    }
+    for (int col = first; col < end; ++col) {
+      const char c = line[col];
+      if (c == '"') {
+        if (!matchQuotes.has_value()) matchQuotes = !hasOddQuoteCount(line, end);
+        if (*matchQuotes && !isBackslashEscaped(line, col)) {
+          inQuote = !inQuote;
+          startedInQuote = false;
+        }
+      } else if (c == '\'') {
+        if (col + 3 < end && line[col + 1] == '\\' && line[col + 3] == '\'') {
+          col += 3;
+        } else if (col + 2 < end && line[col + 2] == '\'') {
+          col += 2;
+        }
+      } else if ((!inQuote || startedInQuote) && (c == open || c == close) &&
+                 !isBackslashEscaped(line, col)) {
+        if (c == open) ++depth;
+        else if (--depth == 0) return {row, col};
+      }
+    }
+    if (!continues) {
+      inQuote = false;
+      startedInQuote = false;
+    }
+  }
+  return POSITION_OUTSIDE_BOUNDARY;
 }
 
 // Port of Neovim's inindent(extra=1): true iff cols [0, col] are all whitespace.
@@ -723,8 +741,10 @@ static bool inIndent(const Lines& lines, CursorPos pos) {
 CharRange bracketTextObjectRange(CursorPos cursor, const Lines& lines, bool isInner,
                                  char open, char close, int leftColOffset,
                                  int rightColOffset) {
-  auto [openPos, closePos] = findMatchingBrackets(lines, cursor, open, close);
-  if (openPos.line < 0 || closePos.line < 0) return CHAR_RANGE_OUTSIDE_BOUNDARY;
+  const CursorPos openPos = findBracketOpen(lines, cursor, open, close);
+  if (openPos.line < 0) return CHAR_RANGE_OUTSIDE_BOUNDARY;
+  const CursorPos closePos = matchingBracketClose(lines, openPos, close, lines.lastLine());
+  if (closePos.line < 0) return CHAR_RANGE_OUTSIDE_BOUNDARY;
 
   if (!isInner) {
     // Around: simple inclusive range [open, close+1).

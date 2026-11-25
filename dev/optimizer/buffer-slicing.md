@@ -40,17 +40,19 @@ NavBoundary subsetBoundary(subset, subsetFirst, subsetLast,
 
 ### 1. Lua → C++ (FFI Boundary)
 
-**File**: `lua/vimficiency/session/compute.lua` (`analyze`), through `util.compute_search_region`
+**File**: `lua/vimficiency/session/compute.lua` (`build_analyze_input`), through `ffi_optimizer.build_search_request`
 
 ```lua
-local start_search, end_search = util.compute_search_region(
-  start_state.row, end_state.row, initial_lines, goal_lines, config.SLICE_PADDING)
+local request = ffi_optimizer.build_search_request({
+  initial_lines = initial_lines, goal_lines = goal_lines, ...
+}, config.SLICE_PADDING, config.MAX_SEARCH_LINES)
 ```
 
-- The region itself is computed in C++ (`vf_compute_search_region`): the span covering both cursor rows and every changed line, plus `SLICE_PADDING` (configurable, default 5) lines above and below
+- Lua sends the whole buffers; C++ (`vf_build_search_request`, `src/Optimizer/Analyze.cppm`) does the rest and returns the sliced `SearchRequest`
+- Capture supplies the smallest untouched prefix and suffix across observed cursor positions and changed line ranges. Within a burst, Neovim reports command starting rows even when only the final text is observable. If the buffer height changed during the burst, the smallest observed height gives a conservative bound on the suffix below those rows. `computeSearchRegion` trims matching rows within those margins, then adds up to `SLICE_PADDING` matching rows on either side. The initial and goal slices share a start row and can have different lengths.
 - A region taller than `MAX_SEARCH_LINES` is rejected before any search runs
-- Positions converted to slice-relative coordinates before FFI call
-- Boundary flags (`has_lines_above`, `has_lines_below`) passed to C++
+- `sliceSearch` converts positions to slice-relative coordinates and sets the boundary flags (`has_lines_above`, `has_lines_below`)
+- The journal sampler (`src/Journal/Evaluate.cpp`) shares the live session slice and uses the larger unpadded position count as the query size
 
 ### 2. NavOptimizer
 
@@ -151,7 +153,7 @@ This applies to both code paths in CompositionOptimizer: the edit/motion transit
 
 | Layer | Slicing | Padding | Params Location |
 |-------|---------|---------|-----------------|
-| Lua → C++ | Yes | `SLICE_PADDING` = 5 | `lua/vimficiency/config.lua` |
+| Lua → C++ | Yes | `SLICE_PADDING` = 5 | `lua/vimficiency/config/init.lua` |
 | NavOptimizer | No | N/A | (caller responsibility) |
 | TransformOptimizer | No | N/A | (exact regions) |
 | TransformOptimizer → NavOptimizer | Yes | `navLinePadding*` = 1 | `TransformOptimizerParams.cppm` |

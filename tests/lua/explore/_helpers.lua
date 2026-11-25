@@ -26,7 +26,7 @@ function M.enters_insert_mode(rec)
 end
 
 function M.widen_recommendations()
-  local registry = require("vimficiency.explore.registry")
+  local registry = require("vimficiency.explore.runtime.registry")
   local state = require("vimficiency.explore.state")
   local view = registry.current()
   view.recommendation_count = 10
@@ -40,13 +40,13 @@ function M.list_has_warning(view)
 end
 
 function M.with_notify_capture(fn)
-  local util = require("vimficiency.util")
+  local ui_windows = require("vimficiency.ui.windows")
   local notices = {}
   base.with_patch({
     { vim, "notify", function(msg, level)
       notices[#notices + 1] = { msg = tostring(msg), level = level }
     end },
-    { util, "show_output", function() end },
+    { ui_windows, "show_output", function() end },
   }, function()
     fn(notices)
   end)
@@ -95,7 +95,7 @@ function M.move_to_first_edit_target(scratch_buf)
 end
 
 function M.complete_delete_mid_word(scratch_buf)
-  local handlers = require("vimficiency.explore.handlers")
+  local handlers = require("vimficiency.explore.input.handlers")
   local view = M.current_view()
   base.feed("w")
   M.trigger_cursor_moved(scratch_buf)
@@ -136,7 +136,7 @@ function M.wait_for(label, pred)
 end
 
 function M.current_view()
-  return require("vimficiency.explore.registry").current()
+  return require("vimficiency.explore.runtime.registry").current()
 end
 
 function M.set_scratch(lines, cursor)
@@ -161,7 +161,7 @@ function M.open_flow(label, result, fn)
 
     -- Open now computes the plan on a worker thread; pump the loop until the
     -- poller installs the view (view_id set) before the test interacts with it.
-    local view = require("vimficiency.explore.registry").current()
+    local view = require("vimficiency.explore.runtime.registry").current()
     assert_true(
       vim.wait(5000, function() return view.view_id ~= nil end, 5),
       "explore plan did not finish computing")

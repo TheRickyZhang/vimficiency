@@ -1,23 +1,13 @@
 import { Fragment, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { homeRoute, type OptimizerSlug } from '../router';
-import { parseName, toNanoseconds, loadBenchmarkData, discoverCategories } from '../utils/data';
+import { benchmarkChanges, toNanoseconds, loadBenchmarkData, discoverCategories } from '../utils/data';
 import { fmtTime, ns, type Nanoseconds } from '../utils/format';
 import { TEST_SUITES, summarizeTestSuite, binaryTotalName } from '../utils/testSuites';
+import { ChangesSection } from '../components/ChangesSection';
 import { MultiLineChart, type ChartLine } from '../components/MultiLineChart';
 import type { BenchmarkData } from '../types/benchmark';
 
-interface Change {
-  name: string;
-  category: string;
-  detail: string;
-  optimizer: OptimizerSlug;
-  pctChange: number;
-  ratio: number;
-}
-
-const MAX_ITEMS = 5;
-const ALERT_RATIO = 1.5;
 const CARD_CLASS = 'block card card-hover p-5 no-underline text-inherit';
 
 const OPTIMIZER_LABELS: Partial<Record<OptimizerSlug, string>> = {
@@ -48,38 +38,8 @@ function summarizeOptimizer(data: BenchmarkData): { total: Nanoseconds; trend: n
 export function HomePage() {
   const { optimizers, coverage } = homeRoute.useLoaderData();
 
-  const changes: Change[] = [];
-  for (const { slug, data } of optimizers) {
-    if (slug === 'tests') continue;
-    const runs = Object.values(data.entries)[0];
-    if (!runs || runs.length < 2) continue;
-    const latest = runs[runs.length - 1]!;
-    const prev = runs[runs.length - 2]!;
-    const prevMap = new Map(prev.benches.map((b) => [b.name, b]));
-
-    for (const bench of latest.benches) {
-      const prevBench = prevMap.get(bench.name);
-      if (!prevBench) continue;
-      const currNs = toNanoseconds(bench.value, bench.unit);
-      const prevNs = toNanoseconds(prevBench.value, prevBench.unit);
-      if (prevNs === 0) continue;
-      const ratio = currNs / prevNs;
-      const pctChange = (ratio - 1) * 100;
-      if (Math.abs(pctChange) < 10) continue; // only show >=10% changes
-      const { category, detail } = parseName(bench.name);
-      changes.push({ name: bench.name, category, detail, optimizer: slug, pctChange, ratio });
-    }
-  }
-
-  const regressions = changes
-    .filter((c) => c.pctChange > 0)
-    .sort((a, b) => b.pctChange - a.pctChange)
-    .slice(0, MAX_ITEMS);
-
-  const improvements = changes
-    .filter((c) => c.pctChange < 0)
-    .sort((a, b) => a.pctChange - b.pctChange)
-    .slice(0, MAX_ITEMS);
+  const changes = optimizers.flatMap(({ slug, data }) => slug === 'tests' ? [] :
+    benchmarkChanges(loadBenchmarkData(data)).map(c => ({ ...c, optimizer: slug })));
 
   const testOptimizer = optimizers.find((o) => o.slug === 'tests');
   const testRuns = testOptimizer ? loadBenchmarkData(testOptimizer.data) : [];
@@ -157,32 +117,10 @@ export function HomePage() {
       )}
 
       <div className="mt-10">
-        <div className="grid grid-cols-2 gap-6">
-          <div>
-            <h3>Largest Regressions</h3>
-            {regressions.length > 0 ? (
-              <div className="flex flex-col gap-1">
-                {regressions.map((c) => (
-                  <ChangeItem key={`${c.optimizer}-${c.name}`} change={c} />
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted">None</p>
-            )}
-          </div>
-          <div>
-            <h3>Largest Improvements</h3>
-            {improvements.length > 0 ? (
-              <div className="flex flex-col gap-1">
-                {improvements.map((c) => (
-                  <ChangeItem key={`${c.optimizer}-${c.name}`} change={c} />
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted">None</p>
-            )}
-          </div>
-        </div>
+        <ChangesSection changes={changes} limit={5} renderItem={(c, body) => (
+          <Link key={`${c.optimizer}-${c.name}`} to="/$optimizer" params={{ optimizer: c.optimizer }}
+            search={{ cat: c.category, bench: c.name }} className="change-item no-underline">{body}</Link>
+        )} />
       </div>
     </>
   );
@@ -229,39 +167,5 @@ function Passing({ failures }: { failures: number }) {
     <span className={`font-semibold ${failures === 0 ? 'text-good' : 'text-bad'}`}>
       {failures === 0 ? 'all passing' : `${failures} failing`}
     </span>
-  );
-}
-
-function ChangeItem({ change: c }: { change: Change }) {
-  const overThreshold = Math.abs(c.pctChange) >= (ALERT_RATIO - 1) * 100;
-  const sign = c.pctChange >= 0 ? '+' : '';
-  const label = c.optimizer.charAt(0).toUpperCase() + c.optimizer.slice(1);
-
-  return (
-    <Link
-      to="/$optimizer"
-      params={{ optimizer: c.optimizer }}
-      search={{ cat: c.category, bench: c.name }}
-      className="change-item no-underline"
-    >
-      <div className="flex flex-col gap-px min-w-0">
-        <span className="font-semibold text-[0.9rem] whitespace-nowrap overflow-hidden text-ellipsis">
-          {c.detail}
-        </span>
-        <span className="text-xs text-[#999]">
-          {label} / {c.category}
-        </span>
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {overThreshold && (
-          <span className="text-[1.1rem] text-warn" title="Exceeds alert threshold">
-            {'⚠'}
-          </span>
-        )}
-        <span className={`font-bold text-[0.9rem] tabular-nums ${c.pctChange > 0 ? 'text-bad' : 'text-good'}`}>
-          {sign}{c.pctChange.toFixed(1)}%
-        </span>
-      </div>
-    </Link>
   );
 }

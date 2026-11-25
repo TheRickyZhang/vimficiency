@@ -35,4 +35,22 @@ TEST_F(CompositionOptimizer_ManualTest, InnerTextObjectsReplaceDelimitedContent)
   }
 }
 
+TEST_F(CompositionOptimizer_ManualTest, MultilineTextObjectChangeAccountsForAutoindent) {
+  const vector<TextObjectCase> cases = {
+      {{"  (old)"}, {"  (X", "Y)"}, "ci("},
+      {{"  (old)  tail"}, {"  X", "Y  tail"}, "ca("},
+  };
+  const CursorPos start(0, 1), finish(1, 0);
+  for (const TextObjectCase& test : cases) {
+    const auto res = opt.optimize(test.initial, start, test.goal, finish, params);
+    EXPECT_TRUE(ranges::any_of(res.getResults(), [&](const Result& r) {
+      return r.getSequence().view().starts_with(test.expectedCommand);
+    })) << test.expectedCommand;
+    for (const Result& r : res.getResults()) {
+      EXPECT_TRUE(OracleReplay::matches(*oracle, test.initial, start, r.getSequence().str(),
+                                        test.goal, finish, Mode::Normal, test.expectedCommand));
+    }
+  }
+}
+
 }  // namespace

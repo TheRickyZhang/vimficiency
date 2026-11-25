@@ -1,5 +1,5 @@
 local helpers = require("_helpers")
-local settings_window = require("vimficiency.settings_window")
+local settings_window = require("vimficiency.settings.window")
 
 
 local function open_widget(rows, opts)

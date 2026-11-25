@@ -167,7 +167,6 @@ if(VIMF_WASM)
     src/Keyboard/Config.cpp
     src/Keyboard/PhysicalKeys.cpp
     src/Keyboard/ToKeys/CharToKeys.cpp
-    src/Keyboard/ToKeys/CommandToKeys.cpp
     src/Keyboard/ToKeys/CountToKeys.cpp
     src/Keyboard/ToKeys/MovementToKeys.cpp
     src/Keyboard/ToKeys/SequenceToKeys.cpp
@@ -267,11 +266,11 @@ FetchContent_MakeAvailable(fast_float)
 file(GLOB_RECURSE VIMFY_CORE_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
 )
-list(FILTER VIMFY_CORE_SOURCES EXCLUDE REGEX [[/src/(LuaExports/|Wasm/|lua_exports\.cpp$|main\.cpp$)]])
+list(FILTER VIMFY_CORE_SOURCES EXCLUDE REGEX [[/src/(LuaExports/|Journal/|Stats/|Wasm/|lua_exports\.cpp$|main\.cpp$)]])
 file(GLOB_RECURSE VIMFY_CORE_MODULES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm
 )
-list(FILTER VIMFY_CORE_MODULES EXCLUDE REGEX [[/src/(LuaExports/|Wasm/)]])
+list(FILTER VIMFY_CORE_MODULES EXCLUDE REGEX [[/src/(LuaExports/|Journal/|Stats/|Wasm/)]])
 
 add_library(vimfy_core STATIC ${VIMFY_CORE_SOURCES})
 target_sources(vimfy_core PUBLIC
@@ -402,6 +401,7 @@ file(GLOB VIMFY_LUA_COMMON_MODULES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LuaExports/*.cppm
 )
 add_library(vimfy_lua_common STATIC
+    src/LuaExports/ConfigState.cpp
     src/LuaExports/Envelope.cpp
     src/LuaExports/Logic.cpp
 )
@@ -410,6 +410,21 @@ target_sources(vimfy_lua_common PUBLIC
 )
 vimfy_enable_modules(vimfy_lua_common)
 target_link_libraries(vimfy_lua_common PUBLIC vimfy_core vimfy_proto)
+
+# `:Vimfy stats` (src/Stats/): the session log and the reduction of it and the
+# journal samples. Outside vimfy_core because it reads protobuf files.
+file(GLOB VIMFY_STATS_MODULES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Stats/*.cppm
+)
+file(GLOB VIMFY_STATS_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Stats/*.cpp
+)
+add_library(vimfy_stats_lib STATIC ${VIMFY_STATS_SOURCES})
+target_sources(vimfy_stats_lib PUBLIC
+    FILE_SET CXX_MODULES BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src FILES ${VIMFY_STATS_MODULES}
+)
+vimfy_enable_modules(vimfy_stats_lib)
+target_link_libraries(vimfy_stats_lib PUBLIC vimfy_lua_common)
 
 # SHARED library for Neovim/Lua direct usage
 file(GLOB VIMFY_LUA_EXPORT_SOURCES CONFIGURE_DEPENDS
@@ -421,7 +436,7 @@ add_library(vimficiency SHARED
     ${VIMFY_LUA_EXPORT_SOURCES}
 )
 vimfy_enable_modules(vimficiency)
-target_link_libraries(vimficiency PRIVATE vimfy_lua_common)
+target_link_libraries(vimficiency PRIVATE vimfy_lua_common vimfy_stats_lib vimfy_journal_lib)
 
 # Lua has no protobuf decoder, so starwing/lua-protobuf's C module ships inside
 # the shared library and ffi/core.lua opens it with package.loadlib. Only the
@@ -448,6 +463,29 @@ target_sources(vimficiency PRIVATE $<TARGET_OBJECTS:vimfy_pb>)
 if(APPLE)
   target_link_options(vimficiency PRIVATE LINKER:-undefined,dynamic_lookup)
 endif()
+
+# Journal sampling (src/Journal/): replays capture journals and scores windows
+# of them. Outside vimfy_core because it reads the protobuf journal and applies
+# the editor's config. `:Vimfy stats` runs the executable, so scripts/install.sh
+# builds it alongside the shared library, which links the library to cut a
+# journal run again (`vf_stats_run`).
+file(GLOB VIMFY_JOURNAL_MODULES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Journal/*.cppm
+)
+file(GLOB VIMFY_JOURNAL_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Journal/*.cpp
+)
+list(FILTER VIMFY_JOURNAL_SOURCES EXCLUDE REGEX [[/main\.cpp$]])
+add_library(vimfy_journal_lib STATIC ${VIMFY_JOURNAL_SOURCES})
+target_sources(vimfy_journal_lib PUBLIC
+    FILE_SET CXX_MODULES BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src FILES ${VIMFY_JOURNAL_MODULES}
+)
+vimfy_enable_modules(vimfy_journal_lib)
+target_link_libraries(vimfy_journal_lib PUBLIC vimfy_lua_common vimfy_stats_lib)
+
+add_executable(vimfy_journal src/Journal/main.cpp)
+vimfy_enable_modules(vimfy_journal)
+target_link_libraries(vimfy_journal PRIVATE vimfy_journal_lib)
 
 # CLI for independent testing
 add_executable(vimficiency_cli src/main.cpp)

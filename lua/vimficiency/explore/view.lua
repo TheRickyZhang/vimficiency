@@ -32,7 +32,7 @@ local v = vim.api
 ---@field restoring (true|{context: string})|nil
 ---@field plan_reconfigure_pending boolean|nil
 ---@field header_handlers table<string, function>
----@field winclosed_autocmd integer|nil
+---@field augroup integer|nil
 ---@field poll_handle VF.Async.PollHandle|nil
 ---@field last_recommend_ms number|nil
 

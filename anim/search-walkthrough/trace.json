@@ -268,904 +268,567 @@
   0,
   0
  ],
- "navCalls": [
-  {
-   "beginLine": 0,
-   "fromNode": 0,
-   "goalFirst": [
-    2,
-    0
-   ],
-   "goalLast": [
-    2,
-    30
-   ],
-   "lines": [
-    "int main() {",
-    "  int x = 0;",
-    "  for(int i = 0; i < 10; i++) {",
-    "    int a = bar(i);"
-   ],
-   "nodes": 3,
-   "pops": [
-    {
-     "g": 0.0,
-     "pos": [
-      0,
-      0
-     ],
-     "seq": {
-      "pretty": "",
-      "raw": ""
-     }
-    },
-    {
-     "g": 1.0,
-     "pos": [
-      1,
-      0
-     ],
-     "seq": {
-      "pretty": "j",
-      "raw": "j"
-     }
+ "navZoom": {
+  "beginLine": 2,
+  "fromNode": 4,
+  "goalFirst": [
+   7,
+   6
+  ],
+  "goalLast": [
+   7,
+   6
+  ],
+  "lines": [
+   "  int n = 10;",
+   "  for(int i = 0; i < n; i++) {",
+   "    int a = bar(i);",
+   "    int b = baz(a);",
+   "    int c = qux(b);",
+   "    int d = quux(c);",
+   "    int e = corge(d);",
+   "    x += a + b + c + d + e;",
+   "  }"
+  ],
+  "nodes": 48,
+  "pops": [
+   {
+    "g": 0.0,
+    "pos": [
+     1,
+     21
+    ],
+    "seq": {
+     "pretty": "",
+     "raw": ""
     }
-   ],
-   "purpose": "insert:I",
-   "results": [
-    {
-     "cost": 2.0,
-     "landing": [
-      2,
-      0
-     ],
-     "seq": {
-      "pretty": "jj",
-      "raw": "jj"
-     }
+   },
+   {
+    "g": 1.0,
+    "pos": [
+     1,
+     2
+    ],
+    "seq": {
+     "pretty": "^",
+     "raw": "^"
     }
-   ],
-   "start": [
-    0,
-    0
-   ]
-  },
-  {
-   "beginLine": 0,
-   "fromNode": 0,
-   "goalFirst": [
-    2,
-    2
-   ],
-   "goalLast": [
-    2,
-    2
-   ],
-   "lines": [
-    "int main() {",
-    "  int x = 0;",
-    "  for(int i = 0; i < 10; i++) {",
-    "    int a = bar(i);"
-   ],
-   "nodes": 6,
-   "pops": [
-    {
-     "g": 0.0,
-     "pos": [
-      0,
-      0
-     ],
-     "seq": {
-      "pretty": "",
-      "raw": ""
-     }
-    },
-    {
-     "g": 1.0,
-     "pos": [
-      0,
-      2
-     ],
-     "seq": {
-      "pretty": "e",
-      "raw": "e"
-     }
-    },
-    {
-     "g": 1.0,
-     "pos": [
-      0,
-      2
-     ],
-     "seq": {
-      "pretty": "E",
-      "raw": "E"
-     }
-    },
-    {
-     "g": 2.0,
-     "pos": [
-      1,
-      2
-     ],
-     "seq": {
-      "pretty": "ej",
-      "raw": "ej"
-     }
-    },
-    {
-     "g": 2.0,
-     "pos": [
-      1,
-      2
-     ],
-     "seq": {
-      "pretty": "Ej",
-      "raw": "Ej"
-     }
+   },
+   {
+    "g": 2.0,
+    "pos": [
+     1,
+     5
+    ],
+    "seq": {
+     "pretty": "^w",
+     "raw": "^w"
     }
-   ],
-   "purpose": "insert:i",
-   "results": [
-    {
-     "cost": 3.0,
-     "landing": [
-      2,
-      2
-     ],
-     "seq": {
-      "pretty": "ejj",
-      "raw": "ejj"
-     }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     1,
+     6
+    ],
+    "seq": {
+     "pretty": "^wl",
+     "raw": "^wl"
     }
-   ],
-   "start": [
-    0,
-    0
-   ]
-  },
-  {
-   "beginLine": 2,
-   "fromNode": 1,
-   "goalFirst": [
-    1,
-    21
-   ],
-   "goalLast": [
-    1,
-    22
-   ],
-   "lines": [
-    "  int n = 10;",
-    "  for(int i = 0; i < 10; i++) {",
-    "    int a = bar(i);"
-   ],
-   "nodes": 3,
-   "pops": [
-    {
-     "g": 0.0,
-     "pos": [
-      1,
-      1
-     ],
-     "seq": {
-      "pretty": "",
-      "raw": ""
-     }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     1,
+     6
+    ],
+    "seq": {
+     "pretty": "^ww",
+     "raw": "^ww"
     }
-   ],
-   "purpose": "inter-edit",
-   "results": [
-    {
-     "cost": 3.0,
-     "landing": [
-      1,
-      22
-     ],
-     "seq": {
-      "pretty": "f0;",
-      "raw": "f0;"
-     }
-    },
-    {
-     "cost": 2.0,
-     "landing": [
-      1,
-      21
-     ],
-     "seq": {
-      "pretty": "f1",
-      "raw": "f1"
-     }
+   },
+   {
+    "g": 2.0,
+    "pos": [
+     1,
+     4
+    ],
+    "seq": {
+     "pretty": "^e",
+     "raw": "^e"
     }
-   ],
-   "start": [
-    1,
-    1
-   ]
-  },
-  {
-   "beginLine": 2,
-   "fromNode": 4,
-   "goalFirst": [
-    7,
-    6
-   ],
-   "goalLast": [
-    7,
-    6
-   ],
-   "lines": [
-    "  int n = 10;",
-    "  for(int i = 0; i < n; i++) {",
-    "    int a = bar(i);",
-    "    int b = baz(a);",
-    "    int c = qux(b);",
-    "    int d = quux(c);",
-    "    int e = corge(d);",
-    "    x += a + b + c + d + e;",
-    "  }"
-   ],
-   "nodes": 48,
-   "pops": [
-    {
-     "g": 0.0,
-     "pos": [
-      1,
-      21
-     ],
-     "seq": {
-      "pretty": "",
-      "raw": ""
-     }
-    },
-    {
-     "g": 1.0,
-     "pos": [
-      1,
-      2
-     ],
-     "seq": {
-      "pretty": "^",
-      "raw": "^"
-     }
-    },
-    {
-     "g": 2.0,
-     "pos": [
-      1,
-      5
-     ],
-     "seq": {
-      "pretty": "^w",
-      "raw": "^w"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      1,
-      6
-     ],
-     "seq": {
-      "pretty": "^wl",
-      "raw": "^wl"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      1,
-      6
-     ],
-     "seq": {
-      "pretty": "^ww",
-      "raw": "^ww"
-     }
-    },
-    {
-     "g": 2.0,
-     "pos": [
-      1,
-      4
-     ],
-     "seq": {
-      "pretty": "^e",
-      "raw": "^e"
-     }
-    },
-    {
-     "g": 2.0,
-     "pos": [
-      1,
-      8
-     ],
-     "seq": {
-      "pretty": "^E",
-      "raw": "^E"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      1,
-      6
-     ],
-     "seq": {
-      "pretty": "^Eb",
-      "raw": "^Eb"
-     }
-    },
-    {
-     "g": 1.0,
-     "pos": [
-      1,
-      0
-     ],
-     "seq": {
-      "pretty": "0",
-      "raw": "0"
-     }
-    },
-    {
-     "g": 2.0,
-     "pos": [
-      1,
-      4
-     ],
-     "seq": {
-      "pretty": "0e",
-      "raw": "0e"
-     }
-    },
-    {
-     "g": 2.0,
-     "pos": [
-      1,
-      8
-     ],
-     "seq": {
-      "pretty": "0E",
-      "raw": "0E"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      1,
-      6
-     ],
-     "seq": {
-      "pretty": "0Eb",
-      "raw": "0Eb"
-     }
-    },
-    {
-     "g": 2.0,
-     "pos": [
-      1,
-      3
-     ],
-     "seq": {
-      "pretty": "^l",
-      "raw": "^l"
-     }
-    },
-    {
-     "g": 4.0,
-     "pos": [
-      2,
-      6
-     ],
-     "seq": {
-      "pretty": "^wlj",
-      "raw": "^wlj"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      5
-     ],
-     "seq": {
-      "pretty": "^wj",
-      "raw": "^wj"
-     }
-    },
-    {
-     "g": 4.0,
-     "pos": [
-      2,
-      6
-     ],
-     "seq": {
-      "pretty": "^Ebj",
-      "raw": "^Ebj"
-     }
-    },
-    {
-     "g": 2.0,
-     "pos": [
-      2,
-      2
-     ],
-     "seq": {
-      "pretty": "^j",
-      "raw": "^j"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      6
-     ],
-     "seq": {
-      "pretty": "^je",
-      "raw": "^je"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      6
-     ],
-     "seq": {
-      "pretty": "^jE",
-      "raw": "^jE"
-     }
-    },
-    {
-     "g": 4.0,
-     "pos": [
-      3,
-      6
-     ],
-     "seq": {
-      "pretty": "^jej",
-      "raw": "^jej"
-     }
-    },
-    {
-     "g": 4.0,
-     "pos": [
-      3,
-      6
-     ],
-     "seq": {
-      "pretty": "^jEj",
-      "raw": "^jEj"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      1,
-      7
-     ],
-     "seq": {
-      "pretty": "0Eh",
-      "raw": "0Eh"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      1,
-      7
-     ],
-     "seq": {
-      "pretty": "^Eh",
-      "raw": "^Eh"
-     }
-    },
-    {
-     "g": 2.0,
-     "pos": [
-      1,
-      10
-     ],
-     "seq": {
-      "pretty": "^W",
-      "raw": "^W"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      1,
-      6
-     ],
-     "seq": {
-      "pretty": "^Wb",
-      "raw": "^Wb"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      4
-     ],
-     "seq": {
-      "pretty": "0ej",
-      "raw": "0ej"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      8
-     ],
-     "seq": {
-      "pretty": "0Ej",
-      "raw": "0Ej"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      8
-     ],
-     "seq": {
-      "pretty": "^Ej",
-      "raw": "^Ej"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      4
-     ],
-     "seq": {
-      "pretty": "^jW",
-      "raw": "^jW"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      4
-     ],
-     "seq": {
-      "pretty": "^j^",
-      "raw": "^j^"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      4
-     ],
-     "seq": {
-      "pretty": "^jw",
-      "raw": "^jw"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      4
-     ],
-     "seq": {
-      "pretty": "^ej",
-      "raw": "^ej"
-     }
-    },
-    {
-     "g": 2.0,
-     "pos": [
-      2,
-      0
-     ],
-     "seq": {
-      "pretty": "0j",
-      "raw": "0j"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      6
-     ],
-     "seq": {
-      "pretty": "0je",
-      "raw": "0je"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      6
-     ],
-     "seq": {
-      "pretty": "0jE",
-      "raw": "0jE"
-     }
-    },
-    {
-     "g": 4.0,
-     "pos": [
-      3,
-      6
-     ],
-     "seq": {
-      "pretty": "0jej",
-      "raw": "0jej"
-     }
-    },
-    {
-     "g": 4.0,
-     "pos": [
-      3,
-      6
-     ],
-     "seq": {
-      "pretty": "0jEj",
-      "raw": "0jEj"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      4
-     ],
-     "seq": {
-      "pretty": "0j^",
-      "raw": "0j^"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      4
-     ],
-     "seq": {
-      "pretty": "0jw",
-      "raw": "0jw"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      4
-     ],
-     "seq": {
-      "pretty": "0jW",
-      "raw": "0jW"
-     }
-    },
-    {
-     "g": 2.0,
-     "pos": [
-      1,
-      1
-     ],
-     "seq": {
-      "pretty": "0l",
-      "raw": "0l"
-     }
-    },
-    {
-     "g": 5.0,
-     "pos": [
-      4,
-      6
-     ],
-     "seq": {
-      "pretty": "0jejj",
-      "raw": "0jejj"
-     }
-    },
-    {
-     "g": 5.0,
-     "pos": [
-      4,
-      6
-     ],
-     "seq": {
-      "pretty": "^jEjj",
-      "raw": "^jEjj"
-     }
-    },
-    {
-     "g": 5.0,
-     "pos": [
-      4,
-      6
-     ],
-     "seq": {
-      "pretty": "^jejj",
-      "raw": "^jejj"
-     }
-    },
-    {
-     "g": 5.0,
-     "pos": [
-      4,
-      6
-     ],
-     "seq": {
-      "pretty": "0jEjj",
-      "raw": "0jEjj"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      3
-     ],
-     "seq": {
-      "pretty": "^jl",
-      "raw": "^jl"
-     }
-    },
-    {
-     "g": 3.0,
-     "pos": [
-      2,
-      3
-     ],
-     "seq": {
-      "pretty": "^lj",
-      "raw": "^lj"
-     }
+   },
+   {
+    "g": 2.0,
+    "pos": [
+     1,
+     8
+    ],
+    "seq": {
+     "pretty": "^E",
+     "raw": "^E"
     }
-   ],
-   "purpose": "inter-edit",
-   "results": [
-    {
-     "cost": 7.0,
-     "landing": [
-      7,
-      6
-     ],
-     "seq": {
-      "pretty": "0jE5j",
-      "raw": "0jE5j"
-     }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     1,
+     6
+    ],
+    "seq": {
+     "pretty": "^Eb",
+     "raw": "^Eb"
     }
-   ],
-   "start": [
-    1,
-    21
-   ]
-  },
-  {
-   "beginLine": 8,
-   "fromNode": 6,
-   "goalFirst": [
-    1,
-    8
-   ],
-   "goalLast": [
-    1,
-    8
-   ],
-   "lines": [
-    "    int e = corge(d);",
-    "    x -= a + b + c + d + e;",
-    "  }"
-   ],
-   "nodes": 4,
-   "pops": [
-    {
-     "g": 0.0,
-     "pos": [
-      1,
-      6
-     ],
-     "seq": {
-      "pretty": "",
-      "raw": ""
-     }
-    },
-    {
-     "g": 1.0,
-     "pos": [
-      1,
-      7
-     ],
-     "seq": {
-      "pretty": "l",
-      "raw": "l"
-     }
-    },
-    {
-     "g": 1.0,
-     "pos": [
-      1,
-      9
-     ],
-     "seq": {
-      "pretty": "w",
-      "raw": "w"
-     }
+   },
+   {
+    "g": 1.0,
+    "pos": [
+     1,
+     0
+    ],
+    "seq": {
+     "pretty": "0",
+     "raw": "0"
     }
-   ],
-   "purpose": "inter-edit",
-   "results": [
-    {
-     "cost": 2.0,
-     "landing": [
-      1,
-      8
-     ],
-     "seq": {
-      "pretty": "f<Space>",
-      "raw": "f<Space>"
-     }
+   },
+   {
+    "g": 2.0,
+    "pos": [
+     1,
+     4
+    ],
+    "seq": {
+     "pretty": "0e",
+     "raw": "0e"
     }
-   ],
-   "start": [
-    1,
-    6
-   ]
-  },
-  {
-   "beginLine": 8,
-   "fromNode": 8,
-   "goalFirst": [
-    1,
-    30
-   ],
-   "goalLast": [
-    1,
-    30
-   ],
-   "lines": [
-    "    int e = corge(d);",
-    "    x -= foo(a + b + c + d + e;",
-    "  }"
-   ],
-   "nodes": 2,
-   "pops": [
-    {
-     "g": 0.0,
-     "pos": [
-      1,
-      12
-     ],
-     "seq": {
-      "pretty": "",
-      "raw": ""
-     }
+   },
+   {
+    "g": 2.0,
+    "pos": [
+     1,
+     8
+    ],
+    "seq": {
+     "pretty": "0E",
+     "raw": "0E"
     }
-   ],
-   "purpose": "insert:i",
-   "results": [
-    {
-     "cost": 1.0,
-     "landing": [
-      1,
-      30
-     ],
-     "seq": {
-      "pretty": "$",
-      "raw": "$"
-     }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     1,
+     6
+    ],
+    "seq": {
+     "pretty": "0Eb",
+     "raw": "0Eb"
     }
-   ],
-   "start": [
-    1,
-    12
-   ]
-  }
- ],
+   },
+   {
+    "g": 2.0,
+    "pos": [
+     1,
+     3
+    ],
+    "seq": {
+     "pretty": "^l",
+     "raw": "^l"
+    }
+   },
+   {
+    "g": 4.0,
+    "pos": [
+     2,
+     6
+    ],
+    "seq": {
+     "pretty": "^wlj",
+     "raw": "^wlj"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     5
+    ],
+    "seq": {
+     "pretty": "^wj",
+     "raw": "^wj"
+    }
+   },
+   {
+    "g": 4.0,
+    "pos": [
+     2,
+     6
+    ],
+    "seq": {
+     "pretty": "^Ebj",
+     "raw": "^Ebj"
+    }
+   },
+   {
+    "g": 2.0,
+    "pos": [
+     2,
+     2
+    ],
+    "seq": {
+     "pretty": "^j",
+     "raw": "^j"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     6
+    ],
+    "seq": {
+     "pretty": "^je",
+     "raw": "^je"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     6
+    ],
+    "seq": {
+     "pretty": "^jE",
+     "raw": "^jE"
+    }
+   },
+   {
+    "g": 4.0,
+    "pos": [
+     3,
+     6
+    ],
+    "seq": {
+     "pretty": "^jej",
+     "raw": "^jej"
+    }
+   },
+   {
+    "g": 4.0,
+    "pos": [
+     3,
+     6
+    ],
+    "seq": {
+     "pretty": "^jEj",
+     "raw": "^jEj"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     1,
+     7
+    ],
+    "seq": {
+     "pretty": "0Eh",
+     "raw": "0Eh"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     1,
+     7
+    ],
+    "seq": {
+     "pretty": "^Eh",
+     "raw": "^Eh"
+    }
+   },
+   {
+    "g": 2.0,
+    "pos": [
+     1,
+     10
+    ],
+    "seq": {
+     "pretty": "^W",
+     "raw": "^W"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     1,
+     6
+    ],
+    "seq": {
+     "pretty": "^Wb",
+     "raw": "^Wb"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     4
+    ],
+    "seq": {
+     "pretty": "0ej",
+     "raw": "0ej"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     8
+    ],
+    "seq": {
+     "pretty": "0Ej",
+     "raw": "0Ej"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     8
+    ],
+    "seq": {
+     "pretty": "^Ej",
+     "raw": "^Ej"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     4
+    ],
+    "seq": {
+     "pretty": "^jW",
+     "raw": "^jW"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     4
+    ],
+    "seq": {
+     "pretty": "^j^",
+     "raw": "^j^"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     4
+    ],
+    "seq": {
+     "pretty": "^jw",
+     "raw": "^jw"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     4
+    ],
+    "seq": {
+     "pretty": "^ej",
+     "raw": "^ej"
+    }
+   },
+   {
+    "g": 2.0,
+    "pos": [
+     2,
+     0
+    ],
+    "seq": {
+     "pretty": "0j",
+     "raw": "0j"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     6
+    ],
+    "seq": {
+     "pretty": "0je",
+     "raw": "0je"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     6
+    ],
+    "seq": {
+     "pretty": "0jE",
+     "raw": "0jE"
+    }
+   },
+   {
+    "g": 4.0,
+    "pos": [
+     3,
+     6
+    ],
+    "seq": {
+     "pretty": "0jej",
+     "raw": "0jej"
+    }
+   },
+   {
+    "g": 4.0,
+    "pos": [
+     3,
+     6
+    ],
+    "seq": {
+     "pretty": "0jEj",
+     "raw": "0jEj"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     4
+    ],
+    "seq": {
+     "pretty": "0j^",
+     "raw": "0j^"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     4
+    ],
+    "seq": {
+     "pretty": "0jw",
+     "raw": "0jw"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     4
+    ],
+    "seq": {
+     "pretty": "0jW",
+     "raw": "0jW"
+    }
+   },
+   {
+    "g": 2.0,
+    "pos": [
+     1,
+     1
+    ],
+    "seq": {
+     "pretty": "0l",
+     "raw": "0l"
+    }
+   },
+   {
+    "g": 5.0,
+    "pos": [
+     4,
+     6
+    ],
+    "seq": {
+     "pretty": "0jejj",
+     "raw": "0jejj"
+    }
+   },
+   {
+    "g": 5.0,
+    "pos": [
+     4,
+     6
+    ],
+    "seq": {
+     "pretty": "^jEjj",
+     "raw": "^jEjj"
+    }
+   },
+   {
+    "g": 5.0,
+    "pos": [
+     4,
+     6
+    ],
+    "seq": {
+     "pretty": "^jejj",
+     "raw": "^jejj"
+    }
+   },
+   {
+    "g": 5.0,
+    "pos": [
+     4,
+     6
+    ],
+    "seq": {
+     "pretty": "0jEjj",
+     "raw": "0jEjj"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     3
+    ],
+    "seq": {
+     "pretty": "^jl",
+     "raw": "^jl"
+    }
+   },
+   {
+    "g": 3.0,
+    "pos": [
+     2,
+     3
+    ],
+    "seq": {
+     "pretty": "^lj",
+     "raw": "^lj"
+    }
+   }
+  ],
+  "purpose": "inter-edit",
+  "results": [
+   {
+    "cost": 7.0,
+    "landing": [
+     7,
+     6
+    ],
+    "seq": {
+     "pretty": "0jE5j",
+     "raw": "0jE5j"
+    }
+   }
+  ],
+  "start": [
+   1,
+   21
+  ]
+ },
  "nodes": [
   {
    "children": [
@@ -1175,7 +838,6 @@
      "f": 41.47213595499958,
      "g": 19.0,
      "kind": "insert",
-     "navCall": 0,
      "nodeId": 1,
      "pos": [
       3,
@@ -1194,7 +856,6 @@
      "f": 42.47213595499958,
      "g": 20.0,
      "kind": "insert",
-     "navCall": 1,
      "pos": [
       3,
       1
@@ -1233,7 +894,6 @@
      "f": 40.0,
      "g": 22.0,
      "kind": "nav",
-     "navCall": 2,
      "nodeId": 3,
      "pos": [
       3,
@@ -1251,7 +911,6 @@
      "f": 39.0,
      "g": 21.0,
      "kind": "nav",
-     "navCall": 2,
      "nodeId": 2,
      "pos": [
       3,
@@ -1370,7 +1029,6 @@
      "f": 42.0,
      "g": 30.0,
      "kind": "nav",
-     "navCall": 3,
      "nodeId": 5,
      "pos": [
       9,
@@ -1467,7 +1125,6 @@
      "f": 44.0,
      "g": 34.0,
      "kind": "nav",
-     "navCall": 4,
      "nodeId": 7,
      "pos": [
       9,
@@ -1548,7 +1205,6 @@
      "f": 45.0,
      "g": 45.0,
      "kind": "insert",
-     "navCall": 5,
      "pos": [
       9,
       30
@@ -1710,371 +1366,184 @@
   3.0,
   0.0
  ],
- "transformZooms": [
-  {
-   "editIdx": 1,
-   "effectiveLines": [
-    "  for(int i = 0; i < 10; i++) {"
-   ],
-   "goalPos": [
-    3,
-    21
-   ],
-   "leftColOffset": 21,
-   "pops": [
-    {
-     "cursor": [
-      0,
-      21
-     ],
-     "g": 0.0,
-     "lines": [
-      "  for(int i = 0; i < 10; i++) {"
-     ],
-     "mode": "n",
-     "pos": [
-      0,
-      21
-     ],
-     "reachedGoal": false,
-     "seq": {
-      "pretty": "",
-      "raw": ""
-     },
-     "start": [
-      0,
-      21
-     ]
+ "transformZoom": {
+  "editIdx": 1,
+  "effectiveLines": [
+   "  for(int i = 0; i < 10; i++) {"
+  ],
+  "goalPos": [
+   3,
+   21
+  ],
+  "leftColOffset": 21,
+  "pops": [
+   {
+    "cursor": [
+     0,
+     21
+    ],
+    "g": 0.0,
+    "lines": [
+     "  for(int i = 0; i < 10; i++) {"
+    ],
+    "mode": "n",
+    "pos": [
+     0,
+     21
+    ],
+    "reachedGoal": false,
+    "seq": {
+     "pretty": "",
+     "raw": ""
     },
-    {
-     "cursor": [
-      0,
-      21
-     ],
-     "g": 1.0,
-     "lines": [
-      "  for(int i = 0; i < 0; i++) {"
-     ],
-     "mode": "n",
-     "pos": [
-      0,
-      21
-     ],
-     "reachedGoal": false,
-     "seq": {
-      "pretty": "x",
-      "raw": "x"
-     },
-     "start": [
-      0,
-      21
-     ]
+    "start": [
+     0,
+     21
+    ]
+   },
+   {
+    "cursor": [
+     0,
+     21
+    ],
+    "g": 1.0,
+    "lines": [
+     "  for(int i = 0; i < 0; i++) {"
+    ],
+    "mode": "n",
+    "pos": [
+     0,
+     21
+    ],
+    "reachedGoal": false,
+    "seq": {
+     "pretty": "x",
+     "raw": "x"
     },
-    {
-     "cursor": [
-      0,
-      22
-     ],
-     "g": 0.0,
-     "lines": [
-      "  for(int i = 0; i < 10; i++) {"
-     ],
-     "mode": "n",
-     "pos": [
-      0,
-      22
-     ],
-     "reachedGoal": false,
-     "seq": {
-      "pretty": "",
-      "raw": ""
-     },
-     "start": [
-      0,
-      22
-     ]
+    "start": [
+     0,
+     21
+    ]
+   },
+   {
+    "cursor": [
+     0,
+     22
+    ],
+    "g": 0.0,
+    "lines": [
+     "  for(int i = 0; i < 10; i++) {"
+    ],
+    "mode": "n",
+    "pos": [
+     0,
+     22
+    ],
+    "reachedGoal": false,
+    "seq": {
+     "pretty": "",
+     "raw": ""
     },
-    {
-     "cursor": [
-      0,
-      21
-     ],
-     "g": 1.0,
-     "lines": [
-      "  for(int i = 0; i < 0; i++) {"
-     ],
-     "mode": "n",
-     "pos": [
-      0,
-      21
-     ],
-     "reachedGoal": false,
-     "seq": {
-      "pretty": "X",
-      "raw": "X"
-     },
-     "start": [
-      0,
-      22
-     ]
+    "start": [
+     0,
+     22
+    ]
+   },
+   {
+    "cursor": [
+     0,
+     21
+    ],
+    "g": 1.0,
+    "lines": [
+     "  for(int i = 0; i < 0; i++) {"
+    ],
+    "mode": "n",
+    "pos": [
+     0,
+     21
+    ],
+    "reachedGoal": false,
+    "seq": {
+     "pretty": "X",
+     "raw": "X"
     },
-    {
-     "cursor": [
-      0,
-      21
-     ],
-     "g": 4.0,
-     "lines": [
-      "  for(int i = 0; i < n; i++) {"
-     ],
-     "mode": "n",
-     "pos": [
-      0,
-      21
-     ],
-     "reachedGoal": true,
-     "seq": {
-      "pretty": "cen<Esc>",
-      "raw": "cen<Esc>"
-     },
-     "start": [
-      0,
-      21
-     ]
-    }
-   ],
-   "rightColOffset": 8,
-   "starts": [
-    {
-     "pos": [
-      3,
-      21
-     ],
-     "results": [
-      {
-       "cost": 4.0,
-       "goal": [
-        3,
-        21
-       ],
-       "seq": {
-        "pretty": "cen<Esc>",
-        "raw": "cen<Esc>"
-       }
-      }
-     ]
+    "start": [
+     0,
+     22
+    ]
+   },
+   {
+    "cursor": [
+     0,
+     21
+    ],
+    "g": 4.0,
+    "lines": [
+     "  for(int i = 0; i < n; i++) {"
+    ],
+    "mode": "n",
+    "pos": [
+     0,
+     21
+    ],
+    "reachedGoal": true,
+    "seq": {
+     "pretty": "cen<Esc>",
+     "raw": "cen<Esc>"
     },
-    {
-     "pos": [
-      3,
-      22
-     ],
-     "results": [
-      {
-       "cost": 6.0,
-       "goal": [
-        3,
-        21
-       ],
-       "seq": {
-        "pretty": "Xciwn<Esc>",
-        "raw": "Xciwn<Esc>"
-       }
-      }
-     ]
-    }
-   ],
-   "stats": {
-    "nodes": 5,
-    "pops": 7
+    "start": [
+     0,
+     21
+    ]
    }
-  },
-  {
-   "editIdx": 2,
-   "effectiveLines": [
-    "    x += a + b + c + d + e;"
-   ],
-   "goalPos": [
-    9,
-    6
-   ],
-   "leftColOffset": 6,
-   "pops": [
-    {
-     "cursor": [
-      0,
-      6
-     ],
-     "g": 0.0,
-     "lines": [
-      "    x += a + b + c + d + e;"
-     ],
-     "mode": "n",
-     "pos": [
-      0,
-      6
-     ],
-     "reachedGoal": false,
-     "seq": {
-      "pretty": "",
-      "raw": ""
-     },
-     "start": [
-      0,
-      6
-     ]
-    },
-    {
-     "cursor": [
-      0,
-      6
-     ],
-     "g": 3.0,
-     "lines": [
-      "    x -= a + b + c + d + e;"
-     ],
-     "mode": "n",
-     "pos": [
-      0,
-      6
-     ],
-     "reachedGoal": true,
-     "seq": {
-      "pretty": "s-<Esc>",
-      "raw": "s-<Esc>"
-     },
-     "start": [
-      0,
-      6
-     ]
-    }
-   ],
-   "rightColOffset": 20,
-   "starts": [
-    {
-     "pos": [
-      9,
-      6
-     ],
-     "results": [
-      {
-       "cost": 2.0,
-       "goal": [
-        9,
-        6
-       ],
-       "seq": {
-        "pretty": "r-",
-        "raw": "r-"
-       }
-      },
-      {
-       "cost": 3.0,
-       "goal": [
-        9,
-        6
-       ],
-       "seq": {
-        "pretty": "s-<Esc>",
-        "raw": "s-<Esc>"
-       }
+  ],
+  "rightColOffset": 8,
+  "starts": [
+   {
+    "pos": [
+     3,
+     21
+    ],
+    "results": [
+     {
+      "cost": 4.0,
+      "goal": [
+       3,
+       21
+      ],
+      "seq": {
+       "pretty": "cen<Esc>",
+       "raw": "cen<Esc>"
       }
-     ]
-    }
-   ],
-   "stats": {
-    "nodes": 2,
-    "pops": 2
-   }
-  },
-  {
-   "editIdx": 3,
-   "effectiveLines": [
-    "    x -= a + b + c + d + e;"
-   ],
-   "goalPos": [
-    9,
-    12
-   ],
-   "leftColOffset": 8,
-   "pops": [
-    {
-     "cursor": [
-      0,
-      8
-     ],
-     "g": 0.0,
-     "lines": [
-      "    x -= a + b + c + d + e;"
-     ],
-     "mode": "n",
-     "pos": [
-      0,
-      8
-     ],
-     "reachedGoal": false,
-     "seq": {
-      "pretty": "",
-      "raw": ""
-     },
-     "start": [
-      0,
-      8
-     ]
-    },
-    {
-     "cursor": [
-      0,
-      12
-     ],
-     "g": 7.0,
-     "lines": [
-      "    x -= foo(a + b + c + d + e;"
-     ],
-     "mode": "n",
-     "pos": [
-      0,
-      8
-     ],
-     "reachedGoal": true,
-     "seq": {
-      "pretty": "s<Space>foo(<Esc>",
-      "raw": "s<Space>foo(<Esc>"
-     },
-     "start": [
-      0,
-      8
-     ]
-    }
-   ],
-   "rightColOffset": 18,
-   "starts": [
-    {
-     "pos": [
-      9,
-      8
-     ],
-     "results": [
-      {
-       "cost": 7.0,
-       "goal": [
-        9,
-        12
-       ],
-       "seq": {
-        "pretty": "s<Space>foo(<Esc>",
-        "raw": "s<Space>foo(<Esc>"
-       }
+     }
+    ]
+   },
+   {
+    "pos": [
+     3,
+     22
+    ],
+    "results": [
+     {
+      "cost": 6.0,
+      "goal": [
+       3,
+       21
+      ],
+      "seq": {
+       "pretty": "Xciwn<Esc>",
+       "raw": "Xciwn<Esc>"
       }
-     ]
-    }
-   ],
-   "stats": {
-    "nodes": 2,
-    "pops": 2
+     }
+    ]
    }
+  ],
+  "stats": {
+   "nodes": 5,
+   "pops": 7
   }
- ],
+ },
  "weights": {
   "distance": 1.0,
   "effort": 1.0,

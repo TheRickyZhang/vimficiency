@@ -14,6 +14,17 @@ test("is_mouse: true for clicks, drags, releases, wheel, move", function()
   end
 end)
 
+test("has_callback: true for a Lua function ref or a <Cmd> inside the keys", function()
+  assert_true(keynorm.has_callback("d\128\253g538\ne"), "Lua callback motion")
+  assert_true(keynorm.has_callback("c" .. vim.keycode("<Cmd>") .. "lua f()\nzz\27"), "<Cmd> text object")
+end)
+
+test("has_callback: false for plain and special keys", function()
+  for _, raw in ipairs({ "dw", "ciwfoo\27", vim.keycode("i<Right><BS><Esc>"), vim.keycode("<C-d>"), "" }) do
+    assert_true(not keynorm.has_callback(raw), "expected plain keys: " .. vim.fn.keytrans(raw))
+  end
+end)
+
 test("is_mouse: false for keyboard tokens", function()
   for _, tok in ipairs({ "a", "M", "<BS>", "<Esc>", "<C-d>", "<C-u>", "w", "" }) do
     assert_true(not keynorm.is_mouse(tok), "expected non-mouse: " .. tok)

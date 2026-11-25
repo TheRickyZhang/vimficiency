@@ -22,12 +22,12 @@ return function(ctx)
         "  }",
         "}",
       }
-      local user_seq = "jwwrmf;i0<Esc>jfnrmjBBBcWi<BS>2<Space>*<Space>i<Esc>"
+      local steps = {}
+      for i = 1, 40 do steps[i] = { keys = "l", row = 3, col = i % 5, mode = "n", deltas = {} } end
       local opt1 = "Wjwrm$i0<Esc>jfnrmjF+Xce2<Space>*<Space>i<Esc>"
       local opt2 = "Wjwrm$i0<Esc>jfnrmjFix.ciw2<Space>*<Space>i<Esc>"
       with_replay({ opt1, opt2 }, lines, function()
-        local user_steps = #sim._debug_tokenize_for_animation(user_seq)
-        sim._debug_seek_to(user_steps)
+        sim._debug_seek_to(#steps)
         local windows = sim._debug_get_windows()
         assert_eq(vim.api.nvim_buf_get_lines(windows[3].buf, 6, 7, true)[1],
           "    cout << 2 * i << endl;",
@@ -35,7 +35,7 @@ return function(ctx)
       end, next, {
         start_row = 3,
         start_col = 0,
-        user_seq = user_seq,
+        recording = { row = 3, col = 0, mode = "n", steps = steps },
       })
     end,
   },
@@ -74,10 +74,13 @@ return function(ctx)
 
       helpers.new_buf({ "session simulate source" })
       local id = session_store.register_fetched_result("simreplay", result)
-      local play = require("vimficiency.play")
+      local play = require("vimficiency.simulate.settings")
       play.set_setting("include_user_sequence", true)
       play.set_setting("window_count", 3)
-      playback.simulate("simreplay", 3)
+      local warned = false
+      helpers.with_patch({ { vim, "notify", function(message, level)
+        if level == vim.log.levels.WARN and message:find("older save format (v1)", 1, true) then warned = true end
+      end } }, function() playback.simulate("simreplay", 3) end)
 
       local tries = 0
       local function finish(ok, err)
@@ -93,7 +96,11 @@ return function(ctx)
         if #windows == 3 and #states == 3 then
           local ok, err = pcall(function()
             local user = assert(sim._debug_get_pool().user, "missing user replay pool entry")
-            sim._debug_seek_to(#user.tokens)
+            assert_true(warned, "Play warns that this is a v1 save")
+            assert_eq(#user.tokens, 1, "older sessions show their recorded endpoints")
+            assert_eq(user.states[2].lines, result.goal_lines, "v1 finish text")
+            assert_eq(user.states[2].cursor, { result.end_row + 1, result.end_col }, "v1 finish cursor")
+            sim._debug_seek_to(1000)
             assert_eq(vim.api.nvim_buf_get_lines(windows[2].buf, 6, 7, true)[1],
               "    cout << 2 * i << endl;",
               "session.simulate opt1 pane should render the full typed tail")
@@ -134,7 +141,7 @@ return function(ctx)
 
       helpers.new_buf({ "session simulate source" })
       local id = session_store.register_fetched_result("simcap", result)
-      require("vimficiency.play").set_setting("include_user_sequence", true)
+      require("vimficiency.simulate.settings").set_setting("include_user_sequence", true)
       playback.simulate("simcap", 4)
 
       local tries = 0
@@ -147,13 +154,13 @@ return function(ctx)
       local function wait_ready()
         tries = tries + 1
         local windows = sim._debug_get_windows()
-        if #windows == 2 and #sim._debug_get_states() == 2 then
+        if #windows == 3 and #sim._debug_get_states() == 3 then
           local ok, err = pcall(function()
-            assert_true(sim._debug_statusline():find("panes 2/4 · only 2 results", 1, true) ~= nil,
+            assert_true(sim._debug_statusline():find("panes 3/4 · only 2 results", 1, true) ~= nil,
               "status line should report the capped pane count: " .. sim._debug_statusline())
-            assert_true(ctx.header_lines(windows[1].buf)[2]:find("[1 · yours] ", 1, true) ~= nil,
+            assert_true(ctx.header_lines(windows[2].buf)[2]:find("[1 · yours] Simulated", 1, true) ~= nil,
               "top pane should be tagged as the user's sequence")
-            assert_true(ctx.header_lines(windows[2].buf)[2]:find("[2] ", 1, true) ~= nil,
+            assert_true(ctx.header_lines(windows[3].buf)[2]:find("[2] ", 1, true) ~= nil,
               "second pane keeps its plain rank label")
           end)
           finish(ok, err)

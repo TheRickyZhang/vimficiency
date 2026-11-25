@@ -23,6 +23,8 @@ function M.encode_optimizer_overrides(overrides)
       end
     end
   end
+  -- A stored encoding is compared with a later one of the same overrides.
+  table.sort(lines)
   return table.concat(lines, "\n")
 end
 
@@ -44,9 +46,40 @@ function M.get_optimizer_defaults()
   return optimizer_defaults_cache
 end
 
+--- A session over its whole buffers; rows and columns are 0-indexed.
+---@class VF.Optimizer.SessionSpan
+---@field untouched_above? integer
+---@field untouched_below? integer
+---@field initial_lines string[]
+---@field goal_lines string[]
+---@field start_row integer
+---@field start_col integer
+---@field end_row integer
+---@field end_col integer
+---@field window_height integer
+---@field indent? VF.IndentOptions
+---@field scroll_amount integer
+---@field user_seq string
+---@field user_typed string
+
+--- Cuts `span` to the rows a search needs. Raises when that region is taller
+--- than `max_search_lines`.
+---@param span VF.Optimizer.SessionSpan
+---@param padding integer
+---@param max_search_lines integer
+---@return VF.SearchRequest
+function M.build_search_request(span, padding, max_search_lines)
+  local request = vim.tbl_extend("error", span, {
+    padding = padding,
+    max_search_lines = max_search_lines,
+  })
+  return core.call(lib.vf_build_search_request, "vf.search.BuildSearchRequest",
+    request, "vf.search.SearchRequest")
+end
+
 ---@param req VF.SearchRequest
 ---@param results_calculated integer
----@return VF.Optimizer.Result[] results, number user_cost, string debug, VF.Diff.Region[] diffs
+---@return VF.Optimizer.Result[] results, number user_cost, string debug, VF.Diff.Region[] diffs, boolean unbeaten
 function M.analyze(req, results_calculated)
   ---@type VF.Optimizer.AnalyzeResult
   local result = core.call(
@@ -55,7 +88,7 @@ function M.analyze(req, results_calculated)
     { search = req, results_calculated = results_calculated },
     "vf.search.AnalyzeResult"
   )
-  return result.results, result.user_cost, result.dbg, result.diffs
+  return result.results, result.user_cost, result.dbg, result.diffs, result.unbeaten
 end
 
 --- `vf.search.AnalyzeResult` (src/LuaExports/proto/search.proto).
@@ -64,6 +97,7 @@ end
 ---@field user_cost number
 ---@field dbg string
 ---@field diffs VF.Diff.Region[]   # The planner's regions the search ran against; empty for pure navigation
+---@field unbeaten boolean         # `results` is empty because no modeled sequence comes close to the user's keys
 
 --- Kicks off `analyze` on a C++ worker thread and returns a job id immediately.
 --- `deadline_ms` 0 = run to natural caps. Poll with `analyze_poll` until it

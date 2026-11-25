@@ -7,7 +7,6 @@ import std.compat;
 import vf.Effort.RunningEffort;
 import vf.Keyboard.KeyedSequence;
 import vf.Keyboard.PhysicalKeys;
-import vf.Types.CharRange;
 import vf.Types.Sequence;
 import vf.VimCore.VimEditUtils;
 import vf.VimCore.VimMotionUtils;
@@ -75,7 +74,7 @@ std::optional<Result> tryReplacement(
   double totalEffort = effort.getEffort();
   if (totalEffort > maxEffort) return std::nullopt;
 
-  return Result(std::move(ks.seq), totalEffort);
+  return Result(std::move(ks.seq), effort);
 }
 
 std::optional<VisualDeleteResult> tryVisualDelete(
@@ -84,12 +83,8 @@ std::optional<VisualDeleteResult> tryVisualDelete(
     int rightColOffset,
     const TransformOptimizerParams& params,
     const Config& config) {
-  const bool spansContent =
-      effectiveLines.size() > 1 ||
-      effectiveLines.getSize(0) > leftColOffset + rightColOffset;
-  if (!spansContent) return std::nullopt;
-
   CursorPos beginPos(0, leftColOffset);
+  if (beginPos.col > effectiveLines.front().lastCol()) return std::nullopt;
   int lastLine = effectiveLines.lastLine();
   int lastEditableEnd = effectiveLines.getSize(lastLine) - rightColOffset;
   if (lastEditableEnd <= 0) return std::nullopt;
@@ -116,11 +111,9 @@ std::optional<VisualDeleteResult> tryVisualDelete(
   appendMotion(lineDelta >= 0 ? KeyedSequence::j : KeyedSequence::k,
                std::abs(lineDelta));
 
-  int cursorCol = beginPos.col;
-  if (lineDelta != 0) {
-    cursorCol = VimCore::clampCol(effectiveLines, beginPos.col, lastPos.line);
-  }
-  int colDelta = lastPos.col - cursorCol;
+  CursorPos endpoint = beginPos;
+  VimCore::moveVisualLine(endpoint, effectiveLines, lineDelta);
+  int colDelta = lastPos.col - endpoint.col;
   appendMotion(colDelta >= 0 ? KeyedSequence::l : KeyedSequence::h,
                std::abs(colDelta));
 
@@ -133,17 +126,15 @@ std::optional<VisualDeleteResult> tryVisualDelete(
   static const PhysicalKeys dKey = {Key::Key_D};
   RunningEffort effort(vKey, config);
   effort.append(motion.keys, config);
-  double totalEffort = effort.append(dKey, config);
+  effort.append(dKey, config);
 
   Lines replayLines = effectiveLines;
-  CursorPos replayPos = beginPos;
-  const int endLineSize = static_cast<int>(effectiveLines[lastPos.line].size());
-  CharRange range(beginPos, CursorPos(lastPos.line, std::min(lastPos.col + 1, endLineSize)));
-  VimCore::deleteRangeAndUpdatePos(replayLines, range, replayPos);
+  CursorPos replayPos = lastPos;
+  VimCore::deleteVisualSelection(replayLines, beginPos, replayPos, Mode::Visual);
 
   return VisualDeleteResult{
       // `j`/`k` inside the selection land by the entry curswant.
-      .result = Result(std::move(visualSeq), totalEffort,
+      .result = Result(std::move(visualSeq), effort,
                        lineDelta != 0 ? EntryCurswant::Required : EntryCurswant::Ignored),
       .goalPos = replayPos,
   };

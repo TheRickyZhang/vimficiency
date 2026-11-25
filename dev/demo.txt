@@ -4,8 +4,14 @@
 using namespace std;
 
 int main() {
-  int n = 10;
+  int end = 0;
+  int n; cin >> n;
+  vector<int> a(n);
   for(int i = 0; i < n; i++) {
-    cout << i+1 << en;
+    cin >> a[i];
+    if(i < n/2) {
+      a[i * 2] += a[i];
+    }
   }
+  cout << max_element(a.begin(), a.end()) << endl;
 }

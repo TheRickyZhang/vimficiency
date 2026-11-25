@@ -9,7 +9,7 @@ local auto_suggest = require("vimficiency.capture.auto_suggest")
 local alias_mod = require("vimficiency.session.alias")
 local explore = require("vimficiency.explore")
 local dev_reload = require("vimficiency.dev_reload")
-local util = require("vimficiency.util")
+local ui_windows = require("vimficiency.ui.windows")
 
 ---@class VF.Subcommand
 ---@field desc string
@@ -168,9 +168,24 @@ return {
   },
 
   stats = {
-    desc = "Show lifetime session stats (efficiency, motions, beats)",
-    usage = "stats",
-    run = function() require("vimficiency.stats").open() end,
+    desc = "Open the stats tab (sessions, journal, commands; list any row's runs); `refresh` only scores the journal",
+    usage = "stats [refresh]",
+    complete = { { "refresh" } },
+    run = function(args)
+      if args[1] == nil then
+        require("vimficiency.stats.view").open()
+      elseif args[1] == "refresh" then
+        require("vimficiency.stats.sampling").refresh(function(err)
+          if err then
+            vim.notify("vimfy: could not score the journal: " .. err, vim.log.levels.ERROR)
+          else
+            vim.notify("vimfy: journal scored")
+          end
+        end)
+      else
+        error("Usage: Vimfy stats [refresh]", 0)
+      end
+    end,
   },
 
 
@@ -201,8 +216,14 @@ return {
 
 
   -- Plugin-related
+  appearance = {
+    desc = "Customize selection highlighting",
+    usage = "appearance",
+    run = function() require("vimficiency.settings.appearance").open() end,
+  },
+
   reload = {
-    desc = "Rebuild the C++ library",
+    desc = "Rebuild and hot-reload Vimfy with live build output",
     usage = "reload",
     run = dev_reload.run,
   },
@@ -210,7 +231,7 @@ return {
   config = {
     desc = "Show current configuration",
     usage = "config",
-    run = function() util.show_output("Vimfy Config", ffi_core.debug_config()) end,
+    run = function() ui_windows.show_output("Vimfy Config", ffi_core.debug_config()) end,
   },
 
   version = {

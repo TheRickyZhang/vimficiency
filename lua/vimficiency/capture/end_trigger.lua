@@ -25,6 +25,7 @@ function M.arm_idle(opts)
   if not timer then return nil end
 
   local disarmed = false
+  local revision = 0
   local last_fire_hrtime = 0
 
   local function fire()
@@ -40,8 +41,12 @@ function M.arm_idle(opts)
   end
 
   local function reset_timer()
+    revision = revision + 1
+    local armed_revision = revision
     timer:stop()
-    timer:start(idle_ms, 0, vim.schedule_wrap(util.entry(fire)))
+    timer:start(idle_ms, 0, vim.schedule_wrap(util.entry(function()
+      if revision == armed_revision then fire() end
+    end)))
   end
 
   local ok = atom_stream.add_listener(name, function()

@@ -2,6 +2,8 @@ export module vf.Optimizer.TransformOptimizer.GoalHandlerTypes;
 
 import std.compat;
 export import vf.Boundary.TransformBoundary;
+export import vf.Effort.RunningEffort;
+export import vf.Keyboard.KeyedSequence;
 export import vf.Optimizer.TransformOptimizer.TransformState;
 export import vf.VimCore.VimEditUtils;
 
@@ -59,10 +61,10 @@ struct ResolvedEditAction {
   }
 };
 
-// tryUseSuffixCache returns hit status and whether the start was capped.
-struct SuffixCacheResult {
-  bool hit = false;
-  bool startCapped = false;
+// A cached completion for the state looked up; both null on a miss.
+struct SuffixCacheHit {
+  const KeyedSequence* suffix = nullptr;
+  const RunningEffort* effort = nullptr;
 };
 
 }  // export

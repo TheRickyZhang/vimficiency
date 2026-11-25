@@ -18,6 +18,7 @@ const char* vf_abi_hash();
 VFByteSlice vf_proto_descriptor();
 
 // vf.config (lua_exports.cpp)
+VFByteSlice vf_versions();                                          // vf.Versions
 VFByteSlice vf_enums();                                             // Enums
 VFByteSlice vf_apply_config(const char* request, size_t request_len);  // Config -> vf.Empty
 void vf_reset_config();
@@ -25,6 +26,7 @@ VFByteSlice vf_debug_config();                                      // vf.Text
 VFByteSlice vf_get_warnings();                                      // vf.Text
 
 // vf.search (AnalyzeExports.cpp)
+VFByteSlice vf_build_search_request(const char* request, size_t request_len); // BuildSearchRequest -> SearchRequest
 VFByteSlice vf_analyze(const char* request, size_t request_len);              // AnalyzeRequest -> AnalyzeResult
 VFByteSlice vf_analyze_start_async(const char* request, size_t request_len);  // AnalyzeRequest -> vf.JobHandle
 VFByteSlice vf_analyze_poll(int job_id);                                      // AnalyzeResult
@@ -35,8 +37,14 @@ VFByteSlice vf_get_optimizer_defaults();                                      //
 VFByteSlice vf_tokenize_movements(const char* request, size_t request_len);     // SequenceRequest -> Tokens
 VFByteSlice vf_tokenize_sequence(const char* request, size_t request_len);      // SequenceRequest -> Tokens
 VFByteSlice vf_build_sequence(const char* request, size_t request_len);         // BuildSequenceRequest -> vf.Text
-VFByteSlice vf_compute_search_region(const char* request, size_t request_len);  // SearchRegionRequest -> SearchRegion
+VFByteSlice vf_typed_keys(const char* request, size_t request_len);             // TypedKeysRequest -> TypedKeys
 VFByteSlice vf_manual_evict_reason(const char* request, size_t request_len);    // ManualEvictRequest -> ManualEvict
+
+// vf.stats (StatsExports.cpp)
+VFByteSlice vf_append_session(const char* request, size_t request_len);  // AppendSessionRequest -> vf.Empty
+VFByteSlice vf_stats_summary(const char* request, size_t request_len);   // SummaryRequest -> Summary
+VFByteSlice vf_stats_runs(const char* request, size_t request_len);      // RunsRequest -> RunList
+VFByteSlice vf_stats_run(const char* request, size_t request_len);       // RunRequest -> RunDetail
 
 // vf.display (DisplayExports.cpp)
 VFByteSlice vf_sequence_display_lines(const char* request, size_t request_len);         // SequenceRequest -> vf.Lines

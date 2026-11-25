@@ -68,7 +68,7 @@ ChangeGoalHandler::ChangeGoalHandler(
     double effortWeight, const Config& config,
     const TransformBoundary&, const Lines& initialLines,
     const Lines& goalLines, const string& pre,
-    const string& suf, const string& preSuf)
+    const string& suf, const string& preSuf, const IndentOptions& indent)
     : effectiveLines(effectiveLines),
       leftColOffset(leftColOffset),
       effortWeight(effortWeight),
@@ -77,15 +77,15 @@ ChangeGoalHandler::ChangeGoalHandler(
       goalLines(goalLines),
       pre(pre),
       suf(suf),
-      preSuf(preSuf) {
-  typed = buildTypedCommands(goalLines, "", pre, suf);
+      preSuf(preSuf), indent(indent) {
+  typed = buildTypedCommands(goalLines, "", pre, suf, indent);
   typedEffort = RunningEffort(typed.keys, config);
 
-  if constexpr (VimOptions::autoindent()) {
-    goalFirstIndentLen = ssize(leadingWhitespace(goalLines[0]));
-    if (goalFirstIndentLen > 0) {
+  if (indent.autoindent) {
+    goalFirstIndent = IndentOptions::leadingIndent(goalLines[0]);
+    if (!goalFirstIndent.empty()) {
       typedAfterIndent = buildTypedCommands(
-          goalLines, leadingWhitespace(goalLines[0]), pre, suf);
+          goalLines, goalFirstIndent, pre, suf, indent);
       afterIndentEffort = RunningEffort(typedAfterIndent.keys, config);
     }
   }
@@ -119,55 +119,16 @@ bool ChangeGoalHandler::isDotRepeat(const TransformState& base, const SequenceBi
 
 // Static helpers
 
-KeyedSequence ChangeGoalHandler::buildCollapseSequence(int totalLines, int cursorLine) {
-  assert(cursorLine >= 0 && cursorLine < totalLines &&
-         "cursorLine must be within [0, totalLines)");
-  KeyedSequence ks;
-  ks.append(KeyedSequence::BS, cursorLine);
-  ks.append(KeyedSequence::Del, totalLines - 1 - cursorLine);
-  return ks;
-}
-
-// The "cleared shell" is the buffer shape `isGoalReached` accepts before the
-// typed completion runs: lines[0] == pre, lines[last] == suf, all middle lines
-// empty. From there, the collapse chain produced by `buildCollapseSequence`
-// merges the shell into a single `pre+suf` line and leaves the cursor at end
-// of pre, ready for typing.
-//
-// The chain only does line-joins under tight conditions: `<BS>` joins only at
-// col 0, `<Del>` joins only at end-of-line (NUL position). Anywhere else they
-// delete a single character and corrupt pre or suf. The entry sequence picks
-// where in the shell we open insert mode so that the chain only ever fires a
-// real join.
-//
-// Cases by where the cursor sits in the cleared shell:
-//   - cursorLine == 0 (on pre line, possibly non-empty):
-//       No BS is emitted, so the chain starts with `<Del>`. `<Del>` only joins
-//       when cursor is past pre's last char; entering with `0i` would put it
-//       at col 0 and the first Del would delete pre's first char. Use `A` to
-//       enter insert mode at end-of-line directly.
-//   - cursorLine > 0, cursorCol != 0 (on suf line, suf non-empty):
-//       BS chain needs col 0 to start. Use `0i`, NOT `I`: `I` enters insert at
-//       the line's first non-blank, which is col > 0 whenever suf has leading
-//       whitespace, and a `<BS>` from there deletes the space instead of
-//       joining — corrupting suf.
-//   - cursorLine > 0, cursorCol == 0 (on a middle line, empty by invariant):
-//       Already at col 0; `0` is redundant. Use plain `i`.
-//   - totalLines == 1 (shell is `[preSuf]`, no collapse needed):
-//       `isGoalReached` (multi-arg overload) pins cursor at col == pre.size(),
-//       which is the correct insert position. Plain `i`.
-KeyedSequence ChangeGoalHandler::buildClearedShellEntry(
-    int totalLines, int cursorLine, int cursorCol) {
-  KeyedSequence entry;
-  if (totalLines > 1 && cursorLine == 0) {
-    entry += KeyedSequence::A;
-    return entry;
+// In a multiline shell <Del> joins only after the prefix, and <BS> joins only at column zero.
+void ChangeGoalHandler::enterAndCollapseClearedShell(
+    KeyedSequence& keys, const Lines& lines, CursorPos pos) {
+  if (lines.size() > 1 && pos.line == 0 && !lines.front().empty()) {
+    keys += KeyedSequence::A;
+  } else {
+    if (pos.line > 0 && pos.col != 0) keys += KeyedSequence::Zero;
+    keys += KeyedSequence::i;
   }
-  if (cursorCol != 0) {
-    entry += KeyedSequence::Zero;
-  }
-  entry += KeyedSequence::i;
-  return entry;
+  keys += buildCollapseSequence(lines.size(), pos.line);
 }
 
 void ChangeGoalHandler::appendOptionalCount(KeyedSequence& out, int count, const KeyedSequence& base) {
@@ -213,18 +174,14 @@ KeyedSequence ChangeGoalHandler::deleteToChangeChar(const SequenceBinding& sourc
 }
 
 KeyedSequence ChangeGoalHandler::deleteToChangeLine(const SequenceBinding& sourceCmd,
-                                                    string_view lineContent) {
+                                                    string_view lineContent, bool autoindent) {
   int count = sourceCmd.count;
   const KeyedSequence& baseKS = sourceCmd.base;
   string_view baseCmd = baseKS.seq.view();
 
   if (baseCmd == "dd") {
     if (count == 0) {
-      if constexpr (VimOptions::autoindent()) {
-        if (!leadingWhitespace(lineContent).empty()) {
-          return KeyedSequence::ZeroC;
-        }
-      }
+      if (autoindent && !IndentOptions::leadingIndent(lineContent).empty()) return KeyedSequence::ZeroC;
       return KeyedSequence::cc;
     }
     return withOptionalCount(count, KeyedSequence::cc);
@@ -308,20 +265,20 @@ SuffixValue ChangeGoalHandler::buildSuffixValueForNextIndex(
       expectedDotCmd, nextIndex, rawSuffixEfforts[nextIndex]);
 }
 
-void ChangeGoalHandler::cacheSuffixesForPath(
-    const TransformState& base,
-    const KeyedSequence& completionSuffix,
-    double completionPenalty,
-    const KeyedSequence& typedSuffix,
-    const RunningEffort& typedSuffixEffort) {
+void ChangeGoalHandler::cacheSuffixesOfGoal(const TransformState& goal) {
+  const shared_ptr<const TransformPathStep> goalStep = goal.getPathTail();
+  // A state already on the cleared shell is a goal no completion produced.
+  if (!goalStep || !goalStep->goalCompletion) return;
+  const GoalCompletion& completion = *goalStep->goalCompletion;
+
+  vector<const TransformPathStep*> path = collectPath(goalStep->prev);
   // Suffix cache is populated only from completed Normal-mode goal paths.
   // The path-step chain's initial state is the search start (no preceding
   // command), which is always Normal.
-  CHECK(base.getMode() == Mode::Normal,
-        "cacheSuffixesForPath called from a non-Normal base state");
+  CHECK(path.empty() || path.back()->modeAfter == Mode::Normal,
+        "cacheSuffixesOfGoal called for a goal completed from a non-Normal state");
   cachePopulations++;
 
-  vector<const TransformPathStep*> path = collectPath(base.getPathTail());
   vector<KeyedSequence> commands;
   vector<SuffixCommandInfo> commandInfos;
   commands.reserve(path.size() + 1);
@@ -332,27 +289,27 @@ void ChangeGoalHandler::cacheSuffixesForPath(
     commandInfos.push_back(SuffixCommandInfo{
         step->isDotRepeat, step->updatesDotRepeat});
   }
-  commands.push_back(completionSuffix);
+  commands.push_back(completion.command);
   commandInfos.push_back(SuffixCommandInfo{
       false, true});
 
   int prefixCommandCount = static_cast<int>(path.size());
   int programCommandCount = static_cast<int>(commands.size());
-  auto suffixProgram = make_shared<SuffixProgram>(std::move(commands), typedSuffix);
+  auto suffixProgram = make_shared<SuffixProgram>(std::move(commands), completion.typed);
 
   vector<RunningEffort> rawSuffixEfforts =
-      buildRawSuffixEfforts(*suffixProgram, typedSuffixEffort,
-                            prefixCommandCount, completionPenalty);
+      buildRawSuffixEfforts(*suffixProgram, completion.typedEffort,
+                            prefixCommandCount, completion.penalty);
 
   uint64_t initialHash = hashLines(effectiveLines);
   int initialLineCount = static_cast<int>(effectiveLines.size());
   CursorPos initialPos =
-      seedPositionForStart(base.getStartIndex(), initialLines, leftColOffset);
+      seedPositionForStart(goal.getStartIndex(), initialLines, leftColOffset);
   for (int nextIndex = 0; nextIndex < programCommandCount; nextIndex++) {
     uint64_t linesHash = initialHash;
     int lineCount = initialLineCount;
     CursorPos replayPos = initialPos;
-    Mode replayMode = base.getMode();
+    Mode replayMode = Mode::Normal;
     DotRepeat lastEdit;
     if (nextIndex > 0) {
       const TransformPathStep* previous = path[static_cast<size_t>(nextIndex - 1)];
@@ -378,7 +335,7 @@ GoalStates ChangeGoalHandler::emitEditGoal(
     const SequenceBinding& sourceCmd,
     const KeyedSequence& goalCompletionCmd,
     const TypedGoalVariants& typedVariants,
-    bool allowDotGoalPath) {
+    const TransformEditorState* repeatLanding) {
   double completionPenalty = sourceCmd.effort.getPenalty();
 
   debug("emitEditGoal:",
@@ -397,32 +354,28 @@ GoalStates ChangeGoalHandler::emitEditGoal(
 
   debug("emitEditGoal: fullNormalSeq='" + normalSeq.seq.str() + "'");
 
-  cacheSuffixesForPath(base, goalCompletionCmd, completionPenalty,
-                       typedVariants.normalTyped.sequence,
-                       typedVariants.normalTyped.effort);
+  auto completion = make_shared<const GoalCompletion>(GoalCompletion{
+      goalCompletionCmd, completionPenalty, typedVariants.normalTyped.sequence,
+      typedVariants.normalTyped.effort});
 
   TransformStateFactory states(config, effortWeight);
-  TransformState normalState = states.afterCommandWithLastEdit(
-      base, postCompletionState, normalSeq.seq.view(), normalEffort, 0.0,
+  TransformState normalState = states.afterGoalCommand(
+      base, postCompletionState, normalSeq.seq.view(), normalEffort,
       DotRepeat{string(sourceCmd.base.seq.view()), sourceCmd.count},
-      EntryCurswant::Ignored);
+      EntryCurswant::Ignored, completion);
 
   GoalStates result{std::move(normalState), nullopt};
 
-  if (allowDotGoalPath) {
+  if (repeatLanding && isDotRepeat(base, sourceCmd)) {
     KeyedSequence dotSeq(".", KeyedSequence::Period.keys);
-    int totalLines = static_cast<int>(postCompletionState.getLines().size());
-    int cursorLine = postCompletionState.getPos().line;
-    dotSeq += buildClearedShellEntry(
-        totalLines, cursorLine, postCompletionState.getPos().col);
-    dotSeq += buildCollapseSequence(totalLines, cursorLine);
+    enterAndCollapseClearedShell(dotSeq, repeatLanding->getLines(), repeatLanding->getPos());
     RunningEffort dotPrefixEffort(dotSeq.keys, config);
     RunningEffort dotEffort = RunningEffort::merge(dotPrefixEffort, typedVariants.dotTyped.effort, config);
     dotSeq += typedVariants.dotTyped.sequence;
 
-    result.dotVariant = states.afterCommand(
-        base, postCompletionState, dotSeq.seq.view(), dotEffort, 0.0,
-        EntryCurswant::Ignored);
+    result.dotVariant = states.afterGoalCommand(
+        base, *repeatLanding, dotSeq.seq.view(), dotEffort, base.getLastEdit(),
+        EntryCurswant::Ignored, completion);
   }
 
   return result;
@@ -430,10 +383,7 @@ GoalStates ChangeGoalHandler::emitEditGoal(
 
 Result ChangeGoalHandler::resultFromClearedGoal(const TransformState& base) const {
   KeyedSequence completion;
-  int totalLines = static_cast<int>(base.getLines().size());
-  int cursorLine = base.getPos().line;
-  completion += buildClearedShellEntry(totalLines, cursorLine, base.getPos().col);
-  completion += buildCollapseSequence(totalLines, cursorLine);
+  enterAndCollapseClearedShell(completion, base.getLines(), base.getPos());
   completion += typed;
 
   RunningEffort completionEffort(completion.keys, config);
@@ -442,100 +392,49 @@ Result ChangeGoalHandler::resultFromClearedGoal(const TransformState& base) cons
 
   Sequence seq = Sequence(base.getSeq());
   seq.append(completion.seq.view());
-  return Result(seq, totalEffort.getEffort());
+  return Result(seq, totalEffort);
 }
 
-GoalStates ChangeGoalHandler::emitLinewiseChangeGoal(
+GoalStates ChangeGoalHandler::onDeletionGoal(
     const TransformEditorState& afterDel, const TransformState& base,
-    const SequenceBinding& sourceCmd, int line,
-    int ccLineCount, const KeyedSequence& changeCmd,
-    bool applyAutoindent) {
-  bool isDot = isDotRepeat(base, sourceCmd);
-  int autoindentLen = 0;
-  if constexpr (VimOptions::autoindent()) {
-    if (applyAutoindent) {
-      autoindentLen = ssize(leadingWhitespace(base.getLines()[line]));
-    }
-  }
-
-  KeyedSequence changePrefix = changeCmd;
-  bool useAfterIndent = false;
-  bool bsInCollapse = ccLineCount > 1 && line > 0;
-  if constexpr (VimOptions::autoindent()) {
-    if (applyAutoindent && !bsInCollapse) {
-      changePrefix += computeIndentAdjustment(autoindentLen, goalFirstIndentLen);
-      changePrefix += buildCollapseSequence(ccLineCount, line);
-      useAfterIndent = goalFirstIndentLen > 0;
-    } else if (applyAutoindent && bsInCollapse) {
-      int bsClear = autoindentLen > 0 ? bsCountForIndent(autoindentLen, 0) : 0;
-      changePrefix.append(KeyedSequence::BS, bsClear + line);
-      changePrefix.append(KeyedSequence::Del, ccLineCount - 1 - line);
-    } else {
-      changePrefix += buildCollapseSequence(ccLineCount, line);
-    }
-  } else {
-    changePrefix += buildCollapseSequence(ccLineCount, line);
-  }
-
-  const auto& suffixTyped = useAfterIndent ? typedAfterIndent : typed;
-  const auto& suffixEffort = useAfterIndent ? afterIndentEffort : typedEffort;
-  TypedGoalVariants typedVariants{{suffixTyped, suffixEffort}, {typed, typedEffort}};
-  return emitEditGoal(afterDel, base, sourceCmd, changePrefix, typedVariants, isDot);
+    const SequenceBinding& sourceCmd, const TransformEditorState* repeatLanding) {
+  KeyedSequence prefix = buildChangePrefix(sourceCmd, afterDel.getLines(), afterDel.getPos());
+  TypedGoalVariants typedVariants{{typed, typedEffort}, {typed, typedEffort}};
+  return emitEditGoal(afterDel, base, sourceCmd, prefix, typedVariants, repeatLanding);
 }
 
 GoalStates ChangeGoalHandler::onLinewiseGoal(
     const TransformEditorState& afterDel, const TransformState& base, LineRange range,
-    const SequenceBinding& sourceCmd) {
-  int line = range.beginLine;
-  KeyedSequence changeCmd = deleteToChangeLine(sourceCmd, base.getLines()[line]);
-  bool applyAutoindent = false;
-  if constexpr (VimOptions::autoindent()) {
-    applyAutoindent = (changeCmd.seq.view() != "0C");
+    const SequenceBinding& sourceCmd, const TransformEditorState* repeatLanding) {
+  const auto [ccLineCount, line] = linewiseChangeShapeForCommand(base, range);
+  KeyedSequence changeCmd = deleteToChangeLine(sourceCmd, base.getLines()[line], indent.autoindent);
+  KeyedSequence changePrefix = changeCmd;
+  const bool keepsIndent = indent.autoindent && changeCmd.seq.view() != "0C";
+  const bool joinsPrevious = ccLineCount > 1 && line > 0;
+  const bool useAfterIndent = keepsIndent && !joinsPrevious && !goalFirstIndent.empty();
+  if (keepsIndent) {
+    const auto sourceIndent = IndentOptions::leadingIndent(base.getLines()[line]);
+    changePrefix += computeIndentAdjustment(sourceIndent, useAfterIndent ? goalFirstIndent : "", indent);
   }
-  LinewiseChangeShape shape =
-      linewiseChangeShapeForCommand(base, range);
-  return emitLinewiseChangeGoal(afterDel, base, sourceCmd, shape.cursorLine,
-                                shape.lineCount, changeCmd, applyAutoindent);
-}
+  changePrefix += buildCollapseSequence(ccLineCount, line);
 
-GoalStates ChangeGoalHandler::onCountedLinewiseGoal(
-    const TransformEditorState& afterDel, const TransformState& base,
-    LineRange range, const SequenceBinding& sourceCmd) {
-  int line = range.beginLine;
-  KeyedSequence changeCmd = deleteToChangeLine(sourceCmd, base.getLines()[line]);
-  LinewiseChangeShape shape =
-      linewiseChangeShapeForCommand(base, range);
-  return emitLinewiseChangeGoal(
-      afterDel, base, sourceCmd, shape.cursorLine, shape.lineCount, changeCmd, true);
+  const auto& suffixTyped = useAfterIndent ? typedAfterIndent : typed;
+  const auto& suffixEffort = useAfterIndent ? afterIndentEffort : typedEffort;
+  TypedGoalVariants typedVariants{{suffixTyped, suffixEffort}, {typed, typedEffort}};
+  return emitEditGoal(afterDel, base, sourceCmd, changePrefix, typedVariants, repeatLanding);
 }
 
 GoalStates ChangeGoalHandler::onJoinGoal(
     const TransformEditorState& afterJn, const TransformState& base,
     const SequenceBinding& sourceCmd) {
-  bool isDot = isDotRepeat(base, sourceCmd);
-  const auto& iCmd = KeyedSequence::i;
   KeyedSequence goalCompletionCmd;
   appendOptionalCount(goalCompletionCmd, sourceCmd.count, sourceCmd.base);
-  if (afterJn.getPos().line > 0 && afterJn.getPos().col != 0) {
-    goalCompletionCmd += KeyedSequence::Zero;
-  }
-  goalCompletionCmd += iCmd;
-  goalCompletionCmd += buildCollapseSequence(
-      static_cast<int>(afterJn.getLines().size()), afterJn.getPos().line);
+  enterAndCollapseClearedShell(goalCompletionCmd, afterJn.getLines(), afterJn.getPos());
   TypedGoalVariants typedVariants{{typed, typedEffort}, {typed, typedEffort}};
-  return emitEditGoal(afterJn, base, sourceCmd, goalCompletionCmd, typedVariants, isDot);
+  return emitEditGoal(afterJn, base, sourceCmd, goalCompletionCmd, typedVariants, &afterJn);
 }
 
-SuffixCacheResult ChangeGoalHandler::tryUseSuffixCache(
-    const TransformState& s,
-    vector<vector<Result>>& resultsByStart,
-    int maxResultsPerStart,
-    const vector<char>& startActive,
-    int& resultsFound,
-    int& uniquePositionsCovered) {
-  int idx = s.getStartIndex();
-  if (!startActive[idx]) return {};
-
+SuffixCacheHit ChangeGoalHandler::findCachedSuffix(const TransformState& s) {
   SuffixKey sk(
       s.getLinesHash(), static_cast<int>(s.getLines().size()), s.getPos(),
       s.getMode());
@@ -543,36 +442,15 @@ SuffixCacheResult ChangeGoalHandler::tryUseSuffixCache(
   if (cacheIt == suffixCache.end()) return {};
 
   cacheHits++;
-  auto& bucket = resultsByStart[static_cast<size_t>(idx)];
-  if (static_cast<int>(bucket.size()) >= maxResultsPerStart) return {true, false};
-
   const SuffixValue& sv = cacheIt->second;
-
   bool useDot = sv.canUseDot(s.getLastEdit());
   const KeyedSequence& suffix = sv.suffix(useDot);
-  const RunningEffort& suffixEffort = sv.suffixEffort(useDot);
-
-  string seqStr = s.getSeq() + suffix.seq.str();
   debug("suffixCache hit:",
         "prefixSeq='" + s.getSeq() + "'",
         "suffix='" + suffix.seq.str() + "'",
-        "fullSeq='" + seqStr + "'",
         "pos=(" + to_string(s.getPos().line) + "," + to_string(s.getPos().col) + ")",
         "useDot=" + string(useDot ? "true" : "false"));
-  RunningEffort mergedEffort = RunningEffort::merge(s.getRunningEffort(), suffixEffort, config);
-  double totalEffort = mergedEffort.getEffort();
-
-  // The cached suffix was simulated from the column this prefix produced.
-  const bool prefixIgnoresCurswant =
-      s.getPathTail() && s.getEntryCurswant() == EntryCurswant::Ignored;
-  bool firstForStart = bucket.empty();
-  bucket.emplace_back(
-      Sequence(seqStr), totalEffort,
-      prefixIgnoresCurswant ? EntryCurswant::Ignored : EntryCurswant::Required);
-  resultsFound++;
-  if (firstForStart) uniquePositionsCovered++;
-  bool capped = (static_cast<int>(bucket.size()) == maxResultsPerStart);
-  return {true, capped};
+  return {&suffix, &sv.suffixEffort(useDot)};
 }
 
 TransformResult ChangeGoalHandler::finalize(

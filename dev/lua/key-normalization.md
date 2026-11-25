@@ -23,8 +23,9 @@ key.
 
 ## Call sites
 
-- `capture/atom_stream.lua` — CmdAtom `keys` and `lhs`.
-- `explore/handlers.lua` — Explore's own `vim.on_key` stream, before
+- `capture/atom_stream.lua` — CmdAtom `keys` and `lhs`, and the pressed-key
+  inputs (`vim.on_key` `typed`, `getchar` results, keys fed as typed).
+- `explore/input/handlers.lua` — Explore's own `vim.on_key` stream, before
   `explore_accept_snapshot`.
 
 Any new consumer that reaches `getEffort` or the tokenizer must normalize too.

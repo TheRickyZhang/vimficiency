@@ -21,17 +21,9 @@ They all share:
 - Boundary of the subbuffer received. Navigation can have padding to allow for the possibility of overshoot + revert, while transforms must be exact.
 - Usage of Endpoint/Range functions for checking if a motion would cross outside the boundary.
 - Counted-command cognitive penalties (see `dev/optimizer/count-penalty.md`)
-- Return some container of Results:
-``` cpp
-struct Result {
-  std::vector<Sequence> sequences;
-  double keyCost;
-
-  Result() : keyCost(0) {}
-  Result(std::vector<Sequence> seqs, double c) : sequences(std::move(seqs)), keyCost(c) {}
-};
-
-```
+- Return optimizer-specific containers of results. Each `Result` stores a
+  single `Sequence`, its cost, its search penalty, and its entry curswant
+  requirement. See `src/Optimizer/Result.cppm`.
 
 For more details about how boundaries are handled, see `dev/core/boundary-logic.md`.
 
@@ -42,14 +34,15 @@ All commands use the endpoint/range methodology. First, we search the span effec
 
 ```cpp
 // Forward word
-Position endpoint = VimCore::wordMotionEndpoint(
-    cursor, lines, WordMotionTarget::NextBegin, isBig, boundary);
+CursorPos endpoint = VimCore::wordMotionEndpoint(
+    cursor, lines, spec.target, spec.big, boundary);
 if (endpoint == POSITION_OUTSIDE_BOUNDARY) continue;
 
 // Text objects
-Range range = VimCore::wordTextObjectRange(
-    cursor, lines, WordTextObjectKind::Inner, isBig, boundary);
-if (range.first == POSITION_OUTSIDE_BOUNDARY) continue;
+CharRange range = VimCore::wordTextObjectRange(
+    cursor, lines, VimCore::WordTextObjectKind::Inner, isBig, boundary);
+if (range.begin == POSITION_OUTSIDE_BOUNDARY ||
+    range.end == POSITION_OUTSIDE_BOUNDARY) continue;
 ```
 
 
@@ -100,7 +93,7 @@ Our distance heuristics are generally **inadmissible** (overestimates true cost)
 
 However, if we use pure effort, with no distance heuristic, then we can have a guaranteed correct Dijkstra exploration.
 
-We expose distanceWeight and effortWeight in baseOptimzerParams to get a balance between these two.
+We expose distanceWeight and effortWeight in baseOptimzerParams to get a balance between these two. Transform's `distanceWeight` defaults to 0.35 instead of the shared 1; see `transform-optimizer.md`.
 
 ## Search Stats Policy
 
@@ -113,44 +106,20 @@ Core counters are part of normal optimizer outputs and benchmark workflows, so t
 
 `SearchStats` now centralizes mutation so callers do not write arbitrary fields directly. This gives us a single place to control expensive collection paths and to add aggregate helpers used by benchmark/reporting workflows.
 
-### Compile-Time vs Runtime Gating
+### Compile-Time Gating
 
-Clang can completely remove a stats helper only when the disabled mode is known at compile time. We use a centralized compile-time switch:
-
-```cpp
-constexpr bool SEARCH_TRACE_STATS_ENABLED = ...;
-
-template<typename SequenceFn>
-void maybeRecordExploredState(bool enabled, ..., SequenceFn&& makeSequence) {
-  if constexpr (SEARCH_TRACE_STATS_ENABLED) {
-    if (enabled) {
-      exploredStates.push_back(... makeSequence());
-    }
-  }
-}
-```
-
-When `SEARCH_TRACE_STATS_ENABLED` is false, the trace path becomes a true no-op after optimization.
-
-By contrast, a runtime branch such as:
-
-```cpp
-if (params.trackExploredStates) {
-  stats.recordExploredState(...);
-}
-```
-
-still leaves a branch in the hot path when compiled, even if the branch is usually false at runtime.
-
-Also note that a `debug(...)`-style helper only removes the helper body. Function arguments are still evaluated before the call. That means expensive payload construction such as `s.getSequence().str()` must be delayed inside the helper, not computed eagerly at the call site.
+`SearchStats::maybeRecordExploredState` compiles out its recording body when
+`SEARCH_TRACE_STATS_ENABLED` is false. With tracking enabled, it records
+states up to `MAX_TRACED_STATES` per search. Keep expensive payload
+construction inside the gate because callers still evaluate function arguments.
 
 ### Workflow Guidance
 
-- `vimfy_unit_tests`: should rely on core counters being present; avoid enabling heavy trace collection unless the test is explicitly about exploration details
-- `vimfy_benchmarks`: should consume aggregate counters only; do not enable `exploredStates`
-- `vimfy_debug` and exploration export tooling: may enable trace payloads when investigating behavior, but should do so explicitly because they are not cheap
-
-By default, detailed trace stats follow `DEBUG_ENABLED`. If a non-debug workflow needs trace payloads, build with `VIMFICIENCY_TRACE_SEARCH_STATS` to enable them explicitly without tying that decision to the general debug stream.
+- `vimfy_unit_tests` and `vimfy_benchmarks` can rely on core counters in
+  any build.
+- Configure with `-DVIMF_TRACK_STATES=ON` to collect trace payloads for
+  `vimfy_debug` or build the `vimfy_explore` export tool. Tracking defaults
+  to off and is independent of the general debug stream.
 
 If we later add more expensive stats, they should follow the same rule: keep aggregate reporting cheap and move payload-style diagnostics behind an explicit gate.
 

@@ -89,7 +89,7 @@ M.lib = load_lib()
 ---@field option fun(name: string)
 ---@field encode fun(message: string, value: table): string
 ---@field decode fun(message: string, bytes: string): table|nil, string|nil
----@field field fun(message: string, field: string): name: string|nil, number: integer, type: string, default: any, label: "optional"|"repeated"|"required"|"packed"
+---@field field fun(message: string, field: string): name: string|nil, number: integer, type: string, default: any, label: "optional"|"repeated"|"required"|"packed", oneof: string|nil
 ---@field type fun(type: string): name: string|nil, basename: string, kind: "message"|"enum"|"map"
 
 ---@return VF.Pb
@@ -109,17 +109,22 @@ local pb = load_pb()
 local function check_fields(root, message, value, path)
   for key, item in pairs(value) do
     local name, _, field_type, _, label = pb.field(message, tostring(key))
-    if not name then
-      error(string.format("vimfy: unknown field '%s%s' in %s", path, tostring(key), root), 0)
-    end
-    local _, _, kind = pb.type(field_type)
-    if kind == "message" and type(item) == "table" then
-      if label == "repeated" then
-        for i, element in ipairs(item) do
-          check_fields(root, field_type, element, string.format("%s%s[%d].", path, key, i))
+    if name then
+      local _, _, kind = pb.type(field_type)
+      if kind == "message" and type(item) == "table" then
+        if label == "repeated" then
+          for i, element in ipairs(item) do
+            check_fields(root, field_type, element, string.format("%s%s[%d].", path, key, i))
+          end
+        else
+          check_fields(root, field_type, item, path .. key .. ".")
         end
-      else
-        check_fields(root, field_type, item, path .. key .. ".")
+      end
+    else
+      -- Decoding names a oneof's set field under the oneof's name; encoding ignores it.
+      local oneof = type(item) == "string" and select(6, pb.field(message, item))
+      if oneof ~= key then
+        error(string.format("vimfy: unknown field '%s%s' in %s", path, tostring(key), root), 0)
       end
     end
   end
@@ -139,6 +144,14 @@ end
 function M.encode(message, value)
   check_fields(message, message, value, "")
   return pb.encode(message, value)
+end
+
+--- Decodes a bare serialized `message`, as stored in a file.
+---@param message string
+---@param bytes string
+---@return table
+function M.decode_message(message, bytes)
+  return assert(pb.decode(message, bytes))
 end
 
 --- Decodes a `vf.Envelope` (C++ `storeResult` / `storePending`) and the

@@ -18,8 +18,10 @@
 ---@field has_lines_above boolean
 ---@field has_lines_below boolean
 ---@field window_height integer
+---@field indent? VF.IndentOptions
 ---@field scroll_amount integer
----@field user_seq string
+---@field user_seq string                   # Resolved keys; bound the search
+---@field user_typed? string                # Pressed keys; cost the user. Only analyze reads them
 ---@field optimizer_overrides string        # `ffi/optimizer.encode_optimizer_overrides` output; "" for none
 
 ---@class VF.Optimizer.Result
@@ -47,7 +49,8 @@
 
 ---@class VF.Sequence.Token
 ---@field text string
----@field kind "movement"|"delete"|"change"|"visual"|"typed"|"escape"
+---@field kind "movement"|"delete"|"change"|"visual"|"typed"|"escape"|"unavailable"|"recorded"
+---@field error? string
 ---@field index integer?
 ---@field hl string?
 
@@ -58,62 +61,5 @@
 ---@class VF.Range
 ---@field begin_pos VF.Position
 ---@field end_pos VF.Position
-
----@class VF.Explore.PhaseNavigate
----@field kind "Navigate"
----@field edit_index integer
-
----@class VF.Explore.PhaseTransform
----@field kind "Transform"
----@field edit_index integer
-
----@class VF.Explore.PhaseInsert
----@field kind "Insert"
----@field edit_index integer
-
----@alias VF.Explore.Phase
----| VF.Explore.PhaseNavigate
----| VF.Explore.PhaseTransform
----| VF.Explore.PhaseInsert
-
----@class VF.Explore.State
----@field phase VF.Explore.Phase
----@field is_completed boolean
----@field cursor VF.Position
----@field total_edits integer
----@field cost number
----@field seq string
----@field can_undo boolean
----@field can_redo boolean
----@field target_range VF.Range
-
----@class VF.Explore.Rejected
----@field reason string
-
---- Exactly one of `applied` / `rejected` is set; `outcome` names it.
----@class VF.Explore.ApplyResult
----@field outcome "applied"|"rejected"
----@field applied? table
----@field rejected? VF.Explore.Rejected
-
----@class VF.Explore.Recommendation
----@field text string
----@field cost_diff number
----@field distance number
----@field score number
----@field landing VF.Position
----@field literal_text string
----@field rank? integer
-
----@class VF.Explore.ReconfigurePlanResult
----@field reset boolean
-
----@class VF.Explore.HeaderRowsResult
----@field rows string[]
-
----@class VF.Explore.HeaderRows
----@field explored string[]
----@field optimal VF.Explore.HeaderRowsResult[]
-
 
 return {}

@@ -15,14 +15,10 @@ dev/architecture/todo.md. Delete items when done.
 
 3. Pure-newline deletion ("\n" -> "") cannot fire single-step structural edits.
 
-4. Linewise deletes other than dd are classified EntryCurswant::Required,
-   although Neovim's dj follows curswant like dd. Classify them Followed after
-   an oracle check, so they stay usable from a clamped column.
-
-5. J/gJ do not model comment-leader stripping ('comments', formatoptions+=j).
+4. J/gJ do not model comment-leader stripping ('comments', formatoptions+=j).
    The oracle clears 'comments' to agree, so real buffers can diverge.
 
-6. Sentence text objects are ported but held back behind the backward
+5. Sentence text objects are ported but held back behind the backward
    findSentenceForOperator gap.
 
 

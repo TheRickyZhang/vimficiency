@@ -6,58 +6,41 @@ export import vf.VimCore.VimOptions;
 
 export {
 
-// Return the leading whitespace of a string (spaces only).
-//
-// This is the optimizer-side notion of indentation: spaces only, because the
-// downstream math in BuildTypedCommands (`bsCountForIndent` in char-units,
-// `combinedIndent.assign(..., ' ')` literal-space construction) assumes
-// expandtab-style indentation. Tab-indented buffers fall outside the
-// optimizer's modeled space and may produce suboptimal recommendations, but
-// not incorrect ones — the replay path (`VimCore::leadingIndent` in
-// VimEditUtils.h) preserves tabs faithfully.
-//
-// Don't unify with `VimCore::leadingIndent` — they encode different semantics.
-inline std::string_view leadingWhitespace(std::string_view s) {
-  size_t i = 0;
-  while (i < s.size() && s[i] == ' ') i++;
-  return s.substr(0, i);
+inline int bsCountForIndent(int from, int to, int sw) {
+  if (sw <= 0 || to > from || (to != from && to % sw != 0)) return -1;
+  return from == to ? 0 : (from - 1) / sw + 1 - to / sw;
 }
 
-// Compute number of <BS> presses to reduce indent from `from` to `to` spaces.
-// In autoindent context, <BS> deletes to the previous shiftwidth boundary, not
-// just 1 space. Returns -1 if <BS> overshoots past `to` (can't land exactly).
-inline int bsCountForIndent(int from, int to, int sw = VimOptions::shiftwidth()) {
-  // shiftwidth 0 ("follow tabstop" in Neovim) has no boundary to step to;
-  // signal "use <C-u> fallback" rather than dividing by zero.
-  if (sw <= 0) return -1;
-  int count = 0;
-  int pos = from;
-  while (pos > to) {
-    pos = ((pos - 1) / sw) * sw;
-    count++;
-    if (pos < to) return -1;  // overshot
+// Quoting a literal tab prevents Insert-mode 'expandtab' and 'smarttab' from rewriting it.
+inline void appendInsertText(KeyedSequence& keys, std::string_view text) {
+  size_t at;
+  while ((at = text.find('\t')) != text.npos) {
+    keys.append(text.substr(0, at));
+    static const KeyedSequence literalTab{"<C-v><Tab>", {Key::Key_Ctrl, Key::Key_V, Key::Key_Tab}};
+    keys += literalTab;
+    text.remove_prefix(at + 1);
   }
-  return count;
+  keys.append(text);
 }
 
-// Compute keys to adjust autoindent from `autoindentLen` to `targetIndentLen`.
-// Returns empty if already matching. Uses BS when landing on shiftwidth boundary,
-// extra spaces when autoindent is too short, or C-u + retype when BS overshoots.
-inline KeyedSequence computeIndentAdjustment(int autoindentLen, int targetIndentLen) {
-  if (autoindentLen == targetIndentLen) return {};
-  KeyedSequence ks;
-  if (autoindentLen < targetIndentLen) {
-    ks.append(' ', targetIndentLen - autoindentLen);
-    return ks;
+inline KeyedSequence computeIndentAdjustment(std::string_view from, std::string_view to,
+                                            const IndentOptions& options) {
+  KeyedSequence keys;
+  if (to.starts_with(from)) {
+    appendInsertText(keys, to.substr(from.size()));
+  } else if (from.starts_with(to)) {
+    const int count = bsCountForIndent(options.columns(from), options.columns(to), options.backspaceWidth());
+    if (count >= 0 && count <= 2 + std::ssize(to)) {
+      keys.append(KeyedSequence::BS, count);
+    } else {
+      keys += KeyedSequence::CtrlU;
+      appendInsertText(keys, to);
+    }
+  } else {
+    keys += KeyedSequence::CtrlU;
+    appendInsertText(keys, to);
   }
-  int bsNeeded = bsCountForIndent(autoindentLen, targetIndentLen);
-  if (bsNeeded >= 0) {
-    ks.append(KeyedSequence::BS, bsNeeded);
-    return ks;
-  }
-  ks += KeyedSequence::CtrlU;
-  if (targetIndentLen > 0) ks.append(' ', targetIndentLen);
-  return ks;
+  return keys;
 }
 
 }  // export

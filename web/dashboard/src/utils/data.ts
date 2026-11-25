@@ -56,6 +56,27 @@ export function toNanoseconds(value: number, unit: string): Nanoseconds {
   return ns as Nanoseconds;
 }
 
+export interface BenchmarkChange extends ParsedName {
+  name: string;
+  ratio: number;
+  pct: number;
+}
+
+export function benchmarkChanges(runs: BenchmarkRun[]) {
+  const changes: BenchmarkChange[] = [];
+  const previous = runs[runs.length - 2];
+  if (!previous) return changes;
+  const baseline = new Map(previous.benches.map(b => [b.name, toNanoseconds(b.value, b.unit)]));
+  for (const b of runs[runs.length - 1]!.benches) {
+    const before = baseline.get(b.name);
+    if (!before) continue;
+    const after = toNanoseconds(b.value, b.unit);
+    const pct = (after - before) / before * 100;
+    if (Math.abs(pct) >= 10) changes.push({ ...parseName(b.name), name: b.name, ratio: after / before, pct });
+  }
+  return changes;
+}
+
 function timePoint(commit: BenchmarkRun, val: number, repoUrl: string): TimePoint {
   return {
     sha: commit.commit.id.substring(0, 7),

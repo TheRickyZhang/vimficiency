@@ -70,7 +70,7 @@ struct TransformResult : BaseOptimizerResult<std::vector<Result>> {
     bool anyApplied = false;
     for (std::size_t i = 0; i < bucket.size(); i++) {
       const EntryCurswant entryCurswant = bucket[i].getEntryCurswant();
-      if (entryCurswant == EntryCurswant::Required && cursor.targetCol != cursor.col) continue;
+      if (!appliesFrom(entryCurswant, cursor)) continue;
 
       CursorPos goal = goalPosAt(cursor.line, cursor.col, i);
       if (entryCurswant == EntryCurswant::Followed) goal.targetCol = cursor.targetCol;
@@ -80,6 +80,14 @@ struct TransformResult : BaseOptimizerResult<std::vector<Result>> {
     }
     return anyApplied;
   }
+
+  // Whether forEachEditFrom would visit anything from `cursor`.
+  inline bool hasEditFrom(const CursorPos& cursor) const {
+    return std::ranges::any_of(resultsAt(cursor.line, cursor.col), [&](const Result& r) {
+      return appliesFrom(r.getEntryCurswant(), cursor);
+    });
+  }
+
   inline bool isValidStartPosition(int bufferLine, int bufferCol) const {
     int idx = resultIndexAt(bufferLine, bufferCol);
     return idx >= 0 && isValidStartIndex(idx);
@@ -94,6 +102,8 @@ struct TransformResult : BaseOptimizerResult<std::vector<Result>> {
       return -1;
     int idx = lineBaseIndex_[editLine] + bufferCol;
     if (idx < 0 || idx >= static_cast<int>(results_.size()))
+      return -1;
+    if (indexToBufferPos_[idx] != CursorPos(bufferLine, bufferCol))
       return -1;
     return idx;
   }
@@ -110,6 +120,10 @@ private:
 
   inline bool isValidStartIndex(int idx) const {
     return validStartByIndex_[idx];
+  }
+
+  inline static bool appliesFrom(EntryCurswant entryCurswant, const CursorPos& cursor) {
+    return entryCurswant != EntryCurswant::Required || cursor.targetCol == cursor.col;
   }
 
   // Clamp cursor to a valid normal-mode position on concrete post-edit lines.

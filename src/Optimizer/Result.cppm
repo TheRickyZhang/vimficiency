@@ -1,6 +1,7 @@
 export module vf.Optimizer.Result;
 
 import std.compat;
+export import vf.Effort.RunningEffort;
 export import vf.Types.Sequence;
 
 export {
@@ -15,12 +16,17 @@ enum class EntryCurswant : uint8_t {
 
 struct Result {
   Result() = default;
-  inline Result(Sequence seq, double c, EntryCurswant entryCurswant = EntryCurswant::Ignored)
-      : sequence_(std::move(seq)), keyCost_(c), entryCurswant_(entryCurswant) {}
+  inline Result(Sequence seq, const RunningEffort& effort,
+                EntryCurswant entryCurswant = EntryCurswant::Ignored)
+      : sequence_(std::move(seq)), keyCost_(effort.getEffort()),
+        penalty_(effort.getPenalty()), entryCurswant_(entryCurswant) {}
 
   inline const Sequence& getSequence() const { return sequence_; }
   inline double getCost() const { return keyCost_; }
+  // The part of getCost() that re-typing the sequence would not reproduce.
+  inline double getPenalty() const { return penalty_; }
   inline EntryCurswant getEntryCurswant() const { return entryCurswant_; }
+  inline void setEntryCurswant(EntryCurswant entryCurswant) { entryCurswant_ = entryCurswant; }
   bool operator==(const Result&) const = default;
 
   inline std::string to_string() {
@@ -37,6 +43,7 @@ struct Result {
 private:
   Sequence sequence_;
   double keyCost_ = 0;
+  double penalty_ = 0;
   EntryCurswant entryCurswant_ = EntryCurswant::Ignored;
 };
 

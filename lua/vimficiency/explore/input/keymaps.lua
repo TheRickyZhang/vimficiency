@@ -1,0 +1,83 @@
+-- Buffer-local keymaps for the explore scratch buffer + its companion
+-- recommendation list buffer. Declarative: each spec entry names a
+-- `handler` key that the caller's `handlers` table must provide — so this
+-- module stays ignorant of session state, forward-declared locals, etc.
+local ui_windows = require("vimficiency.ui.windows")
+
+local M = {}
+
+---@class VF.Explore.KeymapSpec
+---@field lhs string        # key sequence
+---@field handler string    # handler name — resolved against the `handlers` table passed to `install`
+---@field desc string       # human-readable description (shown by :map etc.)
+---@field summary_group string?  # Adjacent matching groups collapse onto one help row.
+---@field summary_desc string?   # Optional help-row description for the collapsed group.
+---@field mode? string      # default "n"
+---@field nowait? boolean
+
+-- Scratch buffer is deliberately minimal: only session-flow keys stay
+-- reachable in real-time (close / undo / redo). Rarer,
+-- more impactful settings (display mode, dedup, recommendation count,
+-- show-user-typed, result-count) live in the settings modal opened via
+-- `gs`.
+---@type VF.Explore.KeymapSpec[]
+local SCRATCH_SPEC = {
+  { lhs = "q",               handler = "cancel",             desc = "Close explore session",      nowait = true },
+  { lhs = "u",               handler = "undo",               desc = "Undo explore step",          nowait = true,
+    summary_group = "history", summary_desc = "Undo / redo explore step" },
+  { lhs = "<C-r>",           handler = "redo",               desc = "Redo explore step",          nowait = true,
+    summary_group = "history", summary_desc = "Undo / redo explore step" },
+  { lhs = "<Leader>u",       handler = "undo_all",           desc = "Undo all explore steps",     nowait = true,
+    summary_group = "history", summary_desc = "Undo all explore steps" },
+  { lhs = "<Leader>d",       handler = "debug_dump",         desc = "Dump explore state to :messages (debug)", mode = "n", nowait = true },
+}
+
+---@type VF.Explore.KeymapSpec[]
+local LIST_SPEC = {
+  { lhs = "q", handler = "cancel", desc = "Close explore session", nowait = true },
+}
+
+local function resolve(spec, handlers)
+  local out = {}
+  for _, entry in ipairs(spec) do
+    local fn = handlers[entry.handler]
+    assert(fn, "vimfy explore keymaps: missing handler '" .. entry.handler .. "'")
+    out[#out + 1] = {
+      lhs = entry.lhs,
+      handler = fn,
+      desc = entry.desc,
+      summary_group = entry.summary_group,
+      summary_desc = entry.summary_desc,
+      mode = entry.mode,
+      nowait = entry.nowait,
+    }
+  end
+  return out
+end
+
+---Install buffer-local keymaps on the explore panes.
+---`handlers` maps handler-name → nullary function; callers own all side
+---effects (clear_on_key_buffer wrapping, dispatching into session API,
+---etc.). This module only does the lhs → handler binding.
+---
+---Standard summary/settings/docs keys are auto-injected per pane.
+---@param scratch_buf integer
+---@param list_buf integer
+---@param handlers table<string, function>
+function M.install(scratch_buf, list_buf, handlers)
+  local scratch_resolved = ui_windows.with_standard_ui_keymaps(
+    resolve(SCRATCH_SPEC, handlers),
+    {
+      title = "Explore — Keys",
+      docs = true,
+      settings = {
+        lhs = "gs",
+        handler = handlers.open_settings,
+        desc = "Toggle explore settings",
+      },
+    })
+  ui_windows.set_buffer_keymaps(scratch_buf, scratch_resolved)
+  ui_windows.set_buffer_keymaps(list_buf, resolve(LIST_SPEC, handlers))
+end
+
+return M

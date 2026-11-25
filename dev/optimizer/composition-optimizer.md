@@ -26,11 +26,16 @@
 - By abstracting away direct edit commands into planned edit transitions over diffs, our search alternates between call types:
   - Intra-transform: refer to TransformResult to apply the current planned edit
   - Inter-transform: move from one transform end to the next transform start (`NavOptimizer::optimize` with a `CharInterval` goal)
+- The motion goal uses the edit's solved start positions, split at the cursor. NavOptimizer never expands a start that already lies in its goal, so a cursor inside the region but past the solved starts would otherwise dead-end.
+  - Trip wire: a gap between solved starts. Landings in the gap dead-end and use up nav result slots, so a real start past the gap can be missed.
+  - If that shows up, give NavOptimizer a goal set rather than one interval. A hull interval plus excluded positions keeps its heuristic and directional pruning unchanged; a union of ranges would rewrite both.
+  - `JournalNoResult.StartDistribution` in `tests/Debug/JournalNoResult.cpp` measures the run shape over a journal directory.
 - Nav can land with `col < targetCol`, while Transform results are computed with `targetCol == col`. Each `Result` carries an `EntryCurswant` class, set when its first command is explored:
   - `Ignored`: the first command does not read curswant (charwise edits, joins, changes).
   - `Followed`: a lone `dd`-style delete; it lands at `min(entry curswant, lastCol)` and resets curswant there.
   - `Required`: such a delete followed by more commands; usable only when `targetCol == col`.
 - `TransformResult::forEachEditFrom(cursor, linesAfter, visit)` is the one place that applies this. Movement is explored only when it visits nothing.
+- A start whose results are all `Required` is passed to NavOptimizer as an exact-`targetCol` landing, so the motion search skips clamped landings there and keeps looking for one with `targetCol == col`.
 - By storing the previous edit command, we can also quickly check if . will work. (TODO)
 
 ### Explore boundary
@@ -58,17 +63,21 @@ TransformOptimizer already searches normal in-diff `J`, `gJ`, and counted join e
 
 Example: changing `aaa\nbbb` to `aaa bbb` can produce the scoped diff `\nbbb` -> ` bbb`. The physical `J` command must start on the `aaa` line, not inside the scoped deleted text. Composition owns that activation point because it operates on the full intermediate buffer.
 
-Invariant: every `JoinPlan` sequence starts with `J`. If the useful sequence would start with a residual edit, movement, or any non-join action, it is not a composition join plan; normal transform/composition search owns it.
+Invariant: every `JoinPlan` sequence starts with a join (`J`, `gJ`, or a counted one). If the useful sequence would start with a residual edit, movement, or any non-join action, it is not a composition join plan; normal transform/composition search owns it.
 
 ### Algorithm: Partition -> J per Group -> TransformOptimizer Residual
 
 For a diff with N source lines -> M target lines (N > M):
 
 1. **Partition** N source lines into M contiguous groups, where group k maps to target line k
-2. **Match quality check** -- if joined group content is too different from target (common prefix+suffix ratio < 0.3), skip J for this diff
+2. **Match quality check** -- if joined group content is too different from target (common prefix+suffix ratio < 0.3), skip J for this diff. A single-target-line diff with a non-empty prefix and suffix skips this check: text survives on both sides of the deleted newlines, so a join is required
 3. **Entry gate**: skip the plan unless the first group needs at least one `J`
-4. **Per group**: simulate J joins using `VimCore::joinLineRange` semantics, then run TransformOptimizer on the single-line residual (joined line vs target line)
-5. **Assemble**: concatenate all groups' sequences (J's + residual + `j` between groups) into one `JoinPlan`
+4. **Per group**: simulate both `J` and `gJ` joins using `VimCore::joinLineRange` semantics, run TransformOptimizer on each single-line residual (joined line vs target line), and keep the cheaper of the two; when both leave the same line, only `J` is tried
+5. **Assemble**: concatenate all groups' sequences (joins + residual + `j0` between groups) into one `JoinPlan`
+
+A group's count is not searched: the partition fixes it, since a group of `n` source lines is exactly `n - 1` joins. Only the spelling is chosen, the cheapest of `JJJ`, `J..`, and `4J`, which all leave the same text and cursor. The counted form is priced by the same `buildCountedEffort<CountClass::Join>` the transform explorer uses.
+
+A count cannot span planned edits. When the planner splits a join run into one region per newline, each region still contributes its own `J`.
 
 **Partition finding:**
 - M=1 (most common): trivial -- all N lines form one group
@@ -80,12 +89,13 @@ For a diff with N source lines -> M target lines (N > M):
 struct JoinPlan {
   Sequence sequence;
   CursorPos goalPos;
-  double effort;
+  double effort;   // includes penalty
+  double penalty;  // count penalties of the joins and residual edits
   int entryLine;
 };
 ```
 
-Because the first action is `J`, activation is column-insensitive: Vim joins the cursor line with the next line and lands at the join point regardless of the starting column on `entryLine`.
+Because the first action is a join, activation is column-insensitive: Vim joins the cursor line with the next line and lands at the join point regardless of the starting column on `entryLine`.
 
 ### Integration into A* search
 
@@ -129,31 +139,37 @@ J plan efforts are included in `computeSuffixEditCosts()` alongside regular tran
 
 ## Quote/Bracket Motions
 - Motions like ci"/cab allow us to combine an Inter-transform with the next Intra-transform.
-- Since we are moving in order, quotes are only valid if the first quote on this line, and the quote after that are within the next transform region.
-(Note "within" could be one outside region, as doing iw -> still only affect what is inside. Greedily picking inside if matches is optimal)
-- Brackets are a bit more complex because they must form a MATCHING pair, but we can simply track bracket depth with a stack (balance of 0 = will search right), and we can leverage the fact that actions will match with the outermost bracket in region
-- Thus, we can use a bitmask prefix for quotes, matching with FIRST pair in region, and count prefix for brackets, matching with OUTERMOST pair in region.
+- A quote command is eligible when its inner or around range matches the planned edit. The closing search skips backslash-escaped quotes. Around includes trailing spaces and tabs, or leading ones when there are none after the closing quote.
+- The diff boundaries identify candidate inner and around bracket pairs. VimCore checks the closing partner with Neovim's quote rules. To offer a forward search from before the pair, Composition must also establish that no earlier opener takes precedence. Hidden lines can prevent that check. Batch search records the eligible columns once per planned edit.
+- Quote entry masks cover the matching pair, plus the columns before it when it is the first pair on the line.
 - Since each planned edit can introduce new destructive content, we must calculate this context per planned edit.
 
-## Pure Insertions
+## Insert-mode entries
+
+For a replacement whose deleted text consists entirely of line breaks, batch composition tries `A` anywhere on the first line followed by one `<Del>` per break, and `i` at column zero of the last line followed by one `<BS>` per break. Both entries type the same replacement at the join point and compete with Transform and join plans.
+
 - Because a pure insertion has no starting point, we must handle it from the higher composition level.
 - We perform a similar movement search, but augmented with the option of using o/O if we need a new line, and I/A in place of a final $/^ movement, and i/a otherwise.
 - Each strategy defines a range of valid cursor positions from which its mode-entry command produces the correct edit:
   - `o`: any column on the line above (new-line insertions, whether anchored as a trailing `\n` at col 0 or a leading `\n` at end-of-line)
+  - `O`: any column on the line below the new line (same anchorings; the only line-open entry above line 0)
+  - `i`: exact insertion column only
+  - `a`: the column before the insert point (col 0 on an empty line)
   - `I`: any column on the target line, when the insert point is where `I` lands (first non-blank, or past the indent on an all-whitespace line)
   - `A`: any column on the target line (appends at end-of-line)
-  - `a`: the column before the insert point (col 0 on an empty line)
-  - `i`: exact insertion column only
+- Strategies are enumerated in that order, so on an exact cost tie the lowercase entry wins (`Analyze` sorts stably).
+- Line-open entries only apply when the planner anchors the insert at a line boundary. A new line sharing the next line's indent may be anchored mid-line instead (`"b\n    "` at col 4 rather than `"    b\n"` at col 0), which rules out `o`/`O`.
 - The mode-entry command determines the actual insert position independent of where in the range we land, so the final cursor position after typing + Esc is always `transformResult.goalPos`.
 - When navigating to the valid range, the `NavBoundary` must use the full subset extent, not the target range (see `dev/optimizer/buffer-slicing.md` § Boundary vs Target Range).
 
 ### Autoindent in Pure Insertions
 
-For `o`/`A`/`I`/`i` with multi-line insertions, `buildTypedCommands` (from `src/Optimizer/BuildTypedCommands.cppm`) applies autoindent strip/backspace/clear logic (see `dev/optimizer/transform-optimizer.md` § Autoindent Handling):
+For `o`/`O`/`A`/`I`/`i` with multi-line insertions, `buildTypedCommands` (from `src/Optimizer/BuildTypedCommands.cppm`) applies autoindent strip/backspace/clear logic (see `dev/optimizer/transform-optimizer.md` § Autoindent Handling):
 
 | Command | Source indent | Line prefix |
 |---------|--------------|-------------|
-| `o` | `leadingWhitespace(currentLines[targetLine])` | (empty) |
+| `o` | `leadingWhitespace(currentLines[targetLine])` (the line above) | (empty) |
+| `O` | `leadingWhitespace(currentLines[targetLine])` (the line below) | (empty) |
 | `A` | (empty) | current line |
 | `I` | (empty) | text before first non-blank |
 | `i` | (empty) | text before cursor |

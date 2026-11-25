@@ -126,7 +126,7 @@ class SearchWalkthrough(Scene):
         plan = TRACE["plan"]
         fenceposts = TRACE["fenceposts"]
         nodes = TRACE["nodes"]
-        nav_calls = TRACE["navCalls"]
+        nav_zoom = TRACE["navZoom"]
         suffix_costs = TRACE["suffixEditCosts"]
         result = TRACE["results"][0]
         result_segments = TRACE["resultSegments"]
@@ -198,7 +198,7 @@ class SearchWalkthrough(Scene):
         veil = Rectangle(width=15, height=9, fill_color=BG, fill_opacity=0.93,
                          stroke_width=0)
         card = VGroup()
-        zoom = next(z for z in TRACE["transformZooms"] if z["editIdx"] == 1)
+        zoom = TRACE["transformZoom"]
         eff = zoom["effectiveLines"][0]
         L = zoom["leftColOffset"]
         R = len(eff) - zoom["rightColOffset"]
@@ -457,9 +457,8 @@ class SearchWalkthrough(Scene):
             if k in beats_before:
                 beats_before[k]()
 
-            # Nav zoom replaces the plain candidate listing for node 4.
-            if k == 4:
-                self.nav_zoom(nav_calls[3])
+            if k == nav_zoom["fromNode"]:
+                self.nav_zoom(nav_zoom)
                 say("Back in the composition search. The found motion\nis one candidate for this state.", wait=0.2)
 
             # Children: candidate rows + queue updates.

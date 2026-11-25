@@ -2,7 +2,7 @@ local v = vim.api
 local max = math.max
 local min = math.min
 
-local util = require("vimficiency.util")
+local ui_windows = require("vimficiency.ui.windows")
 
 local M = {}
 
@@ -191,7 +191,7 @@ function M.new(ctx)
         vim.log.levels.WARN)
       return
     end
-    active_settings_handle = require("vimficiency.play").open_settings({
+    active_settings_handle = require("vimficiency.simulate.settings").open_settings({
       on_close = function()
         active_settings_handle = nil
         ctx.relayout_grid()
@@ -201,7 +201,7 @@ function M.new(ctx)
 
   ---@param step integer
   function actions.adjust_window_count(step)
-    local play = require("vimficiency.play")
+    local play = require("vimficiency.simulate.settings")
     local settings = play.get_settings()
     local current = settings.window_count
     local new_count = max(1, min(4, current + step))
@@ -211,7 +211,7 @@ function M.new(ctx)
   end
 
   function actions.toggle_include_user()
-    local play = require("vimficiency.play")
+    local play = require("vimficiency.simulate.settings")
     local settings = play.get_settings()
     play.set_setting("include_user_sequence", not settings.include_user_sequence)
     ctx.relayout_grid()
@@ -246,7 +246,7 @@ function M.new(ctx)
     end)
   end
 
-  actions.keymaps = util.with_standard_ui_keymaps({
+  actions.keymaps = ui_windows.with_standard_ui_keymaps({
     { lhs = "<Left>",  handler = actions.step_left,  desc = "Step backward",
       summary_group = "step", summary_desc = "Step backward / forward" },
     { lhs = "<Right>", handler = actions.step_right, desc = "Step forward",

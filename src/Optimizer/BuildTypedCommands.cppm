@@ -1,3 +1,6 @@
+module;
+#include <cassert>
+
 export module vf.Optimizer.BuildTypedCommands;
 
 import std.compat;
@@ -7,22 +10,21 @@ export import vf.Types.CursorPos;
 export import vf.Types.Lines;
 export import vf.VimCore.VimOptions;
 
-inline int restoredSuffixSpacesForTypedCommands(
-    const Lines& goalLines,
-    std::string_view suffix) {
-  if constexpr (VimOptions::autoindent()) {
-    return goalLines.size() > 1 ? std::ssize(leadingWhitespace(suffix)) : 0;
-  }
-  return 0;
-}
-
 export {
+
+inline KeyedSequence buildCollapseSequence(int totalLines, int cursorLine) {
+  assert(cursorLine >= 0 && cursorLine < totalLines);
+  KeyedSequence keys;
+  keys.append(KeyedSequence::BS, cursorLine);
+  keys.append(KeyedSequence::Del, totalLines - 1 - cursorLine);
+  return keys;
+}
 
 inline CursorPos typedCommandsExitCursor(
     CursorPos insertPos,
     const Lines& goalLines,
-    std::string_view suffix = "") {
-  int suffixSpaces = restoredSuffixSpacesForTypedCommands(goalLines, suffix);
+    std::string_view suffix = "", const IndentOptions& options = {}) {
+  const int suffixSpaces = options.autoindent ? IndentOptions::leadingIndent(suffix).size() : 0;
 
   if (goalLines.size() == 1) {
     int typedLen = goalLines.getSize(0);
@@ -54,102 +56,44 @@ inline KeyedSequence buildTypedCommands(
     const Lines &goalLines,
     std::string_view initialAutoindent = "", // indent on first typed line
     std::string_view linePrefix = "",
-    std::string_view suffix = ""             // If multi-line goal, leading spaces in suffix may need to be retyped
+    std::string_view suffix = "",
+    const IndentOptions& options = {}
 ) {
   KeyedSequence ks;
-  // Backing storage for autoindentFor's combined-indent view. A plain local,
-  // not a thread_local inside the lambda: see the GCC note in Utils/Debug.cppm.
-  std::string combinedIndent;
-
-  // Helper: emit keys for a line given expected autoindent
-  // Cases: (1) no autoindent, (2) goal matches, (3) goal has less indent, (4) mismatch
-  auto emitLine = [&](std::string_view line, std::string_view autoindent) {
-    // Case 1: no autoindent — type full line
-    if (autoindent.empty()) {
-      ks.append(line);
-      return;
-    }
-
-    if (line == autoindent &&
-        leadingWhitespace(line).size() == line.size()) {
-      ks += computeIndentAdjustment(static_cast<int>(autoindent.size()), 0);
-      ks.append(line);
-      return;
-    }
-
-    // Case 2: goal starts with autoindent — strip it
-    if (line.size() >= autoindent.size() &&
-        line.substr(0, autoindent.size()) == autoindent) {
-      ks.append(line.substr(autoindent.size()));
-      return;
-    }
-
-    // Case 3: autoindent starts with goal's indent — use <BS> if more efficient
-    // <BS> in autoindent deletes to previous shiftwidth boundary, not just 1 space.
-    auto goalIndent = leadingWhitespace(line);
-    if (autoindent.size() > goalIndent.size() &&
-        autoindent.substr(0, goalIndent.size()) == goalIndent) {
-      int bsNeeded = bsCountForIndent(
-          static_cast<int>(autoindent.size()),
-          static_cast<int>(goalIndent.size()),
-          VimOptions::shiftwidth());
-      if (bsNeeded >= 0) {
-        int remainder = static_cast<int>(line.size() - goalIndent.size());
-        // <BS> is better when: bsNeeded + remainder < 2 + line.size()
-        if (bsNeeded + remainder < 2 + static_cast<int>(line.size())) {
-          ks.append(KeyedSequence::BS, bsNeeded);
-          ks.append(line.substr(goalIndent.size()));
-          return;
-        }
+  std::string nextIndent;
+  for (size_t i = 0; i < goalLines.size(); ++i) {
+    const std::string_view line = goalLines[i];
+    if (i > 0) {
+      ks += KeyedSequence::CR;
+      const std::string_view previous = goalLines[i - 1];
+      if (i == 1 && !linePrefix.empty()) {
+        const auto prefixIndent = IndentOptions::leadingIndent(linePrefix);
+        nextIndent = prefixIndent.size() == linePrefix.size()
+            ? options.openedIndent(std::string(prefixIndent) + std::string(IndentOptions::leadingIndent(previous)))
+            : options.openedIndent(prefixIndent);
+      } else {
+        nextIndent = options.openedIndent(previous);
       }
     }
-
-    // Case 4: mismatch — clear with <C-u> and type full line
-    ks += KeyedSequence::CtrlU;
-    ks.append(line);
-  };
-
-  // Compute what autoindent Neovim provides for a given line during insert-mode typing.
-  // Line 0: uses initialAutoindent (from cc source line or mode-entry command).
-  // Line 1 with non-empty linePrefix: autoindent from prefix + goalLines[0].
-  // Line 2+: autoindent from previous goal line.
-  auto autoindentFor = [&](size_t i) -> std::string_view {
-    if (i == 0) return initialAutoindent;
-
-    if (i == 1 && !linePrefix.empty()) {
-      auto prefixWs = leadingWhitespace(linePrefix);
-      if (prefixWs.size() == linePrefix.size()) {
-        // prefix is entirely spaces — combined indent
-        auto goalWs = leadingWhitespace(goalLines[i - 1]);
-        combinedIndent.assign(linePrefix.size() + goalWs.size(), ' ');
-        return combinedIndent;
+    const std::string_view indent = i == 0 ? initialAutoindent : std::string_view(nextIndent);
+    if (indent.empty()) {
+      appendInsertText(ks, line);
+    } else {
+      const auto goalIndent = IndentOptions::leadingIndent(line);
+      // Untouched autoindent disappears on <Esc> or the next <CR>.
+      if (!line.empty() && line == goalIndent && indent.starts_with(line)) {
+        ks += computeIndentAdjustment(indent, {}, options);
+        appendInsertText(ks, line);
+      } else {
+        ks += computeIndentAdjustment(indent, goalIndent, options);
+        appendInsertText(ks, line.substr(goalIndent.size()));
       }
-      return prefixWs;
-    }
-
-    return leadingWhitespace(goalLines[i - 1]);
-  };
-
-  // Main loop: handle all lines uniformly via helpers
-  if constexpr (VimOptions::autoindent()) {
-    for (size_t i = 0; i < goalLines.size(); i++) {
-      if (i > 0) ks += KeyedSequence::CR;
-      emitLine(goalLines[i], autoindentFor(i));
-    }
-  } else {
-    // autoindent off — type full lines directly
-    for (size_t i = 0; i < goalLines.size(); i++) {
-      if (i > 0) ks += KeyedSequence::CR;
-      ks.append(goalLines[i]);
     }
   }
 
-  // Restore suffix leading whitespace stripped by <CR> (see suffix param docs).
-  int suffixSpaces = restoredSuffixSpacesForTypedCommands(goalLines, suffix);
-  if (suffixSpaces > 0) {
-    ks.append(' ', suffixSpaces);
+  if (options.autoindent && goalLines.size() > 1) {
+    appendInsertText(ks, IndentOptions::leadingIndent(suffix));
   }
-
   ks += KeyedSequence::Esc;
   return ks;
 }

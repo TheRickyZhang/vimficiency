@@ -1,8 +1,9 @@
 # Search walkthrough animation
 
 Companion to [dp-walkthrough](../dp-walkthrough/README.md), picking up at its
-closing line: the plan meets the exact search. Same `main()` example
-(5-statement loop body), same visual language.
+closing line about realizing a plan with Vim commands. The recorded search uses
+an earlier five-region partition of the same `main()` example. The current
+planner selects four regions.
 
 - Act 1: the five planned regions on the buffer.
 - Act 2: transform pre-solve for region 2 (`10` → `n`) — deletions explored
@@ -27,8 +28,8 @@ recorded pop order by re-deriving every pop's transitions through the same
 public helpers the real loop uses (transform-result buckets, insertion
 strategies, inner NavOptimizer calls — whose own pop traces are captured).
 Transform pops are replayed through the interpreter for buffer snapshots.
-Every re-derived pop and every production result is asserted against the real
-search, so the animation cannot drift from the real optimizer.
+The exporter checks the reconstructed pops and results against the optimizer
+used for that recording.
 
 The finale's runner-up candidates come from the dominated branches: a dropped
 child shares its state key with a node on the winning path, so the winner's
@@ -36,14 +37,15 @@ remaining transitions complete it verbatim. Each completed sequence (winner
 included) is replay-verified through the interpreter to reach the goal buffer
 and cursor.
 
-Regenerate (from the repo root; the default example is this one —
-`VIMFY_TRACE_INITIAL` / `VIMFY_TRACE_GOAL` override it, literal `\n` for
-newlines, though the scene's zooms and beats are scripted to this trace):
+The scene uses the transform zoom for edit 1 and the inter-edit navigation call
+from node 4. To reproduce the checked-in snapshot from the original recording,
+run these commands from the repo root:
 
 ```bash
-cmake --build build --target vimfy_debug
-VIMFY_TRACE_OUT=anim/search-walkthrough/trace.json \
-  ./build/tests/vimfy_debug --gtest_filter='CompositionTraceExport.*'
+git show e423e1b5:anim/search-walkthrough/trace.json | jq -S --indent 1 \
+  '. + {navZoom: (.navCalls[] | select(.fromNode == 4 and .purpose == "inter-edit")),
+        transformZoom: (.transformZooms[] | select(.editIdx == 1))}
+   | del(.navCalls, .transformZooms, .nodes[].children[].navCall)' > anim/search-walkthrough/trace.json
 ```
 
 ## Render

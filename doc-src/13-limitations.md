@@ -7,8 +7,8 @@ title: "Known limitations"
 - **Needs Neovim nightly (0.13-dev).** Capture runs off the `CmdAtom`
   event; `setup()` raises on older Neovim.
 
-- **Screen-line motions** `gj`/`gk` are approximated as `j`/`k`. Exact on
-  unwrapped lines; off by a little when wrapping is in play.
+- **Screen-line motions.** The optimizer approximates `gj`/`gk` as `j`/`k`.
+  The recorded pane shows the cursor position Neovim observed.
 
 - **Multi-buffer edits** aren't supported within a single session. If you
   finish a session while a different buffer is focused, it is rejected.
@@ -16,7 +16,8 @@ title: "Known limitations"
   the session stays alive and keys typed outside the session window are
   silently ignored.
 
-- **Large regions** (more than `MAX_SEARCH_LINES`) are refused with an error;
+- **Large regions** include intermediate cursor visits, edited lines and padding.
+  Regions beyond `MAX_SEARCH_LINES` are refused with an error;
   split the edit up or increase the limit if you really want this.
 
 - **Long sessions** may hit the optimizer's search budget; expect diminishing
@@ -25,13 +26,20 @@ title: "Known limitations"
 - **Mappings to Lua callbacks can't be audited as motion.** A key mapped to a
   Lua function that edits the buffer or moves the cursor produces an
   unreplayable capture event. By default (`lossy_mappings = "warn"`) the keys
-  you typed are recorded in its place with a once-per-session notice; replay
-  is faithful only when the function did what those keys do in plain Vim.
+  you typed label the action and a once-per-session notice appears. Play
+  shows the observed effect, including edits made through plugin APIs.
   `"allow"` records silently, and `"drop"` ends the session with a warning that
   names the mapping (see [Configuration](09-configuration.md)). Mappings whose
   RHS is a key sequence are fine — they are captured as the resolved
-  post-mapping keys. Type the underlying keys directly when you want a specific
-  motion audited.
+  post-mapping keys. Either way your cost counts the keys you pressed, not
+  what they expanded to. The optimizer uses the captured start and goal.
+  Type the underlying keys directly when you want a specific motion audited.
+
+- **Some recorded keys are inaccurate** until Neovim reports them per command.
+  Text a Lua Insert-mode mapping inserts (nvim-ts-autotag's `>`) is missing
+  from the key label. Play still shows the inserted text at the next observation.
+  Your cost can be off by a key when commands arrive in one burst, or when a
+  Vimscript plugin reads keys with `getchar()`.
 
 - **Recall only records actions in normal file buffers** (`&buftype == ""`).
   Actions in help, quickfix, terminal, prompt, or scratch buffers are skipped —

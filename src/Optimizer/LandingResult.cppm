@@ -10,8 +10,8 @@ export {
 // Returned by every NavOptimizer search (single-cursor and interval alike)
 struct LandingResult : Result {
   LandingResult() = default;
-  inline LandingResult(Sequence seq, double c, CursorPos p)
-    : Result(std::move(seq), c), goalPos_(p) {}
+  inline LandingResult(Sequence seq, const RunningEffort& effort, CursorPos p)
+    : Result(std::move(seq), effort), goalPos_(p) {}
 
   inline const CursorPos& getGoalPos() const { return goalPos_; }
 

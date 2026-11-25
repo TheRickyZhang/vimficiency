@@ -5,6 +5,7 @@ import vf.Utils.HashCombine;
 export import vf.Keyboard.Config;
 export import vf.Effort.RunningEffort;
 export import vf.Interpreter.EditInterpreter;
+export import vf.Keyboard.KeyedSequence;
 export import vf.Optimizer.Result;
 export import vf.Optimizer.SequenceBinding;
 export import vf.Types.CharLineRange;
@@ -126,6 +127,16 @@ public:
   inline uint64_t getLinesHash() const { return linesHash_; }
 };
 
+// What a goal's path is remembered by once the goal pops: the plain completion,
+// also for a goal that itself ends in a dot repeat. The typed text stays with
+// the goal handler.
+struct GoalCompletion {
+  KeyedSequence command;
+  double penalty;
+  const KeyedSequence& typed;
+  const RunningEffort& typedEffort;
+};
+
 struct TransformPathStep {
   std::shared_ptr<const TransformPathStep> prev;
   uint64_t linesHashAfter = 0;
@@ -136,6 +147,8 @@ struct TransformPathStep {
   std::string command;
   bool isDotRepeat = false;
   bool updatesDotRepeat = false;
+  // Set only on the step that completes the edit.
+  std::shared_ptr<const GoalCompletion> goalCompletion;
 
   inline TransformPathStep(std::shared_ptr<const TransformPathStep> prev,
                     const TransformEditorState& editorAfter,
@@ -314,9 +327,19 @@ class TransformStateFactory {
   }
 
   // A command after a curswant-following delete acts on the column it produced.
+  // A first delete that lands on a line no longer than the entry column clamps
+  // every curswant to the same column, so it does not follow it.
   inline static EntryCurswant extendEntryCurswant(const TransformState& base,
-                                                  EntryCurswant command) {
-    if (!base.pathTail_) return command;
+                                                  EntryCurswant command,
+                                                  const TransformEditorState& next) {
+    if (!base.pathTail_) {
+      const int line = next.getPos().line;
+      const Lines& lines = next.getLines();
+      const bool clampsAlike = command == EntryCurswant::Followed &&
+          line >= 0 && line <= lines.lastLine() &&
+          lines[line].lastCol() <= base.getPos().col;
+      return clampsAlike ? EntryCurswant::Ignored : command;
+    }
     return base.entryCurswant_ == EntryCurswant::Followed
         ? EntryCurswant::Required : base.entryCurswant_;
   }
@@ -362,7 +385,7 @@ public:
       EntryCurswant entryCurswant) const {
     TransformState state = base;
     state.editor = std::move(editor);
-    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant);
+    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant, state.editor);
     appendCommand(state, cmd, precomputed, heuristicCost);
     recordPathStep(state, base, std::string(cmd), false);
     return state;
@@ -378,30 +401,33 @@ public:
       EntryCurswant entryCurswant) const {
     TransformState state = base;
     state.editor = std::move(editor);
-    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant);
+    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant, state.editor);
     appendCountedCommand(state, count, baseCmd, precomputed, heuristicCost);
     state.lastEdit_ = DotRepeat{std::string(baseCmd), count};
     recordPathStep(state, base, countedCommandString(count, baseCmd), true);
     return state;
   }
 
-  [[nodiscard]] inline TransformState afterCommandWithLastEdit(
+  // A state whose `cmd` completes the edit, so nothing is left to estimate.
+  [[nodiscard]] inline TransformState afterGoalCommand(
       const TransformState& base,
       TransformEditorState editor,
       std::string_view cmd,
       const RunningEffort& precomputed,
-      double heuristicCost,
       DotRepeat lastEdit,
-      EntryCurswant entryCurswant) const {
+      EntryCurswant entryCurswant,
+      std::shared_ptr<const GoalCompletion> completion) const {
     TransformState state = base;
     state.editor = std::move(editor);
-    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant);
-    appendCommand(state, cmd, precomputed, heuristicCost);
+    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant, state.editor);
+    appendCommand(state, cmd, precomputed, 0.0);
     bool hasEdit = !lastEdit.empty();
     state.lastEdit_ = std::move(lastEdit);
-    state.pathTail_ = std::make_shared<TransformPathStep>(
+    auto step = std::make_shared<TransformPathStep>(
         base.pathTail_, state.editor, state.lastEdit_,
         std::string(cmd), cmd == ".", hasEdit);
+    step->goalCompletion = std::move(completion);
+    state.pathTail_ = std::move(step);
     return state;
   }
 };

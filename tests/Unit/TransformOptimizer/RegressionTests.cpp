@@ -104,6 +104,19 @@ TEST_F(TransformOptimizer_ManualTest, VisualDeleteFallbackRejectsExclusiveNextLi
   EXPECT_FALSE(visual.has_value());
 }
 
+TEST_F(TransformOptimizer_ManualTest, RepeatedDeletionCanStillEnterBeforeSurvivingSuffix) {
+  const Lines source{"", "word", "xxx"};
+  const Lines full{"", "word", "xxxZ"};
+  TransformBoundary boundary(full, {0, 0}, {2, 3});
+  TransformOptimizer optimizer(Config::qwerty());
+  auto result = optimizer.optimizeTransform(source, Lines{"Q"}, boundary, regressionParams(160, 20));
+  const auto bucket = result.resultsAt(2, 1);
+  const string sequence = "dge.iQ<Esc>";
+  ASSERT_TRUE(ranges::any_of(bucket, [&](const Result& r) { return r.getSequence().str() == sequence; }));
+  EXPECT_TRUE(OracleReplay::matches(*oracle, full, {2, 1}, sequence, Lines{"QZ"},
+                                    CursorPos(0, 0), Mode::Normal, "repeat before suffix"));
+}
+
 TEST_F(TransformOptimizer_ManualTest, BackwardWordChangeFromEmptyLineMatchesVim) {
   // `cb` has no property coverage (only the d-variants are generated).
   OracleReplay::expectModelMatchesOracle(*oracle, {"~~~~", ""}, {1, 0}, "cb<Esc>");
@@ -181,6 +194,20 @@ TEST_F(TransformOptimizer_ManualTest, EmbeddedDgeWithBlankPrefixIsInvalid) {
       });
 
   EXPECT_TRUE(sawDge);
+}
+
+TEST_F(TransformOptimizer_ManualTest, JoinThenInsertPreservesFirstLinePrefix) {
+  const Lines full{"abX", " ", "Z"};
+  const CursorPos start(0, 2), goal(1, 0);
+  const TransformBoundary boundary(full, start, {2, 0});
+  TransformOptimizer optimizer(Config::qwerty());
+  const auto result = optimizer.optimizeTransform(
+      {"X", " ", ""}, {"!", ""}, boundary, regressionParams(160, 20), 0, 2, goal);
+  const auto bucket = result.resultsAt(start.line, start.col);
+  EXPECT_TRUE(ranges::any_of(bucket, [](const Result& r) {
+    return r.getSequence().view().starts_with("xJ");
+  }));
+  expectBucketReplays(bucket, full, start, {"ab!", "Z"}, "join then insert", SIZE_MAX, goal);
 }
 
 TEST_F(TransformOptimizer_ManualTest, OneLineClearedShellRequiresBoundaryCursor) {

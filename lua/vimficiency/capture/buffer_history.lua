@@ -1,16 +1,19 @@
--- Per-buffer line history: one shadow copy of the buffer as of its last mark,
--- plus the lines replaced between consecutive marks, so an earlier text can be
--- rebuilt on demand instead of being snapshotted up front.
+-- One shadow per buffer. Each delta keeps the old lines for Recall and the
+-- replacement lines for Play.
 --
 -- `on_lines` reports ranges only, never the replaced text; the shadow is where
 -- that text is read from. Between marks `on_lines` only widens one pending
 -- range, so a command that fires it once per line stays cheap.
 
 ---@class (exact) VF.BufferHistory
----@field mark              fun(buf: integer): integer
+---@field mark              fun(buf: integer): integer, VF.BufferHistory.State
 ---@field lines_at          fun(buf: integer, seq: integer): string[]
+---@field changes           fun(buf: integer, after: integer, through: integer): VF.Replay.Delta[], number
+---@field splice            fun(lines: string[], first: integer, old_count: integer, replacement: string[])
+---@field difference        fun(before: string[], after: string[]): VF.Replay.Delta?
 ---@field trim              fun(buf: integer, seq: integer)
----@field set_reset_handler fun(handler: fun(buf: integer))
+---@field set_reset_handler fun(handler: fun(buf: integer): boolean)
+---@field set_observer      fun(observer: VF.BufferHistory.Observer|nil)
 ---@field shutdown          fun()
 local M = {}
 
@@ -18,11 +21,12 @@ local v = vim.api
 local util = require("vimficiency.util")
 
 ---@class VF.BufferHistory.Delta
----@field first     integer   # 0-indexed first changed line
 ---@field old_lines string[]  # lines the change replaced
----@field new_count integer   # how many lines replaced them
+---@field forward VF.Replay.Delta
+---@field min_height integer
 
 ---@class VF.BufferHistory.Pending
+---@field min_height integer  # smallest buffer height while this range was pending
 ---@field first    integer  # 0-indexed first changed line
 ---@field old_last integer  # end of the changed range in the shadow
 ---@field new_last integer  # end of the changed range in the buffer
@@ -33,19 +37,31 @@ local util = require("vimficiency.util")
 ---@field deltas   VF.BufferHistory.Delta[]
 ---@field base_seq integer       # seq of the text before `deltas[1]`
 ---@field dead     boolean       # set by shutdown/detach; the attach callbacks then detach themselves
+---@field reloaded boolean?      # a named session spans a reload; compare its last shadow at the next mark
 
 ---@type table<integer, VF.BufferHistory.State>
 local states = {}
+---@type table<integer, VF.BufferHistory.State>
+local detached = setmetatable({}, { __mode = "v" })
 
----@type fun(buf: integer)
-local reset_handler = function() end
+---@type fun(buf: integer): boolean
+local reset_handler = function() return false end
+
+--- Sees every text a mark establishes: the seed, then each folded delta in order.
+---@class VF.BufferHistory.Observer
+---@field on_seed  fun(buf: integer, lines: string[])  # `lines` is the live shadow; consume before returning
+---@field on_delta fun(buf: integer, first: integer, old_count: integer, new_lines: string[], min_height: integer)
+
+---@type VF.BufferHistory.Observer
+local NO_OBSERVER = { on_seed = function() end, on_delta = function() end }
+local observer = NO_OBSERVER
 
 --- Replace `lines[first + 1 .. first + old_count]` with `replacement`, in place.
 ---@param lines string[]
 ---@param first integer
 ---@param old_count integer
 ---@param replacement string[]
-local function splice(lines, first, old_count, replacement)
+function M.splice(lines, first, old_count, replacement)
   local new_count = #replacement
   local n = #lines
   if new_count ~= old_count then
@@ -55,29 +71,40 @@ local function splice(lines, first, old_count, replacement)
   table.move(replacement, 1, new_count, first + 1, lines)
 end
 
---- Every seq handed out so far stops being rebuildable. The shadow is reseeded
---- by the next `mark`, not here: `on_reload` fires before the new text is read.
+function M.difference(before, after)
+  local first, tail = 0, 0
+  local shorter = math.min(#before, #after)
+  while first < shorter and before[first + 1] == after[first + 1] do first = first + 1 end
+  while tail < shorter - first and before[#before - tail] == after[#after - tail] do tail = tail + 1 end
+  if first + tail == math.max(#before, #after) then return end
+  return { first = first, old_count = #before - first - tail, lines = vim.list_slice(after, first + 1, #after - tail) }
+end
+
+--- The next mark reads the replacement text. `on_reload` fires before it is available.
 ---@param state VF.BufferHistory.State
 ---@param buf integer
 local function reset(state, buf)
+  state.pending = nil
+  state.reloaded = reset_handler(buf)
+  if state.reloaded then return end
   state.base_seq = state.base_seq + #state.deltas
   state.deltas = {}
   state.shadow = nil
-  state.pending = nil
-  reset_handler(buf)
 end
 
 ---@param state VF.BufferHistory.State
 ---@param first integer
 ---@param last integer
 ---@param new_last integer
-local function widen_pending(state, first, last, new_last)
-  if not state.shadow then return end
+local function widen_pending(state, buf, first, last, new_last)
+  if not state.shadow or state.reloaded then return end
   local pending = state.pending
   if not pending then
-    state.pending = { first = first, old_last = last, new_last = new_last }
+    state.pending = { first = first, old_last = last, new_last = new_last,
+      min_height = math.min(#state.shadow, v.nvim_buf_line_count(buf)) }
     return
   end
+  pending.min_height = math.min(pending.min_height, v.nvim_buf_line_count(buf))
 
   -- Lines past the pending range are unchanged, so they sit at the same offset
   -- in the shadow as in the buffer.
@@ -109,11 +136,12 @@ local function sync(state, buf)
 
   local new_lines = v.nvim_buf_get_lines(buf, first, new_last, false)
   state.deltas[#state.deltas + 1] = {
-    first = first,
     old_lines = vim.list_slice(shadow, first + 1, old_last),
-    new_count = #new_lines,
+    min_height = pending.min_height,
+    forward = { first = first, old_count = old_last - first, lines = new_lines },
   }
-  splice(shadow, first, old_last - first, new_lines)
+  M.splice(shadow, first, old_last - first, new_lines)
+  observer.on_delta(buf, first, old_last - first, new_lines, pending.min_height)
 end
 
 local guarded_widen_pending = util.entry(widen_pending)
@@ -123,13 +151,13 @@ local guarded_reset = util.entry(reset)
 ---@return VF.BufferHistory.State
 local function attach(buf)
   ---@type VF.BufferHistory.State
-  local state = { shadow = nil, pending = nil, deltas = {}, base_seq = 0, dead = false }
-  states[buf] = state
+  local state = detached[buf] or { shadow = nil, pending = nil, deltas = {}, base_seq = 0, dead = false }
 
-  v.nvim_buf_attach(buf, false, {
+  -- Unattached, the shadow would never see another change.
+  local attached = v.nvim_buf_attach(buf, false, {
     on_lines = function(_, _, _, first, last, new_last)
       if state.dead then return true end
-      guarded_widen_pending(state, first, last, new_last)
+      guarded_widen_pending(state, buf, first, last, new_last)
     end,
     on_reload = function()
       if not state.dead then guarded_reset(state, buf) end
@@ -139,8 +167,13 @@ local function attach(buf)
       state.dead = true
       states[buf] = nil
       guarded_reset(state, buf)
+      if state.reloaded then detached[buf] = state end
     end,
   })
+  assert(attached, "vimfy buffer_history: cannot attach to unloaded buffer " .. buf)
+  detached[buf] = nil
+  state.dead = false
+  states[buf] = state
   return state
 end
 
@@ -148,14 +181,27 @@ end
 --- it is trimmed or reset. Starts recording `buf` on first use.
 ---@param buf integer
 ---@return integer
+---@return VF.BufferHistory.State
 function M.mark(buf)
   local state = states[buf] or attach(buf)
-  if state.shadow then
+  if state.shadow and not state.reloaded then
     sync(state, buf)
   else
-    state.shadow = v.nvim_buf_get_lines(buf, 0, -1, false)
+    local lines = v.nvim_buf_get_lines(buf, 0, -1, false)
+    if state.shadow then
+      local delta = M.difference(state.shadow, lines)
+      if delta then
+        state.deltas[#state.deltas + 1] = {
+          old_lines = vim.list_slice(state.shadow, delta.first + 1, delta.first + delta.old_count),
+          min_height = math.min(#state.shadow, #lines),
+          forward = delta,
+        }
+      end
+    end
+    state.shadow, state.reloaded = lines, false
+    observer.on_seed(buf, state.shadow)
   end
-  return state.base_seq + #state.deltas
+  return state.base_seq + #state.deltas, state
 end
 
 --- `buf`'s text as it was at `seq`.
@@ -167,9 +213,21 @@ function M.lines_at(buf, seq)
   local lines = vim.list_slice(state.shadow)
   for i = #state.deltas, seq - state.base_seq + 1, -1 do
     local delta = state.deltas[i]
-    splice(lines, delta.first, delta.new_count, delta.old_lines)
+    M.splice(lines, delta.forward.first, #delta.forward.lines, delta.old_lines)
   end
   return lines
+end
+
+function M.changes(buf, after, through)
+  local state = states[buf]
+  local changes = {}
+  local min_height = math.huge
+  for i = after - state.base_seq + 1, through - state.base_seq do
+    local delta = state.deltas[i]
+    changes[#changes + 1] = delta.forward
+    min_height = math.min(min_height, delta.min_height)
+  end
+  return changes, min_height
 end
 
 --- Forget how to rebuild anything older than `seq`.
@@ -183,16 +241,21 @@ function M.trim(buf, seq)
   state.base_seq = seq
 end
 
---- `handler(buf)` runs when `buf`'s earlier seqs stop being rebuildable: reload
---- or unload.
----@param handler fun(buf: integer)
+--- Keep earlier marks across reload or unload while a named session needs them.
+---@param handler fun(buf: integer): boolean
 function M.set_reset_handler(handler)
   reset_handler = handler
+end
+
+---@param new_observer VF.BufferHistory.Observer|nil
+function M.set_observer(new_observer)
+  observer = new_observer or NO_OBSERVER
 end
 
 function M.shutdown()
   for _, state in pairs(states) do state.dead = true end
   states = {}
+  detached = setmetatable({}, { __mode = "v" })
 end
 
 return M

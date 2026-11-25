@@ -2,6 +2,7 @@ export module vf.Interpreter.EditInterpreter;
 
 import std.compat;
 export import vf.Types.NavContext;
+export import vf.VimCore.VimOptions;
 export import vf.Types.CharLineRange;
 export import vf.Types.LineCharRange;
 export import vf.Types.Mode;
@@ -61,7 +62,7 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
                // that wipes it. Caller threads this across token applies so
                // multi-token sequences (`i<CR><Esc>`, `iX<CR><Esc>`) see
                // consistent state.
-               int* pendingAutoindentLen = nullptr);
+               int* pendingAutoindentLen = nullptr, const IndentOptions& options = {});
 
 enum class EditParseErrorKind {
   MalformedSpecialKey,

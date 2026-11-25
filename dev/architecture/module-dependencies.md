@@ -22,10 +22,16 @@ the few remaining `#include "..."` lines are X-macro `.inc`/`.h` fragments.
 - `Explore`: Interactive exploration adapter built on optimizer frontiers and VimCore replay.
 - `LuaExports`: C ABI adapter layer for LuaJIT, grouped by exported API domain.
 - `Wasm`: C ABI adapter for the docs site's planner module (Emscripten build only; excluded from `vimfy_core`). See `dev/web/how-it-works-site.md`.
+- `Journal`: The `vimfy_journal` tool: replays the capture journal, cuts it into windows and scores them; the shared library also links it to cut one sampled run again (`vf_stats_run`). Excluded from `vimfy_core`. See `dev/lua/atom-stream.md` § Sampling.
+- `Stats`: The session log, the journal rollups, and the filtering and reduction of them and the journal samples into what `:Vimfy stats` shows and lists (`vimfy_stats_lib`, excluded from `vimfy_core` because it reads protobuf files). See `dev/lua/session-storage.md` § The session log.
+- `Storage`: Shared record framing and sample format parameters.
+- `Versions`: `src/Versions.cppm` (`vf.Versions`), the one root-level module: every file-format and scoring version, with the signatures recorded beside them. A leaf any module may import.
 
 ## Allowed Dependencies
 
 - `Types` -> (none)
+- `Versions` -> (none)
+- `Storage` -> `Versions`
 - `Utils` -> `Types`
 - `Keyboard` -> `Types`, `Utils`
 - `Effort` -> `Keyboard`
@@ -35,8 +41,10 @@ the few remaining `#include "..."` lines are X-macro `.inc`/`.h` fragments.
 - `Boundary` -> `Types`, `Utils`
 - `Optimizer` -> `Types`, `Utils`, `Keyboard`, `VimCore`, `Boundary`, `Interpreter`, `Effort`
 - `Explore` -> `Types`, `Keyboard`, `Effort`, `Boundary`, `VimCore`, `Interpreter`, `Optimizer`
-- `LuaExports` -> `Types`, `Keyboard`, `Boundary`, `Interpreter`, `VimCore`, `Optimizer`, `Explore`, `Utils`
+- `LuaExports` -> `Types`, `Keyboard`, `Boundary`, `Interpreter`, `VimCore`, `Optimizer`, `Explore`, `Utils`, `Stats` and `Journal` (`StatsExports.cpp` only: `Stats` and `Journal` import the `vimfy_lua_common` modules, never the `*Exports.cpp` entry points, so there is no build cycle)
 - `Wasm` -> `Types`, `Keyboard`, `Effort`, `Boundary`, `Optimizer` (DiffPlanner only), `Utils`
+- `Journal` -> `Types`, `Keyboard`, `Effort`, `Optimizer`, `Utils`, `LuaExports` (config and override decoding only), `Storage`, `Stats` (`Rollup` and `Run` only)
+- `Stats` -> `Interpreter` (`SequenceParser` and `SequenceDisplay` only), `Storage`, `Versions`
 
 ## Placement Rules
 
@@ -47,7 +55,8 @@ the few remaining `#include "..."` lines are X-macro `.inc`/`.h` fragments.
 - Keep foundational buffer/cursor types out of `Interpreter`; lower layers (`VimCore`, `Boundary`, `Optimizer`) share them via `Types`.
 - `Sequence` follows split ownership:
   type declaration in `Types`, formatting/parsing-aware stream implementation in a higher layer (`Interpreter`) to keep `Types` dependency-free.
-- Keep `Explore`, `LuaExports`, and `Wasm` as edge layers: they may compose lower-level modules, but lower-level modules must not include them.
+- Keep `Explore`, `LuaExports`, `Wasm`, `Journal`, and `Stats` as edge layers: they may compose lower-level modules, but lower-level modules must not include them.
+- What a session search is built from lives in `Optimizer/Analyze` (region, slice, cursor clamping, optimizer choice), so every edge layer that scores a session shares it.
 
 ## Enforcement
 
@@ -57,4 +66,4 @@ Run dependency lint locally:
 ./scripts/lint-module-deps.sh
 ```
 
-CI runs the same lint before build/tests. The lint reads `import vf.<Dir>...` lines (and any remaining quoted includes) and currently enforces the core domain modules; `Explore`, `LuaExports`, and the root FFI entrypoint are documented edge layers rather than linted core modules.
+CI runs the same lint before build/tests. The lint reads `import vf.<Dir>...` lines (and any remaining quoted includes) and currently enforces the core domain modules and `Versions`; `Explore`, `LuaExports`, `Journal`, `Stats`, and the root FFI entrypoint are documented edge layers rather than linted core modules.

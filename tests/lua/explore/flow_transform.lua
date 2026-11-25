@@ -13,7 +13,7 @@ test("explore flow: normal deletion snapshot stays transform and suggests insert
       first_recommendation_in_phase("Transform", function(rec)
         return rec.text == "x"
       end)
-      local handlers = require("vimficiency.explore.handlers")
+      local handlers = require("vimficiency.explore.input.handlers")
       view.on_key_buffer = "x"
       explore_helpers.set_scratch({ "" })
 
@@ -33,7 +33,7 @@ end)
 test("explore flow: operator-pending duplicate keys are reduced before snapshot", function()
   helpers.silence_notify(function()
     explore_helpers.open_scenario_flow("flow-diw-dedup", "delete_text_object", function()
-      local handlers = require("vimficiency.explore.handlers")
+      local handlers = require("vimficiency.explore.input.handlers")
       local view = explore_helpers.current_view()
       view.on_key_events = {
         key_event("n", "d"),

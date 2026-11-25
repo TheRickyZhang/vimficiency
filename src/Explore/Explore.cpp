@@ -40,15 +40,16 @@ bool isHistoryCheckpoint(const State& state) {
 }
 
 std::string deriveInsertModeTypedText(const DiffState& diff,
-                                       const Lines& lines) {
+                                    const Lines& lines,
+                                    std::string_view autoindent, const IndentOptions& options) {
   if (diff.isPureDeletion()) return "";
 
   KeyedSequence ks = diff.isPureInsertion()
-      ? CompositionStrategies::typedInsertion(diff, lines).typed
+      ? CompositionStrategies::typedInsertion(diff, lines, options).typed
       : buildTypedCommands(
-            diff.insertedLines(), "",
+            diff.insertedLines(), autoindent,
             lines[diff.beginPos.line].substr(0, diff.beginPos.col),
-            lines[diff.endPos.line].substr(diff.endPos.col));
+            lines[diff.endPos.line].substr(diff.endPos.col), options);
 
   std::string_view raw = ks.seq.view();
   static constexpr std::string_view ESC_STR = "<Esc>";
@@ -62,12 +63,31 @@ bool containsInsertCursor(const Lines& lines, CursorPos pos) {
   return pos.col >= 0 && pos.col <= lines.getSize(pos.line);
 }
 
-std::optional<DiffState> insertionResidualBetween(
+std::optional<DiffState> insertResidualBetween(
     const Lines& from,
-    const Lines& to) {
+    const Lines& to,
+    std::optional<CursorPos> insertCursor = std::nullopt) {
   auto diff = DiffText::calculateContiguousResidualDiff(from, to);
-  if (!diff || !diff->isPureInsertion()) return std::nullopt;
-  return diff;
+  if (!diff) return std::nullopt;
+  if (diff->isPureInsertion()) return diff;
+  if (!insertCursor || diff->beginPos.line != diff->endPos.line ||
+      diff->endPos != *insertCursor || !containsInsertCursor(from, *insertCursor))
+    return std::nullopt;
+  const Line& line = from[insertCursor->line];
+  if (insertCursor->col != line.size() || IndentOptions::leadingIndent(line).size() != line.size())
+    return std::nullopt;
+  const CursorPos begin(insertCursor->line, 0);
+  return DiffState(begin, diff->endPos, line,
+                   line.substr(0, diff->beginPos.col) + diff->insertedText,
+                   TransformBoundary(from, begin, diff->endPos));
+}
+
+DiffState remainingEdit(const PlannedEditView& edit, const Lines& lines) {
+  if (lines != edit.preFencepost) {
+    if (auto residual = DiffText::calculateContiguousResidualDiff(lines, edit.postFencepost))
+      return std::move(*residual);
+  }
+  return edit.diff;
 }
 
 DiffState deletionPrefixDiff(const DiffState& diff) {
@@ -203,12 +223,16 @@ vector<Suggestion> View::recommendations(
     int maxCount,
     const OptimizerParamOverrides* overrides,
     SuggestionSortMode sortMode) const {
+  if (maxCount <= 0) return {};
   return std::visit(overload{
       [&](const Navigate& nav) {
         return recommendNavigate(nav.index, maxCount, overrides, sortMode);
       },
       [&](const Transform& transform) {
-        return recommendTransform(transform.index, maxCount, overrides, sortMode);
+        auto diff = remainingEdit(plan_.plannedEditAt(transform.index), state_.lines);
+        auto items = transformEdits(diff, makeFrontierQuery(overrides));
+        sortAndCapSuggestions(items, maxCount, sortMode);
+        return items;
       },
       [&](const Insert& insert) {
         return recommendInsert(insert.index, maxCount);
@@ -217,6 +241,7 @@ vector<Suggestion> View::recommendations(
 }
 
 bool View::reconfigurePlan(CompositionOptimizerParams compositionParams) {
+  compositionParams.transform.indent = compositionParams_.transform.indent;
   CompositionTraceResult traced = computePlan(compositionParams);
   const bool resetState = !sameCompositionResult(plan_, traced.result);
 
@@ -280,16 +305,11 @@ Outcome View::commit(State next) {
   return {};
 }
 
-FrontierQuery View::makeFrontierQuery(
-    int maxCount,
-    const OptimizerParamOverrides* overrides,
-    SuggestionSortMode sortMode) const {
+FrontierQuery View::makeFrontierQuery(const OptimizerParamOverrides* overrides) const {
   return FrontierQuery{
       .lines = state_.lines,
       .cursor = state_.cursor,
       .seq = state_.seq,
-      .maxCount = maxCount,
-      .sortMode = sortMode,
       .overrides = overrides,
   };
 }
@@ -299,7 +319,7 @@ vector<Suggestion> View::recommendNavigate(
     int maxCount,
     const OptimizerParamOverrides* overrides,
     SuggestionSortMode sortMode) const {
-  FrontierQuery frontierQuery = makeFrontierQuery(maxCount, overrides, sortMode);
+  FrontierQuery frontierQuery = makeFrontierQuery(overrides);
   vector<Suggestion> nav;
 
   if (navIndex < totalEdits_) {
@@ -310,14 +330,13 @@ vector<Suggestion> View::recommendNavigate(
             cursorPointRange(start),
             boundary_,
             navContext_,
+            maxCount,
+            sortMode,
         }, config_, bank_));
     }
 
-    const DiffState& diff = plan_.plannedEditAt(navIndex).diff;
-    vector<Suggestion> composition = rankCompositionFrontier(
-        CompositionFrontierQuery{frontierQuery, diff, boundary_, navContext_},
-        config_);
-    appendUniqueSuggestions(nav, std::move(composition));
+    auto diff = remainingEdit(plan_.plannedEditAt(navIndex), state_.lines);
+    appendUniqueSuggestions(nav, compositionEdits(diff, frontierQuery));
   } else {
     CharRange target = plan_.getPlan().navTarget(navIndex);
     nav = rankNavFrontier(
@@ -326,6 +345,8 @@ vector<Suggestion> View::recommendNavigate(
           target.isEmpty() ? cursorPointRange(target.begin) : target,
           boundary_,
           navContext_,
+          maxCount,
+          sortMode,
       }, config_, bank_);
   }
 
@@ -333,48 +354,24 @@ vector<Suggestion> View::recommendNavigate(
   return nav;
 }
 
-vector<Suggestion> View::recommendTransform(
-    int editIndex,
-    int maxCount,
-    const OptimizerParamOverrides* overrides,
-    SuggestionSortMode sortMode) const {
-  assert(editIndex >= 0 && editIndex < totalEdits_ && "Transform editIndex out of range");
-  assert(hasExecutableEditStartAt(editIndex, state_.lines, state_.cursor) &&
-         "Transform phase requires an executable edit start");
+vector<Suggestion> View::compositionEdits(const DiffState& diff, const FrontierQuery& query) const {
+  const auto params = query.overrides
+      ? query.overrides->resolved(compositionParams_)
+      : compositionParams_;
+  return collectCompositionEdits({query, diff, boundary_, navContext_}, params, config_);
+}
 
-  const auto plannedEdit = plan_.plannedEditAt(editIndex);
-  auto currentResidual = DiffText::calculateContiguousResidualDiff(
-      state_.lines, plannedEdit.postFencepost);
+vector<Suggestion> View::transformEdits(const DiffState& diff, const FrontierQuery& query) const {
+  auto primary = collectTransformEdits({query, diff, boundary_.hasLinesAbove(), compositionParams_.transform.indent}, config_, bank_);
+  if (!diff.isReplacement()) return primary;
 
-  if (currentResidual && currentResidual->isPureInsertion()) {
-    return rankTransformFrontier(
-        TransformFrontierQuery{makeFrontierQuery(maxCount, overrides, sortMode), *currentResidual},
-        config_, bank_);
-  }
-
-  vector<Suggestion> primary = rankTransformFrontier(
-      TransformFrontierQuery{makeFrontierQuery(maxCount, overrides, sortMode), plannedEdit.diff},
-      config_, bank_);
-  if (!plannedEdit.diff.isReplacement() &&
-      !(currentResidual && currentResidual->isReplacement())) {
-    return primary;
-  }
-
-  // Extra Explore candidates expose delete-then-insert without changing the
-  // optimizer's canonical preference for one change command.
-  const DiffState& deletionBase =
-      (currentResidual && currentResidual->isReplacement())
-          ? *currentResidual
-          : plannedEdit.diff;
-  DiffState deletionPrefix = deletionPrefixDiff(deletionBase);
-  vector<Suggestion> alternatives = rankTransformFrontier(
-      TransformFrontierQuery{makeFrontierQuery(maxCount, overrides, sortMode), deletionPrefix},
-      config_, bank_);
-  const TransformOptimizerParams transformParams = overrides
-      ? overrides->resolved(TransformOptimizerParams{})
+  auto alternatives = collectTransformEdits(
+      {query, deletionPrefixDiff(diff), boundary_.hasLinesAbove(), compositionParams_.transform.indent}, config_, bank_);
+  const auto transformParams = query.overrides
+      ? query.overrides->resolved(TransformOptimizerParams{})
       : TransformOptimizerParams{};
   const double residualInsertDistance =
-      textDistanceEstimate(deletionBase.insertedLines());
+      textDistanceEstimate(diff.insertedLines());
   for (auto& alt : alternatives) {
     const bool duplicate = any_of(primary.begin(), primary.end(),
         [&](const Suggestion& item) { return item.token == alt.token; });
@@ -384,7 +381,6 @@ vector<Suggestion> View::recommendTransform(
         transformParams.effortWeight, transformParams.distanceWeight);
     primary.push_back(std::move(alt));
   }
-  sortAndCapSuggestions(primary, maxCount, sortMode);
   return primary;
 }
 
@@ -393,18 +389,16 @@ vector<Suggestion> View::recommendInsert(int editIndex, int maxCount) const {
   assert(editIndex >= 0 && editIndex < totalEdits_ &&
          "Insert editIndex out of range");
 
-  // state_.lines is the pre-edit fencepost during Insert (afterEditCompleted
-  // hasn't run yet) unless the user entered Insert after a Normal-mode
-  // deletion prefix. In that case the physical buffer is already the
-  // deletion intermediate, so derive the typed tail from the residual diff.
+  // Mode entry can change the text, including copying an opened line's indent.
   const auto plannedEdit = plan_.plannedEditAt(editIndex);
-  auto currentResidual = insertionResidualBetween(
-      state_.lines, plannedEdit.postFencepost);
+  auto currentResidual = insertResidualBetween(
+      state_.lines, plannedEdit.postFencepost, state_.cursor);
   const DiffState& insertDiff = currentResidual
       ? *currentResidual
       : plannedEdit.diff;
   std::string typedText =
-      deriveInsertModeTypedText(insertDiff, state_.lines);
+      deriveInsertModeTypedText(insertDiff, state_.lines,
+                                currentResidual ? currentResidual->deletedText : "", compositionParams_.transform.indent);
   if (typedText.empty()) return {};
 
   // Running effort is contextual across the accepted-sequence boundary.
@@ -418,8 +412,9 @@ vector<Suggestion> View::recommendInsert(int editIndex, int maxCount) const {
   Suggestion suggestion{
       .token = Token{typedText},
       .landingPos = currentResidual
-          ? CompositionStrategies::typedInsertion(insertDiff, state_.lines)
-                .exitCursor
+          ? (insertDiff.isPureInsertion()
+                 ? CompositionStrategies::typedInsertion(insertDiff, state_.lines, compositionParams_.transform.indent).exitCursor
+                 : typedCommandsExitCursor(insertDiff.beginPos, insertDiff.insertedLines()))
           : plannedEdit.transformResult.getGoalPos(),
   };
   suggestion.literalText = insertDiff.insertedText;
@@ -436,7 +431,7 @@ bool View::hasExecutableEditStartAt(
   if (editIndex == totalEdits_) return false;
 
   const auto plannedEdit = plan_.plannedEditAt(editIndex);
-  auto currentResidual = insertionResidualBetween(
+  auto currentResidual = insertResidualBetween(
       lines, plannedEdit.postFencepost);
   if (currentResidual && currentResidual->isPureInsertion()) {
     return cursor == currentResidual->beginPos &&
@@ -453,7 +448,7 @@ vector<CursorPos> View::executableEditStartPositions(
   if (editIndex == totalEdits_) return {};
 
   const auto plannedEdit = plan_.plannedEditAt(editIndex);
-  auto currentResidual = insertionResidualBetween(
+  auto currentResidual = insertResidualBetween(
       lines, plannedEdit.postFencepost);
   if (currentResidual && currentResidual->isPureInsertion()) {
     return {currentResidual->beginPos};
@@ -550,21 +545,28 @@ Outcome View::acceptCursorMove(CursorPos newCursor, string_view rawKeys) {
   return commit(std::move(next));
 }
 
-Outcome View::applyEdit(string_view text) {
-  // Relaxed from Transform-only to any planned-edit-target phase so that
-  // composition-frontier tokens (`A`, `ci(`, `J`, etc.) — whose activation
-  // regions go beyond ordinary Transform start columns — are also applicable
-  // programmatically. EditHandler::applyEdit owns the planner-scope
-  // validation across Transform and Composition lanes.
+Outcome View::applyEdit(string_view text, const OptimizerParamOverrides* overrides) {
   auto gated = requirePlannedEditTarget("edits");
-  if (!gated)
-    return unexpected(std::move(gated.error()));
+  if (!gated) return unexpected(std::move(gated.error()));
+  if (text.empty()) return unexpected(Rejected{"edit text must be non-empty"});
   const int editIndex = *gated;
-
   const auto plannedEdit = plan_.plannedEditAt(editIndex);
-  auto eff = EditHandler::applyEdit(
-      plannedEdit, state_.lines, state_.cursor, text,
-      compositionParams_, config_);
+  const auto diff = remainingEdit(plannedEdit, state_.lines);
+  const auto query = makeFrontierQuery(overrides);
+  auto matches = [&](const Suggestion& item) { return item.token == text; };
+  bool allowed = holds_alternative<Transform>(state_.phase) &&
+                 ranges::any_of(transformEdits(diff, query), matches);
+  if (!allowed) allowed = ranges::any_of(compositionEdits(diff, query), matches);
+  if (!allowed && state_.lines == plannedEdit.preFencepost) {
+    plannedEdit.transformResult.forEachEditFrom(state_.cursor, plannedEdit.postFencepost,
+        [&](const Result& r, CursorPos) {
+          if (r.getSequence().view() == text) allowed = true;
+        });
+  }
+  if (!allowed)
+    return unexpected(Rejected{"edit command is not part of the planned edit scope at this cursor"});
+
+  auto eff = EditHandler::applyEdit(plannedEdit.postFencepost, state_.lines, state_.cursor, text, compositionParams_.transform.indent);
   if (!eff)
     return unexpected(std::move(eff.error()));
 
@@ -694,9 +696,8 @@ Outcome View::acceptSnapshot(const Lines& liveLines, CursorPos liveCursor,
 
     auto outcome = acceptInsertExit(liveLines, liveCursor, rawKeys);
     if (!outcome) {
-      Rejected rejected = std::move(outcome.error());
-      cancelInsert();
-      return unexpected(std::move(rejected));
+      if (auto cancelled = cancelInsert(); !cancelled)
+        return cancelled;
     }
     return outcome;
   }
@@ -706,11 +707,12 @@ Outcome View::acceptSnapshot(const Lines& liveLines, CursorPos liveCursor,
 
   if (hasPlannedEdit) {
     const auto plannedEdit = plan_.plannedEditAt(editIndex);
-    auto residualInsertion = insertionResidualBetween(
-        liveLines, plannedEdit.postFencepost);
+    auto residualInsertion = insertResidualBetween(
+        liveLines, plannedEdit.postFencepost,
+        insertMode ? std::optional(liveCursor) : std::nullopt);
 
     if (insertMode && liveLines == state_.lines && residualInsertion &&
-        liveCursor == residualInsertion->beginPos &&
+        liveCursor == residualInsertion->endPos &&
         containsInsertCursor(liveLines, liveCursor)) {
       State next = state_;
       next.cursor = liveCursor;
@@ -721,7 +723,7 @@ Outcome View::acceptSnapshot(const Lines& liveLines, CursorPos liveCursor,
     if (liveLines != plannedEdit.postFencepost &&
         residualInsertion) {
       const bool validInsertCursor =
-          liveCursor == residualInsertion->beginPos &&
+          liveCursor == residualInsertion->endPos &&
           containsInsertCursor(liveLines, liveCursor);
       const bool validDeleteCursor =
           std::holds_alternative<Transform>(state_.phase) &&

@@ -8,15 +8,20 @@ namespace {
 
 // <...> notations whose keys are not the concatenation of their chars'
 // CHAR_TO_KEYS entries. See :h key-notation, :h keytrans()
-const CommandToKeys specialWithBracket = {
+// The `<...>` names without modifiers that have a price, including none.
+const CommandToKeys KEY_NAMES = {
   {"<lt>", {Key::Key_Shift, Key::Key_Comma}},
   {"<LT>", {Key::Key_Shift, Key::Key_Comma}},
+  {"<Bslash>", {Key::Key_Backslash}},
+  {"<Bar>", {Key::Key_Shift, Key::Key_Backslash}},
 
   {"<Space>", {Key::Key_Space}},
   {"<Tab>", {Key::Key_Tab}},
   {"<CR>", {Key::Key_Enter}},
   {"<Enter>", {Key::Key_Enter}},
   {"<Return>", {Key::Key_Enter}},
+  {"<NL>", {Key::Key_Ctrl, Key::Key_J}},
+  {"<Nul>", {Key::Key_Ctrl, Key::Key_Space}},
   {"<Esc>", {Key::Key_Esc}},
   {"<BS>", {Key::Key_Backspace}},
   {"<Del>", {Key::Key_Delete}},
@@ -28,46 +33,77 @@ const CommandToKeys specialWithBracket = {
 
   {"<Home>", {Key::Key_Home}},
   {"<End>", {Key::Key_End}},
+  {"<PageUp>", {Key::Key_PageUp}},
+  {"<PageDown>", {Key::Key_PageDown}},
+  {"<Insert>", {Key::Key_Insert}},
+
+  {"<F1>", {Key::Key_F1}},
+  {"<F2>", {Key::Key_F2}},
+  {"<F3>", {Key::Key_F3}},
+  {"<F4>", {Key::Key_F4}},
+  {"<F5>", {Key::Key_F5}},
+  {"<F6>", {Key::Key_F6}},
+  {"<F7>", {Key::Key_F7}},
+  {"<F8>", {Key::Key_F8}},
+  {"<F9>", {Key::Key_F9}},
+  {"<F10>", {Key::Key_F10}},
+  {"<F11>", {Key::Key_F11}},
+  {"<F12>", {Key::Key_F12}},
+
+  // Terminals' other codes for the same keys.
+  {"<xHome>", {Key::Key_Home}},
+  {"<zHome>", {Key::Key_Home}},
+  {"<xEnd>", {Key::Key_End}},
+  {"<zEnd>", {Key::Key_End}},
+  {"<xUp>", {Key::Key_Up}},
+  {"<xDown>", {Key::Key_Down}},
+  {"<xLeft>", {Key::Key_Left}},
+  {"<xRight>", {Key::Key_Right}},
+  {"<xF1>", {Key::Key_F1}},
+  {"<xF2>", {Key::Key_F2}},
+  {"<xF3>", {Key::Key_F3}},
+  {"<xF4>", {Key::Key_F4}},
+
+  // The keypad, priced as the main keys with the same legends.
+  {"<k0>", {Key::Key_0}},
+  {"<k1>", {Key::Key_1}},
+  {"<k2>", {Key::Key_2}},
+  {"<k3>", {Key::Key_3}},
+  {"<k4>", {Key::Key_4}},
+  {"<k5>", {Key::Key_5}},
+  {"<k6>", {Key::Key_6}},
+  {"<k7>", {Key::Key_7}},
+  {"<k8>", {Key::Key_8}},
+  {"<k9>", {Key::Key_9}},
+  {"<kPlus>", {Key::Key_Shift, Key::Key_Equal}},
+  {"<kMinus>", {Key::Key_Minus}},
+  {"<kMultiply>", {Key::Key_Shift, Key::Key_8}},
+  {"<kDivide>", {Key::Key_Slash}},
+  {"<kPoint>", {Key::Key_Period}},
+  {"<kComma>", {Key::Key_Comma}},
+  {"<kEqual>", {Key::Key_Equal}},
+  {"<kEnter>", {Key::Key_Enter}},
+  {"<kHome>", {Key::Key_Home}},
+  {"<kEnd>", {Key::Key_End}},
+  {"<kPageUp>", {Key::Key_PageUp}},
+  {"<kPageDown>", {Key::Key_PageDown}},
+  {"<kInsert>", {Key::Key_Insert}},
+  {"<kDel>", {Key::Key_Delete}},
+  {"<kUp>", {Key::Key_Up}},
+  {"<kDown>", {Key::Key_Down}},
+  {"<kLeft>", {Key::Key_Left}},
+  {"<kRight>", {Key::Key_Right}},
+
+  // Not key presses: bracketed-paste markers and names internal to mappings.
+  {"<t_PS>", {}},
+  {"<t_PE>", {}},
+  {"<Ignore>", {}},
+  {"<SNR>", {}},
+  {"<Plug>", {}},
+  {"<Cmd>", {}},
+  {"<CSI>", {}},
+  {"<Drop>", {}},
 };
-
-const CommandToKeys ctrlCombinations = {
-  {"<C-a>", {Key::Key_Ctrl, Key::Key_A}},
-  {"<C-b>", {Key::Key_Ctrl, Key::Key_B}},
-  {"<C-c>", {Key::Key_Ctrl, Key::Key_C}},
-  {"<C-d>", {Key::Key_Ctrl, Key::Key_D}},
-  {"<C-e>", {Key::Key_Ctrl, Key::Key_E}},
-  {"<C-f>", {Key::Key_Ctrl, Key::Key_F}},
-  {"<C-g>", {Key::Key_Ctrl, Key::Key_G}},
-  {"<C-h>", {Key::Key_Ctrl, Key::Key_H}},
-  {"<C-i>", {Key::Key_Ctrl, Key::Key_I}},
-  {"<C-j>", {Key::Key_Ctrl, Key::Key_J}},
-  {"<C-k>", {Key::Key_Ctrl, Key::Key_K}},
-  {"<C-l>", {Key::Key_Ctrl, Key::Key_L}},
-  {"<C-m>", {Key::Key_Ctrl, Key::Key_M}},
-  {"<C-n>", {Key::Key_Ctrl, Key::Key_N}},
-  {"<C-o>", {Key::Key_Ctrl, Key::Key_O}},
-  {"<C-p>", {Key::Key_Ctrl, Key::Key_P}},
-  {"<C-q>", {Key::Key_Ctrl, Key::Key_Q}},
-  {"<C-r>", {Key::Key_Ctrl, Key::Key_R}},
-  {"<C-s>", {Key::Key_Ctrl, Key::Key_S}},
-  {"<C-t>", {Key::Key_Ctrl, Key::Key_T}},
-  {"<C-u>", {Key::Key_Ctrl, Key::Key_U}},
-  {"<C-v>", {Key::Key_Ctrl, Key::Key_V}},
-  {"<C-w>", {Key::Key_Ctrl, Key::Key_W}},
-  {"<C-x>", {Key::Key_Ctrl, Key::Key_X}},
-  {"<C-y>", {Key::Key_Ctrl, Key::Key_Y}},
-  {"<C-z>", {Key::Key_Ctrl, Key::Key_Z}},
-
-  {"<C-Space>", {Key::Key_Ctrl, Key::Key_Space}},
-  {"<C-BS>", {Key::Key_Ctrl, Key::Key_Backspace}},
-  {"<C-CR>", {Key::Key_Ctrl, Key::Key_Enter}},
-  {"<C-Tab>", {Key::Key_Ctrl, Key::Key_Tab}},
-};
-
-const CommandToKeys KEY_NOTATIONS = combineAll({
-  cref(specialWithBracket),
-  cref(ctrlCombinations),
-});
 
 }  // namespace
 
@@ -83,6 +119,6 @@ const MotionSet ALL_MOTIONS = {
 };
 
 const SequenceToKeys& globalSequenceToKeys() {
-  static SequenceToKeys tok(KEY_NOTATIONS);
+  static SequenceToKeys tok(KEY_NAMES);
   return tok;
 }

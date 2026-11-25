@@ -4,23 +4,30 @@ The Lua layer is a Neovim plugin that captures user editing sessions and calls t
 
 ## Layout
 
-Top-level modules are the plugin entry and cross-cutting infrastructure:
+Plugin entry points and domain modules:
 
 | File | Purpose |
 |------|---------|
 | `init.lua` | Plugin entry point: `setup()`, the `:Vimfy` dispatcher and its tab completion, teardown and reload. |
-| `session.lua` | Live capture lifecycle: start, watch, finish, recall, close. Argument errors raise to the `:Vimfy` boundary. |
+| `session/init.lua` | Live capture lifecycle: start, watch, finish, recall, close. Argument errors raise to the `:Vimfy` boundary. |
 | `session/archive.lua` | Finished results by handle: alias resolution through the store, filename resolution on disk, save/store/fetch/rm, view. |
-| `simulate.lua` | Side-by-side animation of motion sequences. Required as `vimficiency.simulate`. |
-| `explore.lua` | Interactive result exploration view. Required as `vimficiency.explore`. |
-| `play.lua` | Play-screen settings and modal wiring. Required as `vimficiency.play`. |
-| `stats.lua` | Stats aggregation and display. Required as `vimficiency.stats`. |
+| `simulate/init.lua` | Side-by-side animation of motion sequences. Required as `vimficiency.simulate`. |
+| `explore/init.lua` | Interactive result exploration view. Required as `vimficiency.explore`. |
+| `explore/input/key_tracking.lua` | Reduces raw `vim.on_key()` events for interactive Explore's frontier replay. |
+| `simulate/settings.lua` | Play-screen settings and modal wiring. |
+| `stats/query.lua` | Builds requests for stats summaries, run lists, and run details. |
+| `stats/render.lua` | Formats summary pages, charts, drill targets, and run rows. |
+| `stats/view.lua` | The `:Vimfy stats` tab handles weight and scoring keys, Look back and run-length selectors, and `<CR>` to expand lists or open runs and charts. |
+| `ui/item_nav.lua` | Item navigation for a rendered buffer: `h`/`j`/`k`/`l` between a view's items (blocks of rows and columns), the current one highlighted whole with the cursor hidden, `<CR>`/`<Esc>` acting on it. Used by the stats tab; the model for new views. |
+| `stats/chart_view.lua` | One chart in a full-screen float over the rest of its section. `+`/`-` change the history chart's scale within the float, and `<CR>` opens a bucket, bar segment or row's run list. |
+| `stats/run_list.lua` | The floating run list (each cell an item) and its preview float: sort by the current column, page, and `<CR>` on a journal run replays it. |
+| `stats/sampling.lua` | Runs `vimfy_journal` over the journal in the background. See `dev/lua/atom-stream.md` § Sampling. |
 | `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, run) per `:Vimfy` verb. Depends on the domain modules; only `init.lua` depends on it. |
-| `dev_reload.lua` | `:Vimfy reload`: cmake rebuild, then hot-reload the `.so` and every Lua module. |
-| `config.lua` | Shared configuration constants (Lua-side only). |
-| `config/validate.lua` | Validators for the structured `watch` and `auto_suggest` blocks; the shape itself stays in `config.lua`. |
-| `ffi.lua` | Compatibility surface for LuaJIT FFI bindings to `libvimficiency.so`. |
-| `util.lua` | State capture, ID generation, UI helpers, `entry` (the error boundary for every autocmd/timer/keymap callback). |
+| `dev_reload.lua` | `:Vimfy reload`: stream the CMake build in a floating window, then hot-reload the `.so` and every Lua module. |
+| `config/init.lua` | Shared configuration constants (Lua-side only). |
+| `config/validate.lua` | Validators for the structured `watch` and `auto_suggest` blocks; the shape itself stays in `config/init.lua`. |
+| `ffi/init.lua` | Compatibility surface for LuaJIT FFI bindings to `libvimficiency.so`. |
+| `util.lua` | Plugin paths, ID generation, and `entry` (the error boundary for every autocmd/timer/keymap callback). |
 
 Subdirectories hold supporting modules for each domain:
 
@@ -36,10 +43,11 @@ Subdirectories hold supporting modules for each domain:
 | `session/result_window.lua` | Full-screen side-by-side viewer (`:Vimfy view`): initial/final panes, diff + cursor highlights. |
 | `session/store.lua` | Canonical session records + manual/recall indexing. |
 
-### `session/picker/` — session picker support
+### `session/picker/` — session picker
 
 | File | Purpose |
 |------|---------|
+| `session/picker/init.lua` | Picker controller. Required as `vimficiency.session.picker`. |
 | `session/picker/model.lua` | Active/saved item construction, filtering, sorting, and row formatting. |
 | `session/picker/preview.lua` | Preview-pane content for active and saved items. |
 | `session/picker/popups.lua` | Sort/help popup windows. |
@@ -53,7 +61,7 @@ Subdirectories hold supporting modules for each domain:
 | `simulate/pool.lua` | Sequence pool tokenization and layout-slot planning. |
 | `simulate/precompute.lua` | Hidden Neovim probe used as the replay oracle. |
 | `simulate/render.lua` | Virtual headers, cursor highlights, status bar, and snapshot rendering. |
-| `simulate/tokenize.lua` | Parser-backed animation tokenization plus fallback splitting. |
+| `simulate/tokenize.lua` | Parser-backed animation of optimizer suggestions. |
 | `simulate/windows.lua` | Replay tab/window/buffer construction, focus, escape, and relayout teardown. |
 
 ### `ffi/` — C ABI wrappers
@@ -67,15 +75,18 @@ Subdirectories hold supporting modules for each domain:
 | `ffi/sequence.lua` | Sequence tokenization, formatting, and movement simulation. |
 | `ffi/display.lua` | C++ sequence-display and session-report formatter wrappers. |
 | `ffi/explore.lua` | Explore-state and recommendation wrappers. |
+| `ffi/stats.lua` | Session log, stats summary, run list and single-run lookup. |
+| `ffi/versions.lua` | `vf_versions`: the library's release and its format and scoring versions (`src/Versions.cppm`). |
 
 ### `capture/` — observation and triggers
 
 | File | Purpose |
 |------|---------|
+| `capture/state.lua` | Captures buffer text, cursor position, and viewport state. |
 | `capture/atom_stream.lua` | CmdAtom-driven capture: one atom per atomic user action, normalized and fanned out to named subscribers (manual/recall/triggers). See `dev/lua/atom-stream.md`. |
-| `capture/key_tracking.lua` | Legacy `vim.on_key()` capture, now used only by interactive Explore's frontier replay. |
 | `capture/recall.lua` | Rolling recall-ring capture driven by atom events. |
 | `capture/buffer_history.lua` | Per-buffer shadow copy plus the lines replaced between marks; rebuilds a recall record's start text on demand. |
+| `capture/journal.lua` | Opt-in protobuf journal of every atom plus buffer snapshots and line deltas (`config.journal`). See `dev/lua/atom-stream.md` § Journal. |
 | `capture/end_trigger.lua` | Idle/command-count auto-end triggers (Watch / Suggest). |
 | `capture/auto_suggest.lua` | Idle-trigger auto-suggest (runs optimizer on a recall window). |
 
@@ -112,19 +123,21 @@ field. Past the constructor nothing re-checks shape, type, or handle validity.
   real alternative path: `compute.capture_end_state` and `build_analyze_input`
   (finish drops the record, suggest stays silent), `archive.resolve_alias` and
   `disk.load` (disk fallback keyed on `is_missing`), `ffi/sequence.tokenize_*`
-  (`simulate/tokenize.lua` falls back to a coarser tokenizer).
+  (`simulate/tokenize.lua` falls back to a coarser tokenizer), `ffi/stats.run`
+  (the stats view warns that the run is not available).
 - **Handle validity is checked once, at event entry.** Helpers take handles as
   valid. The kept exceptions are cross-event: a user can close a window between
   the event that created it and the one that renders into it (`explore/render/
   list.lua`, `explore/render/panel.lua`, `simulate/precompute.lua` teardown,
   `simulate/windows.lua` teardown, picker WinClosed paths).
 - **Tests go through the same constructors.** `h.fake_result` must pass
-  `disk.validate`; session fixtures use `util.capture_state`; config fixtures use
+  `disk.validate`; session fixtures use `capture.state.capture_state`; config fixtures use
   `validate.normalize_*`. A guard that exists only because a fixture skipped the
   constructor is a fixture bug.
 
-Saved files carry `disk.FORMAT_VERSION`; any other version is rejected, with no
-migration. Bump it on any schema change.
+Saved files carry `disk.FORMAT_VERSION`. V1 remains readable for endpoint-only
+Play and produces a warning when opened there. Reject unknown versions and
+bump the current version on schema changes.
 
 ## Session Architecture
 
@@ -155,7 +168,8 @@ promotion at finish:
 | `recall`    | every captured atom (rolling ring) | `:Vimfy recall <N\|Ns>`           |
 | `suggest_*` | a `recall` record, promoted        | the `auto_suggest` trigger that fired |
 
-Name sessions cap at 5 concurrent active (finished records keep their slot).
+Up to 100 named Mark and Watch sessions can be active at once. Finished
+records keep their aliases without counting toward the cap.
 The recall ring retains under **union** semantics: evict the oldest only when
 BOTH `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS` say drop. See
 `dev/lua/session-invocation.md`.
@@ -190,7 +204,9 @@ Capture (manual sessions, recall, Watch/Suggest triggers) runs off Neovim's
 `CmdAtom` autocmd (0.13-dev / nightly). The event fires once per atomic user
 action, AFTER it runs, carrying the resolved post-mapping `keys`, the `lhs`
 that produced it, the count, and whether the buffer changed or the cursor
-moved. `atom_stream.lua` normalizes each event into a `VF.Atom`, classifies it
+moved. `atom_stream.lua` normalizes each event into a `VF.Atom`, adds the keys
+physically pressed for it (`typed`, from `vim.on_key` plus wrappers around
+`getchar`/`feedkeys`; `typed_insert` is the insert text among them), classifies it
 (record / skip / abort), and fans it out to named subscribers; buffer
 and window scoping is each subscriber's job. See `dev/lua/atom-stream.md` for
 the full design (admission policy, synthetic-count stripping, recall
@@ -203,10 +219,10 @@ mapping-LHS leakage, no missing text-object final char, no retraction. A
 without any scan — the obsolete `mapping_scan` warning was removed with the
 migration.
 
-`key_tracking.lua` (the former `vim.on_key` layer) survives only for
-interactive Explore's frontier replay, which still consumes raw key events.
+`explore/input/key_tracking.lua` handles interactive Explore's frontier replay,
+which still consumes raw key events.
 
-**Approximate motion conversions** (in session/compute.lua):
+**Approximate motion conversions** (C++ `sliceSearch`, `src/Optimizer/Analyze.cppm`):
 - `gj` → `j`, `gk` → `k` (screen-line motions unsupported by optimizer)
 
 ## FFI Interface (ffi/)
@@ -214,16 +230,18 @@ interactive Explore's frontier replay, which still consumes raw key events.
 `ffi/core.lua` loads `libvimficiency.so` via LuaJIT FFI. Domain wrappers expose:
 
 ```lua
-ffi_optimizer.analyze(request, results_calculated) → VF.Optimizer.Result[], user_cost, debug_str, VF.Diff.Region[]
+ffi_optimizer.build_search_request(span, padding, max_search_lines) → VF.SearchRequest
+  -- span: whole buffers and cursors; C++ picks the region, slices, and converts motions
+ffi_optimizer.analyze(request, results_calculated) → VF.Optimizer.Result[], user_cost, debug_str, VF.Diff.Region[], unbeaten
   -- request: VF.SearchRequest (types.lua), the same record explore_start_async takes
 ffi_config.apply_globals(user_config)  -- Push the C++ process globals (cost model, Vim options)
-ffi_sequence.tokenize_sequence(seq) → VF.Sequence.Token[]  -- {text, kind} tokens
-ffi_sequence.tokenize_movements(seq) → VF.Sequence.Token[]   -- all kind="motion"
+ffi_sequence.tokenize_sequence(seq) → VF.Sequence.Token[], error?  -- {text, kind} tokens
+ffi_sequence.tokenize_movements(seq) → VF.Sequence.Token[], error?  -- all kind="motion"
 ```
 
-**Position indexing:** C++ uses 0-indexed rows/cols. Neovim uses 1-indexed rows. Conversion happens before calls cross the FFI boundary, primarily in `session/compute.lua`.
+**Position indexing:** C++ uses 0-indexed rows/cols. Neovim uses 1-indexed rows. Conversion happens before calls cross the FFI boundary, at state capture (`capture.state.capture_view`).
 
-## Configuration (config.lua)
+## Configuration (config/init.lua)
 
 Config keys are owned by exactly one side. C++ owns process globals (`vf.config.Config`: keyboard cost model, shiftwidth), pushed once by `ffi_config.apply_globals`. Lua owns everything read at call time, including per-search optimizer parameters passed as FFI arguments:
 
@@ -233,24 +251,28 @@ Config keys are owned by exactly one side. C++ owns process globals (`vf.config.
 | `RESULTS_SAVED` | 5 | Results kept per session |
 | `SLICE_PADDING` | 5 | Lines above/below cursor for search slice |
 | `MAX_SEARCH_LINES` | 500 | Max lines in search region |
-| `KEY_SESSION_CAPACITY` | 10 | Rolling key session limit |
+| `KEY_SESSION_CAPACITY` | 200 | Minimum count retained when enough commands have been captured |
+| `MAX_RETENTION_SECONDS` | 120 | Age threshold for evicting entries above that count |
 
-## Simulation (simulate.lua)
+## Simulation (simulate/init.lua)
 
 Terminology: **step** means the small replay unit, usually one parsed token.
 Interactive Explore's larger state-machine units are **phases** (`Navigate`,
 `Transform`, `Insert`, `Completed`).
 
-`simulate_compare(lines, row, col, sequences)`:
-- Precomputes replay snapshots asynchronously by driving Neovim itself as the
-  oracle (`nvim_feedkeys` into a hidden probe window), then opens a new tab
+`simulate_compare(lines, row, col, pool, opts)`:
+- Expands recorded user steps from the initial slice and line deltas. For
+  suggestions, precomputes snapshots asynchronously in a hidden Neovim probe, then opens a new tab
   with side-by-side windows
 - Replay opens paused; `<Left>`/`<Right>` step, `<CR>` toggles auto-play, `q`
   closes the whole replay tab
+- `opts.filetype` highlights the visible panes (treesitter when a parser
+  exists, else 'syntax'), never the probe; 'filetype' itself stays unset so no
+  ftplugin or LSP client runs
 - `:Vimfy focus <N>` / `:Vimfy escape` toggle the single-buffer view
 - Uses virtual header lines above each replay buffer for progress, mode, and a
   wrapped/highlighted sequence display
-- Uses C++ tokenizer with character fallback for unsupported motions; tokens
+- Uses the C++ tokenizer for suggestions and reports parse errors in their pane. Tokens
   keep feedable command units like `f;` / `rX` intact while leaving repeats
   like `;` as separate replay steps
 
@@ -279,5 +301,5 @@ resolve; without it LuaLS treats `vim` as untyped and misses real mismatches.
 :Vimfy list             -- Show active/saved sessions
 :Vimfy suggest <on|off|toggle> -- Toggle auto-suggest (needs `auto_suggest = {...}` in setup)
 :Vimfy config           -- Show C++ config state
-:Vimfy reload           -- Rebuild C++ library
+:Vimfy reload           -- Rebuild and hot-reload Vimfy with live build output
 ```

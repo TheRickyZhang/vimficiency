@@ -11,19 +11,20 @@ export {
 
 class SequenceToKeys {
 public:
-  // `notations` are the multi-char tokens matched longest-first; every other
-  // byte falls back to CHAR_TO_KEYS. The map must outlive the tokenizer.
-  explicit SequenceToKeys(const CommandToKeys &notations);
+  // `names` are the `<...>` names without modifiers. `<C-…>`, `<S-…>`,
+  // `<M-…>` and `<D-…>` are priced as the modifier keys plus the key they
+  // hold, and every other byte by CHAR_TO_KEYS. The map must outlive the
+  // tokenizer.
+  explicit SequenceToKeys(const CommandToKeys &names);
 
+  // A name with no price warns and adds nothing, so it is never priced as the
+  // letters that spell it.
   PhysicalKeys tokenize(std::string_view s) const;
 
 private:
-  struct TokenDef {
-    std::string      token;
-    const PhysicalKeys *keys; // non-owning, points into mappings
-  };
+  bool appendName(std::string_view name, PhysicalKeys &out) const;
 
-  std::vector<TokenDef> tokens_; // sorted by descending token length
+  const CommandToKeys *names_;
 };
 
 }  // export

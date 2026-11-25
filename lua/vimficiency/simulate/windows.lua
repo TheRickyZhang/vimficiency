@@ -3,16 +3,32 @@ local cmd = vim.cmd
 local max = math.max
 local min = math.min
 
+local ui_windows = require("vimficiency.ui.windows")
+
 local util = require("vimficiency.util")
 
 local M = {}
 
 ---@param win integer
 function M.decorate(win)
-  util.configure_scratch_window(win, {
+  ui_windows.configure_scratch_window(win, {
     cursorline = true,
     cursorcolumn = true,
   })
+end
+
+--- Highlights `buf` as `filetype` without setting 'filetype', whose FileType
+--- event would run ftplugins and attach LSP clients to a scratch pane.
+---@param buf integer
+---@param filetype string
+local function highlight(buf, filetype)
+  if filetype == "" then return end
+  local lang = vim.treesitter.language.get_lang(filetype) --[[@as string]]
+  if vim.treesitter.language.add(lang) then
+    vim.treesitter.start(buf, lang)
+  else
+    vim.bo[buf].syntax = filetype
+  end
 end
 
 ---@param ctx table
@@ -27,8 +43,10 @@ function M.create_buffer(ctx, lines, label)
   v.nvim_set_option_value("swapfile", false, { buf = buf })
   v.nvim_set_option_value("modifiable", true, { buf = buf })
   v.nvim_buf_set_lines(buf, 0, -1, true, lines)
+  if ctx.state.indent then require("vimficiency.indent").apply(buf, ctx.state.indent) end
+  highlight(buf, ctx.state.filetype)
 
-  util.set_buffer_keymaps(buf, ctx.actions.keymaps)
+  ui_windows.set_buffer_keymaps(buf, ctx.actions.keymaps)
 
   v.nvim_create_autocmd("WinEnter", {
     buffer = buf,

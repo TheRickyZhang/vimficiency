@@ -13,7 +13,7 @@ Use these when you want precision analyzing a specific sequence or know *in adva
 ```
 
 Marks are similar semantics to marks in vim, where start/end is similar to creating a mark and jumping back to it. However, our aliases can be any combination of letters, ex:  `a`, `refactor`, `WIP`.
-- Up to 5 Mark sessions can be active concurrently.
+- Up to 100 named sessions can be active at once across Mark and Watch.
 - Starting a session at an already-used alias overwrites it.
 - Sessions left idle for 5 minutes, or whose parameters would otherwise result in an invalid optimize query, are dropped automatically.
 - Alternatively, you can call ```vim :Vimfy close a ``` to drop the session manually.

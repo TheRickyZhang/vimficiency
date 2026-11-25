@@ -44,6 +44,8 @@ TEST(SequenceDisplayTest, PrettyPrintsTypedTextAndKeyNotation) {
   EXPECT_EQ(VF::SequenceDisplay::inlineText("f<Space>l"),
             "f" + string(VF::PrettyText::SPACE) + " l");
   EXPECT_EQ(VF::SequenceDisplay::inlineText("f<lt>l"), "f< l");
+  EXPECT_EQ(VF::SequenceDisplay::inlineText("f<Bar>l"), "f| l");
+  EXPECT_EQ(VF::SequenceDisplay::displayTypedText("a<Bslash>n<Bar>"), "a\\n|");
   EXPECT_EQ(VF::SequenceDisplay::inlineText("r<Tab>"),
             "r" + string(VF::PrettyText::TAB));
 }

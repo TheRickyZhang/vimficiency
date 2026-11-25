@@ -3,8 +3,10 @@ local atom_stream = require("vimficiency.capture.atom_stream")
 local auto_suggest = require("vimficiency.capture.auto_suggest")
 local subcommands = require("vimficiency.subcommands")
 local recall_capture = require("vimficiency.capture.recall")
+local journal = require("vimficiency.capture.journal")
+local sampling = require("vimficiency.stats.sampling")
 local ffi_config = require("vimficiency.ffi.config")
-local util = require("vimficiency.util")
+local ui_windows = require("vimficiency.ui.windows")
 
 local M = {}
 
@@ -28,7 +30,7 @@ local function cmdline_entry(opts)
       table.insert(cmd_lines, string.format("  Vimfy %-20s %s", cmd.usage, cmd.desc))
     end
     table.sort(cmd_lines)
-    util.show_output("Vimfy Commands", table.concat(cmd_lines, "\n"), {
+    ui_windows.show_output("Vimfy Commands", table.concat(cmd_lines, "\n"), {
       ui_keys = {
         title = "Vimfy Scratch Output Keys",
         docs = true,
@@ -92,7 +94,7 @@ end
 --- * apply config to Lua and C++,
 --- * register the `:Vimfy` command
 --- * setup capture mechanism
----@param user_config? table  Keys from `config.lua` and `ffi/config.lua`; unknown keys warn
+---@param user_config? table  Keys from `config/init.lua` and `ffi/config.lua`; unknown keys warn
 function M.setup(user_config)
   -- Require CmdAtom for our capture semantics to work
   if not atom_stream.supported() then
@@ -101,6 +103,8 @@ function M.setup(user_config)
   user_config = user_config or {}
   -- A repeated setup() must not keep triggers armed by the previous config.
   auto_suggest.disable()
+  journal.stop()
+  sampling.stop_background()
   config.reset()
 
   -- Stash config so reload can re-run `setup()` with the same values.
@@ -108,16 +112,18 @@ function M.setup(user_config)
 
   vim.api.nvim_create_augroup(M.AUGROUP, { clear = true })
 
-  local plugin_dir = debug.getinfo(1, "S").source:sub(2):match("(.*)/lua/")
-  vim.cmd.helptags(plugin_dir .. "/doc")
-
-  if not user_config.shiftwidth then
-    -- Handle 'shiftwidth=0' means "follow tabstop" -> use real width
-    user_config.shiftwidth = vim.fn.shiftwidth()
+  local source = debug.getinfo(1, "S").source
+  local caller = debug.getinfo(2, "S")
+  if caller and caller.source ~= source and caller.source:sub(1, 1) == "@" then
+    local path = vim.fn.fnamemodify(caller.source:sub(2), ":p")
+    if vim.fn.filereadable(path) == 1 then config.setup_path = path end
   end
+  local plugin_dir = source:sub(2):match("(.*)/lua/")
+  vim.cmd.helptags(plugin_dir .. "/doc")
 
   -- Lua is for runtime concerns
   local lua_consumed = config.apply(user_config)
+  require("vimficiency.ui.highlights").refresh_selection()
   -- C++ is for per-process globals (keyboard cost model, Vim options), pushed once here.
   local cpp_consumed = ffi_config.apply_globals(user_config)
 
@@ -147,6 +153,9 @@ function M.setup(user_config)
 
   -- Capture: recall always listens; auto-suggest only if the user configured a trigger.
   recall_capture.start_continuous_capture()
+  if config.journal.enabled then journal.start() end
+  -- Journals from when it was on still get scored.
+  sampling.start_background()
 
   auto_suggest.enable_configured()
 end
@@ -161,6 +170,7 @@ function M.shutdown()
   local sim_closed = false
   local ok = pcall(simulate.cleanup_compare)
   if ok then sim_closed = true end
+  require("vimficiency.explore.runtime.lifecycle").shutdown()
 
   auto_suggest.disable()
 
@@ -168,6 +178,9 @@ function M.shutdown()
   local dropped_active = 0
   local ok_drop, n = pcall(session_store.teardown_active)
   if ok_drop then dropped_active = n or 0 end
+
+  journal.stop()
+  sampling.stop_background()
 
   -- Tear down the CmdAtom capture and every subscriber last.
   atom_stream.shutdown()
@@ -202,6 +215,7 @@ function M.reload_lua(new_lib_path)
   end
 
   local fresh = require("vimficiency")
+  fresh.config.setup_path = config.setup_path
   fresh.setup(_G.__vimficiency_last_user_config)
 
   require("vimficiency.session.store").restore_from_dump(dump)

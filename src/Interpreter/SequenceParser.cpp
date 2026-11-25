@@ -1,26 +1,32 @@
 // SequenceParser.cpp - Implementation of sequence parsing for animation
 
-module;
-#include <cassert>
-
 module vf.Interpreter.SequenceParser;
 
 import std.compat;
 import vf.Interpreter.ParserChar;
 import vf.Types.KeyNotation;
+import vf.Utils.PrettyText;
 import vf.Keyboard.ToKeys.MovementToKeys;
 
 using namespace std;
 
-string formatSequenceParseError(const SequenceParseError& error) {
-  switch (error.kind) {
-  case SequenceParseErrorKind::UnknownCharacter:
-    return "unknown character at offset " + to_string(error.offset);
-  case SequenceParseErrorKind::MalformedSpecialKey:
-    return "malformed special key at offset " + to_string(error.offset);
-  }
-  assert(false && "Unhandled SequenceParseErrorKind");
-  return "unknown parse error";
+string formatSequenceParseError(const SequenceParseError& error, string_view seq) {
+  constexpr size_t PREVIEW_BYTES = 40;
+  auto quote = [=](string_view text) {
+    string quoted = format("{:?}", VF::prettify(text.substr(0, PREVIEW_BYTES)));
+    if (text.size() > PREVIEW_BYTES) quoted += "...";
+    return quoted;
+  };
+
+  const string_view tail = seq.substr(error.offset);
+  const string_view key = firstKey(tail);
+  const bool incomplete = error.kind == SequenceParseErrorKind::MalformedSpecialKey && key == "<";
+  const size_t begin = seq.size() > PREVIEW_BYTES && error.offset > PREVIEW_BYTES / 2
+      ? error.offset - PREVIEW_BYTES / 2 : 0;
+  return format("{} {} at byte {} of {}{}",
+                incomplete ? "incomplete special key" : "unrecognized key",
+                quote(incomplete ? tail : key), error.offset + 1,
+                begin ? "..." : "", quote(seq.substr(begin)));
 }
 
 namespace {
@@ -97,9 +103,10 @@ const unordered_set<string> REPLAY_MOTION_SPECIALS = {
 };
 
 // Try to parse a motion at position i
-// Returns the motion string, or empty string if none starts at i.
-string tryParseMotion(string_view sv, size_t i) {
-  if (i >= sv.size()) return "";
+// Returns (motion string, length consumed) or ("", 0). The two lengths differ
+// when a target is named another way than `displayChar` writes it.
+pair<string, size_t> tryParseMotion(string_view sv, size_t i) {
+  if (i >= sv.size()) return {"", 0};
 
   char c = sv[i];
 
@@ -108,43 +115,31 @@ string tryParseMotion(string_view sv, size_t i) {
     string special = tryParseSpecialKey(sv, i);
     if (!special.empty() &&
         (ALL_MOTIONS.contains(special) || REPLAY_MOTION_SPECIALS.count(special))) {
-      return special;
+      return {special, special.size()};
     }
-    return "";
+    return {"", 0};
   }
 
   // Targets may be bracket-form display chars, e.g. f<Space>. Repeat commands
   // `;` and `,` are parsed as separate motion tokens so replay can carry
   // char-find state across intervening movement.
   if ((c == 'f' || c == 'F' || c == 't' || c == 'T') && i + 1 < sv.size()) {
-    string target;
-    if (sv[i + 1] == '<') {
-      string special = tryParseSpecialKey(sv, i + 1);
-      if (!special.empty()) {
-        auto parsed = parseDisplayChar(special);
-        if (parsed.has_value()) {
-          target = displayChar(*parsed);
-        } else {
-          target = displayChar(sv[i + 1]);
-        }
-      } else {
-        target = displayChar(sv[i + 1]);
-      }
-    } else {
-      target = displayChar(sv[i + 1]);
+    const string special = tryParseSpecialKey(sv, i + 1);
+    if (const optional<char> named = parseDisplayChar(special)) {
+      return {c + displayChar(*named), 1 + special.size()};
     }
-    return string(1, c) + target;
+    return {c + displayChar(sv[i + 1]), 2};
   }
 
   // Standard longest-match for other motions
   for (size_t len = min(sv.size() - i, size_t{4}); len > 0; --len) {
     string_view candidate = sv.substr(i, len);
     if (ALL_MOTIONS.contains(candidate)) {
-      return string(candidate);
+      return {string(candidate), len};
     }
   }
 
-  return "";
+  return {"", 0};
 }
 
 // Try to parse a text object at position i (e.g., "iw", "a\"", "ib")
@@ -210,9 +205,9 @@ pair<string, size_t> tryParseDelete(string_view sv, size_t i) {
     }
 
     // d + motion
-    string motion = tryParseMotion(sv, i + 1);
+    auto [motion, motionLen] = tryParseMotion(sv, i + 1);
     if (!motion.empty()) {
-      return {"d" + motion, 1 + motion.size()};
+      return {"d" + motion, 1 + motionLen};
     }
   }
 
@@ -286,9 +281,9 @@ pair<string, size_t> tryParseChange(string_view sv, size_t i) {
     }
 
     // c + motion
-    string motion = tryParseMotion(sv, i + 1);
+    auto [motion, motionLen] = tryParseMotion(sv, i + 1);
     if (!motion.empty()) {
-      return {"c" + motion, 1 + motion.size()};
+      return {"c" + motion, 1 + motionLen};
     }
   }
 
@@ -390,10 +385,10 @@ parseSequence(string_view sv) {
     }
 
     // Try to parse motion
-    string motion = tryParseMotion(sv, i);
+    auto [motion, motionLen] = tryParseMotion(sv, i);
     if (!motion.empty()) {
       tokens.push_back(TaggedToken(countStr + motion, TokenKind::Movement));
-      i += motion.size();
+      i += motionLen;
       continue;
     }
 

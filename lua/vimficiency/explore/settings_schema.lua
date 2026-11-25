@@ -1,5 +1,5 @@
 local ffi_optimizer    = require("vimficiency.ffi.optimizer")
-local settings_profile = require("vimficiency.settings_profile")
+local settings_profile = require("vimficiency.settings.profile")
 local panel_render     = require("vimficiency.explore.render.panel")
 local settings         = require("vimficiency.explore.settings")
 

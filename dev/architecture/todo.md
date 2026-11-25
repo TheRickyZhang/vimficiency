@@ -23,7 +23,7 @@ a thread join on the main thread:
 
 | path | main-thread work | bound |
 |---|---|---|
-| `:Vimfy finish`, `:Vimfy recall`, Watch's idle auto-finish (`session.lua` `finish_active` → `vf_analyze`) | full analyze search under `SearchControl::NEVER_STOP` | none |
+| `:Vimfy finish`, `:Vimfy recall`, Watch's idle auto-finish (`session/init.lua` `finish_active` → `vf_analyze`) | full analyze search under `SearchControl::NEVER_STOP` | none |
 | Explore settings change that affects the plan (`explore/state.lua` `reconfigure_plan` → `View::computePlan`) | full composition search under `NEVER_STOP` | none |
 | every accepted key, undo, redo and restore in Explore (`explore/state.lua` `fetch` → `vf_explore_recommendations`) | one Nav or Transform search for the current phase | natural search caps |
 | cancelling a live worker (`vf_analyze_cancel`, `vf_explore_cancel`) | `~AsyncJob` joins the worker | the worker's next cancel check |
@@ -250,32 +250,26 @@ Transform time dominates a profiled session.
 
 ## 7. Make the optimizer mapping-aware
 
-**What.** Capture (via `CmdAtom`, since 2026-11-10) records the *resolved*
-`keys` of each action and discards the user's own mapping LHS. So for a user
-who has `Z`→`dd`, the cost comparison and every suggestion are in terms of the
-underlying edits (`3dd`), never their shorthand (`3Z`). That is correct for the
-beat/regression metric — costing physical `3Z` against optimal `3dd` would make
-any efficient mapping look like it beats the optimizer — but it means we can
-never *suggest* a mapping the user already has, nor credit them for it.
+**What.** The user is costed by the keys they pressed (`VF.Atom.typed`, since
+2026-11-20; `dev/decisions.md`), but every suggestion is still in resolved
+keys. For a user who has `Z`→`dd`, the optimizer offers `3dd`, never `3Z`, so
+it cannot suggest a mapping the user already has.
 
-The `VF.Atom` already carries both sides: `keys` (resolved) and `lhs`+`count`
-(as typed). The forward path is to thread the user's active mappings (the
-`lhs`→`keys` relation, available from `nvim_get_keymap`) into the optimizer as
-context, so it can (a) recognize when a candidate sequence is reachable by a
-cheaper bound mapping and surface *that*, and (b) optionally cost the user's
-input by what they physically typed when a mapping was involved.
+The forward path is to thread the user's active mappings (the `lhs`→`keys`
+relation, available from `nvim_get_keymap`) into the optimizer as context, so
+it can recognize when a candidate sequence is reachable by a cheaper bound
+mapping and surface that.
 
 **Why deferred.** The optimizer's effort model and search operate on the
 canonical key vocabulary; mappings are an open-ended per-user alphabet. Feeding
-them in means a second cost lane (mapped-LHS effort) and a surface for the
-search to emit mapping tokens — neither exists today, and the resolved-keys
-behavior is the right default in the meantime.
+them in means a surface for the search to emit mapping tokens, which does not
+exist today.
 
 **Threshold to revisit.** A concrete request to have suggestions respect or
 propose user mappings, or activity-log evidence that resolved-keys suggestions
 are routinely worse for users who lean on custom mappings. Pointer:
-`lua/vimficiency/capture/atom_stream.lua` (`VF.Atom.lhs`/`count`) and wherever
-`user_seq`/`keyseq` is costed in `AnalyzeExports.cpp`.
+`lua/vimficiency/capture/atom_stream.lua` (`VF.Atom.typed`) and
+`SearchInputs.userTyped` in `src/Optimizer/Analyze.cppm`.
 
 ---
 

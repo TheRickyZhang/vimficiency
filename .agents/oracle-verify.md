@@ -28,26 +28,23 @@ the two authorities.
    our cursor model can sit at `col == line.size()`. If your port stops one
    position short, re-read `inc()` / `incl()` — that is almost always the bug.
 
-3. **Write an oracle-backed test.**
-   Add it to `tests/.../ManualTest.cpp` following the existing
-   `ExclusiveLineAdjust_*`, `ChangeLinewise_*`, `DeleteLinewise_*` style.
-   The test should:
-   - Set up a buffer + cursor.
-   - Run the command both through our impl and through `NeovimOracle`.
-   - Assert the resulting buffer + cursor match.
+3. **Compare against NeovimOracle.**
+   For a complex mismatch, start in `tests/Debug` and compare Vimficiency
+   and Neovim side by side. Put a permanent regression test in the matching
+   suite under `tests/Unit/`. Assert that the resulting buffer and cursor
+   match, along with the mode when relevant.
 
-4. **Run the test through the real oracle binary** before declaring success.
-   Common targets: `vimficiency_tests`, `edit_optimizer_tests`. Filter with
-   `--gtest_filter=...` to the new test name.
+4. **Run the focused regression test.**
+   Use `scripts/vimfy_tests unit '<Suite.Test>'`.
 
 ## Oracle gotchas (high-frequency footguns)
 
 - **`<BS>` byte:** send as `\x08` (ASCII BS), NOT `\x7f` (DEL). DEL silently
   fails to delete autoindent whitespace; BS works. See `NeovimOracle.cpp`.
-- **`-u NONE` ≠ blank options.** Neovim's compiled-in defaults still apply:
-  `autoindent=on`, `backspace=indent,eol,start`, `startofline=off`,
-  `joinspaces=off`, `shiftwidth=8`. These match `VimOptions.h` — keep them in
-  sync if you change either side.
+- **Oracle options.** `NeovimOracle::Impl::configureVimOptions()` sets
+  `startofline`, `joinspaces`, and `autoindent` to match
+  `src/VimCore/VimOptions.cppm`. It also clears `comments` to match
+  Vimficiency's join behavior. See `tests/Utils/NeovimOracle.cpp`.
 - **Step vs. full sequence divergence.** Calling `nvim_input` once per command
   (step trace) can give different results than one combined `nvim_input` call,
   because autoindent "pending" state is stripped between calls. If a test
@@ -55,8 +52,8 @@ the two authorities.
   why — pick the trace mode that matches what production does.
 - **`<BS>` in autoindent whitespace** deletes to the previous `shiftwidth`
   boundary, not one column. With sw=8: indent 1–8 → 0 in one BS, indent 9 → 8
-  in one BS. Use `bsCountForIndent()` in `StringUtils.h`. If BS cannot land
-  exactly on the target indent, fall through to `<C-u>`.
+  in one BS. Use `bsCountForIndent()` in `src/Optimizer/Indentation.cppm`. If BS
+  cannot land exactly on the target indent, fall through to `<C-u>`.
 
 ## A* / replay consistency
 

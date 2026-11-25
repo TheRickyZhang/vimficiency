@@ -97,7 +97,7 @@ TEST(CompositionResultPlannedEditView, ReversedDiffOrderKeepsFencepostsAligned) 
   }
 }
 
-TEST(CompositionResultPlannedEditView, ExclusiveDiffEndIsNotAValidTransformStart) {
+TEST(CompositionResultPlannedEditView, LinewiseDeletionDoesNotStartAtExclusiveDiffEnd) {
   Config config = Config::uniform();
   CompositionOptimizer opt(config);
 
@@ -127,6 +127,42 @@ TEST(CompositionResultPlannedEditView, ExclusiveDiffEndIsNotAValidTransformStart
   for (CursorPos start : plannedEdit.transformResult.startPositions()) {
     EXPECT_NE(start, CursorPos(2, 0));
   }
+}
+
+TEST(CompositionResultPlannedEditView, LineBreakReplacementUsesEitherInsertEntry) {
+  CompositionOptimizer opt(Config::uniform());
+  const Lines initial = {"(", "unU>"};
+  const Lines goal = {"(APD", "]}?unU>"};
+  const CursorPos nextLine(1, 0);
+
+  for (const CursorPos start : {CursorPos(0, 0), nextLine}) {
+    const auto result = opt.optimize(initial, start, goal, CursorPos(1, 2),
+                                     CompositionOptimizerParams{});
+    ASSERT_EQ(result.totalEdits(), 1);
+    const auto edit = result.plannedEditAt(0);
+    EXPECT_EQ(edit.diff.endPos, nextLine);
+    EXPECT_TRUE(edit.transformResult.resultsAt(1, 0).empty());
+    const string_view entry = start == nextLine ? "i<BS>" : "A<Del>";
+    EXPECT_TRUE(ranges::any_of(result.getResults(), [&](const Result& r) {
+      return r.getSequence().view().starts_with(entry);
+    }));
+  }
+}
+
+TEST(CompositionResultPlannedEditView, DeleteInteriorLinesThenJoinProtectedNeighbors) {
+  CompositionOptimizer opt(Config::uniform());
+  const Lines initial = {"ab", "cd", "  ef"};
+  const Lines goal = {"ab  ef"};
+
+  const auto result = opt.optimize(initial, CursorPos(1, 0), goal, CursorPos(0, 2),
+                                   CompositionOptimizerParams{});
+
+  ASSERT_EQ(result.totalEdits(), 1);
+  const auto edit = result.plannedEditAt(0);
+  ASSERT_TRUE(edit.diff.isPureDeletion());
+  EXPECT_FALSE(edit.transformResult.resultsAt(1, 0).empty());
+  EXPECT_TRUE(edit.transformResult.resultsAt(0, 3).empty());
+  EXPECT_FALSE(result.getResults().empty());
 }
 
 // The plan's diffs are the planner's partition under the search's own cost

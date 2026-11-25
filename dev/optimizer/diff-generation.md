@@ -504,8 +504,8 @@ Other surfaces:
 - `VimDiff::trace` (`VimDiff.cppm`) exposes the production tables, the
   optimal path, and the sealed blocks read-only; `TilingCost::cover` names the
   chunks behind a `query`. Both feed the docs-site widgets (`src/Wasm/`) and
-  `tests/Debug/VimDiffTraceExport.cpp`, which dumps the trace behind the README
-  animation and checks the path optimum against `calculateBreakdown`
+  `tests/Debug/VimDiffTraceExport.cpp`, which exports the planner walkthrough
+  and checks the path optimum against `calculateBreakdown`
 - `VimDiffPlan/*` in `vimfy_benchmarks` times the planner alone (ad hoc, not a
   dashboard suite)
 

@@ -150,6 +150,8 @@ void enumerateDepth1DeletionStructurals(
   TransformEditorState state(effective, localCursor);
 
   const bool isReplacement = diff.isReplacement();
+  const int maxLinewiseCount = isReplacement ? effective.lastLine() + 1
+                                             : explorer.maxLinewiseDeleteCount(effective);
   const double replacementInsertDistance = isReplacement
       ? textDistanceEstimate(diff.insertedLines())
       : 0.0;
@@ -177,7 +179,7 @@ void enumerateDepth1DeletionStructurals(
     if (!isReplacement) {
       return countedCommandString(cmd.count, cmd.base.seq.view());
     }
-    KeyedSequence c = ChangeGoalHandler::deleteToChangeLine(cmd, lineContent);
+    KeyedSequence c = ChangeGoalHandler::deleteToChangeLine(cmd, lineContent, query.indent.autoindent);
     string seq(c.seq.view());
     if (!isSingleChangeAction(seq)) return nullopt;
     return seq;
@@ -190,15 +192,26 @@ void enumerateDepth1DeletionStructurals(
     emitter.emit(*seq, bufferLanding(newState.getPos()), replacementInsertDistance);
   };
 
-  auto applyAndEmitLinewise = [&](TransformEditorState&& newState, const SequenceBinding& cmd,
-                                    std::string_view lineContent) {
-    if (newState.getLines() != expectedPost) return;
-    optional<string> seq = linewiseSeq(cmd, lineContent);
+  const VimCore::LineDeleteContext context = lineDeleteContext(boundary);
+  auto onLinewise = [&](LineRange range, const SequenceBinding& cmd) {
+    if (range.lineCount() > maxLinewiseCount) return;
+    const auto seq = linewiseSeq(cmd, effective[range.beginLine]);
     if (!seq) return;
-    emitter.emit(*seq, bufferLanding(newState.getPos()), replacementInsertDistance);
+    if (isReplacement) {
+      Lines after = effective;
+      CursorPos entry = localCursor;
+      Mode mode = Mode::Normal;
+      VimCore::linewiseChangeWithAutoindent(after, entry, mode,
+          range.beginLine, range.endLine - 1, effective[range.beginLine], query.indent);
+      if (after == expectedPost)
+        emitter.emit(*seq, bufferLanding(entry), replacementInsertDistance);
+    } else {
+      auto after = TransformSimulator::afterMultiLinewiseDeletion(state, range, context);
+      if (after.getLines() == expectedPost)
+        emitter.emit(*seq, bufferLanding(after.getPos()), 0.0);
+    }
   };
 
-  const VimCore::LineDeleteContext context = lineDeleteContext(boundary);
   auto onDeletion = [&](const ResolvedEditAction& action,
                         const SequenceBinding& cmd) {
     if (isReplacement ? !action.changeEffectValid : !action.deleteEffectValid) {
@@ -206,29 +219,16 @@ void enumerateDepth1DeletionStructurals(
     }
     const VimCore::ResolvedDeleteRange& resolved =
         isReplacement ? action.effectForChange() : action.deleteEffect;
-    TransformEditorState after = isReplacement
-        ? TransformSimulator::afterResolvedChangeDeletion(state, resolved, context)
-        : TransformSimulator::afterResolvedDeletion(state, resolved, context);
-    if (resolved.kind != VimCore::ResolvedDeleteRangeKind::Linewise) {
-      applyAndEmitCharwise(std::move(after), cmd);
+    if (resolved.kind == VimCore::ResolvedDeleteRangeKind::Linewise && isReplacement) {
+      onLinewise(resolved.lineRange, cmd);
       return;
     }
-
-    LineRange range = resolved.lineRange;
-    std::string_view firstLineContent =
-        (range.beginLine >= 0 && range.beginLine < static_cast<int>(effective.size()))
-            ? std::string_view(effective[range.beginLine])
-            : std::string_view{};
-    applyAndEmitLinewise(std::move(after), cmd, firstLineContent);
-  };
-  auto onCountedLinewise = [&](const LineRange& range, const SequenceBinding& cmd) {
-    std::string_view firstLineContent =
-        (range.beginLine >= 0 && range.beginLine < static_cast<int>(effective.size()))
-            ? std::string_view(effective[range.beginLine])
-            : std::string_view{};
-    applyAndEmitLinewise(
-        TransformSimulator::afterMultiLinewiseDeletion(state, range, context),
-        cmd, firstLineContent);
+    if (resolved.kind == VimCore::ResolvedDeleteRangeKind::Linewise &&
+        resolved.lineRange.lineCount() > maxLinewiseCount) return;
+    auto after = isReplacement
+        ? TransformSimulator::afterResolvedChangeDeletion(state, resolved, context)
+        : TransformSimulator::afterResolvedDeletion(state, resolved, context);
+    applyAndEmitCharwise(std::move(after), cmd);
   };
 
   // Joins are split by edit kind. For a pure deletion the cleared shell IS the
@@ -254,7 +254,7 @@ void enumerateDepth1DeletionStructurals(
       explorer, state, effective, localCursor,
       boundary.leftColOffset(), boundary.rightColOffset(),
       params.minPrefixCount,
-      onDeletion, onJoin, onCountedLinewise, onCountedJoin);
+      onDeletion, onJoin, onLinewise, onCountedJoin);
 
   // Visual deletion is a multi-token structural macro. Frontier does not
   // surface it; the full TransformOptimizer batch still emits `v{motion}d`
@@ -265,19 +265,15 @@ void enumerateDepth1DeletionStructurals(
 
 }
 
-vector<Suggestion> rankTransformFrontier(
+vector<Suggestion> collectTransformEdits(
     const TransformFrontierQuery& query,
     const Config& config,
     const EffortBank& bank) {
-  if (query.maxCount <= 0) return {};
-
   const TransformOptimizerParams transformParams = query.overrides
       ? query.overrides->resolved(TransformOptimizerParams{})
       : TransformOptimizerParams{};
-  BracketQuoteContext bqContext = computeTextObjectContextForDiff(query.diff, query.lines);
 
   vector<Suggestion> items;
-  items.reserve(static_cast<size_t>(query.maxCount));
   RunningEffort acceptedEffort(globalSequenceToKeys().tokenize(query.seq), config);
   const double acceptedCost = acceptedEffort.getEffort();
   SuggestionEmitter emitter{
@@ -286,10 +282,6 @@ vector<Suggestion> rankTransformFrontier(
       acceptedEffort, acceptedCost,
       transformParams.effortWeight, transformParams.distanceWeight,
       config};
-  auto finish = [&]() -> vector<Suggestion> {
-    sortAndCapSuggestions(items, query.maxCount, query.sortMode);
-    return std::move(items);
-  };
 
   // Depth-1 deletion / replacement enumeration via TransformExplorer.
   // Replaces the prior `computeTransformResultForDiff` call which ran a
@@ -299,14 +291,6 @@ vector<Suggestion> rankTransformFrontier(
   enumerateDepth1DeletionStructurals(query, config, bank, transformParams, emitter);
   const bool gotDeletionStructurals = items.size() > itemsBeforeDeletionEnum;
 
-  // Post-edit cursor target for inline emission paths (pure insertion +
-  // bracket/quote text-objects). Previously sourced from
-  // `transformResult.getGoalPos()`; for depth-1 the equivalent is the
-  // diff's beginPos (cursor lands at the deletion/insertion start after
-  // the structural completes — the typed content is owned by Insert
-  // phase).
-  const CursorPos editGoalPos = query.diff.beginPos;
-
   // Pure-insertion structurals: emit the bare mode-entry command (`o`,
   // `O`, `i`, `I`, `a`, `A`). The typed content + <Esc> are owned by the
   // Insert phase recommendation; the depth-1 transform rec only describes
@@ -314,13 +298,9 @@ vector<Suggestion> rankTransformFrontier(
   if (query.diff.isPureInsertion()) {
     const double insertDistance = textDistanceEstimate(query.diff.insertedLines());
     CompositionStrategies::enumerateInsertions(
-        query.diff, query.lines, [&](const CompositionStrategies::Insertion& s) {
-          // `o` leaves the cursor on the opened line, not at the diff anchor.
-          const CursorPos landing = s.structural == "o"
-              ? CursorPos(s.targetLine + 1, 0)
-              : editGoalPos;
+        query.diff, query.lines, query.indent, [&](const CompositionStrategies::Insertion& s) {
           appendInsertionStrategy(emitter, query.cursor, s.targetLine, s.beginCol,
-                                  s.endCol, s.structural, landing, insertDistance);
+                                  s.endCol, s.structural, s.entryPos, insertDistance);
         });
   }
 
@@ -329,15 +309,19 @@ vector<Suggestion> rankTransformFrontier(
   // Bracket/quote text-objects only fire as a fallback when no deletion
   // structurals were found — preserves the prior behaviour that the
   // optimizer's results path gated.
-  if (gotDeletionStructurals) return finish();
+  if (gotDeletionStructurals) return items;
 
-  if (bqContext.line != query.cursor.line) return finish();
+  const auto bqContext = computeTextObjectContextForDiff(query.diff, query.lines, query.hasHiddenLinesAbove);
+  if (bqContext.line != query.cursor.line) return items;
 
   // Bracket/quote text-objects: emit the bare structural command. For
   // pure-deletion diffs the structural is the full edit (`di"`, `da{`).
   // For replacement, the structural is the change-mode form (`ci"`,
   // `ca{`); the typed replacement content lives in the Insert phase rec.
   const bool pureDeletion = query.diff.isPureDeletion();
+  const CursorPos landing = pureDeletion
+      ? CompositionStrategies::textObjectDeleteLanding(query.diff, query.lines)
+      : query.diff.beginPos;
   const char textObjOp = pureDeletion ? 'd' : 'c';
   const double textObjectDistance = pureDeletion
       ? 0.0
@@ -347,7 +331,7 @@ vector<Suggestion> rankTransformFrontier(
     for (char q : QuoteFlags::ALL_QUOTES) {
       if (!bqContext.validQuoteMask[query.cursor.col].seen(q)) continue;
       string seq = string(1, textObjOp) + bqContext.quoteModifier(q) + q;
-      emitter.emit(seq, editGoalPos, textObjectDistance);
+      emitter.emit(seq, landing, textObjectDistance);
     }
   }
 
@@ -355,9 +339,9 @@ vector<Suggestion> rankTransformFrontier(
     for (char b : BracketFlags::ALL_BRACKETS) {
       if (!bqContext.validBracketMask[query.cursor.col].seen(b)) continue;
       string seq = string(1, textObjOp) + bqContext.bracketModifier(b) + b;
-      emitter.emit(seq, editGoalPos, textObjectDistance);
+      emitter.emit(seq, landing, textObjectDistance);
     }
   }
 
-  return finish();
+  return items;
 }

@@ -1,95 +1,188 @@
 -- tests/lua/stats/log.lua
--- Round-trip and crash-safety for the JSONL log.
+-- The session log through the real library: stamps, scoping, the legacy move.
 
+local config = require("vimficiency.config")
+local ffi_core = require("vimficiency.ffi.core")
+local ffi_stats = require("vimficiency.ffi.stats")
+local ffi_versions = require("vimficiency.ffi.versions")
+local journal = require("vimficiency.capture.journal")
+local sampling = require("vimficiency.stats.sampling")
+local stats_query = require("vimficiency.stats.query")
 local stats_log = require("vimficiency.stats.log")
 local h = require("_helpers")
 
---- Point stdpath("data") at a fresh tempdir so the log file sits in an
---- isolated location for this test. The runner already points
---- XDG_DATA_HOME at a shared tempdir, but we want per-test isolation so
---- multiple tests here don't contaminate each other.
-local function use_temp_data_dir()
-  local tmp = vim.fn.tempname()
-  vim.fn.mkdir(tmp, "p")
-  vim.env.XDG_DATA_HOME = tmp
-  return tmp
-end
-
-local function sample_record(overrides)
-  local r = {
-    v = 1,
-    finish_epoch = 1234567,
-    type = "mark",
-    kind = "mark",
-    key_count = 4,
+---@param user_seq string
+---@param epoch integer
+local function finish(user_seq, epoch)
+  stats_log.append("mark", h.finished_result(user_seq, {
     user_cost = 3.0,
-    best_opt_cost = 2.0,
-    user_seq = "dw",
-    best_opt_seq = "de",
-    beats = false,
-  }
-  for k, val in pairs(overrides or {}) do r[k] = val end
-  return r
+    key_count = 2,
+    finished_wall_epoch = epoch,
+    commands = { { keys = user_seq, kind = "operator" } },
+  }))
 end
 
-test("stats.log: append + read_all round-trips records", function()
-  use_temp_data_dir()
-  stats_log.append(sample_record({ user_seq = "a" }))
-  stats_log.append(sample_record({ user_seq = "b" }))
-  stats_log.append(sample_record({ user_seq = "c" }))
-
-  local records, skipped = stats_log.read_all()
-  assert_eq(#records, 3, "expected 3 records")
-  assert_eq(skipped, 0, "no lines should be skipped")
-  assert_eq(records[1].user_seq, "a")
-  assert_eq(records[2].user_seq, "b")
-  assert_eq(records[3].user_seq, "c")
-end)
-
-test("stats.log: malformed trailing line is silently skipped", function()
-  use_temp_data_dir()
-  stats_log.append(sample_record({ user_seq = "ok" }))
-  -- Simulate a crash mid-write by appending an unterminated / invalid line.
-  local fh = assert(io.open(stats_log._log_path(), "a"))
-  fh:write("{not json at all\n")
-  fh:write("   \n")                  -- whitespace-only line (decodes ok? skip)
-  fh:write("{\"partial\":")           -- no newline, truncated
+---@return table[]  # `vf.stats.LogRecord`
+local function records()
+  local fh = assert(io.open(stats_log.path(), "rb"))
+  local bytes = fh:read("*a")
   fh:close()
+  return ffi_core.decode_message("vf.stats.SessionLog", bytes).records
+end
 
-  local records, skipped = stats_log.read_all()
-  assert_eq(#records, 1, "only the well-formed record should survive")
-  assert_eq(records[1].user_seq, "ok")
-  assert_true(skipped >= 1, "at least one malformed line must be counted as skipped")
+test("stats.log: sessions round-trip under the current stamp", function()
+  h.use_temp_data_home()
+  finish("dw", 10)
+  finish("de", 20)
+
+  local summary = stats_query.summary({ current_only = true, weight = "effort", filter = {}, charted_size = 0 })
+  assert_eq(summary.sessions.sessions, 2)
+  assert_eq(summary.hidden_runs, 0)
+  local prefix = "scoring " .. ffi_versions.versions().scoring_version .. "·"
+  assert_true(summary.scoring_label:find(prefix, 1, true) == 1, summary.scoring_label)
+
+  local first = records()[3].session
+  assert_eq(first.user_seq, "dw")
+  assert_eq(first.best_seq, "dw")
+  assert_eq(first.outcome, "scored")
+  assert_eq(first.kind, "mark")
+  assert_eq(first.commands, { { keys = "dw", kind = "operator" } })
+  assert_eq(records()[4].session.finished_wall_epoch, 20)
 end)
 
-test("stats.log: build_record flags beats when user beats optimizer", function()
-  local r = stats_log.build_record("mark", h.fake_result({
-    user_seq = "xyz",
+test("stats.log: the header comes first, then a stamp once, before its first session", function()
+  h.use_temp_data_home()
+  finish("a", 1)
+  finish("b", 2)
+  local bodies = {}
+  for _, r in ipairs(records()) do bodies[#bodies + 1] = r.body end
+  assert_eq(bodies, { "header", "stamp", "session", "session" })
+end)
+
+test("stats.log: another stamp's sessions count unless current only", function()
+  h.use_temp_data_home()
+  finish("old", 1)
+  local old_label = stats_query.summary({ current_only = true, weight = "effort", filter = {}, charted_size = 0 })
+    .scoring_label
+  h.with_patch({ { config, "RESULTS_CALCULATED", config.RESULTS_CALCULATED + 1 } }, function()
+    finish("new", 2)
+    local all = stats_query.summary({ current_only = false, weight = "effort", filter = {}, charted_size = 0 })
+    assert_eq(all.sessions.sessions, 2)
+    assert_eq(all.hidden_runs, 0)
+    local current = stats_query.summary({ current_only = true, weight = "effort", filter = {}, charted_size = 0 })
+    assert_eq(current.sessions.sessions, 1)
+    assert_eq(current.hidden_runs, 1)
+    assert_true(current.scoring_label ~= old_label, "labels tell stamps apart")
+  end)
+end)
+
+test("stats.log: a truncated last record is not read", function()
+  h.use_temp_data_home()
+  finish("whole", 1)
+  local fh = assert(io.open(stats_log.path(), "ab"))
+  fh:write("\10\100partial")
+  fh:close()
+  assert_eq(stats_query.summary({ current_only = false, weight = "effort", filter = {}, charted_size = 0 }).sessions.sessions, 1)
+end)
+
+test("stats.log: the unstamped v1 log moves to legacy and is not read", function()
+  local tmp = h.use_temp_data_home()
+  local dir = tmp .. "/nvim/vimficiency"
+  vim.fn.mkdir(dir, "p")
+  vim.fn.writefile({ '{"v":1,"user_seq":"old"}' }, dir .. "/sessions.jsonl")
+
+  finish("new", 1)
+  assert_eq(stats_query.summary({ current_only = false, weight = "effort", filter = {}, charted_size = 0 }).lifetime.sessions, 1)
+  assert_true(vim.uv.fs_stat(dir .. "/sessions.jsonl") == nil, "v1 log moved away")
+  assert_eq(vim.fn.readfile(dir .. "/legacy/sessions.v1.jsonl"), { '{"v":1,"user_seq":"old"}' })
+end)
+
+test("stats.log: a row's drill filter lists its sessions through ffi.stats.runs", function()
+  h.use_temp_data_home()
+  local now = os.time()
+  finish("dw", now - 60)
+  finish("de", now - 30)
+
+  local day = stats_query.summary({ current_only = false, weight = "effort", filter = {}, charted_size = 0 }).sessions.days[1]
+  local list = ffi_stats.runs({
+    scope = {
+      session_log = stats_log.path(),
+      stamp = stats_log.stamp(),
+      current_only = false,
+      journal_dir = journal.dir(),
+      sample_params = sampling.params(),
+      weight = "effort",
+      filter = day.drill,
+      charted_size = 0,
+    },
+    order = "newest",
+    offset = 0,
+    limit = 10,
+  })
+  assert_eq(day.drill.source, "sessions")
+  assert_eq(list.total, 2)
+  assert_eq(list.runs[1].id, { run = "session", session = 1 })
+  assert_eq(list.runs[1].user_keys, "de")
+  assert_eq(list.runs[1].outcome, "scored")
+  assert_eq(list.runs[2].wall_epoch, now - 60)
+end)
+
+---@param user_typed_insert string|nil
+---@return VF.Stats.CommandSummary
+local function commands_after_ten_inserts(user_typed_insert)
+  h.use_temp_data_home()
+  local now = os.time()
+  for ago = 1, 10 do
+    stats_log.append("mark", h.finished_result("if()<C-g>U<Left><BS><Esc>", {
+      user_cost = 3.0,
+      finished_wall_epoch = now - ago,
+      commands = { { keys = "if()<C-g>U<Left><BS><Esc>", kind = "insert" } },
+      user_typed_insert = user_typed_insert,
+      optimal_results = { { seq = "if)<Esc>", cost = 1.0 } },
+    }))
+  end
+  return stats_query.summary({ current_only = false, weight = "effort", filter = {}, charted_size = 0 }).sessions.commands
+end
+
+test("stats.log: a session's insert text is the keys pressed in it, not the keys that ran", function()
+  local commands = commands_after_ten_inserts("f(<BS>")
+  assert_eq(commands.user_typed_chars, 20)
+  assert_eq(commands.optimizer_typed_chars, 20)
+  assert_eq(#commands.never, 1)
+  assert_eq(commands.never[1].text, "<BS>")
+  assert_eq(commands.never[1].user, 10)
+end)
+
+test("stats.log: pressing nothing in Insert mode still counts the optimizer's insert text", function()
+  local commands = commands_after_ten_inserts("")
+  assert_eq(commands.user_typed_chars, 0)
+  assert_eq(commands.optimizer_typed_chars, 20)
+end)
+
+test("stats.log: a session without pressed insert keys counts no insert text", function()
+  local commands = commands_after_ten_inserts(nil)
+  assert_eq(commands.user_typed_chars, 0)
+  assert_eq(commands.optimizer_typed_chars, 0)
+end)
+
+test("stats.log: the lowest-cost result is the best, and beating it still scores", function()
+  local s = stats_log._for_test.session_of("mark", h.fake_result({
     user_cost = 1.0,
-    optimal_results = { { seq = "abc", cost = 5.0 } },
-    kind = "mark",
-    key_count = 3,
-  }))
-  r = assert(r)
-  assert_true(r.beats, "user_cost < best_opt_cost must flag beats")
-  assert_eq(r.best_opt_cost, 5.0)
-  assert_eq(r.best_opt_seq, "abc")
-end)
-
-test("stats.log: build_record picks the lowest-cost optimal entry", function()
-  local r = stats_log.build_record("mark", h.fake_result({
-    user_seq = "xyz",
-    user_cost = 10.0,
     optimal_results = {
       { seq = "hi",  cost = 8.0 },
       { seq = "lo",  cost = 2.0 },
-      { seq = "mid", cost = 5.0 },
     },
-    kind = "mark",
-    key_count = 3,
   }))
-  r = assert(r)
-  assert_eq(r.best_opt_cost, 2.0)
-  assert_eq(r.best_opt_seq, "lo")
+  assert_eq(s.outcome, "scored")
+  assert_eq(s.best_cost, 2.0)
+  assert_eq(s.best_seq, "lo")
 end)
 
+test("stats.log: no result and unbeaten are outcomes, not costs", function()
+  local failed = stats_log._for_test.session_of("mark",
+    h.fake_result({ optimal_results = {} }))
+  assert_eq(failed.outcome, "no_result")
+  local unbeaten = stats_log._for_test.session_of("mark",
+    h.fake_result({ optimal_results = {}, unbeaten = true }))
+  assert_eq(unbeaten.outcome, "unbeaten")
+end)

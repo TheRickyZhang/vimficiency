@@ -75,6 +75,7 @@ Lua (User concepts):
 - Always use tests/Debug to investigate complex issues through direct, side-by-side comparison using NeovimOracle, finding the exact point our state differs from expectation.
 - Don't do post-hoc correction when attempting to fix vim semantics bugs. Our flow should be: determine viability of a command when first exploring it. Afterwards, we should not recheck the buffer state after applying in any way, because we should have guaranteed that correctness on the very first step.
 - Instead of performing long test runs at the end of your search, ask me to perform them.
+- Be conservative with adding unit tests for UI, as it is likely to evolve quickly.
 - Don't use static casts if they aren't needed!
 - Don't overuse namespaces. We should naturally bring them up as the code grows, not when we only have a few functions / classes.
 - Make sure to route unicode printing through PrettyPrint
@@ -87,14 +88,14 @@ Lua (User concepts):
 - Motion targets are inclusive (`CharInterval`), while edit/diff ranges remain half-open (`CharRange`). Convert at boundaries only; do not mix semantics inside NavOptimizer internals.
 - Always use our Lines type to represent buffer content, which provides additional helpful methods
 - Lines and Line can be empty, but have the cursor be at index 0 (Matches Vim handling)
-- Ensure CAREFUL handling of targetCol (Vim's curswant) within Position.h by calling the correct column method
+- Preserve Vim's curswant by choosing between `setCol` and `clampColPreservingTarget` in `src/Types/CursorPos.cppm`.
 - The heuristic is inadmissible (overestimates), so pop-time recording is necessary for correctness.
 - Always use TypeScript over JavaScript, Bun over NPM for website actions. We generally prefer more modern technologies and libraries where possible.
 
 ## Build Commands
 
 ```bash
-cmake -G Ninja -B build -DVIMF_BUILD_TESTS=ON   # once; tests are opt-in so plugin installs build only the library
+cmake -G Ninja -B build -DVIMF_BUILD_TESTS=ON   # once
 cmake --build build -j
 ```
 
@@ -125,6 +126,13 @@ Exposes C ABI for LuaJIT through `src/lua_exports.cpp` and the domain export fil
 
 For Lua context, see `lua/vimficiency/AGENTS.md`.
 
+## Repository Skills
+
+- [Comment and docs](.agents/comment-and-docs.md) for comments, changes under `dev/`, and substantial C++ behavior changes.
+- [Design check](.agents/design-check.md) for architecture and ownership decisions.
+- [FFI boundary](.agents/ffi-boundary.md) for `src/LuaExports/`, `lua/vimficiency/`, and other code that crosses the Lua/C++ boundary.
+- [Oracle verification](.agents/oracle-verify.md) for Vim behavior. Investigate in `tests/Debug` and run focused regression tests with `scripts/vimfy_tests unit '<filter>'`. See `tests/Utils/NeovimOracle.cpp` for oracle options, `src/VimCore/VimOptions.cppm` for simulator options, and `src/Optimizer/Indentation.cppm` for `bsCountForIndent`.
+
 ## Deep Dive References
 These are not loaded automatically. Read the matching doc before starting the listed work.
 
@@ -139,7 +147,7 @@ Core:
 - `dev/core/boundary-logic.md` - Before changing word/paragraph/sentence endpoints, boundary crossing, or the NavBoundary/TransformBoundary APIs
 - `dev/core/counted-edit-semantics.md` - Before generating, collapsing, or reasoning about counted edits (`{n}{edit}` != `{edit}` repeated n times)
 - `dev/core/keyboard.md` - Before changing keys, key mappings, sequence-to-keys conversion, or the effort model
-- `dev/core/utils.md` - Before adding helpers to `src/Utils/`, or using Lines, StringUtils, or sequence formatting in unfamiliar ways
+- `dev/core/utils.md` - Before adding helpers to `src/Utils/` or using Lines or sequence formatting in unfamiliar ways
 - `dev/core/vim-edge-cases.md` - Before changing `d`/`c` operator behavior, delete-to-change conversion, autoindent, or other VimCore edit semantics
 - `dev/vim/` - Local copies of Vim/Neovim help files, for checking semantics; these are large, so search them instead of reading them whole
 

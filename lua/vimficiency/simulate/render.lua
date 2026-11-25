@@ -3,11 +3,11 @@ local cmd = vim.cmd
 local max = math.max
 local min = math.min
 
-local chunks_util = require("vimficiency.chunks")
-local highlights = require("vimficiency.highlights")
+local chunks_util = require("vimficiency.ui.chunks")
+local highlights = require("vimficiency.ui.highlights")
 local pool_mod = require("vimficiency.simulate.pool")
-local sequence_display = require("vimficiency.sequence_display")
-local util = require("vimficiency.util")
+local sequence_display = require("vimficiency.ui.sequence_display")
+local ui_windows = require("vimficiency.ui.windows")
 
 local M = {}
 
@@ -27,9 +27,12 @@ end
 ---@param mode string
 ---@return string
 local function mode_label(mode)
+  if mode == "" then return "unrecorded" end
+  if mode:sub(1, 1) == "R" then return "REPLACE" end
+  if mode == "s" or mode == "S" or mode == "\19" then return "SELECT" end
   if mode:sub(1, 1) == "i" then return "INSERT" end
   if mode == "v" or mode == "V" or mode == "\22" then return "VISUAL" end
-  return "NORMAL"
+  return mode == "n" and "NORMAL" or mode
 end
 
 ---@param ctx table
@@ -80,7 +83,7 @@ local function build_virt_lines(ctx, entry)
 
   local info_row = {
     { header_label(ctx, entry), label_hl },
-    { string.format("Local %d/%d", local_step, #tokens), "Comment" },
+    { string.format("%s %d/%d", entry.is_user and "Recorded" or "Simulated", local_step, #tokens), "Comment" },
   }
   if is_active and not entry.is_user
      and entry.default_rank and entry.seq_idx ~= entry.default_rank then
@@ -98,6 +101,11 @@ local function build_virt_lines(ctx, entry)
       { mode_label(snap.mode), "Normal" },
     },
   }
+  local last = tokens[#tokens]
+  if last and last.error then
+    local label = "Replay unavailable · " .. last.error
+    vim.list_extend(virt_lines, wrap_chunks({ { label, "WarningMsg" } }, width))
+  end
   if pool_entry.cost then
     virt_lines[#virt_lines + 1] = {
       { "Cost ", "Comment" },
@@ -228,7 +236,7 @@ function M.create_status_bar(ctx)
   v.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
   v.nvim_win_set_buf(win, buf)
 
-  util.configure_scratch_window(win, {
+  ui_windows.configure_scratch_window(win, {
     winfixheight = true,
     statusline   = " ",
     winhighlight = "Normal:StatusLine,StatusLine:Normal,StatusLineNC:Normal",

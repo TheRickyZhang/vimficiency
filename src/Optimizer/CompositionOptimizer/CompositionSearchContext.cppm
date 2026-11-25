@@ -72,8 +72,6 @@ struct CompositionSearchContext {
 
   inline int totalEdits() const { return static_cast<int>(edits.size()); }
 
-  int maxLineLength;
-
   // Search state.
   // pq lives locally in optimizeImpl() because its element type depends on
   // the trace policy (see QueueEntry<Trace> in CompositionOptimizer.cpp).
@@ -88,6 +86,7 @@ struct CompositionSearchContext {
   int nodesProcessed = 0;
   int totalPops = 0;  // Hard budget: all queue pops, including stale.
   int statesSkipped = 0;
+  int statesOverEffortCap = 0;
 
   // Sub-optimizer aggregate stats
   int navNodesExplored = 0;

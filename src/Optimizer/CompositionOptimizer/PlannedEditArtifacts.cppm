@@ -16,16 +16,10 @@ export {
 // For each column on the edit's line, tracks which quote/bracket types
 // can be used as text objects to reach the edit region from that column.
 struct BracketQuoteContext {
-  // For quotes: validQuoteMask[col] has bits set for quote types valid from col.
-  // A quote type is valid from col if:
-  //   1. No prior quote of that type exists on this line (would pair with earlier)
-  //   2. A valid quote pair of that type contains the edit region
+  // Entries inside a matching pair are valid. The first pair is also reachable from its left.
   std::vector<QuoteFlags> validQuoteMask;  // Indexed by column
 
-  // For brackets: validBracketMask[col] has bits set for bracket types valid from col.
-  // A bracket type is valid from col if:
-  //   1. Balance is 0 at col (not inside a pair of that type)
-  //   2. The next forward pair of that type contains the edit region
+  // Opening-bracket lookup ignores quotes, even when the closing search skips a quoted bracket.
   std::vector<BracketFlags> validBracketMask;  // Indexed by column
 
   // Whether to use around (true) or inner (false) for each delimiter type
@@ -62,7 +56,7 @@ TransformResult computeTransformResultForDiff(
 
 BracketQuoteContext computeTextObjectContextForDiff(
     const DiffState& diff,
-    const Lines& preEditLines);
+    const Lines& preEditLines, bool hasHiddenLinesAbove = false);
 
 std::optional<JoinPlan> computeJoinPlanForDiff(
     const DiffState& diff,

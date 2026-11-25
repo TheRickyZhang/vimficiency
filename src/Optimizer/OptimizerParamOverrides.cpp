@@ -158,5 +158,6 @@ void OptimizerParamOverrides::applyTo(TransformOptimizerParams& p) const {
 void OptimizerParamOverrides::applyTo(CompositionOptimizerParams& p) const {
   applyPatch(shared_, p);
   applyPatch(composition_, p);
+  applyPatch(transform_, p.transform);
   p.validate();
 }

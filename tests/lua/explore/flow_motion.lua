@@ -47,7 +47,7 @@ test("explore flow: live cursor move leaves transform range despite buffered key
   helpers.silence_notify(function()
     explore_helpers.open_scenario_flow("flow-ciw-precursor", "replace_char", function()
       local view = explore_helpers.current_view()
-      local handlers = require("vimficiency.explore.handlers")
+      local handlers = require("vimficiency.explore.input.handlers")
       view.on_key_buffer = "ci"
       explore_helpers.set_scratch({ "abc" }, { 1, 0 })
 

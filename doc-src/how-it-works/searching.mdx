@@ -37,7 +37,7 @@ the new. The final deletion becomes its change form (`de`→`ce`, `dd`→`cc`,
 `x`→`s`) so the delete and the insert-mode entry are one command.
 
 - dot-repeat: a suffix cache keyed on (buffer hash, cursor, mode) stores the remaining suffix at every intermediate state of a goal-reaching path
-- heuristic: characters left to delete, plus 2 per extra line
+- heuristic: `0.35 × (characters left to delete + 2 per extra line)`, plus the effort of typing the new text
 
 **CompositionOptimizer** — precomputes a Transform result from every valid
 start position of every planned edit, so an edit is a single edge. The

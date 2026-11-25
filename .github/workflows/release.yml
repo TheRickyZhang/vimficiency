@@ -18,13 +18,16 @@ jobs:
             container: gcc:16-trixie
             asset: libvimficiency-linux-x86_64.so
             lib: libvimficiency.so
+            tool_asset: vimfy_journal-linux-x86_64
           - os: ubuntu-24.04-arm
             container: gcc:16-trixie
             asset: libvimficiency-linux-aarch64.so
             lib: libvimficiency.so
+            tool_asset: vimfy_journal-linux-aarch64
           - os: macos-15
             asset: libvimficiency-macos-arm64.dylib
             lib: libvimficiency.dylib
+            tool_asset: vimfy_journal-macos-arm64
     runs-on: ${{ matrix.os }}
     # Linux builds in the official gcc image: hosted Ubuntu stops at GCC 14 and
     # the module build needs 16. The trixie image puts the glibc floor at 2.38.
@@ -58,18 +61,19 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install cmake ninja neovim gcc
 
-      - name: Build library
+      - name: Build library and journal scorer
         run: |
-          # The C++ runtime is linked in statically so the prebuilt loads on
+          # The C++ runtime is linked in statically so the prebuilts load on
           # systems whose libstdc++ predates GCC 16.
           flags=(-DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF -DVIMF_BUILD_TESTS=OFF
-                 -DCMAKE_SHARED_LINKER_FLAGS=-static-libstdc++)
+                 -DCMAKE_SHARED_LINKER_FLAGS=-static-libstdc++
+                 -DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++)
           if [ "$RUNNER_OS" = macOS ]; then
             flags+=(-DCMAKE_C_COMPILER=gcc-16 -DCMAKE_CXX_COMPILER=g++-16
                     -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0)
           fi
           cmake -G Ninja -B build "${flags[@]}"
-          cmake --build build -j --target vimficiency
+          cmake --build build -j --target vimficiency vimfy_journal
 
       - name: Load smoke test
         # Loads the built library through the Lua FFI loader, which also
@@ -79,13 +83,33 @@ jobs:
           echo 'print("vimficiency " .. require("vimficiency.ffi").version_string())' |
             nvim -u NONE --cmd "set rtp+=." -l -
 
-      - name: Stage asset
-        run: cp "build/${{ matrix.lib }}" "${{ matrix.asset }}"
+      - name: Journal scorer smoke test
+        # Runs the scorer the way `:Vimfy stats` does, over an empty journal
+        # directory: the request is encoded by the library just built.
+        run: |
+          mkdir smoke-journal
+          nvim -u NONE --cmd "set rtp+=." -l - <<'EOF'
+          local out = assert(io.open("smoke-request", "wb"))
+          out:write(require("vimficiency.ffi.core").encode("vf.journal.SampleRequest", {
+            journal_dir = "smoke-journal",
+            params = { window_sizes = { 4 } },
+            keep_days = 1,
+          }))
+          out:close()
+          EOF
+          build/vimfy_journal < smoke-request
+
+      - name: Stage assets
+        run: |
+          cp "build/${{ matrix.lib }}" "${{ matrix.asset }}"
+          cp build/vimfy_journal "${{ matrix.tool_asset }}"
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
-          path: ${{ matrix.asset }}
+          path: |
+            ${{ matrix.asset }}
+            ${{ matrix.tool_asset }}
           if-no-files-found: error
 
   release:

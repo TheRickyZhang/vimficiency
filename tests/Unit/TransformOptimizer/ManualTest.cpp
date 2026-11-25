@@ -12,17 +12,25 @@ namespace {
 // Multi-motion visual macros are not parseable user sequences, so this goes
 // through `applyEdit` directly.
 TEST_F(TransformOptimizer_ManualTest, VisualSelectionMatchesOracle) {
-  for (auto [col, seq] : {pair{2, "vhhd"}, pair{0, "vlld"}}) {
-    Lines lines = {"abcde"};
-    SimulationResult nvim = oracle->simulate(lines, 0, col, seq);
+  for (auto [col, seq] : {pair{2, "vhhd"}, pair{0, "vlld"}, pair{3, "vjhhd"},
+                          pair{3, "vjd"}, pair{3, "vjc"}, pair{3, "v2jd"},
+                          pair{3, "vjjkd"}, pair{0, "v6ld"}}) {
+    Lines lines = {"abcend", "xZ", "tail"};
+    const bool change = string_view(seq).back() == 'c';
+    SimulationResult nvim = oracle->simulate(lines, 0, col, string(seq) + (change ? "<Esc>" : ""));
 
     CursorPos pos(0, col);
     Mode mode = Mode::Normal;
     Edit::applyEdit(lines, pos, mode, ParsedEdit(seq));
+    if (change) {
+      ASSERT_EQ(mode, Mode::Insert);
+      Edit::applyEdit(lines, pos, mode, ParsedEdit("<Esc>"));
+    }
 
     EXPECT_EQ(lines, nvim.lines) << seq;
     EXPECT_EQ(pos.line, nvim.row) << seq;
     EXPECT_EQ(pos.col, nvim.col) << seq;
+    EXPECT_EQ(mode, nvim.mode) << seq;
   }
 }
 

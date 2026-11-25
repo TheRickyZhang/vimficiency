@@ -41,10 +41,8 @@ TransformResult::TransformResult(vector<vector<Result>> results, TransformSearch
     const int firstCol = (line == 0) ? bufferBeginCol : 0;
     for (int localCol = 0; localCol < positions; localCol++) {
       const int bufferCol = firstCol + localCol;
-      const int idx = resultIndexAt(bufferBeginLine + line, bufferCol);
-      if (idx >= 0) {
-        indexToBufferPos_[idx] = CursorPos(bufferBeginLine + line, bufferCol);
-      }
+      const int idx = lineBaseIndex_[line] + bufferCol;
+      indexToBufferPos_[idx] = CursorPos(bufferBeginLine + line, bufferCol);
     }
   }
 

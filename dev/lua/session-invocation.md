@@ -40,9 +40,10 @@ named `alias`, `filename`, or `alias_or_filename` after the grammar they accept.
 Named aliases are alphabetic (like named registers). Reusing one replaces the
 previous record; `NAMED_CAPACITY = 100` is only a runaway guard (eviction is the
 real bound),
-and finished records keep their slot without counting against it. The recall
-ring holds `config.KEY_SESSION_CAPACITY` records for `config.MAX_RETENTION_SECONDS`,
-in RAM only.
+and finished records keep their aliases without counting against it. The in-memory
+Recall ring drops its oldest entry only when its count exceeds
+`config.KEY_SESSION_CAPACITY` and that entry is older than
+`config.MAX_RETENTION_SECONDS`.
 
 Active mark/watch sessions are evicted when their window closes, the cursor drifts
 past `config.MAX_SEARCH_LINES`, or they idle too long (`compute.manual_should_evict`).
@@ -67,8 +68,8 @@ vimfy regression · 17 keys · 3s ago · 15 → 8
 :Vimfy view $  ·  play $  ·  explore $
 ```
 
-Sequences are tokenized by the C++ `SequenceParser`; `parseSequence` is
-fallible and the FFI tokenizer exports return `ERROR: ...` strings so Lua can
-tell a failure from an empty result. User cost is `getEffort(keyseq, config)`.
+Sequences are tokenized by the C++ `SequenceParser`. On failure the tokenizer
+export returns a protobuf error envelope, and the Lua wrapper returns an empty
+token list plus an error string. User cost is `getEffort(keyseq, config)`.
 Finished results then live in the workspace or the archive; see
 `session-storage.md`.

@@ -1,0 +1,188 @@
+local v = vim.api
+
+local alias_mod = require("vimficiency.session.alias")
+local config = require("vimficiency.config")
+local compute = require("vimficiency.session.compute")
+local atom_stream = require("vimficiency.capture.atom_stream")
+local end_trigger = require("vimficiency.capture.end_trigger")
+local result_view = require("vimficiency.session.result_view")
+local session_store = require("vimficiency.session.store")
+local capture_state = require("vimficiency.capture.state")
+local util = require("vimficiency.util")
+
+local M = {}
+
+--- Reason to drop an active mark/watch session, or nil to keep it. Checked on
+--- every atom: window closed or showing another buffer, cursor drifted out of
+--- range, or idle too long.
+---@param session VF.Session.Active
+---@return string|nil
+local function evict_reason(session)
+  local noun = session.kind == "watch" and "watch" or "session"
+  if not v.nvim_win_is_valid(session.win) then
+    return "Vimfy: " .. noun .. " [" .. session.id .. "] dropped — window closed"
+  end
+  if v.nvim_win_get_buf(session.win) ~= session.buf then
+    return "Vimfy: " .. noun .. " [" .. session.id .. "] dropped — window switched buffers"
+  end
+  local cursor = v.nvim_win_get_cursor(session.win)
+  local reason = compute.manual_should_evict(session, cursor[1] - 1, vim.uv.hrtime())
+  if reason then
+    return "Vimfy: " .. noun .. " dropped — " .. reason
+  end
+  return nil
+end
+
+--- Builds the atom listener for one mark/watch session. Eviction runs first on every atom,
+--- then atoms are scoped to the session window and admitted by decision.
+---@param alias string
+---@param id string
+---@return fun(atom: VF.Atom, decision: VF.Atom.Decision)
+local function make_session_listener(alias, id)
+  return function(atom, decision)
+    local session = session_store.get_active(alias)
+    if not session or session.id ~= id then return end
+
+    local reason = evict_reason(session)
+    if reason then
+      session_store.remove(id)
+      vim.schedule(function() vim.notify(reason, vim.log.levels.WARN) end)
+      return
+    end
+
+    if atom.win ~= session.win then return end
+
+    if decision == "abort" then
+      session_store.remove(id)
+      vim.schedule(function()
+        vim.notify("Vimfy: session [" .. alias .. "] dropped — " .. atom.abort_reason, vim.log.levels.WARN)
+      end)
+    elseif decision == "record" then
+      if atom.lossy and config.lossy_mappings == "warn" and not session.lossy_warned then
+        session.lossy_warned = true
+        vim.schedule(function()
+          vim.notify("Vimfy: session [" .. alias .. "] recorded Lua mapping `" .. atom.keys ..
+            "` by its typed keys; Play shows the recorded result " ..
+            "(lossy_mappings = \"allow\" silences this)", vim.log.levels.WARN)
+        end)
+      end
+      session_store.append_atom(session, atom)
+    end
+  end
+end
+
+---@param alias string
+---@param kind "mark"|"watch"
+---@return VF.Session.Active
+local function start_named_session(alias, kind)
+  alias_mod.expect(alias, { "named" })
+  if not session_store.has_room_for_named(alias) then
+    error("Session capacity reached", 0)
+  end
+
+  local buf = v.nvim_get_current_buf()
+  local win = v.nvim_get_current_win()
+  local id = util.new_id(buf)
+  local start_state = capture_state.capture_state(buf, win)
+
+  atom_stream.add_listener(id, make_session_listener(alias, id))
+
+  return session_store.new_active_session(id, id, win, buf, start_state, kind)
+end
+
+---@param verb string
+---@param alias string
+---@param overwrote boolean
+local function notify_started(verb, alias, overwrote)
+  vim.notify("vimfy " .. verb .. " [" .. alias .. "]" .. (overwrote and " (overwrote existing)" or ""),
+    vim.log.levels.INFO)
+end
+
+---@param alias string
+function M.start(alias)
+  local active = start_named_session(alias, "mark")
+  notify_started("started", alias, session_store.store_named(alias, active))
+end
+
+---@param alias string
+function M.watch(alias)
+  local cfg = config.watch
+  if not cfg or not cfg.idle then
+    error("Watch is not configured. Add `watch = { idle = { ms = N }, cooldown_ms = N }` to setup{}.", 0)
+  end
+
+  local active = start_named_session(alias, "watch")
+  local id = active.id
+
+  local disarm = end_trigger.arm_idle({
+    name = "watch_" .. id,
+    idle_ms = cfg.idle.ms,
+    cooldown_ms = cfg.cooldown_ms,
+    on_fire = function()
+      local rec = session_store.get_active(alias)
+      if not rec or rec.id ~= id then return false end
+      M.finish(alias)
+      return true
+    end,
+  })
+  if not disarm then
+    atom_stream.remove_listener(active.stream_sub)
+    error("vimfy watch [" .. alias .. "] failed to arm idle trigger", 0)
+  end
+
+  active.watch_disarm = disarm
+  notify_started("watching", alias, session_store.store_named(alias, active))
+end
+
+--- Compute, store, and announce the result for an active record. The record's
+--- kind is already decided (mark/watch at start, recall from the ring)
+---@param active VF.Session.Active
+---@param alias string
+local function finish_active(active, alias)
+  local result = compute.compute_result_for_active(active, compute.capture_end_state(active))
+  session_store.convert_to_finished(active.id, result, alias)
+
+  local message = result_view.format_message("vimfy finished [" .. alias .. "]", result)
+  if result.analyze_ms then
+    message = message .. string.format("\n  optimizer: %.0f ms", result.analyze_ms)
+  end
+  vim.notify(message, vim.log.levels.INFO)
+end
+
+---@param alias string
+function M.finish(alias)
+  alias_mod.expect(alias, { "named" })
+
+  local active = session_store.get_active(alias)
+  if not active then
+    error("Session '" .. alias .. "' not found or already finished.", 0)
+  end
+  finish_active(active, alias)
+end
+
+---@param alias string
+function M.recall(alias)
+  local kind = alias_mod.expect(alias, alias_mod.RECALL_KINDS)
+
+  local active = session_store.get_active(alias)
+  if not active then
+    if kind == "recall_key" then
+      error("No recall session found for '" .. alias .. "' commands ago.", 0)
+    end
+    error("No recall session found within '" .. alias .. "'. " ..
+      "Try a larger window or indexing by key count (e.g. 'recall 20').", 0)
+  end
+  finish_active(active, alias)
+end
+
+---@param alias string
+function M.close(alias)
+  local active = session_store.get_active(alias)
+  if not active then
+    error("Session '" .. tostring(alias) .. "' not found or already closed", 0)
+  end
+  session_store.remove(active.id)
+  vim.notify("vimfy closed [" .. alias .. "]", vim.log.levels.INFO)
+end
+
+return M
