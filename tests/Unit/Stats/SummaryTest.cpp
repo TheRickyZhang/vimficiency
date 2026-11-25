@@ -553,11 +553,20 @@ TEST_F(StatsFormatTest, ARollupWrittenBeforeFormatsStillReads) {
   EXPECT_EQ(summarize().journal().score().spans(), 1);
 }
 
-TEST_F(StatsFormatTest, ARollupOfANewerFormatIsSkipped) {
+TEST_F(StatsFormatTest, ANewerRollupIsSkippedAndItsJournalIsRolledUpOnlyOnce) {
   rolledUpJournal();
   setRollupFormat(ROLLUP_FORMAT + 1);
+  const string rollup = readFile(rollupPath());
+  journal("old", 10, params, {sample(4, 10, 5)});
+  age("old");
+
   EXPECT_EQ(summarize().journal().score().spans(), 0);
   EXPECT_EQ(summarize(true).hidden_runs(), 0);
+  EXPECT_EQ(rollUp(params), 1);
+  EXPECT_FALSE(fs::exists(journalPath("old")));
+  EXPECT_FALSE(fs::exists(dir / "journal" / "old.samples"));
+  EXPECT_EQ(readFile(rollupPath()), rollup);
+  EXPECT_EQ(summarize().journal().score().spans(), 0);
 }
 
 TEST_F(StatsFormatTest, ANewLogStartsWithItsHeaderOnce) {

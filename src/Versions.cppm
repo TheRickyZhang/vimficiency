@@ -8,7 +8,7 @@ export {
 inline constexpr int JOURNAL_FORMAT = 3;
 // Bump when what a `.samples` file holds changes, so older files are rescored.
 inline constexpr int SAMPLES_FORMAT = 7;
-// Bump when a rollup changes meaning; newer records are skipped.
+// Bump when rollup totals change meaning.
 inline constexpr int ROLLUP_FORMAT = 1;
 // Bump when a session log record changes meaning; a newer log is an error.
 inline constexpr int SESSION_LOG_FORMAT = 1;

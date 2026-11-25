@@ -93,6 +93,7 @@ jobs:
           out:write(require("vimficiency.ffi.core").encode("vf.journal.SampleRequest", {
             journal_dir = "smoke-journal",
             params = { window_sizes = { 4 } },
+            keep_days = 1,
           }))
           out:close()
           EOF

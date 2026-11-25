@@ -57,8 +57,7 @@ struct RolledJournal {
   RunTable runs;
 };
 
-// A `vf.journal.RollupFile`'s rollups in the order appended, less those of a
-// newer `ROLLUP_FORMAT`; none when the file is missing.
+// Rollups in append order. Newer formats supply only the journal name for deduplication.
 std::vector<RolledJournal> readRollups(const std::filesystem::path& path);
 
 std::expected<void, std::string> appendRollup(const std::filesystem::path& path,

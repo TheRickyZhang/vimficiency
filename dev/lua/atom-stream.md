@@ -320,8 +320,8 @@ unless `current_only`, which counts other params' rollups in `hidden_runs`.
   a pass that dies between the append and the deletion is finished by the next,
   and the summary skips the journal meanwhile.
 - `keep_days` is not a param, so changing it rescores nothing.
-- A rollup carries `ROLLUP_FORMAT` (0, from before the field, is format 1);
-  readers skip a rollup of a newer format.
+- A rollup carries `ROLLUP_FORMAT` (0, from before the field, is format 1).
+  Readers of a newer format use only the journal name to recognize a completed rollup.
 
 Windows are scored like sessions (`dev/lua/session-storage.md` § The session
 log). Windows that end where they started score a best of 0. `unbeaten` windows

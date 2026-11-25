@@ -70,9 +70,9 @@ vector<RolledJournal> readRollups(const fs::path& path) {
   vf::journal::Rollup record;
   vector<RolledJournal> out;
   while (nextRecord(rest, entry) && record.ParseFromArray(entry.data(), entry.size())) {
-    if (record.format() > ROLLUP_FORMAT) continue;
     RolledJournal& rolled = out.emplace_back();
     rolled.journal = record.journal();
+    if (record.format() > ROLLUP_FORMAT) continue;
     rolled.params = record.params().SerializeAsString();
     for (const vf::journal::RollupEntry& e : record.entries()) {
       RunTotals& totals = rolled.runs[{e.day(), e.window_size(), e.nav_only(), e.outcome()}];
