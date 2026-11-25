@@ -2,7 +2,7 @@
 // pair in ChangeGoalHandler. The cleared shell is the buffer shape
 // `[pre, "", ..., "", suf]` that `isGoalReached` accepts before the typed
 // completion runs. From any cursor position in that shell, applying
-// `buildClearedShellEntry + buildCollapseSequence + <Esc>` must produce
+// `enterAndCollapseClearedShell` followed by <Esc> must produce
 // `[pre + suf]` with cursor positioned at end-of-pre (col == pre.size() - 1
 // after the implicit <Esc> backup, or 0 if pre is empty).
 
@@ -11,7 +11,6 @@
 
 import std.compat;
 import vf.Optimizer.TransformOptimizer.ChangeGoalHandler;
-import vf.Optimizer.BuildTypedCommands;
 import vf.Keyboard.KeyedSequence;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
@@ -68,9 +67,8 @@ class VerifyClearedShellEntry {
     int lineLen = static_cast<int>(shell[cursorLine].size());
     int cursorCol = lineLen == 0 ? 0 : clamp(spec.cursorColRaw, 0, lineLen - 1);
 
-    KeyedSequence seq =
-        ChangeGoalHandler::buildClearedShellEntry(totalLines, cursorLine, cursorCol);
-    seq += buildCollapseSequence(totalLines, cursorLine);
+    KeyedSequence seq;
+    ChangeGoalHandler::enterAndCollapseClearedShell(seq, shell, CursorPos(cursorLine, cursorCol));
     seq += KeyedSequence::Esc;
 
     string joined = spec.pre + spec.suf;

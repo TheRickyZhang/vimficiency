@@ -241,6 +241,26 @@ TEST_F(JournalSamplerTest, AWindowARunDiedOnIsRecordedAndSkipped) {
   EXPECT_FALSE(fs::exists(dir / "a.inprogress"));
 }
 
+TEST_F(JournalSamplerTest, ACommittedWindowWithACrashMarkerIsCountedOnce) {
+  writeFile(dir / "a.vfj", journalOf(5));
+  ASSERT_EQ(run().evaluated, 2);
+
+  vf::journal::SampleFile file;
+  ASSERT_TRUE(file.ParseFromString(readFile(dir / "a.samples")));
+  file.mutable_records()->DeleteSubrange(2, 2);
+  writeFile(dir / "a.samples", file.SerializeAsString());
+  auto& marker = *file.mutable_records(1)->mutable_sample();
+  marker.set_outcome(vf::journal::Sample::crashed);
+  writeFile(dir / "a.inprogress", marker.SerializeAsString());
+
+  EXPECT_EQ(run().evaluated, 1);
+  const auto all = samples();
+  ASSERT_EQ(all.size(), 2u);
+  EXPECT_EQ(all[0].outcome(), vf::journal::Sample::scored);
+  EXPECT_EQ(all[1].first_atom(), 2);
+  EXPECT_FALSE(fs::exists(dir / "a.inprogress"));
+}
+
 TEST_F(JournalSamplerTest, ATruncatedSamplesRecordIsRedone) {
   writeFile(dir / "a.vfj", journalOf(5));
   run();

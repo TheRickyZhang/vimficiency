@@ -370,4 +370,5 @@ FUZZ_TEST_F(TransformOptimizerGeneratedPropertyTest, MultiLineEmbeddedAlternativ
     .WithDomains(EmbeddedChangeSpecDomain(), fuzztest::InRange<int>(0, 31),
                  fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>())
     .WithSeeds({{EmbeddedChangeSpec{{"", "word", ""}, {"Q"}, "", ""}, 5, true, true},
-                {EmbeddedChangeSpec{{"end", "x"}, {""}, "abc", "Z"}, 0, true, true}});
+                {EmbeddedChangeSpec{{"end", "x"}, {""}, "abc", "Z"}, 0, true, true},
+                {EmbeddedChangeSpec{{"6", " ", "    $"}, {"", " "}, "~a ", " ]"}, 5, true, false}});

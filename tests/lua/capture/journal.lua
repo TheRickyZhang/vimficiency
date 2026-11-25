@@ -116,6 +116,18 @@ test("journal: an atom carries its keys, kind, mode and the cursor after it", fu
   assert_eq(atom.lossy, false)
 end)
 
+test("journal: an atom from a non-current window keeps that window's viewport", function()
+  local records = with_journal(function(_, atom)
+    vim.cmd("1split")
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    vim.cmd("redraw")
+    journal._for_test.listener(atom, "record")
+    vim.api.nvim_win_close(0, true)
+  end)
+  local view = records[#records - 1].atom.view
+  assert_eq({ view.top_row, view.bottom_row }, { 1, 3 })
+end)
+
 test("journal: recall marking first still yields every delta once", function()
   local expected = {}
   local records, buf_id = with_journal(function(buf, atom)

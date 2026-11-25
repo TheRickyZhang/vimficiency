@@ -466,7 +466,15 @@ test("sampling background: scores new journal content, then waits out the interv
   local _, overview = stats_pane("overview")
   assert_true(line_with(overview, "average | 0 samples") ~= nil)
 
-  vim.api.nvim_exec_autocmds("CursorHold", { group = "VimficiencyJournalSampling", modeline = false })
+  local vanished = vim.fs.joinpath(journal.dir(), "vanished.vfj")
+  vim.fn.writefile({}, vanished)
+  local stat = vim.uv.fs_stat
+  h.with_patch({ { vim.uv, "fs_stat", function(path)
+    if path == vanished then assert(vim.uv.fs_unlink(path)) end
+    return stat(path)
+  end } }, function()
+    vim.api.nvim_exec_autocmds("CursorHold", { group = "VimficiencyJournalSampling", modeline = false })
+  end)
   assert_true(sampling.running(), "a run started")
   _, overview = stats_pane("overview")
   assert_true(line_with(overview, "Scoring journal…") ~= nil)

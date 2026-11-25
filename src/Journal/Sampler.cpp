@@ -66,10 +66,15 @@ struct Existing {
   bool current = false;
   // Samples per window size.
   map<int, int> done;
+  optional<pair<int, int>> lastWindow;
   int64_t journalSize = -1;
   // The file's length without a truncated last record.
   size_t wholeBytes = 0;
 };
+
+pair<int, int> windowId(const vf::journal::Sample& sample) {
+  return {sample.window_size(), sample.last_atom()};
+}
 
 Existing readSamples(const fs::path& path, const string& paramsBytes) {
   const string bytes = readFrom(path, 0);
@@ -84,6 +89,7 @@ Existing readSamples(const fs::path& path, const string& paramsBytes) {
         break;
       case vf::journal::SampleRecord::kSample:
         existing.done[record.sample().window_size()]++;
+        existing.lastWindow = windowId(record.sample());
         break;
       case vf::journal::SampleRecord::kJournalSize:
         existing.journalSize = record.journal_size();
@@ -216,12 +222,13 @@ int sampleJournal(const fs::path& journal, const vf::journal::SampleParams& para
     append(out, record);
   }
 
-  // Left behind by a run that died: the window it names comes right after the
-  // samples of its size.
+  // A crash can leave the marker behind even after its sample was flushed.
   if (fs::exists(progressPath)) {
-    if (record.mutable_sample()->ParseFromString(readFrom(progressPath, 0))) {
+    auto& sample = *record.mutable_sample();
+    if (sample.ParseFromString(readFrom(progressPath, 0)) &&
+        sample.outcome() == vf::journal::Sample::crashed && windowId(sample) != existing.lastWindow) {
       append(out, record);
-      existing.done[record.sample().window_size()]++;
+      existing.done[sample.window_size()]++;
     }
     fs::remove(progressPath);
   }

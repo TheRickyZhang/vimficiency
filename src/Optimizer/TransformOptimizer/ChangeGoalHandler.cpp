@@ -119,46 +119,16 @@ bool ChangeGoalHandler::isDotRepeat(const TransformState& base, const SequenceBi
 
 // Static helpers
 
-// The "cleared shell" is the buffer shape `isGoalReached` accepts before the
-// typed completion runs: lines[0] == pre, lines[last] == suf, all middle lines
-// empty. From there, the collapse chain produced by `buildCollapseSequence`
-// merges the shell into a single `pre+suf` line and leaves the cursor at end
-// of pre, ready for typing.
-//
-// The chain only does line-joins under tight conditions: `<BS>` joins only at
-// col 0, `<Del>` joins only at end-of-line (NUL position). Anywhere else they
-// delete a single character and corrupt pre or suf. The entry sequence picks
-// where in the shell we open insert mode so that the chain only ever fires a
-// real join.
-//
-// Cases by where the cursor sits in the cleared shell:
-//   - cursorLine == 0 (on pre line, possibly non-empty):
-//       No BS is emitted, so the chain starts with `<Del>`. `<Del>` only joins
-//       when cursor is past pre's last char; entering with `0i` would put it
-//       at col 0 and the first Del would delete pre's first char. Use `A` to
-//       enter insert mode at end-of-line directly.
-//   - cursorLine > 0, cursorCol != 0 (on suf line, suf non-empty):
-//       BS chain needs col 0 to start. Use `0i`, NOT `I`: `I` enters insert at
-//       the line's first non-blank, which is col > 0 whenever suf has leading
-//       whitespace, and a `<BS>` from there deletes the space instead of
-//       joining — corrupting suf.
-//   - cursorLine > 0, cursorCol == 0 (on a middle line, empty by invariant):
-//       Already at col 0; `0` is redundant. Use plain `i`.
-//   - totalLines == 1 (shell is `[preSuf]`, no collapse needed):
-//       `isGoalReached` (multi-arg overload) pins cursor at col == pre.size(),
-//       which is the correct insert position. Plain `i`.
-KeyedSequence ChangeGoalHandler::buildClearedShellEntry(
-    int totalLines, int cursorLine, int cursorCol) {
-  KeyedSequence entry;
-  if (totalLines > 1 && cursorLine == 0) {
-    entry += KeyedSequence::A;
-    return entry;
+// In a multiline shell <Del> joins only after the prefix, and <BS> joins only at column zero.
+void ChangeGoalHandler::enterAndCollapseClearedShell(
+    KeyedSequence& keys, const Lines& lines, CursorPos pos) {
+  if (lines.size() > 1 && pos.line == 0 && !lines.front().empty()) {
+    keys += KeyedSequence::A;
+  } else {
+    if (pos.line > 0 && pos.col != 0) keys += KeyedSequence::Zero;
+    keys += KeyedSequence::i;
   }
-  if (cursorLine > 0 && cursorCol != 0) {
-    entry += KeyedSequence::Zero;
-  }
-  entry += KeyedSequence::i;
-  return entry;
+  keys += buildCollapseSequence(lines.size(), pos.line);
 }
 
 void ChangeGoalHandler::appendOptionalCount(KeyedSequence& out, int count, const KeyedSequence& base) {
@@ -398,11 +368,7 @@ GoalStates ChangeGoalHandler::emitEditGoal(
 
   if (repeatLanding && isDotRepeat(base, sourceCmd)) {
     KeyedSequence dotSeq(".", KeyedSequence::Period.keys);
-    int totalLines = static_cast<int>(repeatLanding->getLines().size());
-    int cursorLine = repeatLanding->getPos().line;
-    dotSeq += buildClearedShellEntry(
-        totalLines, cursorLine, repeatLanding->getPos().col);
-    dotSeq += buildCollapseSequence(totalLines, cursorLine);
+    enterAndCollapseClearedShell(dotSeq, repeatLanding->getLines(), repeatLanding->getPos());
     RunningEffort dotPrefixEffort(dotSeq.keys, config);
     RunningEffort dotEffort = RunningEffort::merge(dotPrefixEffort, typedVariants.dotTyped.effort, config);
     dotSeq += typedVariants.dotTyped.sequence;
@@ -417,10 +383,7 @@ GoalStates ChangeGoalHandler::emitEditGoal(
 
 Result ChangeGoalHandler::resultFromClearedGoal(const TransformState& base) const {
   KeyedSequence completion;
-  int totalLines = static_cast<int>(base.getLines().size());
-  int cursorLine = base.getPos().line;
-  completion += buildClearedShellEntry(totalLines, cursorLine, base.getPos().col);
-  completion += buildCollapseSequence(totalLines, cursorLine);
+  enterAndCollapseClearedShell(completion, base.getLines(), base.getPos());
   completion += typed;
 
   RunningEffort completionEffort(completion.keys, config);
@@ -464,15 +427,9 @@ GoalStates ChangeGoalHandler::onLinewiseGoal(
 GoalStates ChangeGoalHandler::onJoinGoal(
     const TransformEditorState& afterJn, const TransformState& base,
     const SequenceBinding& sourceCmd) {
-  const auto& iCmd = KeyedSequence::i;
   KeyedSequence goalCompletionCmd;
   appendOptionalCount(goalCompletionCmd, sourceCmd.count, sourceCmd.base);
-  if (afterJn.getPos().line > 0 && afterJn.getPos().col != 0) {
-    goalCompletionCmd += KeyedSequence::Zero;
-  }
-  goalCompletionCmd += iCmd;
-  goalCompletionCmd += buildCollapseSequence(
-      static_cast<int>(afterJn.getLines().size()), afterJn.getPos().line);
+  enterAndCollapseClearedShell(goalCompletionCmd, afterJn.getLines(), afterJn.getPos());
   TypedGoalVariants typedVariants{{typed, typedEffort}, {typed, typedEffort}};
   return emitEditGoal(afterJn, base, sourceCmd, goalCompletionCmd, typedVariants, &afterJn);
 }

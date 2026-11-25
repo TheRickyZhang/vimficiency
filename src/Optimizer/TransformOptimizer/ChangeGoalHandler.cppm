@@ -92,8 +92,7 @@ struct ChangeGoalHandler {
   static KeyedSequence deleteToChangeLine(const SequenceBinding& sourceCmd,
                                           std::string_view lineContent, bool autoindent);
 
-  // Entry for the cleared-shell invariant in ChangeGoalHandler.cpp.
-  static KeyedSequence buildClearedShellEntry(int totalLines, int cursorLine, int cursorCol);
+  static void enterAndCollapseClearedShell(KeyedSequence& keys, const Lines& lines, CursorPos pos);
 
   struct SuffixCommandInfo {
     bool isDotRepeat = false;

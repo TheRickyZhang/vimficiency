@@ -33,8 +33,8 @@ function M.capture_view(buf, win)
     mode = v.nvim_get_mode().mode,
     row = cursor[1] - 1,
     col = cursor[2],
-    top_row = vim.fn.line("w0"),
-    bottom_row = vim.fn.line("w$"),
+    top_row = vim.fn.line("w0", win),
+    bottom_row = vim.fn.line("w$", win),
     window_height = v.nvim_win_get_height(win),
     scroll_amount = v.nvim_get_option_value("scroll", { win = win }),
   }

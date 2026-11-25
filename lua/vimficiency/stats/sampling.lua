@@ -144,7 +144,8 @@ local function journal_bytes()
   local total = 0
   for name, type in vim.fs.dir(journal.dir()) do
     if type == "file" and name:match("%.vfj$") then
-      total = total + vim.uv.fs_stat(vim.fs.joinpath(journal.dir(), name)).size
+      local stat = vim.uv.fs_stat(vim.fs.joinpath(journal.dir(), name))
+      if stat then total = total + stat.size end
     end
   end
   return total
