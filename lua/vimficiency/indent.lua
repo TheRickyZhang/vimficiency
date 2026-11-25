@@ -1,3 +1,5 @@
+local ffi_config = require("vimficiency.ffi.config")
+
 local M = {}
 
 ---@class VF.IndentOptions
@@ -14,7 +16,7 @@ function M.capture(buf)
   local bo = vim.bo[buf]
   local indent = {}
   for _, name in ipairs(fields) do indent[name] = bo[name] end
-  local override = require("vimficiency.ffi.config").applied_globals().shiftwidth
+  local override = ffi_config.applied_globals().shiftwidth
   if override and override >= 0 then indent.shiftwidth = override end
   return indent
 end

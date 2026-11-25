@@ -62,6 +62,18 @@ return function(ctx)
     end,
   },
   {
+    name = "Play uses the saved buffer's tab stop for the probe and pane",
+    run = function(next)
+      local seq = "oX<Esc>"
+      with_replay({ seq }, { "    source" }, function()
+        local final = get_snapshot(1, #sim._debug_tokenize_for_animation(seq))
+        assert_eq(final.lines, { "    source", "\tX" }, "new indent bytes")
+        assert_eq(final.cursor, { 2, 1 }, "byte column of X")
+        assert_eq(vim.bo[get_window(1).buf].tabstop, 4, "displayed tab width")
+      end, next, { indent = { tabstop = 4, shiftwidth = 0, autoindent = true, expandtab = false, copyindent = false } })
+    end,
+  },
+  {
     name = "simulate handles leading space and append-at-eol",
     run = function(next)
       with_replay({ "3wfa;ww", "<Space>ww", "Axyz<Esc>" }, {

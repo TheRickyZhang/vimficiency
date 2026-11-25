@@ -224,9 +224,7 @@ BS would go 5 → 0 (overshoots past 2) — cannot use <BS>, fall through to <C-
 
 `bsCountForIndent(from, to, sw)` computes the number of `<BS>` presses needed, returning -1 if `<BS>` overshoots past the target (i.e., the target is not reachable via shiftwidth boundaries).
 
-The condition for `<BS>` being better: `bsNeeded + remainder < 2 + goalLine.size()` where:
-- `bsfinishNeeded = bsCountForIndent(autoindent.size(), goalIndent.size(), shiftwidth)`
-- `remainder = goalLine.size() - goalIndent.size()`
+When the target indent is a byte prefix of the source indent, the builder compares backspacing to its display column with clearing and retyping it.
 
 **Important:** Neovim requires `\x08` (ASCII BS) for backspace in insert mode, not `\x7f` (ASCII DEL)
 

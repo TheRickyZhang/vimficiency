@@ -912,9 +912,10 @@ effort-model values that aren’t listed above.
 
 SHIFTWIDTH
 
-Your Neovim `shiftwidth` is auto-detected at setup time and passed to the
-optimizer so suggested sequences match your indentation. To override
-explicitly:
+Each session captures the source buffer’s `autoindent`, `expandtab`,
+`copyindent`, `tabstop`, and `shiftwidth` for search and replay. A `shiftwidth`
+of zero follows that buffer’s `tabstop`. You can override `shiftwidth` for new
+captures.
 
 >lua
     require('vimficiency').setup({ shiftwidth = 4 })

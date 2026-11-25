@@ -112,6 +112,7 @@ struct Case {
   pair<int, int> to;
   string keys;
   bool uniformToo = false;
+  IndentOptions indent;
 };
 
 Lines numbered(int count, string_view stem) {
@@ -238,6 +239,11 @@ vector<Case> referenceCases() {
         "    cout << i+1 << endl;", "  }", "}"},
        {1, 6}, {3, 14}, "rmf0r1jfnrmjfia+1<Esc>", true},
 
+      {"open_with_tabs", {"        source"}, {"        source", "        X"}, {0, 8}, {1, 8},
+       "o<C-u>        X<Esc>"},
+      {"open_with_spaces", {"        source"}, {"        source", "        X"}, {0, 8}, {1, 8},
+       "oX<Esc>", false, {.expandtab = true}},
+
       // composition exploreFactor: best just over the cap of a paste
       {"outcome_unbeaten", {"ab cd"}, {"ab zcd"}, {0, 3}, {0, 3}, "p"},
       // composition exploreFactor: best just under the cap of a paste
@@ -265,10 +271,11 @@ struct Scored {
 
 // `Journal::evaluate` with deadlineMs 0, keeping the stop reason it drops.
 Scored score(const Case& c, const Config& config) {
-  const Window window{.start = state(c.before, c.from),
+  Window window{.start = state(c.before, c.from),
                       .end = state(c.after, c.to),
                       .keys = c.keys,
                       .typed = c.keys};
+  window.start.indent = c.indent;
   const Journal::WindowSlice sliced = Journal::sliceWindow(window, PARAMS);
   if (sliced.outcome != Outcome::Scored) return {.outcome = "unscorable"};
   const AnalyzeOutput analyzed =

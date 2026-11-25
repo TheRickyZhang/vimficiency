@@ -136,7 +136,7 @@ end
 ---@param lines string[]
 ---@param fn fun()
 ---@param next fun(ok: boolean, err: any)
----@param opts { start_row: integer?, start_col: integer?, recording: VF.Replay.Recording?, filetype: string?, end_row: integer?, end_col: integer? }?   0-indexed; default (0, 0)
+---@param opts { start_row: integer?, start_col: integer?, recording: VF.Replay.Recording?, filetype: string?, indent: VF.IndentOptions?, end_row: integer?, end_col: integer? }?   0-indexed; default (0, 0)
 local function with_replay(sequences, lines, fn, next, opts)
   local prev_notify = vim.notify
   local prev_echo = vim.api.nvim_echo

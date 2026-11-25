@@ -17,11 +17,11 @@ message Envelope {
 }
 
 message IndentOptions {
-  optional bool autoindent = 1;
-  optional bool expandtab = 2;
-  optional bool copyindent = 3;
+  bool autoindent = 1;
+  bool expandtab = 2;
+  bool copyindent = 3;
   int32 tabstop = 4;
-  optional int32 shiftwidth = 5;
+  int32 shiftwidth = 5;
 }
 
 message Position {

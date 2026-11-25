@@ -44,8 +44,7 @@ local function build_request(user_config)
 end
 
 --- Push the process-global C++ state: the keyboard cost model (layout, per-key
---- costs, effort weights, count penalties) plus the Vim options the simulator needs
---- (shiftwidth). Applied once per `setup()`; every search reads it from C++ globals.
+--- costs, effort weights, count penalties) and the shiftwidth fallback for older requests.
 --- Everything else in `user_config` is Lua-owned and passed per call or read lazily.
 ---@return table<string, true> consumed  the keys that are `vf.config.Config` fields
 function M.apply_globals(user_config)

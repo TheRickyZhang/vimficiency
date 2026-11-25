@@ -81,6 +81,34 @@ test("ffi.analyze: the user is costed by the keys pressed, not the keys that ran
   assert_true(user_cost("t") < user_cost("www"), "one pressed key costs less than the three that ran")
 end)
 
+test("ffi.analyze: captured buffer indentation survives slicing and determines open-line entries", function()
+  local capture = require("vimficiency.capture.state")
+  local buf = vim.api.nvim_create_buf(false, true)
+  local win = vim.api.nvim_get_current_win()
+  local previous = vim.api.nvim_win_get_buf(win)
+  vim.api.nvim_win_set_buf(win, buf)
+  local ok, err = pcall(function()
+    local bo = vim.bo[buf]
+    bo.autoindent, bo.tabstop, bo.shiftwidth = true, 4, 0
+    for _, setting in ipairs({ { true, false }, { false, false }, { false, true } }) do
+      bo.expandtab, bo.copyindent = setting[1], setting[2]
+      local captured = capture.capture_view(buf, win).indent
+      local search = ffi_lib.build_search_request({
+        initial_lines = { "        source" }, goal_lines = { "        source", "        X" },
+        start_row = 0, start_col = 8, end_row = 1, end_col = 8,
+        window_height = 40, scroll_amount = 20, user_seq = "", user_typed = "", indent = captured,
+      }, 5, 500)
+      assert_eq(search.indent, captured)
+      local results = ffi_lib.analyze(search, 20)
+      assert_true(#results > 0)
+      assert_eq(find_result(results, "oX<Esc>") ~= nil, bo.expandtab or bo.copyindent)
+    end
+  end)
+  vim.api.nvim_win_set_buf(win, previous)
+  vim.api.nvim_buf_delete(buf, { force = true })
+  if not ok then error(err) end
+end)
+
 test("ffi.analyze: identical buffers plan no diff regions", function()
   local line = "one two three"
   local _, _, _, diffs = ffi_lib.analyze(request({ line }, { line }, {

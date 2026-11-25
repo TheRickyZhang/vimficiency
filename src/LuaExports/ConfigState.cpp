@@ -56,9 +56,7 @@ void syncConfig() {
     if (src.hand != Hand::None) g_config_internal.keyInfo[i] = src;
   }
 
-  // Reject 0 as well as the -1 "unset" sentinel: shiftwidth 0 means "follow
-  // tabstop" in Neovim, which this layer can't model (no tabstop). Callers
-  // resolve it to the effective value before this point; keep the default 8.
+  // Older requests have no tabstop. Their fallback uses the default of eight.
   if (g_config_state.shiftwidth >= 1) {
     VimOptions::shiftwidthRef() = g_config_state.shiftwidth;
   }

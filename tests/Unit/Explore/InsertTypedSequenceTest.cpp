@@ -22,6 +22,32 @@ struct Case {
 
 class InsertTypedSequenceTest : public ExploreViewTest {};
 
+TEST_F(InsertTypedSequenceTest, OpenBelowUsesTheCapturedIndentForEntryAndContinuation) {
+  const Lines initial{"        source"};
+  const Lines goal{"        source", "        X"};
+  NeovimOracle oracle;
+  for (const bool expandtab : {true, false}) {
+    CompositionOptimizerParams params;
+    params.transform.indent = {.expandtab = expandtab, .tabstop = 4, .shiftwidth = 0};
+    Explore::View view(initial, {0, 8}, goal, {1, 8}, sliceBoundary(initial, false, false),
+                       navContext, config, "", params);
+    view.reconfigurePlan({});
+    const auto recs = view.recommendations(100);
+    const auto open = ranges::find(recs, "o", &Suggestion::token);
+    ASSERT_NE(open, recs.end());
+    const int entryCol = expandtab ? 8 : 2;
+    EXPECT_EQ(open->landingPos, CursorPos(1, entryCol));
+    ASSERT_TRUE(view.applyEdit("o").has_value());
+    EXPECT_EQ(view.state().cursor, CursorPos(1, entryCol));
+    const auto continuations = view.recommendations(1);
+    ASSERT_EQ(continuations.size(), 1u);
+    const string keys = "o" + string(string_view(continuations.front().token)) + "<Esc>";
+    const auto replay = oracle.simulate(initial, 0, 8, keys, expandtab ? "et ts=4 sw=0" : "noet ts=4 sw=0");
+    EXPECT_EQ(replay.lines, goal);
+    EXPECT_EQ(CursorPos(replay.row, replay.col), continuations.front().landingPos);
+  }
+}
+
 TEST_F(InsertTypedSequenceTest, OpenAboveContinuationClearsCopiedIndent) {
   const Lines initial{"left", "  right"};
   const Lines goal{"left", "payload", "  right"};

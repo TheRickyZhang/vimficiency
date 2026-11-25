@@ -15,8 +15,6 @@ template <typename Request>
 Expected<IndentOptions> decodeIndentOptions(const Request& request) {
   if (!request.has_indent()) return IndentOptions{.shiftwidth = VimOptions::shiftwidth()};
   const auto& in = request.indent();
-  if (!in.has_autoindent() || !in.has_expandtab() || !in.has_copyindent() || !in.has_shiftwidth())
-    return unexpectedError("Incomplete buffer indentation options");
   if (in.tabstop() < 1 || in.tabstop() > 9999 || in.shiftwidth() < 0)
     return unexpectedError("Invalid buffer indentation widths");
   return IndentOptions{in.autoindent(), in.expandtab(), in.copyindent(), in.tabstop(), in.shiftwidth()};

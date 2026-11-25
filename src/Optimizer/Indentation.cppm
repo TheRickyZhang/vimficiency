@@ -28,8 +28,8 @@ inline KeyedSequence computeIndentAdjustment(std::string_view from, std::string_
   KeyedSequence keys;
   if (to.starts_with(from)) {
     appendInsertText(keys, to.substr(from.size()));
-  } else if (from.starts_with(to) && from.find('\t') == from.npos) {
-    const int count = bsCountForIndent(from.size(), to.size(), options.backspaceWidth());
+  } else if (from.starts_with(to)) {
+    const int count = bsCountForIndent(options.columns(from), options.columns(to), options.backspaceWidth());
     if (count >= 0 && count <= 2 + std::ssize(to)) {
       keys.append(KeyedSequence::BS, count);
     } else {

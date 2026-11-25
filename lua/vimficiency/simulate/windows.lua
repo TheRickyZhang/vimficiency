@@ -43,6 +43,7 @@ function M.create_buffer(ctx, lines, label)
   v.nvim_set_option_value("swapfile", false, { buf = buf })
   v.nvim_set_option_value("modifiable", true, { buf = buf })
   v.nvim_buf_set_lines(buf, 0, -1, true, lines)
+  if ctx.state.indent then require("vimficiency.indent").apply(buf, ctx.state.indent) end
   highlight(buf, ctx.state.filetype)
 
   ui_windows.set_buffer_keymaps(buf, ctx.actions.keymaps)
