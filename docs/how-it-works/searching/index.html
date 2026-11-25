@@ -113,7 +113,7 @@ the new. The final deletion becomes its change form (<code dir="auto">de</code>�
 <code dir="auto">x</code>→<code dir="auto">s</code>) so the delete and the insert-mode entry are one command.</p>
 <ul>
 <li>dot-repeat: a suffix cache keyed on (buffer hash, cursor, mode) stores the remaining suffix at every intermediate state of a goal-reaching path</li>
-<li>heuristic: characters left to delete, plus 2 per extra line</li>
+<li>heuristic: <code dir="auto">0.35 × (characters left to delete + 2 per extra line)</code>, plus the effort of typing the new text</li>
 </ul>
 <p><strong>CompositionOptimizer</strong> — precomputes a Transform result from every valid
 start position of every planned edit, so an edit is a single edge. The

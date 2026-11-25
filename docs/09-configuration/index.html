@@ -70,7 +70,7 @@
 		})();
 	</script> </sl-sidebar-state-persist>  <div class="md:sl-hidden"> <div class="mobile-preferences sl-flex astro-wu23bvmt"> <div class="sl-flex social-icons astro-wu23bvmt"> <a href="https://github.com/therickyzhang/vimficiency" rel="me" class="sl-flex astro-wy4te6ga"><span class="sr-only astro-wy4te6ga">GitHub</span><svg aria-hidden="true" class="astro-wy4te6ga astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg> </a> </div> <starlight-theme-select>  <label style="--sl-select-width: 6.25em" class="astro-4yphtoen"> <span class="sr-only astro-4yphtoen">Select theme</span> <svg aria-hidden="true" class="icon label-icon astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg>  <select value="auto" autocomplete="off" class="astro-4yphtoen"> <option value="dark" class="astro-4yphtoen">Dark</option><option value="light" class="astro-4yphtoen">Light</option><option value="auto" selected class="astro-4yphtoen">Auto</option> </select> <svg aria-hidden="true" class="icon caret astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg>  </label>  </starlight-theme-select>  <script>
 	StarlightThemeProvider.updatePickers();
-</script>   </div>  </div> </div> </div> </nav> <div class="main-frame astro-vrdttmbt">  <script type="module">const a=document.getElementById("starlight__sidebar"),n=a?.querySelector("sl-sidebar-state-persist"),o="sl-sidebar-state",i=()=>{let t=[];const e=n?.dataset.hash||"";try{const s=sessionStorage.getItem(o),r=JSON.parse(s||"{}");Array.isArray(r.open)&&r.hash===e&&(t=r.open)}catch{}return{hash:e,open:t,scroll:a?.scrollTop||0}},c=t=>{try{sessionStorage.setItem(o,JSON.stringify(t))}catch{}},d=()=>c(i()),l=(t,e)=>{const s=i();s.open[e]=t,c(s)};n?.addEventListener("click",t=>{if(!(t.target instanceof Element))return;const e=t.target.closest("summary")?.closest("details");if(!e)return;const s=e.querySelector("sl-sidebar-restore"),r=parseInt(s?.dataset.index||"");isNaN(r)||l(!e.open,r)});addEventListener("visibilitychange",()=>{document.visibilityState==="hidden"&&d()});addEventListener("pageHide",d);</script> <div class="lg:sl-flex astro-67yu43on"> <aside class="right-sidebar-container astro-67yu43on"> <div class="right-sidebar astro-67yu43on"> <script type="module" src="/vimficiency/docs/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.C181hMzK.js"></script><script type="module" src="/vimficiency/docs/_astro/TableOfContents.astro_astro_type_script_index_0_lang.CKWWgpjV.js"></script><div class="lg:sl-hidden astro-pb3aqygn"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-doynk5tl"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-doynk5tl"><details id="starlight__mobile-toc" class="astro-doynk5tl"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-doynk5tl"><div class="toggle sl-flex astro-doynk5tl">On this page<svg aria-hidden="true" class="caret astro-doynk5tl astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg> </div><span class="display-current astro-doynk5tl"></span></summary><div class="dropdown astro-doynk5tl"><ul class="isMobile astro-g2bywc46" style="--depth: 0;"> <li class="astro-g2bywc46" style="--depth: 0;"> <a href="#_top" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Overview</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#search-and-performance" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Search and performance</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#optimizer-overrides" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Optimizer overrides</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#recall-and-session-safety" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Recall and session safety</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#idle-end-detection" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Idle end-detection</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#inspect-what-the-c-layer-is-using" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Inspect what the C++ layer is using</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#shiftwidth" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Shiftwidth</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#effort-model-tuning" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Effort model tuning</span> </a>  </li> </ul> </div></details></nav></mobile-starlight-toc></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-pb3aqygn"><div class="sl-container astro-pb3aqygn"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-g2bywc46" style="--depth: 0;"> <li class="astro-g2bywc46" style="--depth: 0;"> <a href="#_top" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Overview</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#search-and-performance" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Search and performance</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#optimizer-overrides" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Optimizer overrides</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#recall-and-session-safety" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Recall and session safety</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#idle-end-detection" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Idle end-detection</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#inspect-what-the-c-layer-is-using" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Inspect what the C++ layer is using</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#shiftwidth" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Shiftwidth</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#effort-model-tuning" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Effort model tuning</span> </a>  </li> </ul> </nav></starlight-toc></div></div> </div> </aside> <div class="main-pane astro-67yu43on">  <main data-pagefind-body class="astro-bguv2lll" lang="en" dir="ltr">    <div class="content-panel astro-7nkwcw3z"> <div class="sl-container astro-7nkwcw3z"> <h1 id="_top" class="astro-j6tvhyss">Configuration</h1>  </div> </div>  <div class="content-panel astro-7nkwcw3z"> <div class="sl-container astro-7nkwcw3z"> <div class="sl-markdown-content"> <p>All settings are optional, and this page documents each one in detail. For a
+</script>   </div>  </div> </div> </div> </nav> <div class="main-frame astro-vrdttmbt">  <script type="module">const a=document.getElementById("starlight__sidebar"),n=a?.querySelector("sl-sidebar-state-persist"),o="sl-sidebar-state",i=()=>{let t=[];const e=n?.dataset.hash||"";try{const s=sessionStorage.getItem(o),r=JSON.parse(s||"{}");Array.isArray(r.open)&&r.hash===e&&(t=r.open)}catch{}return{hash:e,open:t,scroll:a?.scrollTop||0}},c=t=>{try{sessionStorage.setItem(o,JSON.stringify(t))}catch{}},d=()=>c(i()),l=(t,e)=>{const s=i();s.open[e]=t,c(s)};n?.addEventListener("click",t=>{if(!(t.target instanceof Element))return;const e=t.target.closest("summary")?.closest("details");if(!e)return;const s=e.querySelector("sl-sidebar-restore"),r=parseInt(s?.dataset.index||"");isNaN(r)||l(!e.open,r)});addEventListener("visibilitychange",()=>{document.visibilityState==="hidden"&&d()});addEventListener("pageHide",d);</script> <div class="lg:sl-flex astro-67yu43on"> <aside class="right-sidebar-container astro-67yu43on"> <div class="right-sidebar astro-67yu43on"> <script type="module" src="/vimficiency/docs/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.C181hMzK.js"></script><script type="module" src="/vimficiency/docs/_astro/TableOfContents.astro_astro_type_script_index_0_lang.CKWWgpjV.js"></script><div class="lg:sl-hidden astro-pb3aqygn"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-doynk5tl"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-doynk5tl"><details id="starlight__mobile-toc" class="astro-doynk5tl"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-doynk5tl"><div class="toggle sl-flex astro-doynk5tl">On this page<svg aria-hidden="true" class="caret astro-doynk5tl astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg> </div><span class="display-current astro-doynk5tl"></span></summary><div class="dropdown astro-doynk5tl"><ul class="isMobile astro-g2bywc46" style="--depth: 0;"> <li class="astro-g2bywc46" style="--depth: 0;"> <a href="#_top" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Overview</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#search-and-performance" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Search and performance</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#optimizer-overrides" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Optimizer overrides</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#recall-and-session-safety" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Recall and session safety</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#journal" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Journal</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#stats" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Stats</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#ui" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">UI</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#idle-end-detection" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Idle end-detection</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#inspect-what-the-c-layer-is-using" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Inspect what the C++ layer is using</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#shiftwidth" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Shiftwidth</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#effort-model-tuning" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Effort model tuning</span> </a>  </li> </ul> </div></details></nav></mobile-starlight-toc></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-pb3aqygn"><div class="sl-container astro-pb3aqygn"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-g2bywc46" style="--depth: 0;"> <li class="astro-g2bywc46" style="--depth: 0;"> <a href="#_top" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Overview</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#search-and-performance" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Search and performance</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#optimizer-overrides" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Optimizer overrides</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#recall-and-session-safety" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Recall and session safety</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#journal" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Journal</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#stats" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Stats</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#ui" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">UI</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#idle-end-detection" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Idle end-detection</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#inspect-what-the-c-layer-is-using" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Inspect what the C++ layer is using</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#shiftwidth" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Shiftwidth</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#effort-model-tuning" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Effort model tuning</span> </a>  </li> </ul> </nav></starlight-toc></div></div> </div> </aside> <div class="main-pane astro-67yu43on">  <main data-pagefind-body class="astro-bguv2lll" lang="en" dir="ltr">    <div class="content-panel astro-7nkwcw3z"> <div class="sl-container astro-7nkwcw3z"> <h1 id="_top" class="astro-j6tvhyss">Configuration</h1>  </div> </div>  <div class="content-panel astro-7nkwcw3z"> <div class="sl-container astro-7nkwcw3z"> <div class="sl-markdown-content"> <p>All settings are optional, and this page documents each one in detail. For a
 copy-pasteable starting point with recommended keymaps, see
 <a href="../examples/config.lua"><code dir="auto">examples/config.lua</code></a> — it sets the common toggles at
 their defaults and points back here for the advanced knobs.</p>
@@ -162,6 +162,8 @@ values actually in effect with <code dir="auto">:Vimfy config</code>.</p>
 <p>The distance heuristic is intentionally inadmissible (it can overestimate), so
 a higher <code dir="auto">distanceWeight</code> searches faster but may miss the cheapest sequence;
 <code dir="auto">distanceWeight = 0</code> recovers optimality at the cost of speed.</p>
+<p>The search for each individual edit has its own <code dir="auto">distanceWeight</code>, <code dir="auto">0.35</code>, which
+this key does not change.</p>
 <h2 id="recall-and-session-safety">Recall and session safety</h2>
 <p><a href="/vimficiency/docs/05-recall/">Recall</a> keeps a rolling ring of recent commands so you can
 analyze “N commands / Ns ago” after the fact. These knobs bound that ring and
@@ -196,7 +198,108 @@ the lifetime of in-progress sessions.</p>
 
 
 
-<table><thead><tr><th>Field</th><th>Default</th><th>Meaning</th></tr></thead><tbody><tr><td><code dir="auto">KEY_SESSION_CAPACITY</code></td><td><code dir="auto">200</code></td><td>Maximum commands retained in the recall ring.</td></tr><tr><td><code dir="auto">MAX_RETENTION_SECONDS</code></td><td><code dir="auto">120</code></td><td>Maximum age of recall history. The oldest entries are evicted once <strong>both</strong> the capacity and the age limit are exceeded.</td></tr><tr><td><code dir="auto">MANUAL_IDLE_TIMEOUT_SECONDS</code></td><td><code dir="auto">300</code></td><td>A manual (<code dir="auto">start</code>/<code dir="auto">finish</code>) session left idle this long is auto-ended with a warning.</td></tr><tr><td><code dir="auto">lossy_mappings</code></td><td><code dir="auto">"warn"</code></td><td>A key mapped to a Lua function (flash.nvim’s <code dir="auto">f</code>, a <code dir="auto">vim.keymap.set</code> callback) that moves the cursor or edits text cannot be captured as replayable keys. <code dir="auto">"drop"</code>: a session spanning it ends, and the warning names the mapping. <code dir="auto">"warn"</code>: the keys you typed are recorded instead, with a once-per-session notice. <code dir="auto">"allow"</code>: recorded silently. Replay is faithful only when the function did what those keys do in plain Vim.</td></tr></tbody></table>
+<table><thead><tr><th>Field</th><th>Default</th><th>Meaning</th></tr></thead><tbody><tr><td><code dir="auto">KEY_SESSION_CAPACITY</code></td><td><code dir="auto">200</code></td><td>Number of recent commands always kept once captured.</td></tr><tr><td><code dir="auto">MAX_RETENTION_SECONDS</code></td><td><code dir="auto">120</code></td><td>Age in seconds before a Recall entry can be evicted. An older entry is evicted only when the ring also exceeds <code dir="auto">KEY_SESSION_CAPACITY</code>.</td></tr><tr><td><code dir="auto">MANUAL_IDLE_TIMEOUT_SECONDS</code></td><td><code dir="auto">300</code></td><td>A manual (<code dir="auto">start</code>/<code dir="auto">finish</code>) session left idle this long is auto-ended with a warning.</td></tr><tr><td><code dir="auto">lossy_mappings</code></td><td><code dir="auto">"warn"</code></td><td>For a Lua mapping that moves the cursor or edits text, <code dir="auto">"drop"</code> ends the session and names the mapping. <code dir="auto">"warn"</code> records its typed keys with a once-per-session notice. <code dir="auto">"allow"</code> records silently. Play shows the observed cursor and edit under those keys.</td></tr></tbody></table>
+<h2 id="journal">Journal</h2>
+<p>The journal continuously records everything Vimfy captures, so sessions can be
+cut from it later. It is off by default because it writes the text of every
+buffer you edit to disk, unencrypted.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="lua"><code><div class="ec-line"><div class="code"><span style="--0:#C5E478;--1:#3C63B3">require</span><span style="--0:#D6DEEB;--1:#403F53">(</span><span style="--0:#D9F5DD;--1:#111111">'</span><span style="--0:#ECC48D;--1:#9B504E">vimficiency</span><span style="--0:#D9F5DD;--1:#111111">'</span><span style="--0:#D6DEEB;--1:#403F53">).</span><span style="--0:#C5E478;--1:#3C63B3">setup</span><span style="--0:#D6DEEB;--1:#403F53">({ </span><span style="--0:#C5E478;--1:#3C63B3">journal</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#7FDBCA;--1:#097174">=</span><span style="--0:#D6DEEB;--1:#403F53"> { </span><span style="--0:#C5E478;--1:#3C63B3">enabled</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#7FDBCA;--1:#097174">=</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#82AAFF;--1:#3C63B3">true</span><span style="--0:#D6DEEB;--1:#403F53"> } })</span></div></div></code></pre><div class="copy"><button title="Copy to clipboard" data-copied="Copied!" data-code="require(&#x27;vimficiency&#x27;).setup({ journal = { enabled = true } })"><div></div></button></div></figure></div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Default</th><th>Meaning</th></tr></thead><tbody><tr><td><code dir="auto">journal.enabled</code></td><td><code dir="auto">false</code></td><td>Record every command, the cursor after it, and every text change.</td></tr><tr><td><code dir="auto">journal.snapshot_every</code></td><td><code dir="auto">500</code></td><td>Commands per buffer between full-text snapshots. Text changes are recorded exactly either way; a lower value only makes a file quicker to read from the middle.</td></tr><tr><td><code dir="auto">journal.keep_days</code></td><td><code dir="auto">90</code></td><td>Once a closed journal has gone this many days unchanged and is fully scored, its scores are kept as daily totals and the file is deleted.</td></tr><tr><td><code dir="auto">journal.sampling.auto</code></td><td><code dir="auto">true</code></td><td>Score new journal content in the background, at low priority. When off, only <code dir="auto">:Vimfy stats refresh</code> scores it.</td></tr><tr><td><code dir="auto">journal.sampling.window_sizes</code></td><td><code dir="auto">{ 4, 8, 16 }</code></td><td>Run lengths, in commands, that <a href="/vimficiency/docs/11-commands/"><code dir="auto">:Vimfy stats</code></a> scores. The middle one is charted until <code dir="auto">&#x3C;CR></code> on another in the stats switches it.</td></tr><tr><td><code dir="auto">journal.sampling.deadline_ms</code></td><td><code dir="auto">2000</code></td><td>Search budget per run. <code dir="auto">0</code> lets every search run to its natural caps.</td></tr><tr><td><code dir="auto">journal.sampling.idle_gap_ms</code></td><td><code dir="auto">30000</code></td><td>A pause this long between commands ends a run, so one run never spans a break.</td></tr></tbody></table>
+<p>Each Neovim instance writes its own file under
+<code dir="auto">stdpath('data')/vimficiency/journal/</code>, and <code dir="auto">:Vimfy stats</code> keeps its scores in
+a <code dir="auto">.samples</code> file beside each one. Rollup replaces the closed journal and its
+samples with daily totals in <code dir="auto">rollup.vfr</code>.</p>
+<p>Changing a sampling field other than <code dir="auto">auto</code>, the keyboard, or an effort weight
+rescores the whole journal in the background. Days already rolled up cannot be
+rescored, so they drop out of the current scores.</p>
+<h2 id="stats">Stats</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Default</th><th>Meaning</th></tr></thead><tbody><tr><td><code dir="auto">stats.weight</code></td><td><code dir="auto">"effort"</code></td><td>How <a href="/vimficiency/docs/11-commands/"><code dir="auto">:Vimfy stats</code></a> averages sessions and journal runs into a score. <code dir="auto">"effort"</code> counts each by the effort you spent on it, so long ones count more; <code dir="auto">"uniform"</code> counts each once. The stats tab opens with this weight; <code dir="auto">w</code> there switches it for that tab only.</td></tr></tbody></table>
+<h2 id="ui">UI</h2>
+<p>Open <code dir="auto">:Vimfy appearance</code> to customize selection highlighting. The selection
+preview updates as you edit. Changes apply immediately, persist across Neovim
+restarts, and override the values from <code dir="auto">setup()</code>. Use <strong>Reset to defaults</strong>
+to restore those values.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Default</th><th>Meaning</th></tr></thead><tbody><tr><td><code dir="auto">ui.selection_color</code></td><td><code dir="auto">"IncSearch"</code></td><td>Tint for the faded selection background. Use <code dir="auto">"IncSearch"</code> for the active theme’s search highlight, <code dir="auto">"colorscheme"</code> for its <code dir="auto">Visual</code> highlight, a color name such as <code dir="auto">"yellow"</code>, or a <code dir="auto">"#RRGGBB"</code> color.</td></tr><tr><td><code dir="auto">ui.selection_strength</code></td><td><code dir="auto">35</code></td><td>How much of the tint to blend into the background, from <code dir="auto">0</code> to <code dir="auto">100</code>. Applies to the shared selection highlight used in the stats, settings, and session picker.</td></tr></tbody></table>
 <h2 id="idle-end-detection">Idle end-detection</h2>
 <p>Two features auto-fire on command idleness: <a href="/vimficiency/docs/04-watch/">Watch</a>
 (ends a manual session once you pause) and <a href="/vimficiency/docs/06-suggest/">Suggest</a>’s
@@ -236,9 +339,9 @@ one exception: it counts commands, not time, so it has no <code dir="auto">ms</c
 <p>Opens a scratch buffer with the full current configuration, including the
 effort-model values that aren’t listed above.</p>
 <h2 id="shiftwidth">Shiftwidth</h2>
-<p>Your Neovim <code dir="auto">shiftwidth</code> is auto-detected at setup time and passed to the
-optimizer so suggested sequences match your indentation. To override
-explicitly:</p>
+<p>Each session captures the source buffer’s <code dir="auto">autoindent</code>, <code dir="auto">expandtab</code>, <code dir="auto">copyindent</code>,
+<code dir="auto">tabstop</code>, and <code dir="auto">shiftwidth</code> for search and replay. A <code dir="auto">shiftwidth</code> of zero follows
+that buffer’s <code dir="auto">tabstop</code>. You can override <code dir="auto">shiftwidth</code> for new captures.</p>
 <div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="lua"><code><div class="ec-line"><div class="code"><span style="--0:#C5E478;--1:#3C63B3">require</span><span style="--0:#D6DEEB;--1:#403F53">(</span><span style="--0:#D9F5DD;--1:#111111">'</span><span style="--0:#ECC48D;--1:#9B504E">vimficiency</span><span style="--0:#D9F5DD;--1:#111111">'</span><span style="--0:#D6DEEB;--1:#403F53">).</span><span style="--0:#C5E478;--1:#3C63B3">setup</span><span style="--0:#D6DEEB;--1:#403F53">({ </span><span style="--0:#C5E478;--1:#3C63B3">shiftwidth</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#7FDBCA;--1:#097174">=</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#F78C6C;--1:#AA0982">4</span><span style="--0:#D6DEEB;--1:#403F53"> })</span></div></div></code></pre><div class="copy"><button title="Copy to clipboard" data-copied="Copied!" data-code="require(&#x27;vimficiency&#x27;).setup({ shiftwidth = 4 })"><div></div></button></div></figure></div>
 <h2 id="effort-model-tuning">Effort model tuning</h2>
 <p>The optimizer scores sequences by a keyboard-effort model with several

@@ -70,7 +70,7 @@
 		})();
 	</script> </sl-sidebar-state-persist>  <div class="md:sl-hidden"> <div class="mobile-preferences sl-flex astro-wu23bvmt"> <div class="sl-flex social-icons astro-wu23bvmt"> <a href="https://github.com/therickyzhang/vimficiency" rel="me" class="sl-flex astro-wy4te6ga"><span class="sr-only astro-wy4te6ga">GitHub</span><svg aria-hidden="true" class="astro-wy4te6ga astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg> </a> </div> <starlight-theme-select>  <label style="--sl-select-width: 6.25em" class="astro-4yphtoen"> <span class="sr-only astro-4yphtoen">Select theme</span> <svg aria-hidden="true" class="icon label-icon astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg>  <select value="auto" autocomplete="off" class="astro-4yphtoen"> <option value="dark" class="astro-4yphtoen">Dark</option><option value="light" class="astro-4yphtoen">Light</option><option value="auto" selected class="astro-4yphtoen">Auto</option> </select> <svg aria-hidden="true" class="icon caret astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg>  </label>  </starlight-theme-select>  <script>
 	StarlightThemeProvider.updatePickers();
-</script>   </div>  </div> </div> </div> </nav> <div class="main-frame astro-vrdttmbt">  <script type="module">const a=document.getElementById("starlight__sidebar"),n=a?.querySelector("sl-sidebar-state-persist"),o="sl-sidebar-state",i=()=>{let t=[];const e=n?.dataset.hash||"";try{const s=sessionStorage.getItem(o),r=JSON.parse(s||"{}");Array.isArray(r.open)&&r.hash===e&&(t=r.open)}catch{}return{hash:e,open:t,scroll:a?.scrollTop||0}},c=t=>{try{sessionStorage.setItem(o,JSON.stringify(t))}catch{}},d=()=>c(i()),l=(t,e)=>{const s=i();s.open[e]=t,c(s)};n?.addEventListener("click",t=>{if(!(t.target instanceof Element))return;const e=t.target.closest("summary")?.closest("details");if(!e)return;const s=e.querySelector("sl-sidebar-restore"),r=parseInt(s?.dataset.index||"");isNaN(r)||l(!e.open,r)});addEventListener("visibilitychange",()=>{document.visibilityState==="hidden"&&d()});addEventListener("pageHide",d);</script> <div class="lg:sl-flex astro-67yu43on"> <aside class="right-sidebar-container astro-67yu43on"> <div class="right-sidebar astro-67yu43on"> <script type="module" src="/vimficiency/docs/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.C181hMzK.js"></script><script type="module" src="/vimficiency/docs/_astro/TableOfContents.astro_astro_type_script_index_0_lang.CKWWgpjV.js"></script><div class="lg:sl-hidden astro-pb3aqygn"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-doynk5tl"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-doynk5tl"><details id="starlight__mobile-toc" class="astro-doynk5tl"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-doynk5tl"><div class="toggle sl-flex astro-doynk5tl">On this page<svg aria-hidden="true" class="caret astro-doynk5tl astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg> </div><span class="display-current astro-doynk5tl"></span></summary><div class="dropdown astro-doynk5tl"><ul class="isMobile astro-g2bywc46" style="--depth: 0;"> <li class="astro-g2bywc46" style="--depth: 0;"> <a href="#_top" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Overview</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#aliases-and-filenames" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Aliases and filenames</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#workspace-vs-storage" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Workspace vs. storage</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#session-picker-vimfy-list" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Session picker (:Vimfy list)</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#session-stats-vimfy-stats" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Session stats (:Vimfy stats)</span> </a> <ul class="isMobile astro-g2bywc46" style="--depth: 1;"> <li class="astro-g2bywc46" style="--depth: 1;"> <a href="#where-the-data-lives" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Where the data lives</span> </a>  </li> </ul>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#tab-completion" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Tab completion</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#scratch-output-buffer-keys" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Scratch output buffer keys</span> </a>  </li> </ul> </div></details></nav></mobile-starlight-toc></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-pb3aqygn"><div class="sl-container astro-pb3aqygn"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-g2bywc46" style="--depth: 0;"> <li class="astro-g2bywc46" style="--depth: 0;"> <a href="#_top" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Overview</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#aliases-and-filenames" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Aliases and filenames</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#workspace-vs-storage" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Workspace vs. storage</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#session-picker-vimfy-list" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Session picker (:Vimfy list)</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#session-stats-vimfy-stats" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Session stats (:Vimfy stats)</span> </a> <ul class="astro-g2bywc46" style="--depth: 1;"> <li class="astro-g2bywc46" style="--depth: 1;"> <a href="#where-the-data-lives" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Where the data lives</span> </a>  </li> </ul>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#tab-completion" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Tab completion</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#scratch-output-buffer-keys" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Scratch output buffer keys</span> </a>  </li> </ul> </nav></starlight-toc></div></div> </div> </aside> <div class="main-pane astro-67yu43on">  <main data-pagefind-body class="astro-bguv2lll" lang="en" dir="ltr">    <div class="content-panel astro-7nkwcw3z"> <div class="sl-container astro-7nkwcw3z"> <h1 id="_top" class="astro-j6tvhyss">Commands reference</h1>  </div> </div>  <div class="content-panel astro-7nkwcw3z"> <div class="sl-container astro-7nkwcw3z"> <div class="sl-markdown-content"> 
+</script>   </div>  </div> </div> </div> </nav> <div class="main-frame astro-vrdttmbt">  <script type="module">const a=document.getElementById("starlight__sidebar"),n=a?.querySelector("sl-sidebar-state-persist"),o="sl-sidebar-state",i=()=>{let t=[];const e=n?.dataset.hash||"";try{const s=sessionStorage.getItem(o),r=JSON.parse(s||"{}");Array.isArray(r.open)&&r.hash===e&&(t=r.open)}catch{}return{hash:e,open:t,scroll:a?.scrollTop||0}},c=t=>{try{sessionStorage.setItem(o,JSON.stringify(t))}catch{}},d=()=>c(i()),l=(t,e)=>{const s=i();s.open[e]=t,c(s)};n?.addEventListener("click",t=>{if(!(t.target instanceof Element))return;const e=t.target.closest("summary")?.closest("details");if(!e)return;const s=e.querySelector("sl-sidebar-restore"),r=parseInt(s?.dataset.index||"");isNaN(r)||l(!e.open,r)});addEventListener("visibilitychange",()=>{document.visibilityState==="hidden"&&d()});addEventListener("pageHide",d);</script> <div class="lg:sl-flex astro-67yu43on"> <aside class="right-sidebar-container astro-67yu43on"> <div class="right-sidebar astro-67yu43on"> <script type="module" src="/vimficiency/docs/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.C181hMzK.js"></script><script type="module" src="/vimficiency/docs/_astro/TableOfContents.astro_astro_type_script_index_0_lang.CKWWgpjV.js"></script><div class="lg:sl-hidden astro-pb3aqygn"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-doynk5tl"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-doynk5tl"><details id="starlight__mobile-toc" class="astro-doynk5tl"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-doynk5tl"><div class="toggle sl-flex astro-doynk5tl">On this page<svg aria-hidden="true" class="caret astro-doynk5tl astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg> </div><span class="display-current astro-doynk5tl"></span></summary><div class="dropdown astro-doynk5tl"><ul class="isMobile astro-g2bywc46" style="--depth: 0;"> <li class="astro-g2bywc46" style="--depth: 0;"> <a href="#_top" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Overview</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#aliases-and-filenames" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Aliases and filenames</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#workspace-vs-storage" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Workspace vs. storage</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#session-picker-vimfy-list" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Session picker (:Vimfy list)</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#session-stats-vimfy-stats" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Session stats (:Vimfy stats)</span> </a> <ul class="isMobile astro-g2bywc46" style="--depth: 1;"> <li class="astro-g2bywc46" style="--depth: 1;"> <a href="#the-journal-section" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">The Journal section</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#where-the-data-lives" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Where the data lives</span> </a>  </li> </ul>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#tab-completion" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Tab completion</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#scratch-output-buffer-keys" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Scratch output buffer keys</span> </a>  </li> </ul> </div></details></nav></mobile-starlight-toc></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-pb3aqygn"><div class="sl-container astro-pb3aqygn"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-g2bywc46" style="--depth: 0;"> <li class="astro-g2bywc46" style="--depth: 0;"> <a href="#_top" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Overview</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#aliases-and-filenames" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Aliases and filenames</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#workspace-vs-storage" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Workspace vs. storage</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#session-picker-vimfy-list" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Session picker (:Vimfy list)</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#session-stats-vimfy-stats" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Session stats (:Vimfy stats)</span> </a> <ul class="astro-g2bywc46" style="--depth: 1;"> <li class="astro-g2bywc46" style="--depth: 1;"> <a href="#the-journal-section" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">The Journal section</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#where-the-data-lives" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Where the data lives</span> </a>  </li> </ul>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#tab-completion" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Tab completion</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#scratch-output-buffer-keys" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Scratch output buffer keys</span> </a>  </li> </ul> </nav></starlight-toc></div></div> </div> </aside> <div class="main-pane astro-67yu43on">  <main data-pagefind-body class="astro-bguv2lll" lang="en" dir="ltr">    <div class="content-panel astro-7nkwcw3z"> <div class="sl-container astro-7nkwcw3z"> <h1 id="_top" class="astro-j6tvhyss">Commands reference</h1>  </div> </div>  <div class="content-panel astro-7nkwcw3z"> <div class="sl-container astro-7nkwcw3z"> <div class="sl-markdown-content"> 
 
 
 
@@ -159,7 +159,15 @@
 
 
 
-<table><thead><tr><th>Command</th><th>Purpose</th></tr></thead><tbody><tr><td><code dir="auto">:Vimfy start &#x3C;alias></code></td><td>Mark a session start (a named alias: letters only, e.g. <code dir="auto">a</code>).</td></tr><tr><td><code dir="auto">:Vimfy watch &#x3C;alias></code></td><td>Start a Watch session (auto-end on idle).</td></tr><tr><td><code dir="auto">:Vimfy finish &#x3C;alias></code></td><td>Finish a Mark or Watch session and optimize.</td></tr><tr><td><code dir="auto">:Vimfy recall &#x3C;N|Ns></code></td><td>Finish a retrospective recall window.</td></tr><tr><td><code dir="auto">:Vimfy close &#x3C;alias></code></td><td>Discard a session without optimizing.</td></tr><tr><td><code dir="auto">:Vimfy save &#x3C;alias> [&#x3C;filename>]</code></td><td>Copy a finished result to disk (keeps the workspace copy). Filename defaults to the alias.</td></tr><tr><td><code dir="auto">:Vimfy store &#x3C;alias> [&#x3C;filename>]</code></td><td>Move a finished result to disk (removes from workspace).</td></tr><tr><td><code dir="auto">:Vimfy fetch &#x3C;filename> [&#x3C;alias>]</code></td><td>Copy a saved result from disk into the current workspace.</td></tr><tr><td><code dir="auto">:Vimfy play &#x3C;alias>|&#x3C;filename> [count]</code></td><td>Animate results side-by-side (memory first, disk fallback).</td></tr><tr><td><code dir="auto">:Vimfy focus &#x3C;N></code></td><td>Focus the active replay on the Nth buffer (full-screen).</td></tr><tr><td><code dir="auto">:Vimfy escape</code></td><td>Restore the side-by-side replay layout.</td></tr><tr><td><code dir="auto">:Vimfy view [&#x3C;alias>|&#x3C;filename>]</code></td><td>View a finished result full-screen (no arg lists saved files).</td></tr><tr><td><code dir="auto">:Vimfy rm &#x3C;filename></code></td><td>Delete a saved result from disk.</td></tr><tr><td><code dir="auto">:Vimfy list</code></td><td>Open the interactive session picker (see below).</td></tr><tr><td><code dir="auto">:Vimfy stats</code></td><td>Show lifetime session stats (see below).</td></tr><tr><td><code dir="auto">:Vimfy suggest &#x3C;on|off|toggle></code></td><td>Runtime toggle for auto-suggest (works with zero config).</td></tr><tr><td><code dir="auto">:Vimfy config</code></td><td>Show the current configuration.</td></tr><tr><td><code dir="auto">:Vimfy reload</code></td><td>Rebuild the C++ library (needs restart).</td></tr><tr><td><code dir="auto">:Vimfy version</code></td><td>Show the plugin version.</td></tr><tr><td><code dir="auto">:Vimfy help</code></td><td>Show the command list.</td></tr></tbody></table>
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Command</th><th>Purpose</th></tr></thead><tbody><tr><td><code dir="auto">:Vimfy start &#x3C;alias></code></td><td>Mark a session start (a named alias: letters only, e.g. <code dir="auto">a</code>).</td></tr><tr><td><code dir="auto">:Vimfy watch &#x3C;alias></code></td><td>Start a Watch session (auto-end on idle).</td></tr><tr><td><code dir="auto">:Vimfy finish &#x3C;alias></code></td><td>Finish a Mark or Watch session and optimize.</td></tr><tr><td><code dir="auto">:Vimfy recall &#x3C;N|Ns></code></td><td>Finish a retrospective recall window.</td></tr><tr><td><code dir="auto">:Vimfy close &#x3C;alias></code></td><td>Discard a session without optimizing.</td></tr><tr><td><code dir="auto">:Vimfy save &#x3C;alias> [&#x3C;filename>]</code></td><td>Copy a finished result to disk (keeps the workspace copy). Filename defaults to the alias.</td></tr><tr><td><code dir="auto">:Vimfy store &#x3C;alias> [&#x3C;filename>]</code></td><td>Move a finished result to disk (removes from workspace).</td></tr><tr><td><code dir="auto">:Vimfy fetch &#x3C;filename> [&#x3C;alias>]</code></td><td>Copy a saved result from disk into the current workspace.</td></tr><tr><td><code dir="auto">:Vimfy play &#x3C;alias>|&#x3C;filename> [count]</code></td><td>Animate results side-by-side (memory first, disk fallback).</td></tr><tr><td><code dir="auto">:Vimfy focus &#x3C;N></code></td><td>Focus the active replay on the Nth buffer (full-screen).</td></tr><tr><td><code dir="auto">:Vimfy escape</code></td><td>Restore the side-by-side replay layout.</td></tr><tr><td><code dir="auto">:Vimfy view [&#x3C;alias>|&#x3C;filename>]</code></td><td>View a finished result full-screen (no arg lists saved files).</td></tr><tr><td><code dir="auto">:Vimfy rm &#x3C;filename></code></td><td>Delete a saved result from disk.</td></tr><tr><td><code dir="auto">:Vimfy list</code></td><td>Open the interactive session picker (see below).</td></tr><tr><td><code dir="auto">:Vimfy stats</code></td><td>Open the stats tab (see below).</td></tr><tr><td><code dir="auto">:Vimfy stats refresh</code></td><td>Score the journal now, without opening the stats.</td></tr><tr><td><code dir="auto">:Vimfy suggest &#x3C;on|off|toggle></code></td><td>Runtime toggle for auto-suggest (works with zero config).</td></tr><tr><td><code dir="auto">:Vimfy config</code></td><td>Show the current configuration.</td></tr><tr><td><code dir="auto">:Vimfy appearance</code></td><td>Customize selection highlighting.</td></tr><tr><td><code dir="auto">:Vimfy reload</code></td><td>Rebuild and hot-reload Vimfy with live build output.</td></tr><tr><td><code dir="auto">:Vimfy version</code></td><td>Show the plugin version.</td></tr><tr><td><code dir="auto">:Vimfy help</code></td><td>Show the command list.</td></tr></tbody></table>
 <h2 id="aliases-and-filenames">Aliases and filenames</h2>
 <p>Every handle you type is either an <strong>alias</strong> (a session in memory) or a
 <strong>filename</strong> (a saved result on disk).</p>
@@ -331,43 +339,250 @@ way; for recall and auto-suggest results, save to disk first (<code dir="auto">:
 on a still-accumulating session. Finish it with <code dir="auto">:Vimfy finish</code> (or let
 Watch’s idle trigger fire) and try again.</p>
 <h2 id="session-stats-vimfy-stats">Session stats (<code dir="auto">:Vimfy stats</code>)</h2>
-<p>Opens a read-only float summarizing your lifetime activity. Close with
-<code dir="auto">q</code> or <code dir="auto">&#x3C;Esc></code>.</p>
+<p>Opens a tab with a header over one full-width pane:</p>
+<ul>
+<li><strong>Header</strong> — the scorings counted, the weight and the charted run length,
+over the path of the session log the stats are read from.</li>
+<li><strong>Stats</strong> — a Sessions band over a Journal band, with a faint line between
+them (<code dir="auto">VimficiencyStatsRule</code>). Each holds its efficiency chart, its
+optimizer times and its own Commands tables.</li>
+</ul>
+<p>In a wide window a band’s Commands tables sit to the right of its chart, and
+in a narrow one under it. <code dir="auto">l</code> from the left side goes to that band’s first
+command, and <code dir="auto">h</code> from a command goes back to its chart.</p>
+<p>The stats are laid out as items: rows that list runs or expand command lists,
+charts, and selector rows. One item is always current. It is highlighted whole and
+the cursor itself is hidden.</p>
+<p><code dir="auto">h</code>, <code dir="auto">j</code>, <code dir="auto">k</code> and <code dir="auto">l</code> move to the item on that side, and the other keys act on
+the current one. Any other motion takes the nearest item.</p>
+<p>Keys in the stats (<code dir="auto">?</code> lists them):</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody><tr><td><code dir="auto">j</code> / <code dir="auto">k</code></td><td>The item below / above; a count moves that many.</td></tr><tr><td><code dir="auto">h</code> / <code dir="auto">l</code></td><td>Change the active option on a selector row, or move to the item to the left / right. The arrow keys work the same way.</td></tr><tr><td><code dir="auto">&#x3C;CR></code></td><td>Open a row’s runs, open a full-screen chart, or expand or collapse a command list.</td></tr><tr><td><code dir="auto">w</code></td><td>Switch the efficiency weight between effort and uniform for this view.</td></tr><tr><td><code dir="auto">v</code></td><td>Count every scoring, or only the current one (see below).</td></tr><tr><td><code dir="auto">gs</code></td><td>Open <code dir="auto">:Vimfy appearance</code>.</td></tr><tr><td><code dir="auto">q</code></td><td>Close the tab.</td></tr></tbody></table>
+<p><code dir="auto">&#x3C;Esc></code> or <code dir="auto">q</code> closes the float opened by <code dir="auto">&#x3C;CR></code>. A
+chart fills its column in the stats and the whole screen in its float.</p>
+<p>The stats keep each band’s left side to its headline: the Sessions efficiency,
+the Journal’s run lengths, a chart each and the optimizer times. The rest is
+under the chart in its float.</p>
+<p>The chart takes up most of the float. Scroll down with <code dir="auto">&#x3C;C-d></code> or the mouse
+wheel to see the details below it. Moving back up to a chart bucket brings
+the entire plot into view. The chart draws two lines:
+the efficiency, solid, against the left axis, and the number of samples
+behind it, dotted, against the right. Each bucket’s own value is a larger dot, placed to the nearest row, and
+the lines only join them; the float’s title has the exact value. A line breaks where there are no samples. Their colors
+are <code dir="auto">VimficiencyStatsEfficiency</code> and <code dir="auto">VimficiencyStatsVolume</code>. <code dir="auto">e</code> and <code dir="auto">s</code>
+hide and show the efficiency and the samples line. <code dir="auto">+</code> shows more history
+and <code dir="auto">-</code> shows less, from 15 minutes to 30 weeks. These keys change the
+history scale of the float. <code dir="auto">?</code> lists the chart keys.</p>
+<p>In the chart’s float each bucket with runs is an item, named with its efficiency in the
+title. <code dir="auto">h</code> and <code dir="auto">l</code> move between buckets and <code dir="auto">&#x3C;CR></code> lists the selected bucket’s runs. The
+rows under the chart list their runs the same way.</p>
+<p>The run list floats over the tab at its full width, one line per session or
+journal run: when, your effort, the best found, the saving, the extra
+characters you typed in insert mode and the search time. Its title holds the row it came from, the sort and the page. It takes
+two fifths of the screen and the preview under it the rest.</p>
+<p>The preview follows the current run. It shows your keys and the best sequence,
+spaced by command and cut to two lines each. Under them is the run’s text
+before and after, side by side, with the changed lines marked and the cursor’s
+place shaded in each.</p>
+<p>A session keeps no text, so its preview is the keys alone. Runs from closed journals that have been idle for
+<code dir="auto">journal.keep_days</code> and fully scored count toward totals after rollup. Only
+individual runs still on disk appear in the list.</p>
+<p>Every cell of the list is an item, as in the stats:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody><tr><td><code dir="auto">j</code> / <code dir="auto">k</code></td><td>The run below / above, in the same column.</td></tr><tr><td><code dir="auto">h</code> / <code dir="auto">l</code></td><td>The column to the left / right. The arrow keys move the same way.</td></tr><tr><td><code dir="auto">s</code></td><td>Sort by the current column: largest first, then smallest first, then off. Unsorted, the worst runs come first (your effort minus the best).</td></tr><tr><td><code dir="auto">&#x3C;CR></code></td><td>On a journal run: replay it as <code dir="auto">:Vimfy play</code> does, your keys beside the best sequence, highlighted as the file was. <code dir="auto">q</code> there returns to the list.</td></tr><tr><td><code dir="auto">]</code> / <code dir="auto">[</code></td><td>Next / previous page of runs.</td></tr><tr><td><code dir="auto">&#x3C;Esc></code> / <code dir="auto">q</code></td><td>Back to the stats.</td></tr></tbody></table>
 <p>Sections:</p>
 <ul>
-<li><strong>Lifetime</strong> — total finished sessions, broken down by type (mark /
-watch / recall / suggest), and total captured commands.</li>
-<li><strong>Efficiency</strong> — a score out of 100, defined per session as
-<code dir="auto">min(best_optimizer_cost / user_cost, 1) × 100</code> (capped at 100 so a
-beat doesn’t inflate the average). Aggregated as a geometric mean.
-The 30-day block below the score is a sparkline of the daily
-geometric mean (▁ = 0, █ = 100; blanks = no sessions that day).</li>
-<li><strong>Motions</strong> — for every motion molecule that appears at least ten
-times combined across your sequences and the optimizer’s best
-suggestions, the ratio <code dir="auto">your_proportion / optimizer_proportion</code>. Two
-lists: what you use <em>more</em> than the optimizer (potential inefficient
-habits) and what you use <em>less</em> (candidates to practice). Only the
-trailing character of <code dir="auto">f</code>/<code dir="auto">F</code>/<code dir="auto">t</code>/<code dir="auto">T</code>/<code dir="auto">r</code>/<code dir="auto">R</code> is collapsed to <code dir="auto">_</code> —
-everything else is reported as-is, since further grouping hides
-signal.</li>
-<li><strong>Dev — Optimizer beats queued</strong> — count of finished sessions where
-your sequence came in cheaper than the optimizer’s best result.
-These are flagged (<code dir="auto">beats: true</code>) on their log lines. <strong>Beats are
-interesting-to-study, not ground truth</strong>: many are cost-model
-artifacts or unexplored regions, so they are <em>not</em> fed back into
-training without manual review.</li>
+<li><strong>Sessions</strong> — your percent efficiency: the best effort found over the effort
+you spent, <code dir="auto">min(best / yours, 1)</code>, averaged over sessions. It never passes
+100%. A session that beats the optimizer and any unbeaten session with
+positive user effort each count as 100%. By default, sessions are
+weighted by the effort you spent. Set <code dir="auto">stats.weight = "uniform"</code> to
+count each once (see
+<a href="/vimficiency/docs/09-configuration/">configuration</a>). The Look back selector sets both
+overview efficiency charts and their Commands tables to the same period
+of 30 minutes, hours, days, or weeks. The average and sample count above
+each chart cover that period.
+Its float adds the total finished sessions by type (mark / watch / recall /
+suggest) and the commands recorded in them. Its <strong>Not scored</strong> and
+<strong>Unbeaten</strong> headings have selectable categories underneath, just as in
+the Journal float.
+<em>You beat the optimizer</em> counts the scored sessions where your keys cost
+less than the best sequence found, and <code dir="auto">&#x3C;CR></code> lists them. Each is a
+sequence the search missed or one the cost model underprices.</li>
+<li><strong>Journal</strong> — the same efficiency over everything you typed, not only
+finished sessions. Needs the <a href="/vimficiency/docs/09-configuration/">journal</a> turned on.
+See below.</li>
+<li><strong>Commands</strong> — one set of tables per band, never added together: the
+Sessions band counts your scored sessions, and the Journal band your scored
+journal runs of the selected length, over the same Look back period as the
+chart. The line over the tables counts comparisons that have a best
+sequence. The efficiency chart also counts unbeaten runs.
+For every command that appears at least ten times across those and the
+optimizer’s best sequences for them, the ratio
+<code dir="auto">your_share / optimizer_share</code>, with the two shares beside it. Three
+lists: <em>Underused commands</em>, which you use less than the optimizer
+(candidates to practice); <em>Overused commands</em>, which you use more
+(potential inefficient habits); and <em>Never used by the optimizer</em>. Each
+list starts with five rows. Press <code dir="auto">&#x3C;CR></code> on
+<em>… and N more</em> to reveal the remaining rows in place or on <em>Show fewer</em>
+to collapse them again. The target of <code dir="auto">f</code>/<code dir="auto">F</code>/<code dir="auto">t</code>/<code dir="auto">T</code>/<code dir="auto">r</code>/<code dir="auto">R</code> is
+collapsed to <code dir="auto">_</code>, an insert counts its entry command and editing keys
+such as <code dir="auto">&#x3C;BS></code> (typed characters are only totalled), and <code dir="auto">ce</code>/<code dir="auto">cw</code>
+share a row, as do <code dir="auto">cE</code>/<code dir="auto">cW</code>; the row’s run list names your split. A <code dir="auto">gj</code> or <code dir="auto">gk</code>
+that crossed to another line shares a row with <code dir="auto">j</code> or <code dir="auto">k</code>; one that
+moved along a wrapped line is listed apart, as <code dir="auto">gj (same line)</code>.
+Under the lists, <em>Extra typed text</em> is how much more you typed in insert
+mode than the best sequences did; <code dir="auto">&#x3C;CR></code> lists the runs where you typed
+more.</li>
+<li><strong>Optimizer times</strong> — under each band’s chart. Sessions: <em>Optimizer
+response</em>, the median response time over the last 30 days; <code dir="auto">&#x3C;CR></code> lists
+those sessions, slowest first. Journal: <em>Movement search</em> and <em>Composition
+search</em>, the search time for retained runs of the selected length; <code dir="auto">&#x3C;CR></code>
+opens the chart. These timing views use their own samples independently
+of Look back. The Movement chart groups queries by lines from start to
+goal. The Composition chart groups queries by buffer positions in the larger
+before/after search slice. Each chart shows median milliseconds and
+sample count for searches with a recorded duration and size, including
+searches that finished without a solution. Select a bucket for its exact
+values and any deadline hits. <code dir="auto">&#x3C;CR></code> lists its runs, slowest first. p95
+appears from 100 samples.</li>
 </ul>
+<p>A scoring is the plugin’s scoring version plus the settings a score depends
+on. The stats count sessions and rolled-up journal runs from every scoring.
+<code dir="auto">v</code> counts only the current one; the stats then say how many runs it hides.</p>
+<h3 id="the-journal-section">The Journal section</h3>
+<p>The journal is cut into back-to-back runs of 4, 8 and 16 commands, and each
+run is scored as if you had ended a session there. A run’s score is the
+effort of the best sequence found over the effort of what you typed.</p>
+<p>In the stats:</p>
+<ul>
+<li><strong>Run length</strong> — each available length in brackets, with the selected length in bold
+(8 commands by default). Use <code dir="auto">h</code> or <code dir="auto">l</code> on the row to switch lengths. Longer runs give the
+optimizer more to merge, so they usually score lower.</li>
+<li><strong>Percent efficiency</strong> — the selected length’s average and sample count for the visible period. Minute and hour bars use timestamped samples. Archived daily totals also contribute to day and week bars.</li>
+</ul>
+<p>If some of the journal still needs scoring under the current settings, its
+coverage percentage appears above the chart in the float. The float title
+shows the overall efficiency, run count and run length. A run that ends
+where it started counts as all waste. Below the chart:</p>
+<ul>
+<li><strong>Movement only / With edits</strong> — one bar, split by whether the text
+changed, each side as wide as its share of the scored runs and titled with
+its efficiency. Their colors are <code dir="auto">VimficiencyStatsMovement</code> and
+<code dir="auto">VimficiencyStatsEdit</code>.</li>
+<li><strong>Size</strong> — the label to the left of the ranges under the second bar,
+which uses the same size groups as the search-time charts. For movement and
+edits, size is the larger of the before and after position counts in the
+unpadded region. That region covers both
+cursor rows and all net changes. Matching rows are trimmed from the top and
+bottom up to the cursors, so inserting or deleting a line leaves an unchanged
+tail out of the count. Each byte in a line counts as one position, and an
+empty line counts as one. Runs without a recorded size are drawn shaded (<code dir="auto">░</code>).</li>
+<li><strong>Not scored</strong> — runs left out of the score, in <code dir="auto">VimficiencyStatsNotScored</code>.
+The rows under it say why: the changed region was too large, the search
+found nothing, or the search failed.</li>
+<li><strong>Unbeaten</strong> — runs where no modeled sequence came close to your keys,
+scored as 100%, in <code dir="auto">VimficiencyStatsUnbeaten</code>. The rows under it count the
+runs with a bare paste (<code dir="auto">p</code>, <code dir="auto">P</code>, <code dir="auto">gp</code>, <code dir="auto">gP</code>) or undo or redo (<code dir="auto">u</code>, <code dir="auto">U</code>,
+<code dir="auto">&#x3C;C-r></code>). A run with both counts under each. <em>Other</em> counts runs with
+neither. Rolled-up runs contribute only to the heading total because
+their command details are gone.</li>
+</ul>
+<p><code dir="auto">&#x3C;CR></code> on a row under either heading lists its runs.</p>
+<p>Every segment of either bar is an item: <code dir="auto">h</code> and <code dir="auto">l</code> move along a bar, <code dir="auto">j</code>
+and <code dir="auto">k</code> between them, and the float’s title has the segment’s efficiency and
+run count. <code dir="auto">&#x3C;CR></code> opens the run list for the selected segment.</p>
+<p>A run is dropped, not scored, when the journal cannot account for everything
+in it: you switched buffer or window, an ex command or mouse click changed
+something, or you paused for more than 30 seconds.</p>
+<p>The first background scoring check runs 30 seconds after startup or on an
+earlier idle event. After that, Neovim checks for new journal data when idle
+and starts another low-priority run at most once every five minutes.
+The Journal section shows <code dir="auto">Scoring journal…</code> in place of the average while
+the worker runs and refreshes the average when it finishes.</p>
+<p>After a settings change, the journal is rescored under the new settings. Until
+that finishes, runs scored under the old settings are left out, never mixed in.
+Rolled-up runs keep the scoring they were rolled up under, since their journal
+is gone.
+<code dir="auto">:Vimfy stats refresh</code> scores right away, which is also how to score with
+<code dir="auto">journal.sampling.auto = false</code>.</p>
 <h3 id="where-the-data-lives">Where the data lives</h3>
-<p>Every finished session (mark, watch, recall, suggest) appends one JSON
-object to <code dir="auto">stdpath("data")/vimficiency/sessions.jsonl</code>. The file is
-append-only, one record per line. Stats read the whole log on demand —
-no aggregate cache in v1, so changing the efficiency formula or adding
-new buckets only requires re-reducing, not a migration. A trailing
-malformed line (e.g. a crash mid-write) is silently skipped on read.</p>
-<p>Per-record schema (version <code dir="auto">v: 1</code>): <code dir="auto">finish_epoch</code> (the same <code dir="auto">os.time()</code> stamp as the saved result’s <code dir="auto">finished_wall_epoch</code>), <code dir="auto">type</code>,
-<code dir="auto">kind</code>, <code dir="auto">key_count</code>, <code dir="auto">user_cost</code>, <code dir="auto">best_opt_cost</code>, <code dir="auto">user_seq</code>,
-<code dir="auto">best_opt_seq</code>, <code dir="auto">beats</code>. Only the single lowest-cost optimal result is
-stored; Top-N alternatives are not retained at log-write time.</p>
+<p>Every finished session (mark, watch, recall, suggest) is appended to
+<code dir="auto">stdpath("data")/vimficiency/sessions.vfs</code>, with your keys, its cost and the
+single best sequence found.</p>
+<p>Each session is stamped with the scoring version and every setting its score
+depends on: keyboard, effort weights and optimizer overrides. The stats count
+every stamp’s sessions; <code dir="auto">v</code> in the stats tab keeps only the current stamp’s.</p>
+<p>The JSON log of earlier versions, <code dir="auto">sessions.jsonl</code>, predates stamps. It is
+moved to <code dir="auto">legacy/sessions.v1.jsonl</code> and no longer read.</p>
 <h2 id="tab-completion">Tab completion</h2>
 <p>Works on:</p>
 <ul>
@@ -379,6 +594,7 @@ stored; Top-N alternatives are not retained at log-write time.</p>
 <li>Every alias plus saved filenames for <code dir="auto">play</code>, <code dir="auto">view</code>, and <code dir="auto">explore</code>.</li>
 <li>Saved filenames for <code dir="auto">rm</code> and <code dir="auto">fetch</code>.</li>
 <li><code dir="auto">on</code> / <code dir="auto">off</code> / <code dir="auto">toggle</code> for <code dir="auto">suggest</code>.</li>
+<li><code dir="auto">refresh</code> for <code dir="auto">stats</code>.</li>
 </ul>
 <h2 id="scratch-output-buffer-keys">Scratch output buffer keys</h2>
 <p>Press <code dir="auto">:h g?</code> in a Vimfy scratch output buffer to open this section

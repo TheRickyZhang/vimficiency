@@ -108,11 +108,12 @@ only time unit; if you want 90 seconds, use <code dir="auto">90s</code>.</p>
 queue, <code dir="auto">N</code> and <code dir="auto">Ns</code> are how you name it.</p>
 <h2 id="implementation-details">Implementation Details</h2>
 <p>Each command is tagged with a timestamp. <code dir="auto">:Vimfy recall Ns</code> resolves to
-the most recent commands run within the last <code dir="auto">N</code> seconds. Because every
-ring entry is already a complete command (one <code dir="auto">CmdAtom</code> event), no
-boundary snapping is needed.</p>
-<p>The optimizer runs only when you invoke a recall command, so per-command
-overhead is O(1).</p>
+the most recent commands run within the last <code dir="auto">N</code> seconds. If a command or
+time cutoff falls inside a burst delivered together, Recall includes the
+whole burst. For example, <code dir="auto">recall 1</code> can include both deletions in <code dir="auto">dwdw</code>
+when Neovim reported only their combined result.</p>
+<p>The ring shares command observations and changed lines across overlapping
+recall windows. Finishing a window submits its observed range to the optimizer.</p>
 <h2 id="capacity">Capacity</h2>
 <p>The queue is bounded by two caps, applied with <strong>union semantics</strong> — a
 session is kept as long as EITHER cap still holds it, and only evicted

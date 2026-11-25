@@ -84,28 +84,26 @@ See <a href="/vimficiency/docs/10-effort-model/">10. The effort model</a> for ho
 how to tune it to your layout.</p>
 <h2 id="simulating">Simulating</h2>
 <p><code dir="auto">:Vimfy play &#x3C;alias> [count]</code> opens a new tab with side-by-side windows and
-animates your sequence (leftmost) and the top suggestions (one per additional
-window).</p>
-<ul>
-<li><code dir="auto">count</code> — how many optimal sequences to show. <strong>Default: 1</strong>, paired
-with your sequence for a clean side-by-side “yours vs. best” pane.</li>
-<li>The layout is a 4-wide grid that wraps to a second row once more than
-four windows are needed. <strong>Max: 8 windows total</strong>; a higher count is
-silently trimmed (with a notice) so the grid stays readable.</li>
-</ul>
+shows your recording alongside simulated optimizer suggestions.
+<code dir="auto">count</code> sets the number of panes, up to four. The default layout pairs
+your recording with the best suggestion.</p>
 <p>Replay opens after a brief precompute phase. Step forward with
 <code dir="auto">&#x3C;Right></code>, back with <code dir="auto">&#x3C;Left></code>. Close the replay with <code dir="auto">q</code>.</p>
-<p>The precompute phase runs each sequence through a hidden Neovim probe
-window — a real oracle — so every intermediate state (cursor, lines,
-mode) reflects exactly what your keystrokes would do in a live buffer.
-Scrubbing is <code dir="auto">O(1)</code> after that: seeking back and forth through the
-sequence is an index lookup, not a re-simulation. The drain strategy
-that keeps the oracle accurate is documented for contributors in
-<code dir="auto">dev/lua/replay-precompute.md</code>.</p>
+<p>The <code dir="auto">[you] Recorded</code> pane shows the text, cursor and mode Neovim reported.
+A Visual deletion such as <code dir="auto">Vd</code> shows the line disappearing in one step.
+When several commands arrive together, one step shows their combined result.
+Plugin edits appear as they happened, even when a mapping’s reported keys
+omit some of the text it inserted.</p>
+<p>Each numbered <code dir="auto">Simulated</code> pane runs a suggestion in a hidden Neovim buffer.
+You can compare the two even when you used the same keys as the top suggestion.
+Both panes use the same slice, including lines you visited and temporary edits
+you later undid. A step advances each pane to its next available state.</p>
+<p>Opening an older v1 save shows a warning. Its user pane has one step between
+the two states that file contains. Suggestions still animate normally.</p>
 <p>Each replay window shows a virtual header above the buffer:</p>
 <ul>
 <li>progress through the global and local step counts, plus the current
-simulated mode (<code dir="auto">NORMAL</code>, <code dir="auto">INSERT</code>, <code dir="auto">VISUAL</code>)</li>
+editor mode</li>
 <li>the replay sequence itself, wrapped to the window width, with the
 current token highlighted</li>
 </ul>

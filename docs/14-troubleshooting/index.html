@@ -110,8 +110,9 @@ guards all tear down Watch sessions silently.</li>
 a <code dir="auto">vim.keymap.set</code> callback) and Neovim cannot report replayable keys for
 it. The notice names the mapping. <code dir="auto">lossy_mappings</code> decides what happens:
 <code dir="auto">"warn"</code> (default) records the keys you typed with a once-per-session
-notice, <code dir="auto">"allow"</code> records them silently, <code dir="auto">"drop"</code> ends the session. See
-<a href="/vimficiency/docs/13-limitations/">13. Limitations</a> for why replay may then diverge.</p>
+notice, <code dir="auto">"allow"</code> records them silently, <code dir="auto">"drop"</code> ends the session.
+Play shows the recorded effect of an admitted mapping. The key label can
+omit work the plugin performed. See <a href="/vimficiency/docs/13-limitations/">13. Limitations</a>.</p>
 <h2 id="suggestions-look-wrong-or-worse-than-what-i-did">Suggestions look wrong or worse than what I did</h2>
 <ul>
 <li>Some motions we can’t model (screen-line motions <code dir="auto">gj</code>/<code dir="auto">gk</code>, and

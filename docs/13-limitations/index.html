@@ -76,8 +76,8 @@
 event; <code dir="auto">setup()</code> raises on older Neovim.</p>
 </li>
 <li>
-<p><strong>Screen-line motions</strong> <code dir="auto">gj</code>/<code dir="auto">gk</code> are approximated as <code dir="auto">j</code>/<code dir="auto">k</code>. Exact on
-unwrapped lines; off by a little when wrapping is in play.</p>
+<p><strong>Screen-line motions.</strong> The optimizer approximates <code dir="auto">gj</code>/<code dir="auto">gk</code> as <code dir="auto">j</code>/<code dir="auto">k</code>.
+The recorded pane shows the cursor position Neovim observed.</p>
 </li>
 <li>
 <p><strong>Multi-buffer edits</strong> aren’t supported within a single session. If you
@@ -87,7 +87,8 @@ the session stays alive and keys typed outside the session window are
 silently ignored.</p>
 </li>
 <li>
-<p><strong>Large regions</strong> (more than <code dir="auto">MAX_SEARCH_LINES</code>) are refused with an error;
+<p><strong>Large regions</strong> include intermediate cursor visits, edited lines and padding.
+Regions beyond <code dir="auto">MAX_SEARCH_LINES</code> are refused with an error;
 split the edit up or increase the limit if you really want this.</p>
 </li>
 <li>
@@ -98,13 +99,21 @@ suggestion quality beyond roughly a dozen lines of edits.</p>
 <p><strong>Mappings to Lua callbacks can’t be audited as motion.</strong> A key mapped to a
 Lua function that edits the buffer or moves the cursor produces an
 unreplayable capture event. By default (<code dir="auto">lossy_mappings = "warn"</code>) the keys
-you typed are recorded in its place with a once-per-session notice; replay
-is faithful only when the function did what those keys do in plain Vim.
+you typed label the action and a once-per-session notice appears. Play
+shows the observed effect, including edits made through plugin APIs.
 <code dir="auto">"allow"</code> records silently, and <code dir="auto">"drop"</code> ends the session with a warning that
 names the mapping (see <a href="/vimficiency/docs/09-configuration/">Configuration</a>). Mappings whose
 RHS is a key sequence are fine — they are captured as the resolved
-post-mapping keys. Type the underlying keys directly when you want a specific
-motion audited.</p>
+post-mapping keys. Either way your cost counts the keys you pressed, not
+what they expanded to. The optimizer uses the captured start and goal.
+Type the underlying keys directly when you want a specific motion audited.</p>
+</li>
+<li>
+<p><strong>Some recorded keys are inaccurate</strong> until Neovim reports them per command.
+Text a Lua Insert-mode mapping inserts (nvim-ts-autotag’s <code dir="auto">></code>) is missing
+from the key label. Play still shows the inserted text at the next observation.
+Your cost can be off by a key when commands arrive in one burst, or when a
+Vimscript plugin reads keys with <code dir="auto">getchar()</code>.</p>
 </li>
 <li>
 <p><strong>Recall only records actions in normal file buffers</strong> (<code dir="auto">&#x26;buftype == ""</code>).
