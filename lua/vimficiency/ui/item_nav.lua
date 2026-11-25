@@ -122,7 +122,12 @@ function M.attach(buf, opts)
 
   local function sync()
     local item = current() or item_at_cursor()
-    if item then set_current(item) end
+    if item then
+      set_current(item)
+    else
+      current_id = nil
+      v.nvim_buf_clear_namespace(buf, ns, 0, -1)
+    end
   end
 
   --- The current item, once whatever moved the cursor since has been followed.

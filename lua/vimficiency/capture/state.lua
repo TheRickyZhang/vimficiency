@@ -10,11 +10,13 @@ local v = vim.api
 ---@class VF.ViewState
 ---@field bufname string       # original buffer name (full path)
 ---@field filetype string      # buffer filetype
+---@field mode string
 ---@field row integer          # 0-indexed cursor row
 ---@field col integer          # 0-indexed cursor column
 ---@field top_row integer      # top visible row
 ---@field bottom_row integer   # bottom visible row
 ---@field window_height integer # Ctrl-F, B distance
+---@field indent VF.IndentOptions
 ---@field scroll_amount integer # Ctrl-D, U distance (may differ from window_height/2)
 
 ---@class VF.BufferState : VF.ViewState
@@ -27,6 +29,8 @@ function M.capture_view(buf, win)
   return {
     bufname = v.nvim_buf_get_name(buf),
     filetype = vim.bo[buf].filetype,
+    indent = require("vimficiency.indent").capture(buf),
+    mode = v.nvim_get_mode().mode,
     row = cursor[1] - 1,
     col = cursor[2],
     top_row = vim.fn.line("w0"),

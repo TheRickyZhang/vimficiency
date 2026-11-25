@@ -1,4 +1,5 @@
 import type { BenchmarkRun } from '../types/benchmark';
+import { benchmarkChanges } from '../utils/data';
 import { SummaryCard } from './SummaryCard';
 import { ChangesSection } from './ChangesSection';
 
@@ -36,7 +37,10 @@ export function OverviewSection({
           />
         ))}
       </div>
-      <ChangesSection categories={categories} data={data} onSelect={onSelectBench} />
+      <ChangesSection changes={benchmarkChanges(data)} limit={3} renderItem={(c, body) => (
+        <button key={c.name} className="change-item cursor-pointer text-left font-[inherit] w-full"
+          onClick={() => onSelectBench(c.category, c.name)}>{body}</button>
+      )} />
     </div>
   );
 }

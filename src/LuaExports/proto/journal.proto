@@ -6,6 +6,8 @@ package vf.journal;
 
 import "stats.proto";
 
+import "common.proto";
+
 option optimize_for = LITE_RUNTIME;
 
 // Cursor and viewport of the focused window. Rows and columns are 0-indexed.
@@ -16,6 +18,7 @@ message ViewState {
   int32 bottom_row = 4;
   int32 window_height = 5;
   int32 scroll_amount = 6;
+  vf.IndentOptions indent = 7;
 }
 
 message Header {
@@ -37,6 +40,8 @@ message Delta {
   int32 first = 2;
   int32 old_count = 3;
   repeated bytes lines = 4;
+  // Smallest buffer height across the on_lines notifications folded into this delta.
+  optional int32 min_height = 5;
 }
 
 // The state of a window that no atom accounts for: a window or buffer was
@@ -77,6 +82,8 @@ message Atom {
   // `nvim_get_mode().mode` at delivery.
   string mode = 7;
   ViewState view = 8;
+  // Extremes of the starting rows reported by this atom and its subatoms.
+  repeated int32 visited_rows = 13;
 }
 
 // The tick of the records before it is complete. Absent after a tick the
@@ -124,7 +131,7 @@ message SampleParams {
 message SampleRequest {
   bytes journal_dir = 1;
   SampleParams params = 2;
-  // A journal untouched this many days is rolled up once fully scored, then
+  // A closed journal untouched this many days is rolled up once fully scored, then
   // deleted with its samples. Not a param: samples do not depend on it.
   int32 keep_days = 3;
 }
@@ -169,6 +176,7 @@ message Sample {
   // Indices of the `commands` that are a gj/gk which moved the cursor along
   // its buffer line. Every other gj/gk counts as j/k.
   repeated int32 within_line = 17;
+  int32 query_size = 18;
 }
 
 message SampleRecord {

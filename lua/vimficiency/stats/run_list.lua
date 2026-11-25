@@ -4,7 +4,7 @@
 
 ---@class (exact) VF.Stats.RunListModule
 ---@field PAGE_SIZE integer
----@field open fun(scope: VF.Stats.Scope, label: string): VF.Stats.RunListView
+---@field open fun(scope: VF.Stats.Scope, label: string, order?: VF.Stats.Order): VF.Stats.RunListView
 local M = {}
 
 local v = vim.api
@@ -31,6 +31,8 @@ local ns = v.nvim_create_namespace("vimfy_stats_runs")
 ---@field list_win integer
 ---@field preview_buf integer
 ---@field preview_win integer
+---@field preview_row? VF.Stats.RunRow
+---@field preview_width? integer
 ---@field details table<string, { detail?: VF.Stats.RunDetail, err?: string }>   # by run, as looked up
 ---@field refresh fun()   # re-queries, as after a scoring run
 ---@field close fun()
@@ -89,18 +91,22 @@ end
 ---@param view VF.Stats.RunListView
 local function draw_preview(view)
   local row = current_row(view)
+  local width = v.nvim_win_get_width(view.preview_win)
+  if view.preview_row == row and view.preview_width == width then return end
   v.nvim_buf_clear_namespace(view.preview_buf, ns, 0, -1)
   if not row then
     set_lines(view.preview_buf, {})
+    view.preview_row, view.preview_width = nil, width
     return
   end
   local detail, err = detail_of(view, row)
-  local preview = render.run_preview(row, detail, err, v.nvim_win_get_width(view.preview_win))
+  local preview = render.run_preview(row, detail, err, width)
   set_lines(view.preview_buf, preview.lines)
   for _, mark in ipairs(preview.marks) do
     v.nvim_buf_set_extmark(view.preview_buf, ns, mark.row, mark.col,
       { end_col = mark.end_col, hl_group = mark.hl, priority = mark.priority })
   end
+  view.preview_row, view.preview_width = row, width
 end
 
 ---@param view VF.Stats.RunListView
@@ -168,13 +174,14 @@ local function open_run(view)
     return
   end
   simulate.simulate_compare(detail.lines, detail.start_row, detail.start_col, {
-    user = { seq = detail.keys, cost = format_cost(row.user_cost) },
+    user = { recording = detail.recording, cost = format_cost(row.user_cost) },
     suggestions = row.best_seq == "" and {} or { { seq = row.best_seq, cost = format_cost(row.best_cost) } },
   }, {
     label = string.format("%s · %d commands", os.date("%b %d %H:%M", row.wall_epoch), row.window_size),
     end_row = detail.end_row,
     end_col = detail.end_col,
     filetype = detail.filetype,
+    indent = detail.indent,
   })
 end
 
@@ -241,11 +248,13 @@ end
 
 ---@param scope VF.Stats.Scope   # the runs to list
 ---@param label string           # what the stats row called them
+---@param order? VF.Stats.Order
 ---@return VF.Stats.RunListView
-function M.open(scope, label)
+function M.open(scope, label, order)
   ---@type VF.Stats.RunListView
   ---@diagnostic disable-next-line: missing-fields
-  local view = { scope = scope, label = label, offset = 0, details = {}, items = {} }
+  local view = { scope = scope, label = label, sort = order and { order = order, ascending = false },
+    offset = 0, details = {}, items = {} }
   view.refresh = function() refresh(view) end
   view.close = function()
     if v.nvim_win_is_valid(view.list_win) then v.nvim_win_close(view.list_win, true) end
@@ -258,10 +267,16 @@ function M.open(scope, label)
     focused = function() draw_preview(view) end,
   })
   set_keymaps(view)
+  local resize = v.nvim_create_autocmd("WinResized", {
+    callback = util.entry(function()
+      if vim.list_contains(vim.v.event.windows, view.preview_win) then draw_preview(view) end
+    end),
+  })
   v.nvim_create_autocmd("WinClosed", {
     pattern = tostring(view.list_win),
     once = true,
     callback = util.entry(function()
+      v.nvim_del_autocmd(resize)
       if v.nvim_win_is_valid(view.preview_win) then v.nvim_win_close(view.preview_win, true) end
     end),
   })

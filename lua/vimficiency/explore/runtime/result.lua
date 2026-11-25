@@ -17,6 +17,7 @@ function M.search_request(result, source_win, optimizer_overrides)
     has_lines_below = result.has_lines_below,
     window_height = v.nvim_win_get_height(source_win),
     scroll_amount = v.nvim_get_option_value("scroll", { win = source_win }),
+    indent = result.indent or require("vimficiency.indent").capture(v.nvim_win_get_buf(source_win)),
     user_seq = result.user_seq,
     optimizer_overrides = optimizer_overrides,
   }

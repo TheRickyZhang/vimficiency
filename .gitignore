@@ -3,6 +3,10 @@ build/
 # Claude doesn't support the open standard for some reason, so we copy the agents standard into claude locally, but don't push it
 .claude
 CLAUDE.md
+/.agents/*.patch
+/.agents/*-preview.html
+/.agents/*.gif
+/.agents/*.mp4
 
 CMakeFiles/
 CMakeCache.txt
@@ -49,9 +53,7 @@ web/dashboard/dist/
 web/dashboard/public/*/data.json
 web/dashboard/public/*/explore.json
 
-# Manim animations (anim/): sources and traces are tracked; the venv, render
-# cache, and rendered videos are not. Videos are embedded in the README via
-# GitHub user-attachments, not from the repo.
+# Local Manim environment, cache, and full renders.
 anim/.venv/
 anim/**/manim-env/
 anim/.cache/

@@ -83,16 +83,11 @@ concept ChangeGoalEmitter = requires(
     T handler,
     const TransformEditorState& editorState,
     const TransformState& constState,
-    const CharRange& charRange,
-    const CharLineRange& charLineRange,
-    const LineCharRange& lineCharRange,
+    const TransformEditorState* repeatLanding,
     LineRange lineRange,
     const SequenceBinding& cmd) {
-  { handler.onDeletionGoal(editorState, constState, charRange, cmd) } -> std::same_as<GoalStates>;
-  { handler.onDeletionGoal(editorState, constState, charLineRange, cmd) } -> std::same_as<GoalStates>;
-  { handler.onDeletionGoal(editorState, constState, lineCharRange, cmd) } -> std::same_as<GoalStates>;
-  { handler.onLinewiseGoal(editorState, constState, lineRange, cmd) } -> std::same_as<GoalStates>;
-  { handler.onCountedLinewiseGoal(editorState, constState, lineRange, cmd) } -> std::same_as<GoalStates>;
+  { handler.onDeletionGoal(editorState, constState, cmd, repeatLanding) } -> std::same_as<GoalStates>;
+  { handler.onLinewiseGoal(editorState, constState, lineRange, cmd, repeatLanding) } -> std::same_as<GoalStates>;
   { handler.onJoinGoal(editorState, constState, cmd) } -> std::same_as<GoalStates>;
 };
 
@@ -159,7 +154,7 @@ struct TransformTransitionDispatcher {
   const TransformHeuristic& heuristic;
   int leftColOffset;
   int rightColOffset;
-  bool allowLinewisePureDeletion;
+  int maxLinewiseDeleteCount;
   // Cheapest complete solution queued so far per start; empty sequence = none.
   std::vector<Result>& cheapestQueuedGoalByStart;
   int maxEqualArrivals;
@@ -181,6 +176,30 @@ struct TransformTransitionDispatcher {
     return deleteEffect.linewiseCursorPolicy ==
                VimCore::LinewiseDeleteCursorPolicy::LinewiseCommand
         ? LINEWISE_COMMAND_CURSWANT : EntryCurswant::Required;
+  }
+
+  // A first delete that a motion promoted to linewise either ignores the entry
+  // curswant or clamps it like dd; replaying it from an end-of-line curswant
+  // tells which. Oracle probe: ClampedLinewiseDelete in tests/Debug.
+  EntryCurswant promotedLinewiseCurswant(const VimCore::ResolvedDeleteRange& deleteEffect,
+                                         const TransformEditorState& afterDeletion) const {
+    const CursorPos entry = baseState.getPos();
+    const CursorPos landing = afterDeletion.getPos();
+    const Lines& lines = afterDeletion.getLines();
+    if (landing.line < 0 || landing.line > lines.lastLine()) return EntryCurswant::Required;
+
+    const CursorPos fromEol = TransformSimulator::afterResolvedDeletion(
+        TransformSimulator::withPos(baseState.getEditorState(),
+                                    CursorPos(entry.line, entry.col, TARGETCOL_EOL)),
+        deleteEffect, lineDeleteContext(transformBoundary)).getPos();
+    if (fromEol.pos() == landing.pos() && fromEol.targetCol == landing.targetCol) {
+      return EntryCurswant::Ignored;
+    }
+    const int lastCol = lines[landing.line].lastCol();
+    const bool clampsLikeDd = fromEol.line == landing.line && fromEol.col == lastCol &&
+                              fromEol.targetCol == TARGETCOL_EOL &&
+                              landing.col == std::min(entry.col, lastCol);
+    return clampsLikeDd ? LINEWISE_COMMAND_CURSWANT : EntryCurswant::Required;
   }
 
   void continueWithEdit(TransformEditorState&& next, const SequenceBinding& sourceCmd,
@@ -211,20 +230,18 @@ struct TransformTransitionDispatcher {
 
   void emitChangeGoalForResolved(const TransformEditorState& afterDeletion,
                                  const VimCore::ResolvedDeleteRange& resolved,
-                                 const SequenceBinding& sourceCmd) {
+                                 const SequenceBinding& sourceCmd,
+                                 const TransformEditorState* repeatLanding) {
     if constexpr (!PureDeletion) {
       switch (resolved.kind) {
         case VimCore::ResolvedDeleteRangeKind::Characterwise:
-          emitGoalStates(mode.onDeletionGoal(
-              afterDeletion, baseState, resolved.charRange, sourceCmd));
-          return;
         case VimCore::ResolvedDeleteRangeKind::LineChar:
           emitGoalStates(mode.onDeletionGoal(
-              afterDeletion, baseState, resolved.lineCharRange, sourceCmd));
+              afterDeletion, baseState, sourceCmd, repeatLanding));
           return;
         case VimCore::ResolvedDeleteRangeKind::Linewise:
           emitGoalStates(mode.onLinewiseGoal(
-              afterDeletion, baseState, resolved.lineRange, sourceCmd));
+              afterDeletion, baseState, resolved.lineRange, sourceCmd, repeatLanding));
           return;
       }
     }
@@ -238,16 +255,19 @@ struct TransformTransitionDispatcher {
     }
     if constexpr (PureDeletion) {
       if (deleteEffect.kind == VimCore::ResolvedDeleteRangeKind::Linewise &&
-          !allowLinewisePureDeletion) {
+          deleteEffect.lineRange.lineCount() > maxLinewiseDeleteCount) {
         return;
       }
     }
-    const EntryCurswant entryCurswant = entryCurswantOf(deleteEffect);
+    EntryCurswant entryCurswant = entryCurswantOf(deleteEffect);
     std::optional<TransformEditorState> afterDeletion;
     bool deleteReachedGoal = false;
     if (action.deleteEffectValid) {
       afterDeletion = TransformSimulator::afterResolvedDeletion(
           baseState.getEditorState(), deleteEffect, lineDeleteContext(transformBoundary));
+      if (entryCurswant == EntryCurswant::Required && !baseState.getPathTail()) {
+        entryCurswant = promotedLinewiseCurswant(deleteEffect, *afterDeletion);
+      }
       deleteReachedGoal = finishTransition(*afterDeletion, sourceCmd, entryCurswant);
     }
     if constexpr (PureDeletion) {
@@ -261,19 +281,20 @@ struct TransformTransitionDispatcher {
             TransformSimulator::afterResolvedChangeDeletion(
                 baseState.getEditorState(), changeEffect, lineDeleteContext(transformBoundary));
         if (canEmitGoalFrom(afterChangeDeletion)) {
-          emitChangeGoalForResolved(afterChangeDeletion, changeEffect, sourceCmd);
+          emitChangeGoalForResolved(afterChangeDeletion, changeEffect, sourceCmd,
+                                    deleteReachedGoal ? &*afterDeletion : nullptr);
           return;
         }
       }
       if (action.changeEffect) return;
       if (!deleteReachedGoal) return;
-      emitChangeGoalForResolved(*afterDeletion, deleteEffect, sourceCmd);
+      emitChangeGoalForResolved(*afterDeletion, deleteEffect, sourceCmd, &*afterDeletion);
     }
   }
 
   void deleteCountedLinewise(LineRange range, const SequenceBinding& sourceCmd) {
     if constexpr (PureDeletion) {
-      if (!allowLinewisePureDeletion) return;
+      if (range.lineCount() > maxLinewiseDeleteCount) return;
     }
     TransformEditorState afterDeletion =
         TransformSimulator::afterMultiLinewiseDeletion(
@@ -282,7 +303,7 @@ struct TransformTransitionDispatcher {
     if constexpr (PureDeletion) {
       continueWithEdit(std::move(afterDeletion), sourceCmd, 0.0, LINEWISE_COMMAND_CURSWANT);
     } else {
-      emitGoalStates(mode.onCountedLinewiseGoal(afterDeletion, baseState, range, sourceCmd));
+      emitGoalStates(mode.onLinewiseGoal(afterDeletion, baseState, range, sourceCmd, &afterDeletion));
     }
   }
 
@@ -336,7 +357,7 @@ private:
     if (!protectedTextPreserved(next)) return false;
     if (stateReachedGoal(next)) return !lineOutOfBounds;
     if (lineOutOfBounds) return false;
-    if (cursorOutsideEditableRegion(next)) return false;
+    if (cursorOutsideEditableRegion(next) && !restsOnProtectedLine(next)) return false;
 
     continueWithEdit(
         std::move(next),
@@ -371,6 +392,15 @@ private:
       return true;
     }
     return false;
+  }
+
+  // A protected line can still border an editable newline.
+  bool restsOnProtectedLine(const TransformEditorState& state) const {
+    const Lines& lines = state.getLines();
+    if (lines.size() < 2) return false;
+    const int line = state.getPos().line;
+    if (line == 0) return std::ssize(lines[0]) == leftColOffset;
+    return line == lines.lastLine() && std::ssize(lines[line]) == rightColOffset;
   }
 
   bool protectedTextPreserved(const TransformEditorState& state) const {

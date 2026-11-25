@@ -36,9 +36,11 @@ local lib = core.lib
 ---@field window_size? integer   # 0: the charted size
 ---@field kind? "any"|"nav"|"edit"
 ---@field outcomes? VF.Stats.Outcome[]
----@field commands? { tokens: string[], side: "either"|"user"|"optimizer" }[]
+---@field commands? { tokens: string[], side: "either"|"user"|"optimizer", absent?: boolean }[]   # any of `tokens`; none with `absent`
 ---@field over_typed? boolean    # only runs where the user typed more than the best sequence
 ---@field beats? boolean         # only runs whose keys cost less than the best sequence
+---@field timed? boolean
+---@field query_size? { first: integer, last: integer }
 
 --- `vf.stats.SummaryRequest` (src/LuaExports/proto/summary.proto).
 ---@class VF.Stats.SummaryRequest
@@ -50,6 +52,8 @@ local lib = core.lib
 ---@field weight VF.Stats.Weight
 ---@field filter VF.Stats.Filter
 ---@field chart_unit? string
+---@field chart_bucket_size? integer
+---@field chart_buckets? integer
 ---@field charted_size integer   # 0: the middle window size
 
 ---@class VF.Stats.Score
@@ -62,12 +66,34 @@ local lib = core.lib
 ---@field spans integer   # the runs the score is over
 ---@field drill VF.Stats.Filter
 
+---@class VF.Stats.Timing
+---@field n integer
+---@field p50 number
+---@field p95 number
+---@field p99 number
+---@field max number
+---@field drill? VF.Stats.Filter
+
+---@class VF.Stats.TimingBucket
+---@field first integer
+---@field last integer
+---@field timing VF.Stats.Timing
+---@field deadline_hit integer
+---@field score VF.Stats.Score     # over its scoring runs, timed or not
+---@field drill? VF.Stats.Filter   # those runs
+
+--- Unbeaten runs holding a command the search does not model; a run counts
+--- under each tag it holds, and under `other` when it holds none.
+---@class VF.Stats.UnbeatenTag
+---@field name string
+---@field runs integer
+---@field drill VF.Stats.Filter
+
 ---@class VF.Stats.Summary
 ---@field chart_unit string
 ---@field lifetime { sessions: integer, mark: integer, watch: integer, recall: integer, suggest: integer, commands: integer }
 ---@field sessions VF.Stats.SessionSummary
 ---@field journal VF.Stats.JournalSummary
----@field commands VF.Stats.CommandSummary
 ---@field scoring_label string   # the current stamp's
 ---@field hidden_runs integer    # sessions and rolled-up runs `current_only` left out
 
@@ -79,10 +105,12 @@ local lib = core.lib
 ---@field no_result integer
 ---@field unbeaten integer
 ---@field beats integer
----@field timing? { n: integer, p50: number, p95: number, p99: number, max: number }
+---@field timing? VF.Stats.Timing
 ---@field no_result_drill VF.Stats.Filter
 ---@field unbeaten_drill VF.Stats.Filter
 ---@field beats_drill VF.Stats.Filter
+---@field commands VF.Stats.CommandSummary
+---@field unbeaten_tags VF.Stats.UnbeatenTag[]
 
 ---@class VF.Stats.JournalSummary
 ---@field present boolean
@@ -102,6 +130,10 @@ local lib = core.lib
 ---@field nav_drill VF.Stats.Filter
 ---@field edit_drill VF.Stats.Filter
 ---@field unbeaten_drill VF.Stats.Filter
+---@field nav_timing VF.Stats.TimingBucket[]
+---@field edit_timing VF.Stats.TimingBucket[]
+---@field commands VF.Stats.CommandSummary
+---@field unbeaten_tags VF.Stats.UnbeatenTag[]
 
 ---@class VF.Stats.CommandRow
 ---@field text string
@@ -114,12 +146,10 @@ local lib = core.lib
 ---@field drill VF.Stats.Filter
 
 ---@class VF.Stats.CommandSummary
----@field sessions integer
----@field runs integer
+---@field spans integer   # the sessions or runs counted
 ---@field more VF.Stats.CommandRow[]
 ---@field less VF.Stats.CommandRow[]
 ---@field never VF.Stats.CommandRow[]   # Only the user uses these, most used first; never in `more`
----@field never_cut integer             # How many more of those there are
 ---@field user_typed_chars integer
 ---@field optimizer_typed_chars integer
 ---@field typed_drill VF.Stats.Filter   # the runs where the user typed more
@@ -170,6 +200,8 @@ local lib = core.lib
 --- A journal run as its search saw it. Rows and columns are 0-indexed and
 --- relative to `lines`.
 ---@class VF.Stats.RunDetail
+---@field recording VF.Replay.Recording
+---@field commands VF.Session.Command[]
 ---@field lines string[]
 ---@field goal_lines string[]   # the same slice as the run ended
 ---@field start_row integer
@@ -178,6 +210,7 @@ local lib = core.lib
 ---@field end_col integer
 ---@field keys string     # resolved, as the search scored them (gj/gk as j/k)
 ---@field typed string    # physical
+---@field indent VF.IndentOptions?
 ---@field filetype string # as the run started
 
 --- Appends a finished session to the log at `path`, under `stamp` (a

@@ -13,8 +13,6 @@ namespace {
 
 // Below this many uses by either side, a ratio is mostly noise.
 constexpr int MIN_OCCURRENCES = 10;
-constexpr size_t ROWS_SHOWN = 8;
-constexpr int NEVER_SHOWN = 5;
 // Shares within 5% of each other count as the same.
 constexpr double DEADBAND = 0.05;
 
@@ -223,15 +221,9 @@ CommandComparison compareCommands(const CommandCounts& user, const CommandCounts
   };
   ranges::sort(out.more, furthest(true));
   ranges::sort(out.less, furthest(false));
-  if (out.more.size() > ROWS_SHOWN) out.more.resize(ROWS_SHOWN);
-  if (out.less.size() > ROWS_SHOWN) out.less.resize(ROWS_SHOWN);
   ranges::sort(out.never, [](const CommandRow& a, const CommandRow& b) {
     return a.user != b.user ? a.user > b.user : a.text < b.text;
   });
-  if (ssize(out.never) > NEVER_SHOWN) {
-    out.neverCut = ssize(out.never) - NEVER_SHOWN;
-    out.never.resize(NEVER_SHOWN);
-  }
   return out;
 }
 

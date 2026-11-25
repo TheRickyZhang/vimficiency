@@ -1,7 +1,7 @@
 # ffi-boundary
 
 Use when adding or modifying any code that crosses the Lua/C++ FFI boundary,
-any file under `src/lua/` or the Lua plugin tree, or any C++ symbol exported
+any file under `src/LuaExports/` or `lua/vimficiency/`, or any C++ symbol exported
 for FFI. Also use when deciding whether a new piece of logic belongs in Lua
 or in C++.
 

@@ -41,7 +41,7 @@ struct DeletionGoalHandler {
                       double, const Config&,
                       const TransformBoundary&,
                       const Lines&, const Lines&,
-                      const string&, const string&, const string& preSuf)
+                      const string&, const string&, const string& preSuf, const IndentOptions&)
       : preSuf(preSuf) {}
 
   bool isGoalReached(const Lines& lines) const {
@@ -152,7 +152,7 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
   static_assert(PureDeletion || ChangeGoalEmitter<ModeType>);
   ModeType mode(effectiveLines, leftColOffset, rightColOffset, effortWeight,
                 config, transformBoundary, initialLines, goalLines,
-                pre, suf, preSuf);
+                pre, suf, preSuf, params.indent);
 
   double typedTerm = 0.0;
   if constexpr (!PureDeletion) {
@@ -313,7 +313,7 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
         mode,         s,           stats,         pq,
         costMap,      pendingByStart, startActive, bank,
         transformBoundary, states,   heuristic,
-        leftColOffset, rightColOffset, params.allowLinewisePureDeletion,
+        leftColOffset, rightColOffset, explorer.maxLinewiseDeleteCount(lines),
         cheapestQueuedGoalByStart,
         params.maxResultsPerStartPos};
 
@@ -322,6 +322,9 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
       dispatch.deleteResolved(action, cmd);
     };
     auto onJoin = [&](bool sp, const SequenceBinding& cmd) { dispatch.joinLines(sp, cmd); };
+    auto onCountedJoin = [&](bool addSpace, const SequenceBinding& sourceCmd) {
+      dispatch.joinCountedLines(addSpace, sourceCmd);
+    };
 
     bool inSuffixRegion = pos.line == lines.lastLine() &&
                           rightColOffset > 0 &&
@@ -332,12 +335,12 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
         explorer.exploreWordEdits(
             Edit::EXCLUSIVE_BACKWARD_WORD_EDITS, pos, lines, onDeletion);
       }
-      if (pos.col > 0) {
+      if (pos.col > 0 && firstSuffixCol > 0) {
         dispatch.moveByMotion(CursorPos(pos.line, pos.col - 1),
                               SequenceBinding(KeyedSequence::h, bank[KSId::h]),
                               EntryCurswant::Ignored);
       }
-      if (pos.line > 0) {
+      if (s.getPathTail() && pos.line > 0) {
         int newCol = VimCore::clampCol(lines, pos.targetCol, pos.line - 1);
         dispatch.moveByMotion(CursorPos(pos.line - 1, newCol, pos.targetCol),
                               SequenceBinding(KeyedSequence::k, bank[KSId::k]),
@@ -346,7 +349,11 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
       continue;
     }
     if (pos.line == 0 && pos.col < leftColOffset) {
-      if (pos.col < lines[0].lastCol()) {
+      if (lines.getSize(0) == leftColOffset) {
+        explorer.exploreJoinCommands(pos, lines, onJoin);
+        explorer.exploreCountedJoinCommands(pos, lines, params.minPrefixCount, onCountedJoin);
+      }
+      if (pos.col < lines[0].lastCol() && lines.getSize(0) > leftColOffset) {
         dispatch.moveByMotion(CursorPos(0, pos.col + 1),
                               SequenceBinding(KeyedSequence::l, bank[KSId::l]),
                               EntryCurswant::Ignored);
@@ -367,9 +374,7 @@ TransformResult TransformOptimizer::optimizeImpl(const Lines &initialLines, cons
         [&](LineRange range, const SequenceBinding& sourceCmd) {
           dispatch.deleteCountedLinewise(range, sourceCmd);
         },
-        [&](bool addSpace, const SequenceBinding& sourceCmd) {
-          dispatch.joinCountedLines(addSpace, sourceCmd);
-        });
+        onCountedJoin);
     ::maybeMarkStartExhausted(pendingByStart, startActive, terminalStarts, activeStart);
   }
 

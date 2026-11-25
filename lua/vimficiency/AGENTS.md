@@ -17,9 +17,9 @@ Plugin entry points and domain modules:
 | `simulate/settings.lua` | Play-screen settings and modal wiring. |
 | `stats/query.lua` | Builds requests for stats summaries, run lists, and run details. |
 | `stats/render.lua` | Formats summary pages, charts, drill targets, and run rows. |
-| `stats/view.lua` | The `:Vimfy stats` tab: header over one full-width stats pane; weight/length/scoring keys, and `<CR>` opens a float: a command row's run list, or a chart's own view. |
+| `stats/view.lua` | The `:Vimfy stats` tab handles weight and scoring keys, Look back and run-length selectors, and `<CR>` to expand lists or open runs and charts. |
 | `ui/item_nav.lua` | Item navigation for a rendered buffer: `h`/`j`/`k`/`l` between a view's items (blocks of rows and columns), the current one highlighted whole with the cursor hidden, `<CR>`/`<Esc>` acting on it. Used by the stats tab; the model for new views. |
-| `stats/chart_view.lua` | One daily chart in a full-screen float over the rest of its section; each day and each row that lists runs is an item, and `<CR>` opens its run list. |
+| `stats/chart_view.lua` | One chart in a full-screen float over the rest of its section. `+`/`-` change the history chart's scale within the float, and `<CR>` opens a bucket, bar segment or row's run list. |
 | `stats/run_list.lua` | The floating run list (each cell an item) and its preview float: sort by the current column, page, and `<CR>` on a journal run replays it. |
 | `stats/sampling.lua` | Runs `vimfy_journal` over the journal in the background. See `dev/lua/atom-stream.md` § Sampling. |
 | `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, run) per `:Vimfy` verb. Depends on the domain modules; only `init.lua` depends on it. |
@@ -61,7 +61,7 @@ Subdirectories hold supporting modules for each domain:
 | `simulate/pool.lua` | Sequence pool tokenization and layout-slot planning. |
 | `simulate/precompute.lua` | Hidden Neovim probe used as the replay oracle. |
 | `simulate/render.lua` | Virtual headers, cursor highlights, status bar, and snapshot rendering. |
-| `simulate/tokenize.lua` | Parser-backed animation tokenization plus fallback splitting. |
+| `simulate/tokenize.lua` | Parser-backed animation of optimizer suggestions. |
 | `simulate/windows.lua` | Replay tab/window/buffer construction, focus, escape, and relayout teardown. |
 
 ### `ffi/` — C ABI wrappers
@@ -135,8 +135,9 @@ field. Past the constructor nothing re-checks shape, type, or handle validity.
   `validate.normalize_*`. A guard that exists only because a fixture skipped the
   constructor is a fixture bug.
 
-Saved files carry `disk.FORMAT_VERSION`; any other version is rejected, with no
-migration. Bump it on any schema change.
+Saved files carry `disk.FORMAT_VERSION`. V1 remains readable for endpoint-only
+Play and produces a warning when opened there. Reject unknown versions and
+bump the current version on schema changes.
 
 ## Session Architecture
 
@@ -167,7 +168,8 @@ promotion at finish:
 | `recall`    | every captured atom (rolling ring) | `:Vimfy recall <N\|Ns>`           |
 | `suggest_*` | a `recall` record, promoted        | the `auto_suggest` trigger that fired |
 
-Name sessions cap at 5 concurrent active (finished records keep their slot).
+Up to 100 named Mark and Watch sessions can be active at once. Finished
+records keep their aliases without counting toward the cap.
 The recall ring retains under **union** semantics: evict the oldest only when
 BOTH `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS` say drop. See
 `dev/lua/session-invocation.md`.
@@ -230,11 +232,11 @@ which still consumes raw key events.
 ```lua
 ffi_optimizer.build_search_request(span, padding, max_search_lines) → VF.SearchRequest
   -- span: whole buffers and cursors; C++ picks the region, slices, and converts motions
-ffi_optimizer.analyze(request, results_calculated) → VF.Optimizer.Result[], user_cost, debug_str, VF.Diff.Region[]
+ffi_optimizer.analyze(request, results_calculated) → VF.Optimizer.Result[], user_cost, debug_str, VF.Diff.Region[], unbeaten
   -- request: VF.SearchRequest (types.lua), the same record explore_start_async takes
 ffi_config.apply_globals(user_config)  -- Push the C++ process globals (cost model, Vim options)
-ffi_sequence.tokenize_sequence(seq) → VF.Sequence.Token[]  -- {text, kind} tokens
-ffi_sequence.tokenize_movements(seq) → VF.Sequence.Token[]   -- all kind="motion"
+ffi_sequence.tokenize_sequence(seq) → VF.Sequence.Token[], error?  -- {text, kind} tokens
+ffi_sequence.tokenize_movements(seq) → VF.Sequence.Token[], error?  -- all kind="motion"
 ```
 
 **Position indexing:** C++ uses 0-indexed rows/cols. Neovim uses 1-indexed rows. Conversion happens before calls cross the FFI boundary, at state capture (`capture.state.capture_view`).
@@ -249,7 +251,8 @@ Config keys are owned by exactly one side. C++ owns process globals (`vf.config.
 | `RESULTS_SAVED` | 5 | Results kept per session |
 | `SLICE_PADDING` | 5 | Lines above/below cursor for search slice |
 | `MAX_SEARCH_LINES` | 500 | Max lines in search region |
-| `KEY_SESSION_CAPACITY` | 10 | Rolling key session limit |
+| `KEY_SESSION_CAPACITY` | 200 | Minimum count retained when enough commands have been captured |
+| `MAX_RETENTION_SECONDS` | 120 | Age threshold for evicting entries above that count |
 
 ## Simulation (simulate/init.lua)
 
@@ -258,8 +261,8 @@ Interactive Explore's larger state-machine units are **phases** (`Navigate`,
 `Transform`, `Insert`, `Completed`).
 
 `simulate_compare(lines, row, col, pool, opts)`:
-- Precomputes replay snapshots asynchronously by driving Neovim itself as the
-  oracle (`nvim_feedkeys` into a hidden probe window), then opens a new tab
+- Expands recorded user steps from the initial slice and line deltas. For
+  suggestions, precomputes snapshots asynchronously in a hidden Neovim probe, then opens a new tab
   with side-by-side windows
 - Replay opens paused; `<Left>`/`<Right>` step, `<CR>` toggles auto-play, `q`
   closes the whole replay tab
@@ -269,7 +272,7 @@ Interactive Explore's larger state-machine units are **phases** (`Navigate`,
 - `:Vimfy focus <N>` / `:Vimfy escape` toggle the single-buffer view
 - Uses virtual header lines above each replay buffer for progress, mode, and a
   wrapped/highlighted sequence display
-- Uses C++ tokenizer with character fallback for unsupported motions; tokens
+- Uses the C++ tokenizer for suggestions and reports parse errors in their pane. Tokens
   keep feedable command units like `f;` / `rX` intact while leaving repeats
   like `;` as separate replay steps
 

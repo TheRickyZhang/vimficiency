@@ -112,16 +112,18 @@ function M.setup(user_config)
 
   vim.api.nvim_create_augroup(M.AUGROUP, { clear = true })
 
-  local plugin_dir = debug.getinfo(1, "S").source:sub(2):match("(.*)/lua/")
-  vim.cmd.helptags(plugin_dir .. "/doc")
-
-  if not user_config.shiftwidth then
-    -- Handle 'shiftwidth=0' means "follow tabstop" -> use real width
-    user_config.shiftwidth = vim.fn.shiftwidth()
+  local source = debug.getinfo(1, "S").source
+  local caller = debug.getinfo(2, "S")
+  if caller and caller.source ~= source and caller.source:sub(1, 1) == "@" then
+    local path = vim.fn.fnamemodify(caller.source:sub(2), ":p")
+    if vim.fn.filereadable(path) == 1 then config.setup_path = path end
   end
+  local plugin_dir = source:sub(2):match("(.*)/lua/")
+  vim.cmd.helptags(plugin_dir .. "/doc")
 
   -- Lua is for runtime concerns
   local lua_consumed = config.apply(user_config)
+  require("vimficiency.ui.highlights").refresh_selection()
   -- C++ is for per-process globals (keyboard cost model, Vim options), pushed once here.
   local cpp_consumed = ffi_config.apply_globals(user_config)
 
@@ -213,6 +215,7 @@ function M.reload_lua(new_lib_path)
   end
 
   local fresh = require("vimficiency")
+  fresh.config.setup_path = config.setup_path
   fresh.setup(_G.__vimficiency_last_user_config)
 
   require("vimficiency.session.store").restore_from_dump(dump)

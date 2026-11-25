@@ -14,14 +14,14 @@ namespace {
 
 bool matchesDayAndOutcome(const Selection& selection, int64_t day, int outcome) {
   return day >= selection.firstDay && day <= selection.lastDay &&
-         (selection.outcomes == 0 || (selection.outcomes & (1u << outcome)));
+         (selection.outcomes.empty() || ranges::contains(selection.outcomes, outcome));
 }
 
 bool matchesCommands(const Selection& selection, const Run& run) {
   if (selection.overTyped && run.user.typedChars <= run.optimizer.typedChars) return false;
   if (selection.beats && (!isScoring(run.outcome) || run.userCost >= run.bestCost)) return false;
   return ranges::all_of(selection.commands, [&](const CommandMatch& match) {
-    return ranges::any_of(match.commands, [&](int command) {
+    return match.absent != ranges::any_of(match.commands, [&](int command) {
       return (match.side != Side::Optimizer && run.user.uses(command)) ||
              (match.side != Side::User && run.optimizer.uses(command));
     });
@@ -62,6 +62,9 @@ bool matches(const Selection& selection, const RunKey& key) {
 bool matches(const Selection& selection, const Run& run) {
   if (selection.epochSeconds && (run.wallEpoch < selection.epochSeconds->first ||
                                  run.wallEpoch > selection.epochSeconds->second)) return false;
+  if (selection.timed && !run.hasTiming()) return false;
+  if (selection.querySize && (run.querySize <= 0 || run.querySize < selection.querySize->first ||
+                              run.querySize > selection.querySize->second)) return false;
   if (run.source == Source::Session) {
     if (!selection.sessions || !matchesDayAndOutcome(selection, run.day, run.outcome)) return false;
   } else if (!matches(selection, keyOf(run))) {
@@ -98,7 +101,7 @@ void visitJournal(const Scope& scope, const Selection& selection,
 }
 
 int rolledUpRuns(const Scope& scope, const Selection& selection) {
-  if (selection.epochSeconds) return 0;
+  if (selection.epochSeconds || selection.timed || selection.querySize) return 0;
   int runs = 0;
   for (const RunTable& rolled : scope.journal.rolledUp) {
     for (const auto& [key, totals] : rolled) {

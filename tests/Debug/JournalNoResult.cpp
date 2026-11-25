@@ -60,7 +60,7 @@ TEST(JournalNoResult, Classify) {
 
         const Lines& initial = *w.start.lines;
         const Lines& goal = *w.end.lines;
-        const pair<int, int> region = computeSearchRegion(
+        const SearchRegion region = computeSearchRegion(
             w.start.row, w.end.row, initial, goal, params.slicePadding);
         SearchSlice slice = sliceSearch(
             initial, goal,
@@ -135,9 +135,9 @@ TEST(JournalNoResult, StartDistribution) {
         const Lines& initial = *w.start.lines;
         const Lines& goal = *w.end.lines;
         if (initial == goal) continue;
-        const pair<int, int> region = computeSearchRegion(
+        const SearchRegion region = computeSearchRegion(
             w.start.row, w.end.row, initial, goal, params.slicePadding);
-        if (region.second - region.first > params.maxSearchLines) continue;
+        if (region.paddedHeight() - 1 > params.maxSearchLines) continue;
         SearchSlice slice = sliceSearch(
             initial, goal,
             SessionEnds{.startRow = w.start.row, .startCol = w.start.col,

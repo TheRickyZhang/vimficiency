@@ -31,7 +31,7 @@ local M = {}
 
 ---@class VF.Replay.Pool
 ---@field user VF.Replay.PoolEntry?
----@field user_is_top boolean  user typed suggestion 1, so `user` is nil
+---@field user_is_top boolean
 ---@field suggestions VF.Replay.PoolEntry[]
 
 ---@class VF.Replay.State
@@ -51,8 +51,8 @@ local M = {}
 ---@field precompute_gen integer
 ---@field source_lines string[]?
 ---@field source_row integer?
+---@field indent VF.IndentOptions?
 ---@field source_col integer?
----@field source_opts table?
 ---@field filetype string   # "": no highlighting
 
 local multi_sim = {
@@ -67,7 +67,6 @@ local multi_sim = {
   source_lines = nil,
   source_row = nil,
   source_col = nil,
-  source_opts = nil,
   filetype = "",
 }
 
@@ -153,8 +152,8 @@ local function cleanup_multi_sim()
   multi_sim.end_col = nil
   multi_sim.source_lines = nil
   multi_sim.source_row = nil
+  multi_sim.indent = nil
   multi_sim.source_col = nil
-  multi_sim.source_opts = nil
   multi_sim.filetype = ""
   focus_state = nil
 end
@@ -234,7 +233,7 @@ local function ensure_states_for_ranks(ranks, cb)
         if multi_sim.precompute_gen ~= my_gen then return end
         pool_entry.states = states
         step(i + 1)
-      end)
+      end, multi_sim.indent)
   end
   step(1)
 end
@@ -245,12 +244,12 @@ ctx.ensure_states_for_ranks = ensure_states_for_ranks
 ---@field label string?
 ---@field end_row integer?
 ---@field end_col integer?
+---@field indent VF.IndentOptions?
 ---@field initial_window_count integer?
 ---@field filetype string?   # highlights the visible panes only, never the precompute probe
 
 ---@class VF.Replay.PoolArg
----@field user { seq: string, cost: string? }?
----@field user_is_top boolean?
+---@field user { recording: VF.Replay.Recording, cost: string? }?
 ---@field suggestions { seq: string, cost: string? }[]
 
 ---@param lines string[]
@@ -282,11 +281,7 @@ function M.simulate_compare(lines, row, col, pool_arg, opts)
   multi_sim.source_lines = vim.deepcopy(lines)
   multi_sim.source_row = row
   multi_sim.source_col = col
-  multi_sim.source_opts = {
-    label = opts.label,
-    end_row = opts.end_row,
-    end_col = opts.end_col,
-  }
+  multi_sim.indent = opts.indent
   multi_sim.filetype = opts.filetype or ""
   multi_sim.saved_win = v.nvim_get_current_win()
   multi_sim.saved_tab = v.nvim_get_current_tabpage()
@@ -299,7 +294,7 @@ function M.simulate_compare(lines, row, col, pool_arg, opts)
       "window_count", max(1, min(4, opts.initial_window_count)))
   end
 
-  multi_sim.pool = pool_mod.build(pool_arg)
+  multi_sim.pool = pool_mod.build(pool_arg, lines)
 
   local plan = pool_mod.layout_plan(multi_sim.pool)
   local ranks = pool_mod.ranks_for_plan(plan)

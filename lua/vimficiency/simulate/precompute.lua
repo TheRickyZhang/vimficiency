@@ -43,12 +43,14 @@ end
 ---@param col integer 0-indexed
 ---@param should_cancel fun(): boolean
 ---@param on_done fun(states: VF.Replay.Snapshot[])
-function M.states(tokens, lines, row, col, should_cancel, on_done)
+---@param indent VF.IndentOptions?
+function M.states(tokens, lines, row, col, should_cancel, on_done, indent)
   local saved_win = v.nvim_get_current_win()
 
   local buf = v.nvim_create_buf(false, true)
   v.nvim_set_option_value("buftype", "nofile", { buf = buf })
   v.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
+  if indent then require("vimficiency.indent").apply(buf, indent) end
   v.nvim_buf_set_lines(buf, 0, -1, true, lines)
 
   local probe_win = v.nvim_open_win(buf, true, {
@@ -187,6 +189,7 @@ function M.states(tokens, lines, row, col, should_cancel, on_done)
     while i <= #tokens do
       if not v.nvim_win_is_valid(probe_win) then return end
       local tok = tokens[i]
+      if tok.kind == "unavailable" then break end
       if tok.kind == "change" then
         i = replay_edit_transaction(i)
       else

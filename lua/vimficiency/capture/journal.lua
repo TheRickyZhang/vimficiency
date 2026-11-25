@@ -11,6 +11,7 @@
 ---@field _for_test { listener: fun(atom: VF.Atom, decision: VF.Atom.Decision), resync: fun(), close_tick: fun() }
 local M = {}
 
+local ffi = require("ffi")
 local atom_stream = require("vimficiency.capture.atom_stream")
 local buffer_history = require("vimficiency.capture.buffer_history")
 local config = require("vimficiency.config")
@@ -23,6 +24,11 @@ local JOURNAL_FORMAT = ffi_versions.versions().journal_format
 local LISTENER_NAME = "journal"
 local AUGROUP = "VimficiencyJournal"
 local TICK_END = ffi_core.encode("vf.journal.File", { records = { { tick_end = {} } } })
+ffi.cdef[[
+  int fileno(void *stream);
+  int flock(int fd, int operation);
+]]
+local LOCK_SH, LOCK_NB = 1, 4
 
 ---@class VF.Journal.Run
 ---@field file file*
@@ -134,6 +140,7 @@ local function view_state(buf, win)
     bottom_row = view.bottom_row,
     window_height = view.window_height,
     scroll_amount = view.scroll_amount,
+    indent = view.indent,
   }
 end
 
@@ -188,6 +195,7 @@ local function listener(run, atom, decision)
     win = atom.win,
     keys = atom.keys,
     kind = atom.kind,
+    visited_rows = atom.visited_rows,
     typed = atom.typed,
     typed_insert = atom.typed_insert,
     decision = decision,
@@ -200,6 +208,9 @@ end
 
 ---@param run VF.Journal.Run
 local function install(run)
+  if ffi.C.flock(ffi.C.fileno(run.file), LOCK_SH + LOCK_NB) ~= 0 then
+    error(("vimfy journal: could not lock %s (errno %d)"):format(run.path, ffi.errno()), 0)
+  end
   local ok, err = run.file:setvbuf("no")
   if not ok then error("vimfy journal: could not configure " .. run.path .. ": " .. tostring(err), 0) end
   write(run, "header", { version = JOURNAL_FORMAT, started_wall_epoch = os.time() })
@@ -210,10 +221,10 @@ local function install(run)
   assert(run.listening, "vimfy journal: listener already installed")
   buffer_history.set_observer({
     on_seed = function(buf, lines) write_snapshot(run, buf, lines) end,
-    on_delta = function(buf, first, old_count, new_lines)
+    on_delta = function(buf, first, old_count, new_lines, min_height)
       -- Before the first snapshot there is no base for a delta to apply to.
       if run.since_snapshot[buf] then
-        write(run, "delta", { buf = buf, first = first, old_count = old_count, lines = new_lines })
+        write(run, "delta", { buf = buf, first = first, old_count = old_count, lines = new_lines, min_height = min_height })
       end
     end,
   })

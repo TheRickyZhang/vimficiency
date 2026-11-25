@@ -289,20 +289,16 @@ test("journal: a write failure releases the run without certifying the tick", fu
   local buf = h.new_buf({ "one" })
   local atom = { keys = "l", kind = "motion", typed = "l", typed_insert = "", buf = buf,
     win = vim.api.nvim_get_current_win(), lossy = false }
-  local writes, closes = 0, 0
-  local file = {
-    setvbuf = function() return true end,
-    write = function(self)
-      writes = writes + 1
-      if writes == 1 then return self end
-      return nil, "disk full"
-    end,
-    close = function()
-      closes = closes + 1
-      return true
-    end,
-  }
-  h.with_patch({ { io, "open", function() return file end } }, function()
+  local methods = getmetatable(io.stdout).__index
+  local writes = 0
+  ---@type file*|nil
+  local handle
+  h.with_patch({ { methods, "write", function(self)
+    writes = writes + 1
+    handle = self
+    if writes == 1 then return self end
+    return nil, "disk full"
+  end } }, function()
     journal.start()
     local ok, err = pcall(journal._for_test.listener, atom, "record")
     assert_eq(ok, false)
@@ -310,7 +306,8 @@ test("journal: a write failure releases the run without certifying the tick", fu
     assert_eq(journal.path(), nil)
     assert_true(not atoms._has_listener("journal"))
     journal.stop()
-    assert_eq({ writes, closes }, { 2, 1 })
+    assert_eq(writes, 2)
+    assert_eq(io.type(assert(handle)), "closed file")
   end)
   vim.api.nvim_buf_delete(buf, { force = true })
 end)

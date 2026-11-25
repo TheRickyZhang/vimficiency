@@ -2,6 +2,7 @@ local max = math.max
 local min = math.min
 
 local tokenize = require("vimficiency.simulate.tokenize")
+local history = require("vimficiency.capture.buffer_history")
 
 local M = {}
 
@@ -12,15 +13,30 @@ local M = {}
 ---@alias VF.Replay.PoolRankKey "user" | integer
 
 ---@param pool_arg VF.Replay.PoolArg
+---@param initial_lines string[]
 ---@return VF.Replay.Pool
-function M.build(pool_arg)
-  local pool = { user = nil, user_is_top = pool_arg.user_is_top == true, suggestions = {} }
+function M.build(pool_arg, initial_lines)
+  local pool = { user = nil, user_is_top = false, suggestions = {} }
   if pool_arg.user then
-    pool.user = {
-      tokens = tokenize.for_animation(pool_arg.user.seq),
-      cost = pool_arg.user.cost,
-      states = nil,
-    }
+    local recording = pool_arg.user.recording
+    local lines = initial_lines
+    local states = { { lines = lines, cursor = { recording.row + 1, recording.col }, mode = recording.mode } }
+    local tokens = {}
+    local keys = {}
+    for i, step in ipairs(recording.steps) do
+      if #step.deltas > 0 then
+        lines = vim.list_slice(lines)
+        for _, delta in ipairs(step.deltas) do
+          history.splice(lines, delta.first, delta.old_count, delta.lines)
+        end
+      end
+      states[i + 1] = { lines = lines, cursor = { step.row + 1, step.col }, mode = step.mode }
+      tokens[i] = { text = step.keys, kind = "recorded" }
+      keys[i] = step.keys
+    end
+    local top = pool_arg.suggestions[1]
+    pool.user_is_top = top ~= nil and top.seq ~= "" and top.seq == table.concat(keys)
+    pool.user = { tokens = tokens, cost = pool_arg.user.cost, states = states }
   end
   for i, sug in ipairs(pool_arg.suggestions or {}) do
     pool.suggestions[i] = {
@@ -46,7 +62,7 @@ end
 ---@return integer requested_count
 function M.effective_layout(pool)
   local settings = require("vimficiency.simulate.settings").get_settings()
-  local include_user = (settings.include_user_sequence == true) and pool.user ~= nil
+  local include_user = pool.user ~= nil and (settings.include_user_sequence or #pool.suggestions == 0)
   local requested_count = max(1, min(4, settings.window_count))
   local window_count = requested_count
   local suggestion_slots = window_count - (include_user and 1 or 0)

@@ -390,6 +390,11 @@ void moveLine(CursorPos &pos, const Lines &lines, int dy) {
   pos.clampColPreservingTarget(clampCol(lines, pos.targetCol, pos.line));
 }
 
+void moveVisualLine(CursorPos& pos, const Lines& lines, int dy) {
+  pos.line += std::clamp(dy, -pos.line, lines.lastLine() - pos.line);
+  pos.clampColPreservingTarget(std::min(pos.targetCol, lines.getSize(pos.line)));
+}
+
 // =============================================================================
 // Sentence motions
 // =============================================================================

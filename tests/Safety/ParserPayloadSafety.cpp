@@ -35,12 +35,12 @@ void SequenceTokensAreStable(string sequence) {
   auto parsed = parseSequence(sequence);
   if (!parsed) {
     EXPECT_LE(parsed.error().offset, sequence.size());
-    EXPECT_FALSE(formatSequenceParseError(parsed.error()).empty());
+    EXPECT_FALSE(formatSequenceParseError(parsed.error(), sequence).empty());
     return;
   }
 
   auto parsedStrings = parseSequenceStrings(sequence);
-  ASSERT_TRUE(parsedStrings) << formatSequenceParseError(parsedStrings.error());
+  ASSERT_TRUE(parsedStrings) << formatSequenceParseError(parsedStrings.error(), sequence);
   ASSERT_EQ(parsedStrings->size(), parsed->size());
   for (size_t i = 0; i < parsed->size(); i++) {
     const auto& token = (*parsed)[i];

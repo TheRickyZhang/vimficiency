@@ -36,10 +36,6 @@ export function getTestSuite(slug: TestSuiteSlug) {
   return TEST_SUITES.find((suite) => suite.slug === slug)!;
 }
 
-export function testSuiteKind(slug: TestSuiteSlug): TestSuiteKind {
-  return getTestSuite(slug).kind;
-}
-
 export function testSuiteDescription(slug: TestSuiteSlug) {
   switch (slug) {
     case 'unit':

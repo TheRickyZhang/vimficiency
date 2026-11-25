@@ -1,13 +1,15 @@
 # Replay precompute (`simulate/precompute.lua`, `simulate/tokenize.lua`)
 
-Replay shows `{ lines, cursor, mode }` after every token of a captured sequence.
-Scrubbing must be O(1), so every step is precomputed up front; `:normal` is not
-usable as the oracle because it flattens the mid-insert and mid-visual states the
-view exists to show.
+Play indexes precomputed `{ lines, cursor, mode }` states when scrubbing.
+The user pane expands the recorded line replacements from the search slice's
+initial text. Cursor-only steps share the preceding text. A delivery tick
+contributes one step, with its commands' resolved keys as the label. A change
+observed at finish after the last command contributes a final unlabeled step.
+Journal runs expose the same steps when their window is opened.
 
 ## Probe window
 
-Each sequence is driven through `nvim_feedkeys` in a hidden 1×1 float that is
+Each optimizer suggestion is driven through `nvim_feedkeys` in a hidden 1×1 float that is
 made the real current window. `nvim_buf_call` is not enough: feedkeys queues
 input that drains later into whichever window is current, so keys could leak
 into the user's buffer. `noautocmd`, `nofile`, and `bufhidden=wipe` keep the
@@ -16,13 +18,9 @@ callbacks when a new replay starts first.
 
 ## Tokenization
 
-C++ `tokenize_sequence`, then `tokenize_movements`, then a per-character Lua
-fallback. Two rules matter for replay: a command that consumes one following key
-(`f`, `t`, `r`, `m`, `'`, `` ` ``, `@`) keeps it in the same token, and plain
-insert text is chunked into 4-char steps while `<...>` keys stay whole. Token
-`kind` comes from the C++ `SequenceParser` over the FFI, so Lua does not keep a
-second grammar; the fallback's `classify_fallback` tables cover only the
-char-by-char path.
+The tokenizer splits each suggestion into feedable steps. Typed text is
+chunked into four-character steps and `<...>` keys stay whole. A parse
+failure shows the rejected key in the suggestion pane.
 
 ## Draining typeahead
 

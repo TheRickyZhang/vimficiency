@@ -3,6 +3,7 @@ export module vf.Journal.Windows;
 import std.compat;
 import vf.Journal.Replay;
 import vf.Types.Lines;
+import vf.Optimizer.Analyze;
 
 export namespace Journal {
 
@@ -17,6 +18,7 @@ struct WindowState {
   int col = 0;
   int windowHeight = 0;
   int scrollAmount = 0;
+  IndentOptions indent;
   int64_t ms = 0;
 };
 
@@ -30,6 +32,7 @@ struct Command {
 
 // Consecutive recorded atoms of one window and the states on either side.
 struct Window {
+  UntouchedRows untouched;
   // The atom count it was cut for. `atomCount` exceeds it when the atoms that
   // completed it were delivered together and cannot be told apart.
   int size = 0;
@@ -41,6 +44,11 @@ struct Window {
   WindowState end;
   // `keys` split back into its atoms.
   std::vector<Command> commands;
+  struct Step {
+    size_t commandEnd;
+    WindowState state;
+  };
+  std::vector<Step> steps;
   std::string keys;
   std::string typed;
   // Of `typed`, the keys read in Insert mode; unknown once an atom has none.
@@ -61,7 +69,7 @@ struct Window {
 // growing journal a prefix of the windows it yields later.
 class WindowCutter {
 public:
-  WindowCutter(std::span<const int> sizes, int64_t idleGapMs);
+  WindowCutter(std::span<const int> sizes, int64_t idleGapMs, bool keepSteps = false);
 
   // Appends the windows that `event` completes.
   void push(const Event& event, std::vector<Window>& out);
@@ -70,6 +78,7 @@ private:
   void closeGroup(std::vector<Window>& out);
 
   int64_t idleGapMs;
+  bool keepSteps;
   int64_t wallEpoch = 0;
   std::vector<Event> group;
   // One per size; `atomCount == 0` while unopened.

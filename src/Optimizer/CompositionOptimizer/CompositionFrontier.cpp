@@ -15,14 +15,14 @@ void emitInsertionStrategy(const CompositionFrontierQuery& query,
   if (!cursorInInsertionRange(query.cursor, s.targetLine, s.beginCol, s.endCol)) {
     return;
   }
-  emitter.emit(s.structural, s.goalPos);
+  emitter.emit(s.structural, s.entryPos);
 }
 
 void emitBracketQuoteStrategy(const CompositionFrontierQuery& query,
                               const CompositionStrategies::BracketQuote& s,
                               SuggestionEmitter& emitter) {
   if (query.cursor.line != s.line || query.cursor.col != s.col) return;
-  emitter.emit(s.structural, s.goalPos);
+  emitter.emit(s.structural, query.diff.isPureDeletion() ? s.goalPos : query.diff.beginPos);
 }
 
 // Activation gate: any column on the join plan's entry line.
@@ -30,35 +30,32 @@ void emitJoinAction(const CompositionFrontierQuery& query,
                     const JoinPlan& joinPlan,
                     SuggestionEmitter& emitter) {
   if (query.cursor.line != joinPlan.entryLine) return;
-  emitProgressJoin(query.lines, query.cursor, query.diff, emitter);
+  emitProgressJoin(query.lines, query.cursor, query.diff, emitter, true);
 }
 
 }  // namespace
 
-vector<Suggestion> rankCompositionFrontier(
+vector<Suggestion> collectCompositionEdits(
     const CompositionFrontierQuery& query,
-    const Config& config) {
+    const CompositionOptimizerParams& params, const Config& config) {
   vector<Suggestion> items;
   RunningEffort acceptedEffort(globalSequenceToKeys().tokenize(query.seq), config);
   const double acceptedCost = acceptedEffort.getEffort();
-  const CompositionOptimizerParams params = query.overrides
-      ? query.overrides->resolved(CompositionOptimizerParams{})
-      : CompositionOptimizerParams{};
   SuggestionEmitter emitter{
       items, {}, acceptedEffort, acceptedCost,
       params.effortWeight, params.distanceWeight, config};
 
   CompositionStrategies::enumerateInsertions(
-      query.diff, query.lines,
+      query.diff, query.lines, params.transform.indent,
       [&](const CompositionStrategies::Insertion& s) {
         emitInsertionStrategy(query, s, emitter);
       });
 
   if (!query.diff.isPureInsertion()) {
     BracketQuoteContext bqContext =
-        computeTextObjectContextForDiff(query.diff, query.lines);
+        computeTextObjectContextForDiff(query.diff, query.lines, query.boundary.hasLinesAbove());
     CompositionStrategies::enumerateBracketQuotes(
-        query.diff, query.lines, bqContext,
+        query.diff, query.lines, bqContext, params.transform.indent,
         [&](const CompositionStrategies::BracketQuote& s) {
           emitBracketQuoteStrategy(query, s, emitter);
         });
@@ -68,6 +65,5 @@ vector<Suggestion> rankCompositionFrontier(
     if (joinPlan) emitJoinAction(query, *joinPlan, emitter);
   }
 
-  sortAndCapSuggestions(items, query.maxCount, query.sortMode);
   return items;
 }

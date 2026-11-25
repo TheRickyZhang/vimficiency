@@ -327,9 +327,19 @@ class TransformStateFactory {
   }
 
   // A command after a curswant-following delete acts on the column it produced.
+  // A first delete that lands on a line no longer than the entry column clamps
+  // every curswant to the same column, so it does not follow it.
   inline static EntryCurswant extendEntryCurswant(const TransformState& base,
-                                                  EntryCurswant command) {
-    if (!base.pathTail_) return command;
+                                                  EntryCurswant command,
+                                                  const TransformEditorState& next) {
+    if (!base.pathTail_) {
+      const int line = next.getPos().line;
+      const Lines& lines = next.getLines();
+      const bool clampsAlike = command == EntryCurswant::Followed &&
+          line >= 0 && line <= lines.lastLine() &&
+          lines[line].lastCol() <= base.getPos().col;
+      return clampsAlike ? EntryCurswant::Ignored : command;
+    }
     return base.entryCurswant_ == EntryCurswant::Followed
         ? EntryCurswant::Required : base.entryCurswant_;
   }
@@ -375,7 +385,7 @@ public:
       EntryCurswant entryCurswant) const {
     TransformState state = base;
     state.editor = std::move(editor);
-    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant);
+    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant, state.editor);
     appendCommand(state, cmd, precomputed, heuristicCost);
     recordPathStep(state, base, std::string(cmd), false);
     return state;
@@ -391,7 +401,7 @@ public:
       EntryCurswant entryCurswant) const {
     TransformState state = base;
     state.editor = std::move(editor);
-    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant);
+    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant, state.editor);
     appendCountedCommand(state, count, baseCmd, precomputed, heuristicCost);
     state.lastEdit_ = DotRepeat{std::string(baseCmd), count};
     recordPathStep(state, base, countedCommandString(count, baseCmd), true);
@@ -409,7 +419,7 @@ public:
       std::shared_ptr<const GoalCompletion> completion) const {
     TransformState state = base;
     state.editor = std::move(editor);
-    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant);
+    state.entryCurswant_ = extendEntryCurswant(base, entryCurswant, state.editor);
     appendCommand(state, cmd, precomputed, 0.0);
     bool hasEdit = !lastEdit.empty();
     state.lastEdit_ = std::move(lastEdit);

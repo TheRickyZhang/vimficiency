@@ -10,6 +10,22 @@ return function(ctx)
 
   return {
   {
+    name = "Play shows observed plugin edits and groups commands in the same delivery",
+    run = function(next)
+      with_replay({}, { "abc" }, function()
+        local user = assert(sim._debug_get_pool().user)
+        assert_eq(#user.tokens, 1, "one observed boundary")
+        assert_eq(user.tokens[1].text, "Vdww", "all the delivered keys")
+        sim._debug_seek_to(1)
+        assert_eq(get_snapshot(1, 1), { lines = { "aXbc" }, cursor = { 1, 1 }, mode = "n" }, "recorded state")
+        sim._debug_seek_to(0)
+        assert_eq(get_snapshot(1, 0).lines, { "abc" }, "original text")
+      end, next, { recording = { row = 0, col = 0, mode = "n", steps = { {
+        keys = "Vdww", row = 0, col = 1, mode = "n", deltas = { { first = 0, old_count = 1, lines = { "aXbc" } } },
+      } } } })
+    end,
+  },
+  {
     name = "simulate replays insert and visual sequence with virtual header",
     run = function(next)
       with_replay({ "jf;i<BS>3<Esc><Space>ve", "j" }, {

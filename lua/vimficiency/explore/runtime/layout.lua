@@ -20,7 +20,8 @@ local M = {}
 ---@param source_buf integer
 ---@param source_win integer
 ---@return VF.Explore.Layout
-function M.build(label, initial_lines, source_buf, source_win)
+---@param indent VF.IndentOptions
+function M.build(label, initial_lines, source_buf, source_win, indent)
   vim.cmd("tabnew")
   local scratch_tab = v.nvim_get_current_tabpage()
   local scratch_win = v.nvim_get_current_win()
@@ -39,6 +40,7 @@ function M.build(label, initial_lines, source_buf, source_win)
   v.nvim_buf_delete(tabnew_buf, { force = true })
   v.nvim_buf_set_lines(scratch_buf, 0, -1, false, initial_lines)
   buf_window.copy_buffer_options(source_buf, scratch_buf)
+  require("vimficiency.indent").apply(scratch_buf, indent)
   buf_window.copy_window_options(source_win, scratch_win)
 
   local list_buf, list_win = buf_window.create_side_pane(

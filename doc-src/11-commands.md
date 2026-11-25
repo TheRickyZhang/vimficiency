@@ -24,6 +24,7 @@ title: "Commands reference"
 | `:Vimfy stats refresh`                     | Score the journal now, without opening the stats.    |
 | `:Vimfy suggest <on\|off\|toggle>`         | Runtime toggle for auto-suggest (works with zero config). |
 | `:Vimfy config`                            | Show the current configuration.                      |
+| `:Vimfy appearance`                        | Customize selection highlighting.                    |
 | `:Vimfy reload`                            | Rebuild and hot-reload Vimfy with live build output. |
 | `:Vimfy version`                           | Show the plugin version.                             |
 | `:Vimfy help`                              | Show the command list.                               |
@@ -129,14 +130,16 @@ Opens a tab with a header over one full-width pane:
 
 - **Header** — the scorings counted, the weight and the charted run length,
   over the path of the session log the stats are read from.
-- **Stats** — Sessions, Journal, the Commands tables, then Dev.
+- **Stats** — a Sessions band over a Journal band, with a faint line between
+  them (`VimficiencyStatsRule`). Each holds its efficiency chart, its
+  optimizer times and its own Commands tables.
 
-In a wide window the Commands tables sit to the right of Sessions and Journal.
-`l` past the right edge of the left side goes to the first command, and `h`
-from any command goes back to the chart.
+In a wide window a band's Commands tables sit to the right of its chart, and
+in a narrow one under it. `l` from the left side goes to that band's first
+command, and `h` from a command goes back to its chart.
 
-The stats are laid out as items: each row that lists runs, each chart,
-and each selector row. One item is always current. It is highlighted whole and
+The stats are laid out as items: rows that list runs or expand command lists,
+charts, and selector rows. One item is always current. It is highlighted whole and
 the cursor itself is hidden.
 
 `h`, `j`, `k` and `l` move to the item on that side, and the other keys act on
@@ -148,26 +151,32 @@ Keys in the stats (`?` lists them):
 |-----------------|-------------------------------------------------------------|
 | `j` / `k`       | The item below / above; a count moves that many.            |
 | `h` / `l`       | Change the active option on a selector row, or move to the item to the left / right. The arrow keys work the same way. |
-| `<CR>`          | Open the runs for a result row or expand a chart over the whole screen. |
+| `<CR>`          | Open a row's runs, open a full-screen chart, or expand or collapse a command list. |
 | `w`             | Switch the efficiency weight between effort and uniform for this view. |
 | `v`             | Count every scoring, or only the current one (see below).   |
+| `gs`            | Open `:Vimfy appearance`.                                   |
 | `q`             | Close the tab.                                              |
 
 `<Esc>` or `q` closes the float opened by `<CR>`. A
 chart fills its column in the stats and the whole screen in its float.
 
-The stats keep each section to its headline: the Sessions efficiency, the Journal's
-run lengths, and a chart each. The rest of a section is under the chart in its
-float.
+The stats keep each band's left side to its headline: the Sessions efficiency,
+the Journal's run lengths, a chart each and the optimizer times. The rest is
+under the chart in its float.
 
-The float's chart is as tall as the screen allows and draws two lines:
+The chart takes up most of the float. Scroll down with `<C-d>` or the mouse
+wheel to see the details below it. Moving back up to a chart bucket brings
+the entire plot into view. The chart draws two lines:
 the efficiency, solid, against the left axis, and the number of samples
 behind it, dotted, against the right. Each bucket's own value is a larger dot, placed to the nearest row, and
 the lines only join them; the float's title has the exact value. A line breaks where there are no samples. Their colors
-are `VimficiencyStatsEfficiency` and `VimficiencyStatsVolume`.
+are `VimficiencyStatsEfficiency` and `VimficiencyStatsVolume`. `e` and `s`
+hide and show the efficiency and the samples line. `+` shows more history
+and `-` shows less, from 15 minutes to 30 weeks. These keys change the
+history scale of the float. `?` lists the chart keys.
 
-In the chart's float each day with runs is an item, named with its efficiency in the
-title. `h` and `l` move between the days and `<CR>` lists a day's runs. The
+In the chart's float each bucket with runs is an item, named with its efficiency in the
+title. `h` and `l` move between buckets and `<CR>` lists the selected bucket's runs. The
 rows under the chart list their runs the same way.
 
 The run list floats over the tab at its full width, one line per session or
@@ -180,8 +189,9 @@ spaced by command and cut to two lines each. Under them is the run's text
 before and after, side by side, with the changed lines marked and the cursor's
 place shaded in each.
 
-A session keeps no text, so its preview is the keys alone. Runs older than
-`journal.keep_days` are rolled up: they count in the total but are not listed.
+A session keeps no text, so its preview is the keys alone. Runs from closed journals that have been idle for
+`journal.keep_days` and fully scored count toward totals after rollup. Only
+individual runs still on disk appear in the list.
 
 Every cell of the list is an item, as in the stats:
 
@@ -198,27 +208,38 @@ Sections:
 
 - **Sessions** — your percent efficiency: the best effort found over the effort
   you spent, `min(best / yours, 1)`, averaged over sessions. It never passes
-  100%: a session that beats the optimizer counts as 100%. By default each
-  session counts by the effort you spent on it, so long sessions count more;
-  set `stats.weight = "uniform"` to count each once (see
-  [configuration](09-configuration.md)). Look back groups the chart into 30 minutes, hours, days, or weeks. The average and sample count above the chart cover that period.
+  100%. A session that beats the optimizer and any unbeaten session with
+  positive user effort each count as 100%. By default, sessions are
+  weighted by the effort you spent. Set `stats.weight = "uniform"` to
+  count each once (see
+  [configuration](09-configuration.md)). The Look back selector sets both
+  overview efficiency charts and their Commands tables to the same period
+  of 30 minutes, hours, days, or weeks. The average and sample count above
+  each chart cover that period.
   Its float adds the total finished sessions by type (mark / watch / recall /
-  suggest), the commands recorded in them, and the sessions that were
-  unbeaten or had no solution, which are counted but not scored.
+  suggest) and the commands recorded in them. Its **Not scored** and
+  **Unbeaten** headings have selectable categories underneath, just as in
+  the Journal float.
   *You beat the optimizer* counts the scored sessions where your keys cost
   less than the best sequence found, and `<CR>` lists them. Each is a
   sequence the search missed or one the cost model underprices.
 - **Journal** — the same efficiency over everything you typed, not only
   finished sessions. Needs the [journal](09-configuration.md) turned on.
   See below.
-- **Commands** — for every command that appears at least ten times
-  combined across your scored sessions and journal runs and the
+- **Commands** — one set of tables per band, never added together: the
+  Sessions band counts your scored sessions, and the Journal band your scored
+  journal runs of the selected length, over the same Look back period as the
+  chart. The line over the tables counts comparisons that have a best
+  sequence. The efficiency chart also counts unbeaten runs.
+  For every command that appears at least ten times across those and the
   optimizer's best sequences for them, the ratio
   `your_share / optimizer_share`, with the two shares beside it. Three
   lists: *Underused commands*, which you use less than the optimizer
   (candidates to practice); *Overused commands*, which you use more
-  (potential inefficient habits); and *Never used by the optimizer* (the
-  five you use most). The target of `f`/`F`/`t`/`T`/`r`/`R` is
+  (potential inefficient habits); and *Never used by the optimizer*. Each
+  list starts with five rows. Press `<CR>` on
+  *… and N more* to reveal the remaining rows in place or on *Show fewer*
+  to collapse them again. The target of `f`/`F`/`t`/`T`/`r`/`R` is
   collapsed to `_`, an insert counts its entry command and editing keys
   such as `<BS>` (typed characters are only totalled), and `ce`/`cw`
   share a row, as do `cE`/`cW`; the row's run list names your split. A `gj` or `gk`
@@ -227,7 +248,18 @@ Sections:
   Under the lists, *Extra typed text* is how much more you typed in insert
   mode than the best sequences did; `<CR>` lists the runs where you typed
   more.
-- **Dev** — how long the optimizer took per session over the last 30 days.
+- **Optimizer times** — under each band's chart. Sessions: *Optimizer
+  response*, the median response time over the last 30 days; `<CR>` lists
+  those sessions, slowest first. Journal: *Movement search* and *Composition
+  search*, the search time for retained runs of the selected length; `<CR>`
+  opens the chart. These timing views use their own samples independently
+  of Look back. The Movement chart groups queries by lines from start to
+  goal. The Composition chart groups queries by buffer positions in the larger
+  before/after search slice. Each chart shows median milliseconds and
+  sample count for searches with a recorded duration and size, including
+  searches that finished without a solution. Select a bucket for its exact
+  values and any deadline hits. `<CR>` lists its runs, slowest first. p95
+  appears from 100 samples.
 
 A scoring is the plugin's scoring version plus the settings a score depends
 on. The stats count sessions and rolled-up journal runs from every scoring.
@@ -246,15 +278,38 @@ In the stats:
   optimizer more to merge, so they usually score lower.
 - **Percent efficiency** — the selected length’s average and sample count for the visible period. Minute and hour bars use timestamped samples. Archived daily totals also contribute to day and week bars.
 
-Under the chart in its float:
+If some of the journal still needs scoring under the current settings, its
+coverage percentage appears above the chart in the float. The float title
+shows the overall efficiency, run count and run length. A run that ends
+where it started counts as all waste. Below the chart:
 
-- **Efficiency** — the Sessions efficiency, for runs of the charted length, and how
-  many runs it covers. A run that ends where it started counts as all waste.
-- **Scored under the current settings** — how much of the journal that is.
-- **Movement only / With edits** — the charted runs split by whether the
-  text changed.
-- **Not scored** — runs left out of the score: the changed region was too
-  large, the search found nothing, or the search failed.
+- **Movement only / With edits** — one bar, split by whether the text
+  changed, each side as wide as its share of the scored runs and titled with
+  its efficiency. Their colors are `VimficiencyStatsMovement` and
+  `VimficiencyStatsEdit`.
+- **Size** — the label to the left of the ranges under the second bar,
+  which uses the same size groups as the search-time charts. For movement and
+  edits, size is the larger of the before and after position counts in the
+  unpadded region. That region covers both
+  cursor rows and all net changes. Matching rows are trimmed from the top and
+  bottom up to the cursors, so inserting or deleting a line leaves an unchanged
+  tail out of the count. Each byte in a line counts as one position, and an
+  empty line counts as one. Runs without a recorded size are drawn shaded (`░`).
+- **Not scored** — runs left out of the score, in `VimficiencyStatsNotScored`.
+  The rows under it say why: the changed region was too large, the search
+  found nothing, or the search failed.
+- **Unbeaten** — runs where no modeled sequence came close to your keys,
+  scored as 100%, in `VimficiencyStatsUnbeaten`. The rows under it count the
+  runs with a bare paste (`p`, `P`, `gp`, `gP`) or undo or redo (`u`, `U`,
+  `<C-r>`). A run with both counts under each. *Other* counts runs with
+  neither. Rolled-up runs contribute only to the heading total because
+  their command details are gone.
+
+`<CR>` on a row under either heading lists its runs.
+
+Every segment of either bar is an item: `h` and `l` move along a bar, `j`
+and `k` between them, and the float's title has the segment's efficiency and
+run count. `<CR>` opens the run list for the selected segment.
 
 A run is dropped, not scored, when the journal cannot account for everything
 in it: you switched buffer or window, an ex command or mouse click changed

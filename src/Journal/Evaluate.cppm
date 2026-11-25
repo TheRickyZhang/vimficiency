@@ -39,12 +39,14 @@ struct Sample {
   bool netZero = false;
   bool deadlineHit = false;
   double analyzeMs = 0;
+  int querySize = 0;
 };
 
 struct WindowSlice {
-  // Scored, TooLarge or Unsupported; `inputs` is filled only when Scored.
+  // Scored, TooLarge or Unsupported; inputs and size are filled only when Scored.
   Outcome outcome = Outcome::Scored;
   SearchInputs inputs;
+  int querySize = 0;
 };
 
 // The window cut down to the search a session over it would run. Only

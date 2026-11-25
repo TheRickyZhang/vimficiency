@@ -31,15 +31,14 @@ local fields = {
   -- A Lua-callback mapping that moves the cursor or changes text is lossy: Neovim
   -- cannot report replayable keys for it. "drop" ends the session; "warn" and
   -- "allow" record the typed keys (`lhs`) instead, "warn" with a once-per-session
-  -- notice. Replay is faithful only when the callback did what those keys do in
-  -- plain Vim.
+  -- notice. Play uses the observed state.
   lossy_mappings = "warn",
 
   -- Off by default: the journal writes the text of every edited buffer to disk.
   journal = {
     enabled = false,
     snapshot_every = 500, -- atoms per buffer between full-text snapshots
-    -- A journal file untouched this many days is reduced to daily totals once
+    -- A closed journal untouched this many days is reduced to daily totals once
     -- scored, then deleted with its samples. Its runs then count only toward
     -- the settings they were scored under.
     keep_days = 90,
@@ -62,6 +61,11 @@ local fields = {
     -- the effort you spent on it, so long ones count more; "uniform" counts
     -- each once.
     weight = "effort",
+  },
+
+  ui = {
+    selection_color = "IncSearch",
+    selection_strength = 35,
   },
 
   -- Session features
@@ -148,6 +152,7 @@ function fields.apply(user_config)
   merged.lossy_mappings = validate.normalize_lossy_mappings(merged.lossy_mappings)
   merged.journal = validate.normalize_journal(merged.journal)
   merged.stats = validate.normalize_stats(merged.stats)
+  merged.ui = validate.normalize_ui(merged.ui)
 
   for name, value in pairs(merged) do
     if fields._defaults[name] ~= nil then

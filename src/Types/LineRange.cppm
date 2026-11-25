@@ -11,6 +11,8 @@ struct LineRange {
 
   constexpr LineRange(int begin, int end) : beginLine(begin), endLine(end) {}
 
+  constexpr int lineCount() const { return std::abs(endLine - beginLine); }
+
   inline void normalize() {
     if (endLine < beginLine) {
       std::swap(beginLine, endLine);

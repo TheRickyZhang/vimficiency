@@ -1,5 +1,5 @@
 ---@class (exact) VF.Stats.Query
----@field summary     fun(scope: VF.Stats.Scope): VF.Stats.Summary
+---@field summary     fun(scope: VF.Stats.Scope, scale?: VF.Stats.ChartScale): VF.Stats.Summary
 ---@field runs        fun(scope: VF.Stats.Scope, order: VF.Stats.Order, ascending: boolean, offset: integer, limit: integer): VF.Stats.RunList
 ---@field run         fun(id: VF.Stats.RunId): VF.Stats.RunDetail|nil, string|nil
 local M = {}
@@ -34,9 +34,16 @@ local function request(scope)
 end
 
 ---@param scope VF.Stats.Scope
+---@param scale? VF.Stats.ChartScale
 ---@return VF.Stats.Summary
-function M.summary(scope)
-  return ffi_stats.summary(request(scope))
+function M.summary(scope, scale)
+  local params = request(scope)
+  if scale then
+    params.chart_unit = scale.unit
+    params.chart_bucket_size = scale.bucket_size
+    params.chart_buckets = scale.buckets
+  end
+  return ffi_stats.summary(params)
 end
 
 --- The runs `M.summary` reduces under the same scope, one page of them.

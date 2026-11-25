@@ -23,7 +23,7 @@ local v = vim.api
 ---Open the modal. Returns a handle so callers can implement `gs` toggle.
 ---@param rows table[]
 ---@param on_change fun()|nil
----@param opts? { title?: string, on_close?: fun() }
+---@param opts? { title?: string, on_close?: fun(), on_render?: VF.SettingsWidget.RenderHook }
 ---@return VF.SettingsWidget.Handle?
 function M.open(rows, on_change, opts)
   if #rows == 0 then return nil end
@@ -85,6 +85,7 @@ function M.open(rows, on_change, opts)
     value_gap = value_gap,
     on_change = on_change,
     on_close = opts.on_close,
+    on_render = opts.on_render,
   })
 end
 

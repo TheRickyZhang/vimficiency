@@ -59,6 +59,18 @@ test("simulate tokenization emits replay-safe command steps", function()
     "change|typed|typed|typed|escape")
 end)
 
+test("replay errors show whole keys and identify incomplete notation", function()
+  for _, case in ipairs({
+    { "Vd", 'unrecognized key "d" at byte 2 of "Vd"' },
+    { "w<F12>", 'unrecognized key "<F12>" at byte 2 of "w<F12>"' },
+    { "w<F12", 'incomplete special key "<F12" at byte 2 of "w<F12"' },
+    { "wé", 'unrecognized key "é" at byte 2 of "wé"' },
+  }) do
+    local tokens = sim._debug_tokenize_for_animation(case[1])
+    assert_eq(tokens[1].error, case[2])
+  end
+end)
+
 test("simulate tokenization preserves NUL bytes in typed text", function()
   local nul = string.char(0)
   local tokens = sim._debug_tokenize_for_animation("i" .. nul .. "x<Esc>")

@@ -11,6 +11,7 @@ import vf.Optimizer.SearchStats;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
 import vf.Types.NavContext;
+export import vf.VimCore.VimOptions;
 
 export {
 
@@ -23,6 +24,7 @@ struct SessionEnds {
   int endCol = 0;
   int windowHeight = 0;
   int scrollAmount = 0;
+  IndentOptions indent;
 };
 
 // A session cut down to the rows a search needs. Rows are relative to the slice.
@@ -47,6 +49,7 @@ struct SearchInputs {
   CursorPos goalPos{0, 0};
   NavBoundary boundary;
   NavContext navContext;
+  IndentOptions indent;
   std::string userSeq;
   std::string userTyped;
   OptimizerParamOverrides overrides;
@@ -69,10 +72,32 @@ struct AnalyzeOutput {
 // no horizontal prefix or suffix; only the lines cut off above and below vary.
 NavBoundary sliceBoundary(const Lines& lines, bool hasLinesAbove, bool hasLinesBelow);
 
-// Inclusive rows covering both cursors and every changed line, plus `padding`.
-std::pair<int, int> computeSearchRegion(
+struct UntouchedRows {
+  int above = std::numeric_limits<int>::max();
+  int below = std::numeric_limits<int>::max();
+
+  inline void include(int prefix, int suffix) {
+    above = std::min(above, prefix);
+    below = std::min(below, suffix);
+  }
+};
+
+// Half-open row ranges covering visited rows and edits, with shared padding.
+struct SearchRegion {
+  int begin;
+  int initialEnd;
+  int goalEnd;
+  int paddingAbove;
+  int paddingBelow;
+
+  inline int paddedHeight() const {
+    return std::max(initialEnd, goalEnd) - begin + paddingAbove + paddingBelow;
+  }
+};
+
+SearchRegion computeSearchRegion(
     int startRow, int endRow, const Lines& startLines, const Lines& endLines,
-    int padding);
+    int padding, UntouchedRows untouched = {});
 
 // Whether `keys` is one screen-line motion: `[count]gj` or `[count]gk`.
 bool isScreenLineMotion(std::string_view keys);
@@ -80,7 +105,7 @@ bool isScreenLineMotion(std::string_view keys);
 // Rows `region` (from computeSearchRegion) of a session, as one search problem.
 SearchSlice sliceSearch(
     const Lines& initialLines, const Lines& goalLines, const SessionEnds& ends,
-    std::string_view userSeq, std::string_view userTyped, std::pair<int, int> region);
+    std::string_view userSeq, std::string_view userTyped, const SearchRegion& region);
 
 SearchInputs searchInputs(SearchSlice slice, OptimizerParamOverrides overrides);
 

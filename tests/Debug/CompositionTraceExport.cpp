@@ -15,7 +15,7 @@
 // never drift from the production search.
 //
 // Run:
-//   VIMFY_TRACE_OUT=anim/search-walkthrough/trace.json \
+//   VIMFY_TRACE_OUT=anim/.cache/composition-full.json \
 //     ./build/tests/vimfy_debug --gtest_filter='CompositionTraceExport.*'
 // Optional: VIMFY_TRACE_INITIAL / VIMFY_TRACE_GOAL override the example
 // (literal "\n" for newlines). Without VIMFY_TRACE_OUT the equality checks
@@ -305,7 +305,7 @@ TEST(CompositionTraceExport, ExportExample) {
           node.children.push_back(std::move(c));
         }
       };
-      CompositionStrategies::enumerateInsertions(nextEdit, currentLines, dispatchInsertion);
+      CompositionStrategies::enumerateInsertions(nextEdit, currentLines, params.transform.indent, dispatchInsertion);
       return;
     }
 
@@ -340,7 +340,7 @@ TEST(CompositionTraceExport, ExportExample) {
     const BracketQuoteContext& bqContext = ctx.edits[editsCompleted].bracketQuoteContext;
     if (bqContext.line == pos.line) {
       CompositionStrategies::enumerateBracketQuotes(
-          nextEdit, currentLines, bqContext,
+          nextEdit, currentLines, bqContext, params.transform.indent,
           [&](const CompositionStrategies::BracketQuote& bq) {
             if (bq.line != pos.line || bq.col != pos.col) return;
             ChildRec c{"textobj", bq.body, 0,

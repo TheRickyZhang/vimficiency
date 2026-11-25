@@ -8,6 +8,8 @@ package vf.stats;
 import "journal.proto";
 import "stats.proto";
 
+import "common.proto";
+
 option optimize_for = LITE_RUNTIME;
 
 enum ChartUnit {
@@ -39,10 +41,12 @@ message Filter {
     int64 first = 1;
     int64 last = 2;
   }
-  // Any of `tokens`, command classes as the command tables count them, on `side`.
+  // Any of `tokens`, command classes as the command tables count them, on
+  // `side`; with `absent`, none of them.
   message Commands {
     repeated bytes tokens = 1;
     Side side = 2;
+    bool absent = 3;
   }
 
   Source source = 1;
@@ -64,6 +68,8 @@ message Filter {
   // Only runs whose keys cost less than the best sequence found. Leaves
   // rollups out, as `commands` does.
   bool beats = 9;
+  bool timed = 10;
+  InclusiveRange query_size = 11;
 }
 
 message SummaryRequest {
@@ -87,6 +93,8 @@ message SummaryRequest {
   // window size overrides it.
   int32 charted_size = 8;
   ChartUnit chart_unit = 9;
+  uint32 chart_bucket_size = 10;
+  uint32 chart_buckets = 11;
 }
 
 // Σ w·min(best/user, 1) / Σ w × 100 over `spans`; `score` is unset when there
@@ -98,7 +106,7 @@ message Score {
 
 // Every `drill` is the request's filter narrowed to the runs its row counts.
 message DayScore {
-  // Offset in chart units, zero for the current bucket.
+  // Offset in buckets, zero for the current bucket.
   int32 days_ago = 1;
   double score = 2;
   Filter drill = 3;
@@ -122,12 +130,35 @@ message Timing {
   double p95 = 3;
   double p99 = 4;
   double max = 5;
+  Filter drill = 6;
+}
+
+// The charted runs whose query size is in [first, last]; the last bucket has
+// no `last`.
+message TimingBucket {
+  int32 first = 1;
+  int32 last = 2;
+  Timing timing = 3;
+  int32 deadline_hit = 4;
+  // Over its scoring runs, timed or not, which `drill` lists.
+  Score score = 5;
+  Filter drill = 6;
+}
+
+// A guess at why nothing came near some unbeaten runs: they hold a command the
+// search does not model. A run counts under each tag it holds and under
+// `other` when it holds none; a rolled-up one, which keeps no commands, is in
+// no tag.
+message UnbeatenTag {
+  string name = 1;
+  int32 runs = 2;
+  Filter drill = 3;
 }
 
 message SessionSummary {
   int32 sessions = 1;
   Score score = 2;
-  // The last 30 chart buckets.
+  // The visible chart buckets with data.
   repeated DayScore days = 3;
   int32 no_result = 4;
   int32 unbeaten = 5;
@@ -139,6 +170,8 @@ message SessionSummary {
   Filter unbeaten_drill = 9;
   Score chart_score = 10;
   Filter beats_drill = 11;
+  CommandSummary commands = 12;
+  repeated UnbeatenTag unbeaten_tags = 13;
 }
 
 message SizeScore {
@@ -178,6 +211,10 @@ message JournalSummary {
   Filter edit_drill = 15;
   Filter unbeaten_drill = 16;
   Score chart_score = 17;
+  repeated TimingBucket nav_timing = 18;
+  repeated TimingBucket edit_timing = 19;
+  CommandSummary commands = 20;
+  repeated UnbeatenTag unbeaten_tags = 21;
 }
 
 message CommandRow {
@@ -195,29 +232,29 @@ message CommandRow {
   double optimizer_share = 8;
 }
 
-// Commands of the scored spans: the sessions and the journal runs of the
-// charted size.
+// Commands of one source's scored spans in the chart's buckets: the sessions,
+// or the journal runs of the charted size.
 message CommandSummary {
-  int32 sessions = 1;
-  int32 runs = 2;
+  reserved 2, 8;
+  reserved "runs", "never_cut";
+  int32 spans = 1;
   repeated CommandRow more = 3;
   repeated CommandRow less = 4;
   int64 user_typed_chars = 5;
   int64 optimizer_typed_chars = 6;
   // Commands only the user uses, most used first; never in `more`.
   repeated CommandRow never = 7;
-  // How many more of those there are.
-  int32 never_cut = 8;
   // The runs where the user typed more than the best sequence.
   Filter typed_drill = 9;
 }
 
 message Summary {
+  reserved 4;
+  reserved "commands";
   ChartUnit chart_unit = 30;
   Lifetime lifetime = 1;
   SessionSummary sessions = 2;
   JournalSummary journal = 3;
-  CommandSummary commands = 4;
   // The current stamp's, `scoring <N>·<id>`.
   string scoring_label = 5;
   // Sessions and rolled-up runs `current_only` leaves out.
@@ -314,7 +351,7 @@ message RunDetail {
   int32 end_row = 4;
   int32 end_col = 5;
   // Resolved keys as the search scored them (`sliceSearch` approximates gj/gk),
-  // like a session's `user_seq`, so replay feeds the same sequence.
+  // like a session's `user_seq`.
   bytes keys = 6;
   // Physical keys.
   bytes typed = 7;
@@ -322,4 +359,26 @@ message RunDetail {
   string filetype = 8;
   // The slice's ending text.
   repeated bytes goal_lines = 9;
+  repeated Command commands = 10;
+  Recording recording = 11;
+  vf.IndentOptions indent = 12;
+}
+
+message Recording {
+  message Delta {
+    int32 first = 1;
+    int32 old_count = 2;
+    repeated bytes lines = 3;
+  }
+  message Step {
+    bytes keys = 1;
+    int32 row = 2;
+    int32 col = 3;
+    string mode = 4;
+    repeated Delta deltas = 5;
+  }
+  int32 row = 1;
+  int32 col = 2;
+  string mode = 3;
+  repeated Step steps = 4;
 }

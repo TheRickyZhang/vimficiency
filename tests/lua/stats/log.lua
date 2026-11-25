@@ -131,16 +131,17 @@ end)
 ---@return VF.Stats.CommandSummary
 local function commands_after_ten_inserts(user_typed_insert)
   h.use_temp_data_home()
-  for epoch = 1, 10 do
+  local now = os.time()
+  for ago = 1, 10 do
     stats_log.append("mark", h.finished_result("if()<C-g>U<Left><BS><Esc>", {
       user_cost = 3.0,
-      finished_wall_epoch = epoch,
+      finished_wall_epoch = now - ago,
       commands = { { keys = "if()<C-g>U<Left><BS><Esc>", kind = "insert" } },
       user_typed_insert = user_typed_insert,
       optimal_results = { { seq = "if)<Esc>", cost = 1.0 } },
     }))
   end
-  return stats_query.summary({ current_only = false, weight = "effort", filter = {}, charted_size = 0 }).commands
+  return stats_query.summary({ current_only = false, weight = "effort", filter = {}, charted_size = 0 }).sessions.commands
 end
 
 test("stats.log: a session's insert text is the keys pressed in it, not the keys that ran", function()

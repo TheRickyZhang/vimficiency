@@ -102,11 +102,11 @@ test("recall records rebuild their own start text", function()
   local win = vim.api.nvim_get_current_win()
   local atom = { keys = "x", typed = "x", buf = buf, win = win, lossy = false }
 
-  session_store.ingest_recall_atom(atom)
+  session_store.ingest_recall_atom(vim.deepcopy(atom))
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "b", "b2" })
-  session_store.ingest_recall_atom(atom)
+  session_store.ingest_recall_atom(vim.deepcopy(atom))
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "c" })
-  session_store.ingest_recall_atom(atom)
+  session_store.ingest_recall_atom(vim.deepcopy(atom))
 
   local older = assert(session_store.get_active("2"))
   local newer = assert(session_store.get_active("1"))
@@ -145,8 +145,14 @@ test("reload drops the buffer's recall records and reseeds on the next atom", fu
   local buf = vim.api.nvim_get_current_buf()
   local win = vim.api.nvim_get_current_win()
   local _, _, id = h.seed_recall({ buf = buf })
+  local capture = require("vimficiency.capture.state")
+  local named = session_store.new_active_session("reload-mark", nil, win, buf, capture.capture_state(buf, win), "mark")
+  session_store.store_named("reloadmark", named)
 
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "unsaved" })
+  session_store.append_atom(named, {
+    kind = "operator", keys = "x", typed = "x", typed_insert = "", win = win, buf = buf, lossy = false,
+  })
   vim.cmd("edit!")
   assert_eq(session_store.summarize(id), nil)
 
@@ -155,6 +161,10 @@ test("reload drops the buffer's recall records and reseeds on the next atom", fu
   session_store.ingest_recall_atom(atom)
   local rec = assert(session_store.get_active("1"))
   assert_eq(buffer_history.lines_at(buf, rec.start_seq), { "on disk" })
+  local recording = require("vimficiency.capture.recording").capture(named, { "on disk" }, capture.capture_state(buf, win))
+  assert_eq(recording.steps[1].deltas[1].lines, { "unsaved" })
+  assert_eq(recording.steps[2].deltas[1].lines, { "on disk" })
+  session_store.remove(named.id)
 
   vim.api.nvim_buf_delete(buf, { force = true })
   vim.fn.delete(path)

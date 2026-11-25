@@ -2,13 +2,12 @@
 
 -- `##CmdAtom` (Neovim 0.13-dev+) fires once per atomic user action, after the
 -- action has run, carrying the resolved post-mapping `keys` alongside the
--- as-typed `lhs`.--
+-- as-typed `lhs`.
 
 -- The event is *deferred*: under fast typeahead every atom for a burst of input
 -- arrives back-to-back once control returns to the main loop, by which point the
 -- buffer is already at its final state. Subscribers that need pre-action buffer
--- state must therefore shift (atom i's start == atom i-1's end), not read it at
--- atom time. See `dev/lua/atom-stream.md`.
+-- state use the preceding delivery's mark. See `dev/lua/atom-stream.md`.
 
 ---@class (exact) VF.AtomStream
 ---@field supported       fun(): boolean
@@ -37,13 +36,16 @@ local util = require("vimficiency.util")
 --- The event's other fields (`lhs`, `count`, `changed`, `moved`) are consumed by
 --- `classify`, `describe_abort` and `strip_synthetic_count` and not forwarded.
 ---@class VF.Atom
+---@field visited_rows? integer[]   # Extremes of CmdAtom's reported starting rows, including subatoms.
+---@field tick? integer
+---@field mark? VF.Session.RecallMark
 ---@field keys         string        # Replayable post-mapping sequence (notation); "" when unavailable. Feed this to the simulator/optimizer.
 ---@field kind         string        # The event's `type`: operator, insert, motion, normal, visual, jump, scroll, excmd, mouse or mapping.
 ---@field typed        string        # Physical keys pressed since the previous atom (notation). Cost the user by these; never replay them. Atoms delivered together cannot be told apart, so an earlier one carries the keys of a later one, which gets "".
 ---@field typed_insert string        # Of `typed`, the insert text: keys pressed in an insert that did not end it. `keys` also holds what mappings typed there.
 ---@field buf          integer       # Buffer the atom fired for (`ev.buf`).
 ---@field win          integer       # Focused window at atom time.
----@field lossy        boolean       # `keys` is the typed lhs of a Lua-callback mapping (lossy_mappings ~= "drop"); replay may diverge.
+---@field lossy        boolean       # `keys` is the typed lhs of a Lua callback; its expansion is unknown.
 ---@field abort_reason string|nil    # Only for "abort": what made the atom unreplayable and what it did, for the user-facing drop notice.
 
 -- What we tag this atom as, informing our decision
@@ -287,6 +289,20 @@ local function take_pressed()
   return table.concat(typed), table.concat(typed_insert)
 end
 
+local tick = 0
+local tick_open = false
+
+local function visited_rows(data, rows)
+  if data.pos and data.pos[1] > 0 then
+    local row = data.pos[1] - 1
+    rows[1], rows[2] = math.min(rows[1] or row, row), math.max(rows[2] or row, row)
+  end
+  if data.atoms then
+    for _, child in ipairs(data.atoms) do visited_rows(child, rows) end
+  end
+  return rows
+end
+
 local function dispatch(ev)
   local d = ev.data
   local keys_raw = d.keys
@@ -307,9 +323,18 @@ local function dispatch(ev)
   end
   local decision = classify(d.type, keys_raw, keys_norm, changed, moved)
   local typed, typed_insert = take_pressed()
+  local rows = visited_rows(d, {})
+  if rows[2] == rows[1] then rows[2] = nil end
+  if not tick_open then
+    tick = tick + 1
+    tick_open = true
+    vim.schedule(function() tick_open = false end)
+  end
 
   ---@type VF.Atom
   local atom = {
+    visited_rows = rows,
+    tick = tick,
     keys  = keys_norm,
     kind  = d.type,
     typed = typed,

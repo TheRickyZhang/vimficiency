@@ -22,13 +22,15 @@ WindowState stateAfter(const Event& event) {
       .col = event.col,
       .windowHeight = event.windowHeight,
       .scrollAmount = event.scrollAmount,
+      .indent = event.indent,
       .ms = event.ms,
   };
 }
 
 }  // namespace
 
-WindowCutter::WindowCutter(span<const int> sizes, int64_t idleGapMs) : idleGapMs(idleGapMs) {
+WindowCutter::WindowCutter(span<const int> sizes, int64_t idleGapMs, bool keepSteps)
+    : idleGapMs(idleGapMs), keepSteps(keepSteps) {
   for (const int size : sizes) open.push_back(Window{.size = size});
 }
 
@@ -48,7 +50,7 @@ void WindowCutter::push(const Event& event, vector<Window>& out) {
 void WindowCutter::closeGroup(vector<Window>& out) {
   const Event& last = group.back();
   // A cursor past the end of the text means the journal lost track of it.
-  const bool clean = last.lines && last.normalMode && last.row < ssize(*last.lines);
+  const bool clean = last.lines && last.normalMode && last.row >= 0 && last.row < ssize(*last.lines);
 
   // Whether the anchor, this group's recorded atoms and its last state are the
   // whole story of what happened.
@@ -75,6 +77,18 @@ void WindowCutter::closeGroup(vector<Window>& out) {
   }
 
   if (vouched) {
+    UntouchedRows untouched;
+    int minHeight = ssize(*anchor.lines);
+    for (const Event& event : group) {
+      untouched.include(event.untouched.above, event.untouched.below);
+      minHeight = min(minHeight, event.minHeight);
+    }
+    for (const Event& event : group) {
+      for (const int row : event.visitedRows) {
+        if (row >= 0) untouched.include(row, std::max(0, minHeight - row - 1));
+      }
+    }
+    untouched.include(last.row, last.lines->size() - last.row - 1);
     // Only an atom alone in its tick has a state of its own to judge by.
     const bool withinLine = group.size() == 1 && last.row == anchor.row &&
                             last.col != anchor.col && isScreenLineMotion(last.keys);
@@ -96,6 +110,8 @@ void WindowCutter::closeGroup(vector<Window>& out) {
       }
     }
     for (Window& window : open) {
+      if (window.atomCount > 0) window.untouched.include(untouched.above, untouched.below);
+      if (keepSteps && recorded) window.steps.push_back({window.commands.size(), stateAfter(last)});
       if (window.atomCount < window.size) continue;
       window.end = stateAfter(last);
       window.wallEpoch = wallEpoch + last.ms / 1000;

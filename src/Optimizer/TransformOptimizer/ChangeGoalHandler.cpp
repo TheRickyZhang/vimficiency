@@ -68,7 +68,7 @@ ChangeGoalHandler::ChangeGoalHandler(
     double effortWeight, const Config& config,
     const TransformBoundary&, const Lines& initialLines,
     const Lines& goalLines, const string& pre,
-    const string& suf, const string& preSuf)
+    const string& suf, const string& preSuf, const IndentOptions& indent)
     : effectiveLines(effectiveLines),
       leftColOffset(leftColOffset),
       effortWeight(effortWeight),
@@ -77,15 +77,15 @@ ChangeGoalHandler::ChangeGoalHandler(
       goalLines(goalLines),
       pre(pre),
       suf(suf),
-      preSuf(preSuf) {
-  typed = buildTypedCommands(goalLines, "", pre, suf);
+      preSuf(preSuf), indent(indent) {
+  typed = buildTypedCommands(goalLines, "", pre, suf, indent);
   typedEffort = RunningEffort(typed.keys, config);
 
-  if constexpr (VimOptions::autoindent()) {
-    goalFirstIndentLen = ssize(leadingWhitespace(goalLines[0]));
-    if (goalFirstIndentLen > 0) {
+  if (indent.autoindent) {
+    goalFirstIndent = IndentOptions::leadingIndent(goalLines[0]);
+    if (!goalFirstIndent.empty()) {
       typedAfterIndent = buildTypedCommands(
-          goalLines, leadingWhitespace(goalLines[0]), pre, suf);
+          goalLines, goalFirstIndent, pre, suf, indent);
       afterIndentEffort = RunningEffort(typedAfterIndent.keys, config);
     }
   }
@@ -118,15 +118,6 @@ bool ChangeGoalHandler::isDotRepeat(const TransformState& base, const SequenceBi
 }
 
 // Static helpers
-
-KeyedSequence ChangeGoalHandler::buildCollapseSequence(int totalLines, int cursorLine) {
-  assert(cursorLine >= 0 && cursorLine < totalLines &&
-         "cursorLine must be within [0, totalLines)");
-  KeyedSequence ks;
-  ks.append(KeyedSequence::BS, cursorLine);
-  ks.append(KeyedSequence::Del, totalLines - 1 - cursorLine);
-  return ks;
-}
 
 // The "cleared shell" is the buffer shape `isGoalReached` accepts before the
 // typed completion runs: lines[0] == pre, lines[last] == suf, all middle lines
@@ -163,7 +154,7 @@ KeyedSequence ChangeGoalHandler::buildClearedShellEntry(
     entry += KeyedSequence::A;
     return entry;
   }
-  if (cursorCol != 0) {
+  if (cursorLine > 0 && cursorCol != 0) {
     entry += KeyedSequence::Zero;
   }
   entry += KeyedSequence::i;
@@ -213,18 +204,14 @@ KeyedSequence ChangeGoalHandler::deleteToChangeChar(const SequenceBinding& sourc
 }
 
 KeyedSequence ChangeGoalHandler::deleteToChangeLine(const SequenceBinding& sourceCmd,
-                                                    string_view lineContent) {
+                                                    string_view lineContent, bool autoindent) {
   int count = sourceCmd.count;
   const KeyedSequence& baseKS = sourceCmd.base;
   string_view baseCmd = baseKS.seq.view();
 
   if (baseCmd == "dd") {
     if (count == 0) {
-      if constexpr (VimOptions::autoindent()) {
-        if (!leadingWhitespace(lineContent).empty()) {
-          return KeyedSequence::ZeroC;
-        }
-      }
+      if (autoindent && !IndentOptions::leadingIndent(lineContent).empty()) return KeyedSequence::ZeroC;
       return KeyedSequence::cc;
     }
     return withOptionalCount(count, KeyedSequence::cc);
@@ -378,7 +365,7 @@ GoalStates ChangeGoalHandler::emitEditGoal(
     const SequenceBinding& sourceCmd,
     const KeyedSequence& goalCompletionCmd,
     const TypedGoalVariants& typedVariants,
-    bool allowDotGoalPath) {
+    const TransformEditorState* repeatLanding) {
   double completionPenalty = sourceCmd.effort.getPenalty();
 
   debug("emitEditGoal:",
@@ -409,19 +396,19 @@ GoalStates ChangeGoalHandler::emitEditGoal(
 
   GoalStates result{std::move(normalState), nullopt};
 
-  if (allowDotGoalPath) {
+  if (repeatLanding && isDotRepeat(base, sourceCmd)) {
     KeyedSequence dotSeq(".", KeyedSequence::Period.keys);
-    int totalLines = static_cast<int>(postCompletionState.getLines().size());
-    int cursorLine = postCompletionState.getPos().line;
+    int totalLines = static_cast<int>(repeatLanding->getLines().size());
+    int cursorLine = repeatLanding->getPos().line;
     dotSeq += buildClearedShellEntry(
-        totalLines, cursorLine, postCompletionState.getPos().col);
+        totalLines, cursorLine, repeatLanding->getPos().col);
     dotSeq += buildCollapseSequence(totalLines, cursorLine);
     RunningEffort dotPrefixEffort(dotSeq.keys, config);
     RunningEffort dotEffort = RunningEffort::merge(dotPrefixEffort, typedVariants.dotTyped.effort, config);
     dotSeq += typedVariants.dotTyped.sequence;
 
     result.dotVariant = states.afterGoalCommand(
-        base, postCompletionState, dotSeq.seq.view(), dotEffort, base.getLastEdit(),
+        base, *repeatLanding, dotSeq.seq.view(), dotEffort, base.getLastEdit(),
         EntryCurswant::Ignored, completion);
   }
 
@@ -445,74 +432,38 @@ Result ChangeGoalHandler::resultFromClearedGoal(const TransformState& base) cons
   return Result(seq, totalEffort);
 }
 
-GoalStates ChangeGoalHandler::emitLinewiseChangeGoal(
+GoalStates ChangeGoalHandler::onDeletionGoal(
     const TransformEditorState& afterDel, const TransformState& base,
-    const SequenceBinding& sourceCmd, int line,
-    int ccLineCount, const KeyedSequence& changeCmd,
-    bool applyAutoindent) {
-  bool isDot = isDotRepeat(base, sourceCmd);
-  int autoindentLen = 0;
-  if constexpr (VimOptions::autoindent()) {
-    if (applyAutoindent) {
-      autoindentLen = ssize(leadingWhitespace(base.getLines()[line]));
-    }
-  }
-
-  KeyedSequence changePrefix = changeCmd;
-  bool useAfterIndent = false;
-  bool bsInCollapse = ccLineCount > 1 && line > 0;
-  if constexpr (VimOptions::autoindent()) {
-    if (applyAutoindent && !bsInCollapse) {
-      changePrefix += computeIndentAdjustment(autoindentLen, goalFirstIndentLen);
-      changePrefix += buildCollapseSequence(ccLineCount, line);
-      useAfterIndent = goalFirstIndentLen > 0;
-    } else if (applyAutoindent && bsInCollapse) {
-      int bsClear = autoindentLen > 0 ? bsCountForIndent(autoindentLen, 0) : 0;
-      changePrefix.append(KeyedSequence::BS, bsClear + line);
-      changePrefix.append(KeyedSequence::Del, ccLineCount - 1 - line);
-    } else {
-      changePrefix += buildCollapseSequence(ccLineCount, line);
-    }
-  } else {
-    changePrefix += buildCollapseSequence(ccLineCount, line);
-  }
-
-  const auto& suffixTyped = useAfterIndent ? typedAfterIndent : typed;
-  const auto& suffixEffort = useAfterIndent ? afterIndentEffort : typedEffort;
-  TypedGoalVariants typedVariants{{suffixTyped, suffixEffort}, {typed, typedEffort}};
-  return emitEditGoal(afterDel, base, sourceCmd, changePrefix, typedVariants, isDot);
+    const SequenceBinding& sourceCmd, const TransformEditorState* repeatLanding) {
+  KeyedSequence prefix = buildChangePrefix(sourceCmd, afterDel.getLines(), afterDel.getPos());
+  TypedGoalVariants typedVariants{{typed, typedEffort}, {typed, typedEffort}};
+  return emitEditGoal(afterDel, base, sourceCmd, prefix, typedVariants, repeatLanding);
 }
 
 GoalStates ChangeGoalHandler::onLinewiseGoal(
     const TransformEditorState& afterDel, const TransformState& base, LineRange range,
-    const SequenceBinding& sourceCmd) {
-  int line = range.beginLine;
-  KeyedSequence changeCmd = deleteToChangeLine(sourceCmd, base.getLines()[line]);
-  bool applyAutoindent = false;
-  if constexpr (VimOptions::autoindent()) {
-    applyAutoindent = (changeCmd.seq.view() != "0C");
+    const SequenceBinding& sourceCmd, const TransformEditorState* repeatLanding) {
+  const auto [ccLineCount, line] = linewiseChangeShapeForCommand(base, range);
+  KeyedSequence changeCmd = deleteToChangeLine(sourceCmd, base.getLines()[line], indent.autoindent);
+  KeyedSequence changePrefix = changeCmd;
+  const bool keepsIndent = indent.autoindent && changeCmd.seq.view() != "0C";
+  const bool joinsPrevious = ccLineCount > 1 && line > 0;
+  const bool useAfterIndent = keepsIndent && !joinsPrevious && !goalFirstIndent.empty();
+  if (keepsIndent) {
+    const auto sourceIndent = IndentOptions::leadingIndent(base.getLines()[line]);
+    changePrefix += computeIndentAdjustment(sourceIndent, useAfterIndent ? goalFirstIndent : "", indent);
   }
-  LinewiseChangeShape shape =
-      linewiseChangeShapeForCommand(base, range);
-  return emitLinewiseChangeGoal(afterDel, base, sourceCmd, shape.cursorLine,
-                                shape.lineCount, changeCmd, applyAutoindent);
-}
+  changePrefix += buildCollapseSequence(ccLineCount, line);
 
-GoalStates ChangeGoalHandler::onCountedLinewiseGoal(
-    const TransformEditorState& afterDel, const TransformState& base,
-    LineRange range, const SequenceBinding& sourceCmd) {
-  int line = range.beginLine;
-  KeyedSequence changeCmd = deleteToChangeLine(sourceCmd, base.getLines()[line]);
-  LinewiseChangeShape shape =
-      linewiseChangeShapeForCommand(base, range);
-  return emitLinewiseChangeGoal(
-      afterDel, base, sourceCmd, shape.cursorLine, shape.lineCount, changeCmd, true);
+  const auto& suffixTyped = useAfterIndent ? typedAfterIndent : typed;
+  const auto& suffixEffort = useAfterIndent ? afterIndentEffort : typedEffort;
+  TypedGoalVariants typedVariants{{suffixTyped, suffixEffort}, {typed, typedEffort}};
+  return emitEditGoal(afterDel, base, sourceCmd, changePrefix, typedVariants, repeatLanding);
 }
 
 GoalStates ChangeGoalHandler::onJoinGoal(
     const TransformEditorState& afterJn, const TransformState& base,
     const SequenceBinding& sourceCmd) {
-  bool isDot = isDotRepeat(base, sourceCmd);
   const auto& iCmd = KeyedSequence::i;
   KeyedSequence goalCompletionCmd;
   appendOptionalCount(goalCompletionCmd, sourceCmd.count, sourceCmd.base);
@@ -523,7 +474,7 @@ GoalStates ChangeGoalHandler::onJoinGoal(
   goalCompletionCmd += buildCollapseSequence(
       static_cast<int>(afterJn.getLines().size()), afterJn.getPos().line);
   TypedGoalVariants typedVariants{{typed, typedEffort}, {typed, typedEffort}};
-  return emitEditGoal(afterJn, base, sourceCmd, goalCompletionCmd, typedVariants, isDot);
+  return emitEditGoal(afterJn, base, sourceCmd, goalCompletionCmd, typedVariants, &afterJn);
 }
 
 SuffixCacheHit ChangeGoalHandler::findCachedSuffix(const TransformState& s) {

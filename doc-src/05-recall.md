@@ -38,12 +38,13 @@ queue, `N` and `Ns` are how you name it.
 ## Implementation Details
 
 Each command is tagged with a timestamp. `:Vimfy recall Ns` resolves to
-the most recent commands run within the last `N` seconds. Because every
-ring entry is already a complete command (one `CmdAtom` event), no
-boundary snapping is needed.
+the most recent commands run within the last `N` seconds. If a command or
+time cutoff falls inside a burst delivered together, Recall includes the
+whole burst. For example, `recall 1` can include both deletions in `dwdw`
+when Neovim reported only their combined result.
 
-The optimizer runs only when you invoke a recall command, so per-command
-overhead is O(1).
+The ring shares command observations and changed lines across overlapping
+recall windows. Finishing a window submits its observed range to the optimizer.
 
 
 ## Capacity

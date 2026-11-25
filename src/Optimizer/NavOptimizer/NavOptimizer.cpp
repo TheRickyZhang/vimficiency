@@ -56,7 +56,8 @@ LandingNavResult NavOptimizer::optimize(
     const NavContext& navContext,
     const BufferIndex& bufferIndex,
     int lineOffset,
-    const SearchControl& control) {
+    const SearchControl& control,
+    std::span<const Pos> exactTargetColLandings) {
   assert(range.isValid() && "target interval must be non-empty");
 
   // startPos already in the goal interval — nothing to do
@@ -124,6 +125,7 @@ LandingNavResult NavOptimizer::optimize(
     bool isGoal = range.containsPos(pos);
 
     if (isGoal) {
+      if (pos.targetCol != pos.col && ranges::contains(exactTargetColLandings, stateKey)) continue;
       stats.incrementNodesExplored();
       landings.add(stateKey, s.getEffort(),
                    LandingResult(s.getSequence(), s.getRunningEffort(), pos));

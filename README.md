@@ -156,11 +156,12 @@ The planner lays the initial text against the goal on a grid, prices every
 delete, move and type step with counted Vim commands, and seals long unchanged
 runs so its work scales with the change rather than the buffer:
 
-https://github.com/user-attachments/assets/d214130e-4026-4ea6-994d-fe85c3503277
+https://github.com/user-attachments/assets/bec6105f-1966-486e-b6d6-3f7fc48c2f74
 
 The search then turns each planned edit into keystrokes with three A* searches
 (navigation, transform, composition) over a Vim simulator verified against a
-headless Neovim, priced by a per-key effort model:
+headless Neovim, priced by a per-key effort model. This recording follows the
+search on an earlier five-region partition:
 
 https://github.com/user-attachments/assets/737cf2df-1d26-47b9-b947-d5159b5b586b
 

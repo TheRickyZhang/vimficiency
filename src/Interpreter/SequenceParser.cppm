@@ -35,7 +35,7 @@ struct SequenceParseError {
   size_t offset;
 };
 
-std::string formatSequenceParseError(const SequenceParseError& error);
+std::string formatSequenceParseError(const SequenceParseError& error, std::string_view seq);
 
 // Parse a Vim command sequence into tagged tokens suitable for step-by-step animation.
 // Example: "ciwhello<Esc>2j" -> [("ciw", Change), ("hello", TypedText), ("<Esc>", Escape), ("2j", Motion)]

@@ -31,7 +31,7 @@ namespace VimCore {
 //
 // Replaces the inclusive line range [firstLine, lastLine] with a single new
 // line carrying `sourceLine`'s leading indent (preserved verbatim via
-// `leadingIndent`, including tabs), positions the cursor at the end of that
+// `IndentOptions::leadingIndent`, including tabs), positions the cursor at the end of that
 // indent, and switches mode to Insert. Mirrors what Neovim does on a linewise
 // change operator: collapse to one autoindented line and drop into insert.
 //
@@ -42,30 +42,15 @@ namespace VimCore {
 //
 // Caller is responsible for validating the range (the operator-level
 // preconditions like "cj requires count lines below") before invoking.
-// Leading indent of a line for Vim's autoindent replay (both spaces and tabs).
-// Vim's autoindent copies the source line's indent characters verbatim when
-// entering insert mode via cc/S/cj/ck/o/O, including tabs.
-//
-// Distinct from `leadingWhitespace` in `Optimizer/Indentation.h`, which is
-// spaces-only because the optimizer's downstream math (BuildTypedCommands'
-// `bsCountForIndent`, the combined-indent assembly in spaces) assumes
-// expandtab-style indentation throughout. Don't unify the two — use this one
-// from the replay/edit path and the optimizer's one from the goal-shape path.
-inline std::string_view leadingIndent(std::string_view s) {
-  size_t i = 0;
-  while (i < s.size() && CharMask::isWhitespace(s[i])) i++;
-  return s.substr(0, i);
-}
-
 inline void linewiseChangeWithAutoindent(Lines& lines,
                                          CursorPos& pos,
                                          Mode& mode,
                                          int firstLine,
                                          int lastLine,
-                                         std::string_view sourceLine) {
+                                         std::string_view sourceLine, const IndentOptions& options = {}) {
   std::string indent;
-  if constexpr (VimOptions::autoindent()) {
-    indent = std::string(leadingIndent(sourceLine));
+  if (options.autoindent) {
+    indent = std::string(IndentOptions::leadingIndent(sourceLine));
   }
   lines.erase(lines.begin() + firstLine, lines.begin() + lastLine + 1);
   lines.insert(lines.begin() + firstLine, indent);
@@ -462,6 +447,7 @@ struct LineDeleteContext {
 void deleteRangeAndUpdatePos(
     Lines& lines, const CharRange& range, CursorPos& pos,
     Mode mode = Mode::Normal, LineDeleteContext context = {});
+void deleteVisualSelection(Lines& lines, CursorPos anchor, CursorPos& pos, Mode mode);
 void deleteCharLineRangeAndUpdatePos(
     Lines& lines, const CharLineRange& range, CursorPos& pos,
     Mode mode = Mode::Normal, LineDeleteContext context = {});
@@ -494,8 +480,8 @@ void joinLineRange(Lines& lines, CursorPos& pos, int lineCount, bool addSpace);
 // line; pos moves to the end of that indent. Returns the indent length (Vim's
 // `did_ai`, stripped by an immediate <Esc>).
 // Precondition: lines not empty
-int openLineBelow(Lines& lines, CursorPos& pos);
-int openLineAbove(Lines& lines, CursorPos& pos);
+int openLineBelow(Lines& lines, CursorPos& pos, const IndentOptions& options = {});
+int openLineAbove(Lines& lines, CursorPos& pos, const IndentOptions& options = {});
 
 } // namespace VimCore
 

@@ -216,6 +216,12 @@ return {
 
 
   -- Plugin-related
+  appearance = {
+    desc = "Customize selection highlighting",
+    usage = "appearance",
+    run = function() require("vimficiency.settings.appearance").open() end,
+  },
+
   reload = {
     desc = "Rebuild and hot-reload Vimfy with live build output",
     usage = "reload",

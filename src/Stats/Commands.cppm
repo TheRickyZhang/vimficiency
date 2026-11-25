@@ -73,8 +73,6 @@ struct CommandComparison {
   // Commands only the user uses, most used first; kept out of `more`, where
   // their infinite ratios would crowd out every other row.
   std::vector<CommandRow> never;
-  // How many more of those were cut.
-  int neverCut = 0;
 };
 
 CommandComparison compareCommands(const CommandCounts& user, const CommandCounts& optimizer);

@@ -467,6 +467,56 @@ TEST_F(ExploreViewTest, ApplyEditRejectsBogusToken) {
   EXPECT_EQ(view.state(), priorState);
 }
 
+TEST_F(ExploreViewTest, PartialReplacementCanBeAppliedWithAnyMenuSize) {
+  const Lines before{"above", "old", "below"}, goal{"above", "new", "below"};
+  auto view = makeView(before, {1, 1}, goal, {1, 1});
+  auto hasReplace = [](const Suggestion& s) { return s.token == "re"; };
+  const auto edits = view.recommendations(20);
+  ASSERT_TRUE(ranges::any_of(edits, hasReplace));
+  ASSERT_GT(edits.size(), 1u);
+  ASSERT_EQ(view.recommendations(1).size(), 1u);
+  for (const auto& edit : edits) {
+    auto fresh = makeView(before, {1, 1}, goal, {1, 1});
+    ASSERT_TRUE(fresh.applyEdit(edit.token).has_value()) << edit.token;
+    EXPECT_EQ(fresh.state().cursor, edit.landingPos) << edit.token;
+  }
+  EXPECT_TRUE(view.recommendations(0).empty());
+  ASSERT_TRUE(view.applyEdit("re").has_value());
+  EXPECT_EQ(view.state().lines, (Lines{"above", "oed", "below"}));
+  EXPECT_EQ(view.state().cursor, CursorPos(1, 1));
+  EXPECT_FALSE(view.applyEdit("re").has_value());
+}
+
+TEST_F(ExploreViewTest, PartialReplacementUsesTheSameCountOverridesWhenApplied) {
+  auto view = makeView({"old"}, {0, 0}, {"XXy"}, {0, 2});
+  const auto enabled = *OptimizerParamOverrides::parse("transform:minPrefixCount=2");
+  const auto disabled = *OptimizerParamOverrides::parse("transform:maxPrefixCount=0");
+  auto isCounted = [](const Suggestion& s) { return s.token == "2rX"; };
+  EXPECT_TRUE(ranges::any_of(view.recommendations(20, &enabled), isCounted));
+  EXPECT_FALSE(ranges::any_of(view.recommendations(20, &disabled), isCounted));
+  EXPECT_FALSE(view.applyEdit("2rX", &disabled).has_value());
+  ASSERT_TRUE(view.applyEdit("2rX", &enabled).has_value());
+  EXPECT_EQ(view.state().lines, (Lines{"XXd"}));
+  EXPECT_EQ(view.state().cursor, CursorPos(0, 1));
+}
+
+TEST_F(ExploreViewTest, StructuralSuggestionLandsWhereTheNextCharacterIsTyped) {
+  auto check = [&](const Lines& before, CursorPos start, const Lines& goal,
+                   CursorPos finish, string_view token, CursorPos entry) {
+    auto view = makeView(before, start, goal, finish);
+    const auto suggestions = view.recommendations(40);
+    auto it = ranges::find_if(suggestions, [&](const Suggestion& s) { return s.token == token; });
+    ASSERT_NE(it, suggestions.end()) << token;
+    EXPECT_EQ(it->landingPos, entry) << token;
+    ASSERT_TRUE(view.applyEdit(token).has_value()) << token;
+    EXPECT_EQ(view.state().cursor, entry) << token;
+    EXPECT_TRUE(holds_alternative<Explore::Insert>(view.phase()));
+  };
+  check({"abc"}, {0, 0}, {"abcxyz"}, {0, 5}, "A", {0, 3});
+  check({"above", "old", "below"}, {1, 1}, {"above", "new", "below"}, {1, 1}, "cc", {1, 0});
+  check({"(old)"}, {0, 0}, {"(longer)"}, {0, 6}, "ci(", {0, 1});
+}
+
 TEST_F(ExploreViewTest, AcceptBufferStateRejectedAtPostFinalEditNav) {
   // Pure-motion sessions live entirely in Navigate(totalEdits). There is no
   // edit to apply, so buffer-state changes are rejected.

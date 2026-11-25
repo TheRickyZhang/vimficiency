@@ -4,6 +4,8 @@ syntax = "proto3";
 
 package vf.search;
 
+import "common.proto";
+
 option optimize_for = LITE_RUNTIME;
 
 // One search problem. Rows and columns are 0-indexed and relative to the slice.
@@ -24,10 +26,11 @@ message SearchRequest {
   bytes user_typed = 13;
   // `scope:key=value` lines; empty for none.
   bytes optimizer_overrides = 12;
+  vf.IndentOptions indent = 14;
 }
 
 // A session over its whole buffers. `vf_build_search_request` cuts it to the
-// rows a search needs: both cursors and every changed line, plus `padding`.
+// visited rows and edits, with up to `padding` matching rows at either end.
 message BuildSearchRequest {
   repeated bytes initial_lines = 1;
   repeated bytes goal_lines = 2;
@@ -42,6 +45,9 @@ message BuildSearchRequest {
   int32 padding = 10;
   // A taller region is an error.
   int32 max_search_lines = 11;
+  optional int32 untouched_above = 13;
+  optional int32 untouched_below = 14;
+  vf.IndentOptions indent = 15;
 }
 
 message AnalyzeRequest {

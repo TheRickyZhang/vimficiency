@@ -5,6 +5,7 @@ module vf.Journal.Replay;
 
 import std.compat;
 import vf.Storage.RecordFile;
+import vf.LuaExports.Logic;
 import vf.Types.Lines;
 import vf.Versions;
 
@@ -42,13 +43,17 @@ void applyDelta(unordered_map<int, BufferText>& buffers, int& versions,
 
   const int first = delta.first();
   const int oldCount = delta.old_count();
-  if (first < 0 || oldCount < 0 || first + oldCount > ssize(*text.lines)) {
+  if (first < 0 || oldCount < 0 || oldCount > ssize(*text.lines) - first) {
     text.lines = nullptr;
     text.discontinuous = true;
     return;
   }
 
   // An event may still hold the text as it was.
+  text.untouched.include(first, text.lines->size() - first - oldCount);
+  const int surviving = ssize(*text.lines) - oldCount;
+  const int minHeight = delta.has_min_height() ? max(surviving, delta.min_height()) : surviving;
+  text.minHeight = min(text.minHeight, minHeight);
   if (text.lines.use_count() > 1) text.lines = make_shared<Lines>(*text.lines);
   Lines& lines = *text.lines;
   lines.erase(lines.begin() + first, lines.begin() + first + oldCount);
@@ -70,6 +75,9 @@ Event stateEvent(unordered_map<int, BufferText>& buffers, EventKind kind,
   event.col = view.col();
   event.windowHeight = view.window_height();
   event.scrollAmount = view.scroll_amount();
+  auto indent = VF::LuaExports::logic::decodeIndentOptions(view);
+  if (!indent) return event;
+  event.indent = *indent;
 
   const auto it = buffers.find(buf);
   if (it != buffers.end()) {
@@ -78,6 +86,8 @@ Event stateEvent(unordered_map<int, BufferText>& buffers, EventKind kind,
     event.textVersion = text.version;
     event.discontinuous = text.discontinuous;
     event.filetype = text.filetype;
+    event.untouched = exchange(text.untouched, {});
+    event.minHeight = exchange(text.minHeight, numeric_limits<int>::max());
     text.discontinuous = false;
   }
   return event;
@@ -130,6 +140,7 @@ bool Replay::next(Event& out) {
         const vf::journal::Atom& atom = record.atom();
         out = stateEvent(buffers, EventKind::Atom, record, atom.buf(), atom.win(), atom.view());
         out.atomIndex = atoms++;
+        out.visitedRows.assign(atom.visited_rows().begin(), atom.visited_rows().end());
         out.keys = atom.keys();
         out.atomKind = atom.kind();
         out.typed = atom.typed();

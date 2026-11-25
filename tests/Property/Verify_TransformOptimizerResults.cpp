@@ -1,4 +1,4 @@
-// Property: TransformOptimizer top results for generated edit-region problems
+// Property: TransformOptimizer results for generated edit-region problems
 // must replay in Neovim to the exact goal while preserving protected full-buffer
 // prefix/suffix context around embedded regions.
 
@@ -8,6 +8,7 @@
 import std.compat;
 import vf.Boundary.TransformBoundary;
 import vf.Keyboard.Config;
+import vf.Optimizer.BuildTypedCommands;
 import vf.Optimizer.TransformOptimizer.TransformOptimizer;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
@@ -58,7 +59,7 @@ struct SingleLineChangeSpec {
   string goal;
 };
 
-struct SameLineCountChangeSpec {
+struct MultiLineChangeSpec {
   vector<string> source;
   vector<string> goal;
 };
@@ -75,17 +76,6 @@ struct EmbeddedChangeSpec {
   string prefix;
   string suffix;
 };
-
-Lines resizeLines(vector<string> rawLines, int lineCount) {
-  Lines lines(std::move(rawLines));
-  while (static_cast<int>(lines.size()) < lineCount) {
-    lines.push_back("");
-  }
-  while (static_cast<int>(lines.size()) > lineCount) {
-    lines.pop_back();
-  }
-  return lines;
-}
 
 string normalizedNonEmpty(string text, char fallback) {
   if (text.empty()) {
@@ -111,13 +101,14 @@ SameLengthReplacementSpec normalizeSameLength(
   return spec;
 }
 
-EmbeddedEditRegion toEmbeddedRegion(EmbeddedRegionSpec spec) {
+EmbeddedEditRegion toEmbeddedRegion(EmbeddedRegionSpec spec, bool hasOutsideLines = false) {
   EmbeddedEditRegion result;
   result.editRegion = Lines(std::move(spec.editRegion));
   result.prefix = std::move(spec.prefix);
   result.suffix = std::move(spec.suffix);
 
-  result.fullBuffer.reserve(result.editRegion.size());
+  if (hasOutsideLines) result.fullBuffer.push_back("above");
+  result.startLine = result.fullBuffer.size();
   for (int i = 0; i <= result.editRegion.lastLine(); i++) {
     string line = result.editRegion[i];
     if (i == 0) line.insert(0, result.prefix);
@@ -125,22 +116,13 @@ EmbeddedEditRegion toEmbeddedRegion(EmbeddedRegionSpec spec) {
     result.fullBuffer.push_back(line);
   }
 
-  result.startLine = 0;
   result.startCol = static_cast<int>(result.prefix.size());
-  result.endLine = result.editRegion.lastLine();
+  result.endLine = result.fullBuffer.lastLine();
   result.endCol = static_cast<int>(result.fullBuffer[result.endLine].size()) -
                   static_cast<int>(result.suffix.size());
+  if (hasOutsideLines) result.fullBuffer.push_back("below");
 
   return result;
-}
-
-EmbeddedEditRegion toEmbeddedRegion(const EmbeddedChangeSpec& spec) {
-  return toEmbeddedRegion(
-      EmbeddedRegionSpec{spec.editRegion, spec.prefix, spec.suffix});
-}
-
-Lines goalForEmbeddedChange(const EmbeddedChangeSpec& spec, int lineCount) {
-  return resizeLines(spec.goal, lineCount);
 }
 
 string contextForLines(const string& label, const Lines& source, const Lines& goal) {
@@ -180,8 +162,8 @@ auto SingleLineChangeSpecDomain() {
       PropertyDomains::LineTextDomain(1, 7));
 }
 
-auto SameLineCountChangeSpecDomain() {
-  return fuzztest::StructOf<SameLineCountChangeSpec>(
+auto MultiLineChangeSpecDomain() {
+  return fuzztest::StructOf<MultiLineChangeSpec>(
       PropertyDomains::LineVecDomain(2, 3, 0, 8),
       PropertyDomains::LineVecDomain(1, 3, 0, 8));
 }
@@ -197,7 +179,7 @@ auto EmbeddedRegionSpecDomain(
 
 auto EmbeddedChangeSpecDomain() {
   return fuzztest::StructOf<EmbeddedChangeSpec>(
-      PropertyDomains::LineVecDomain(2, 4, 3, 5),
+      PropertyDomains::LineVecDomain(2, 4, 0, 5),
       PropertyDomains::LineVecDomain(1, 4, 0, 8),
       PropertyDomains::LineTextDomain(0, 3),
       PropertyDomains::LineTextDomain(0, 3));
@@ -271,10 +253,10 @@ class TransformOptimizerGeneratedPropertyTest {
   }
 
   void MultiLineFullBufferChangeTopResultsReplay(
-      const SameLineCountChangeSpec& spec) {
+      const MultiLineChangeSpec& spec) {
     Lines source(spec.source);
-    Lines goal = resizeLines(spec.goal, static_cast<int>(source.size()));
-    if (source == goal) return;
+    Lines goal(spec.goal);
+    if (source == goal || goal == Lines{""}) return;
 
     TransformBoundary boundary(source, {0, 0}, source.endPos());
     TransformResult res = opt_.optimizeTransform(source, goal, boundary, params_);
@@ -286,31 +268,34 @@ class TransformOptimizerGeneratedPropertyTest {
     });
   }
 
-  void MultiLineEmbeddedChangeTopResultsReplay(const EmbeddedChangeSpec& spec) {
-    auto test = toEmbeddedRegion(spec);
-    int numGoalLines = static_cast<int>(test.editRegion.size());
-    Lines goal = goalForEmbeddedChange(spec, numGoalLines);
+  void MultiLineEmbeddedAlternativesReplay(const EmbeddedChangeSpec& spec, int startIndex,
+                                           bool useQwerty, bool hasOutsideLines) {
+    auto test = toEmbeddedRegion({spec.editRegion, spec.prefix, spec.suffix}, hasOutsideLines);
+    Lines goal(spec.goal);
     if (goal == test.editRegion) return;
 
-    TransformResult res =
-        opt_.optimizeTransform(test.editRegion, goal, test.makeBoundary(), params_);
+    const CursorPos begin(test.startLine, test.startCol);
+    TransformOptimizerParams params;
+    params.withMaxResults(160).withMaxResultsPerStartPos(20);
+    TransformOptimizer optimizer(useQwerty ? Config::qwerty() : Config::uniform());
+    const auto boundary = test.makeBoundary();
+    const auto res = goal == Lines{""}
+        ? optimizer.optimizePureDeletion(test.editRegion, boundary, params, begin.line, begin.col, begin)
+        : optimizer.optimizeTransform(test.editRegion, goal, boundary, params, begin.line, begin.col,
+                                      typedCommandsExitCursor(begin, goal, spec.suffix));
+    if (res.startPositions().empty()) return;
+    const auto start = res.startPositions()[startIndex % res.startPositions().size()];
 
-    Lines expectedFull;
-    for (int i = 0; i < numGoalLines; i++) {
-      string line;
-      if (i == 0) line += test.prefix;
-      line += goal[i];
-      if (i == numGoalLines - 1) line += test.suffix;
-      expectedFull.push_back(line);
+    Lines expected = goal;
+    expected.front().insert(0, spec.prefix);
+    expected.back() += spec.suffix;
+    if (hasOutsideLines) {
+      expected.insert(expected.begin(), "above");
+      expected.push_back("below");
     }
-
-    string context =
-        contextForEmbedded("multi-line embedded change", test, expectedFull);
-    runSampledReplays(res, test.fullBuffer, expectedFull, context,
-                      hashLines(test.fullBuffer) ^ hashLines(goal),
-                      [&](int startIdx) {
-      CursorPos editPos = test.editRegion.cursorFromFlatIndexClamped(startIdx);
-      return test.toFullBufferPos(editPos);
+    res.forEachEditFrom(start, expected, [&](const Result& result, CursorPos landing) {
+      EXPECT_TRUE(OracleReplay::matches(oracle_, test.fullBuffer, start, result.getSequence().str(),
+                                        expected, landing, Mode::Normal, "embedded edit"));
     });
   }
 
@@ -379,7 +364,10 @@ FUZZ_TEST_F(TransformOptimizerGeneratedPropertyTest, SingleLineChangeTopResultsR
 FUZZ_TEST_F(
     TransformOptimizerGeneratedPropertyTest,
     MultiLineFullBufferChangeTopResultsReplay)
-    .WithDomains(SameLineCountChangeSpecDomain());
+    .WithDomains(MultiLineChangeSpecDomain());
 
-FUZZ_TEST_F(TransformOptimizerGeneratedPropertyTest, MultiLineEmbeddedChangeTopResultsReplay)
-    .WithDomains(EmbeddedChangeSpecDomain());
+FUZZ_TEST_F(TransformOptimizerGeneratedPropertyTest, MultiLineEmbeddedAlternativesReplay)
+    .WithDomains(EmbeddedChangeSpecDomain(), fuzztest::InRange<int>(0, 31),
+                 fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>())
+    .WithSeeds({{EmbeddedChangeSpec{{"", "word", ""}, {"Q"}, "", ""}, 5, true, true},
+                {EmbeddedChangeSpec{{"end", "x"}, {""}, "abc", "Z"}, 0, true, true}});

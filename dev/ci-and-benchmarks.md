@@ -1,205 +1,85 @@
 # CI/CD and Benchmark Dashboard
 
-This page covers the benchmark pipeline. The separate
-`.github/workflows/vimdoc.yml` workflow regenerates
-`doc/vimficiency.txt` from `doc-src/**` on pushes to `main`; see
-[script-usage.md](./script-usage.md) for that pipeline.
+Hosted CI checks correctness. A self-hosted Linux runner measures performance on fixed
+hardware so changes between commits are interpretable.
 
-## CI Workflow (`.github/workflows/bench.yml`)
+## Correctness CI
 
-`bench.yml` runs correctness only — `dependency-lint` (module dependency and
-in-class `inline` lints; needs `ripgrep` and `gawk`), `lua-lint`
-(`scripts/lint-lua.sh`: the `assert(type(` / `pcall(` ratchets plus
-lua-language-server with `$VIMRUNTIME` from the pinned Neovim, so `vim.*`
-types resolve), `doc-lint`, `debug-build`, and `test`. Benchmark numbers are deliberately not produced in
-CI: GitHub-hosted runners vary by ~10% in wall-clock time, so the numbers
-were too noisy to compare across pushes. The bench pipeline moved to a local
-hook (next section) on the maintainer's machine, where hardware is stable.
+On pull requests and pushes to `main`, the build jobs use the GCC container, Ninja, and a
+pinned CMake. Dependency lint checks module edges and in-class inline definitions. Lua lint
+uses Neovim nightly's runtime types. Doc lint checks that frontmatter titles match chapter
+headings. [CI workflow](../.github/workflows/bench.yml)
 
-### Dependency setup abstraction
+| Build | What it verifies |
+|---|---|
+| Debug, state tracking on | Compiles every target, including assertions and `vimfy_explore`, and runs unit and approval tests. |
+| Release, state tracking off | Runs the full correctness gate with a fixed FuzzTest seed. The C++ oracle uses pinned Neovim, while `VF_NVIM` selects nightly for the Lua/FFI suite's CmdAtom tests. |
 
-Shared dependency setup is centralized in `.github/actions/setup-ci-deps/action.yml`.
+Each job caches its whole build tree because ccache cannot reuse the C++ module compilations.
+Keys include job, compiler version, ref, and SHA. On a miss the job tries the current ref,
+then `main`. The cache records Git blob IDs so a changed file is rebuilt even when its commit
+predates the cached build. A successful build is saved before tests run.
+[Build cache script](../scripts/ci-build-cache.sh)
 
-- Runs inside the `gcc:16` container (Ubuntu 24.04 has no GCC 16 package) and installs Ninja and a pinned CMake
-- Optionally installs Neovim (version-controlled by workflow env `NEOVIM_VERSION`)
-- Caches extracted Neovim under `~/.local/neovim/<version>` with key `neovim-<os>-<version>`
-- Adds cached Neovim to `PATH` when enabled
+The hosted docs job publishes `web/docs/dist/` to `gh-pages/docs/` independently of the
+benchmark runner. If a push races with a dashboard update, it reapplies the docs to the new
+tip. Changes to the help source on `main` also trigger a PR regenerating
+`doc/vimficiency.txt`. [Docs deploy](../.github/workflows/docs-deploy.yml) ·
+[Vim help generation](script-usage.md)
 
-### `test` job (every push and PR)
+## Running benchmarks
 
-1. Runs `setup-ci-deps` with Neovim enabled
-2. Restores the cached `build/` tree and marks changed sources (see cache notes)
-3. Builds the test binaries and `vimficiency` in Release mode
-   (`-DVIMF_DEBUG=OFF`, `-DVIMF_TRACK_STATES=OFF`)
-4. Runs the fast correctness gate via `scripts/vimfy_tests`: unit, approval,
-   property and safety exploration with the fixed CI FuzzTest runner seed, and
-   Lua/FFI smoke tests
-
-### `debug-build` job (every push and PR)
-
-Builds every target in Debug with `-DVIMF_TRACK_STATES=ON`, so benchmark,
-debug, and tracking-enabled `vimfy_explore` binaries still get compiled on PRs,
-then runs unit and approval tests. Tracking is on here (unlike a default local
-configure) so that `vimfy_explore` does not need its own tree: the flag goes
-through `BuildConfig.h`, so a separate tree is a full recompile with no build-cache
-reuse. It only records popped states, so unit and approval results are
-unaffected. `vimfy_explore` is not run in CI; the local bench pipeline executes
-it and ingests results.
-
-## Docs deploy (`.github/workflows/docs-deploy.yml`)
-
-Every `main` push builds the docs site on a GitHub-hosted runner and publishes
-it with `scripts/publish-docs.sh`, so docs do not depend on the benchmark
-machine. A failure leaves the previously published docs live.
-
-`publish-docs.sh` owns `docs/` on gh-pages and `bench-local-run.sh` owns
-everything else. Keeping those paths disjoint is what makes a push race safe:
-a rejected docs push rebuilds its one commit on the new tip.
-
-### CI cache and performance notes
-
-- ccache can't cache C++20 module compiles, so each build job caches its whole
-  `build/` tree (including `_deps`) and Ninja rebuilds incrementally. The key is
-  job + GCC version + ref + SHA; a miss falls back to the latest tree on the
-  same ref, then on `main`.
-- `scripts/ci-build-cache.sh mark` ages every tracked file and re-touches only
-  those whose blob differs from the index recorded with the cached tree. Commit
-  times would miss commits authored before the cached build but pushed after.
-- The tree is saved right after a successful build, before tests. A failed
-  build is never saved, since its stale outputs would look up to date.
-- Neovim install is cached by OS + version. On cache hit, CI skips the GitHub release download and untar.
-- `apt-get update` and apt package installation are intentionally not cached in this workflow. These commands still run on every fresh GitHub-hosted runner, so `Setup CI deps` can remain one of the slower steps even when all project-level caches hit.
-
-## Benchmark pipeline (`scripts/bench-local-run.sh`)
-
-One automatic trigger drives `bench-local-run.sh`:
-
-- **`main` pushes** — `.github/workflows/bench-main.yml` runs on a
-  self-hosted runner (the dev Linux machine). Fires on every push to main,
-  including PR merges done via the web UI. It is the only source of
-  timeline points. While the machine is asleep, runs queue (GitHub cancels
-  after 24h) and complete on wake; each queued SHA still gets its own point.
-
-Feature branches are **not** benched automatically. A `.githooks/pre-push`
-hook on the dev machine used to bench them, but that put two hardware
-profiles on one timeline and made every cross-regime comparison
-apples-to-oranges. The hook and its `core.hooksPath` install step (formerly
-in the top-level `CMakeLists.txt`) were removed; the timeline is now
-all-main, one-runner, so points are directly comparable. The runner machine
-has changed twice (dev Linux → spare MacBook at 5c4a5be5 → dev Linux again,
-Nov 2026); each cutover shows as a step in absolute numbers, not an
-optimizer change.
-
-Noise sources on a dev machine as runner: a heavy build or test run in
-another terminal while a bench is in flight inflates that point. Steady
-state is ~3-5 min per main push.
-
-For ad-hoc pre-merge perf intuition, run the benchmark binary directly from a
-**Release** tree — `./build-release/tests/vimfy_benchmarks
---benchmark_filter=<suite>` — which prints numbers without touching the
-chart. The default `build/` is a Debug configuration; its timings are
-dominated by uninlined container accessors (~6× Release on the planner
-suites) and are not comparable to the dashboard or to each other across
-structural changes. Configure the Release tree once:
+For a local comparison, run the benchmark binary in a **Release** tree. Debug timings can be
+dominated by container access and differ substantially from the dashboard.
 
 ```bash
 cmake -G Ninja -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DVIMF_DEBUG=OFF \
-  -DVIMF_BUILD_TESTS=ON \
-  -DVIMF_TRACK_STATES=OFF -DFETCHCONTENT_FULLY_DISCONNECTED=OFF
+  -DVIMF_BUILD_TESTS=ON -DVIMF_TRACK_STATES=OFF
 cmake --build build-release --target vimfy_benchmarks
+./build-release/tests/vimfy_benchmarks --benchmark_filter='EditOpt.*'
 ```
 
-`bench-local-run.sh` itself still ingests and pushes to gh-pages, so only run
-it by hand when you actually want a point on the timeline (see *Re-running
-manually*).
+### Published benchmarks
 
-### Self-hosted runner (`main`)
+Pushes to `main` trigger `bench-main.yml`. It serializes runs on the machine labeled
+`vimficiency-bench`. Concurrent local workloads can inflate a point. The runner switched from
+Linux to a MacBook at `5c4a5be5` and back to Linux in November 2026. Account for those
+hardware changes when comparing historical timings.
+[Runner workflow](../.github/workflows/bench-main.yml)
 
-GitHub workflow `bench-main.yml` on `runs-on: [self-hosted, Linux,
-vimficiency-bench]`, triggered `on: push: branches: [main]`. The job
-checks out the repo with `fetch-depth: 0` (the baseline-lookup step needs
-HEAD~1; gh-pages is fetched explicitly inside the script) and invokes the
-same `bench-local-run.sh` with `CI=true` set. The CI env gate inside the
-script skips the `flock` single-flight (the workflow's `concurrency:
-group: bench-main` already serializes runs).
+The cache defaults to `~/.cache/vimficiency-bench/`. The detached `repo/` worktree builds the
+requested SHA. The `gh-pages/` worktree records and publishes the result. A manual run uses
+`flock`, writes to `logs/` and records its exit code, SHA, branch, and log path in
+`last-status`. Under Actions, read the workflow log.
 
-The runner is registered to the repo via `Settings → Actions → Runners`
-and runs as a systemd service via the installer's `./svc.sh install`. Deps
-(`ccache cmake neovim jq bun g++`) are system packages on the machine; the
-workflow's "Check bench deps" step fails fast if one is missing.
-
-### What the runner does
-
-Operates in `~/.cache/vimficiency-bench/` so the user's primary checkout is
-never touched. Two `git worktree`s sharing `.git` with the main repo:
-
-- `repo/` — detached worktree at the pushed SHA, used to build and run benches
-- `gh-pages/` — worktree on the `gh-pages` branch, written into and pushed back to `origin`
-- `logs/run-<ts>-<sha>-<branch>.log` — full output of each run
-- `last-status` — written on every exit; records the last run's exit code, sha, branch, and log path for manual inspection
-- `lock` — `flock`-based single-flight; concurrent invocations exit immediately rather than queue stale runs
-
-### Single-source data model
-
-Every bench ingests into the same root timeline at
-`gh-pages/{edit,motion,composition}/data.json`. There are no per-branch
-dashboards, no promotion-on-PR-merge logic, no `branches.json` index.
-With benches now main-only on one machine, each chart point is a real
-main-SHA measurement on one consistent machine. (A manual
-`bench-local-run.sh` on a non-main SHA would still ingest a point; that is
-the one remaining way an off-main entry can land, so do it deliberately.)
-
-Main-only extras are conditional on `BRANCH=main` (a cheap optimization,
-not a correctness boundary): exploration data via `vimfy_explore`
-with `VIMF_TRACK_STATES=ON`, and C++ test-suite timing via
-`--gtest_output=json`. Branch pushes skip these to stay fast.
-
-Steps:
-
-1. Build pushed `<sha>` in Release with `VIMF_TRACK_STATES=OFF`
-2. Run three suites with fixed benchmark fixtures:
-   - `EditOpt.*` → `edit_result.json`
-   - `MotionOpt.*` → `motion_result.json`
-   - `CompositionOpt.*` → `composition_result.json`
-3. Baseline comparison: look up the parent SHA's stored entry in `gh-pages/{edit,motion,composition}/data.json` via `scripts/bench-baseline-from-stored.ts`, feed it to `bench-compare.ts`. Skipped when the parent has no stored entry (first run on this machine, parent was rebased away, etc.) — informational, never gates the run.
-4. **Main only:** build and run `vimfy_explore` for exploration data; time the unit + approval binaries (`convert-gtest-timing.ts`) and snapshot property + safety coverage (`convert-gtest-coverage.ts`)
-5. Build `web/dashboard/` with `--base=/vimficiency/`
-6. In the `gh-pages` worktree: ingest results, prune to 100 entries, ingest exploration (main only), copy dashboard assets
-7. Commit + push to `origin gh-pages`. On push conflict (race with another local run) fetch + rebase once and retry
-
-### Failure surfacing
-
-- **Self-hosted runner (main):** the workflow run shows up under the
-  Actions tab; failures send the standard GitHub notification. Logs are
-  retained per GitHub's defaults.
-- **Manual `bench-local-run.sh` runs:** the script emits a `notify-send`
-  desktop notification on completion (critical urgency on failure, low on
-  success; silently skipped if no notification daemon) and records exit
-  code, SHA, branch, and log path to
-  `~/.cache/vimficiency-bench/last-status` for inspection.
+1. Build Release with tracking off and run the Edit, Motion, and Composition benchmark suites
+   on fixed fixtures. The Actions summary compares them with the stored parent SHA when
+   available.
+2. On `main`, run `vimfy_explore` in a tracking-enabled tree, time Unit and Approval, and
+   collect Property and Safety coverage.
+3. Build the dashboard, ingest the results, prune histories to 100 entries, and push the
+   updated assets and data to `gh-pages`. The benchmark publisher owns the dashboard root and
+   datasets. The docs publisher owns `docs/`.
+   [Benchmark publisher](../scripts/bench-local-run.sh)
 
 ### Re-running manually
 
-To re-ingest a `main` SHA (e.g. the self-hosted runner was offline for a
-push), run the pipeline directly from a machine with the build deps
-installed:
+To publish a missing point, run the following with the desired commit and branch name. This
+**appends** to the shared timeline, including when the SHA already has an entry. Passing a
+feature branch also publishes its measurements and skips the main-only extras. Use the Release
+binary above for a private comparison.
 
 ```bash
 scripts/bench-local-run.sh <sha> <branch>
 ```
-
-This ingests and pushes to gh-pages, so it adds or overwrites a timeline
-point. Behavior is identical for any `<branch>` — only the optional
-main-only extras differ — which is also why running it on a non-main SHA
-deliberately lands an off-main point.
 
 ## Self-hosted runner setup (one-time)
 
 Steps to register the dev Linux machine as the runner backing
 `bench-main.yml`. Run as your normal user; `svc.sh` needs `sudo`.
 
-1. **Deps.** `ccache cmake neovim jq bun gcc` as system packages (on Arch:
-   `pacman -S ccache cmake neovim jq bun gcc`). Nothing is installed by the
+1. **Deps.** `ccache cmake ninja neovim jq bun gcc` as system packages (on Arch:
+   `pacman -S ccache cmake ninja neovim jq bun gcc`). Nothing is installed by the
    workflow.
 
 2. **Register the runner.** In the repo on GitHub: Settings → Actions →
@@ -252,49 +132,16 @@ The queue limit is separate: a job waiting longer than 24h is cancelled,
 so pushes made while the machine is off for over a day lose their point
 (see "Re-running manually").
 
-### First-run gotchas
+A first build fetches dependencies and warms the cache. Manual and service runs share the
+cache when they use the same account.
 
-- First main push after registration builds everything from scratch
-  (cmake fetches GoogleTest/FuzzTest/benchmark/msgpack/etc., compiles
-  Release with no ccache history). Expect ~10-20 min. Steady-state with a
-  warm ccache is ~3-5 min.
-- The runner's `ccache` and `~/.cache/vimficiency-bench` worktrees are
-  separate from the ones a by-hand `bench-local-run.sh` uses only if `HOME`
-  differs; with `svc.sh install $USER` they are shared, which is fine
-  (flock is skipped under CI, concurrency is serialized by the workflow).
-- Numbers land in a different absolute range than the macOS history — the
-  chart shows a step at the cutover. Not a bug; different CPU.
+## Data pipeline
 
-## Data Pipeline
-
-### Benchmark data (`data.json`)
-
-Google Benchmark outputs JSON → `scripts/bench-data.ts ingest` parses it and appends to `{optimizer}/data.json` on gh-pages. The dashboard fetches this JSON directly.
-
-**Format:**
-```json
-{
-  "lastUpdate": 1704240000000,
-  "repoUrl": "https://github.com/owner/repo",
-  "entries": {
-    "EditOpt": [
-      {
-        "commit": { "id": "...", "message": "...", "timestamp": "...", "url": "...", "author": { "username": "..." } },
-        "date": 1704240000000,
-        "benches": [
-          { "name": "EditOpt/BufferSize/1", "value": 1.693, "unit": "ms/iter" }
-        ]
-      }
-    ]
-  }
-}
-```
-
-### Exploration data (`explore.json`)
-
-`vimfy_explore` outputs JSON → the local deploy runner merges it into
-`{optimizer}/explore.json` on gh-pages. The dashboard fetches this JSON
-directly.
+`gh-pages/{edit,motion,composition}/data.json` stores benchmark runs by suite with commit
+metadata, dates, and measurements. The corresponding `explore.json` keeps full explored states
+for the latest run and summaries for older runs. Both ingestion scripts can read the legacy
+JavaScript format. [Benchmark ingestion](../scripts/bench-data.ts) ·
+[Explore ingestion](../scripts/explore-data.ts)
 
 ### Test timing data (`tests/data.json`) and coverage (`tests/coverage.json`)
 
@@ -308,8 +155,8 @@ test binaries, but splits them by what their wall-time means:
   `tests/data.json` as a per-commit time series. The home page charts the two
   per-binary totals as one multi-line chart; each suite page shows its
   binary-total trend on top plus per-case charts (no per-suite total).
-- **Property + Safety** run FuzzTest in unit mode, whose wall-time is a fixed
-  watchdog floor and carries no signal (see `dev/decisions.md`). They are run
+- **Property + Safety** run FuzzTest in unit mode, where the configured time budget
+  makes elapsed time a poor performance measure (see `dev/decisions.md`). They are run
   with `FUZZTEST_FUZZ_FOR=0` purely to enumerate cases, and
   `scripts/convert-gtest-coverage.ts` writes a latest-snapshot
   `tests/coverage.json` (suites → cases + pass status + counts). Their dashboard
@@ -326,110 +173,19 @@ are fast now because `tests/patches/fuzztest-watchdog.patch` (applied via the
 per-test watchdog teardown. `scripts/vimfy_tests` exposes `--for <dur>` to set
 each FUZZ_TEST's `FUZZTEST_FUZZ_FOR` budget, which now shortens runs for real.
 
-### Migration from legacy format
+## Benchmark dashboard
 
-The `bench-data.ts` script automatically migrates from the old `data.js` format (`window.BENCHMARK_DATA = {...}`) to plain `data.json` on first run. Similarly for `explore.js` → `explore.json`.
+The React dashboard's TanStack Router loaders read the published JSON directly. For local
+development, datasets live under `web/dashboard/public/{edit,motion,composition,tests}/`.
+[Route loaders](../web/dashboard/src/router.ts) ·
+[Dashboard scripts and dependencies](../web/dashboard/package.json)
 
-## Benchmark Dashboard (`web/dashboard/`)
-
-A single-page React + TypeScript + Vite app using TanStack Router for client-side navigation.
-
-### Stack
-- **Runtime/package manager:** Bun
-- **Framework:** React 19, TypeScript 5.7
-- **Routing:** TanStack Router (code-based routes)
-- **Build:** Vite 6 with `@vitejs/plugin-react`
-- **Charts:** Chart.js + react-chartjs-2
-
-### Structure
-```
-web/dashboard/
-├── package.json
-├── bun.lock
-├── vite.config.ts          # base: '/vimficiency/', single entry
-├── tsconfig.json
-├── index.html              # SPA shell (single Vite entry point)
-├── public/
-│   ├── edit/               # Dev fixtures per optimizer
-│   │   ├── data.json
-│   │   └── explore.json
-│   ├── motion/
-│   │   ├── data.json
-│   │   └── explore.json
-│   └── composition/
-│       ├── data.json
-│       └── explore.json
-└── src/
-    ├── main.tsx            # App entry: Chart.js registration, RouterProvider
-    ├── router.ts           # Route tree, loaders, search param validation
-    ├── index.css            # Global shared styles
-    ├── pages/
-    │   ├── HomePage.tsx     # Home: optimizer cards + changes
-    │   ├── OptimizerPage.tsx # Benchmark charts (wraps App)
-    │   └── ExplorePage.tsx  # Search space explorer (wraps ExploreApp)
-    ├── components/          # RootLayout, App, ExploreApp, BenchmarkChart, etc.
-    ├── types/               # benchmark.d.ts, exploration.d.ts
-    └── utils/               # data parsing, formatting, github API
-```
-
-### How data flows
-- In production, `data.json` and `explore.json` are plain JSON files on gh-pages
-- TanStack Router loaders fetch data before components render
-- Route search params (`?cat=X`, `?bench=X`, `?case=X`) replace hash-based navigation
-- In dev, `public/{optimizer}/data.json` and `public/{optimizer}/explore.json` provide sample fixture data
-
-### Local development
 ```bash
-# Install dependencies
-cd web/dashboard && bun install
-
-# Dev server with hot reload
+cd web/dashboard
+bun install --frozen-lockfile
 bun run dev
-
-# Production build (outputs to web/dashboard/dist/)
-bun run build
-
-# Preview production build
-bun run preview
 ```
 
-### Verifying the dashboard build locally
-```bash
-cd web/dashboard && bun install --frozen-lockfile && bun run build
-```
-This mirrors the dashboard build step used by the local deploy runner.
-
-## gh-pages Branch Layout
-
-```
-gh-pages/
-├── index.html              # SPA entry (same file at all paths)
-├── .nojekyll               # Disables Jekyll processing
-├── assets/                 # Vite-built JS/CSS bundles
-├── edit/
-│   ├── index.html          # SPA entry (copy of root index.html)
-│   ├── data.json           # Benchmark data (written by bench-data.ts ingest)
-│   ├── explore.json        # Exploration data (written by the local deploy runner)
-│   └── explore/
-│       └── index.html      # SPA entry (copy of root index.html)
-├── motion/
-│   ├── index.html
-│   ├── data.json
-│   ├── explore.json
-│   └── explore/
-│       └── index.html
-├── composition/
-│   ├── index.html
-│   ├── data.json
-│   ├── explore.json
-│   └── explore/
-│       └── index.html
-├── tests/
-│   ├── data.json           # Unit + Approval timing (per-commit time series)
-│   └── coverage.json       # Property + Safety coverage (latest snapshot)
-└── docs/
-```
-
-## Gitignore
-
-`web/dashboard/node_modules/` and `web/dashboard/dist/` are gitignored. Source files, `bun.lock`, and `public/` are tracked.
+Use `bun run build` to type-check and create `dist/`, and `bun run preview` to inspect the
+production build. The publisher installs the dashboard entry point as both `index.html` and
+`404.html` for client-side routes. Static assets go under `assets/`.

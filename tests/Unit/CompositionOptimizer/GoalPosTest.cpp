@@ -255,6 +255,42 @@ TEST_F(CompositionOptimizerGoalPosTest, ClampedColumn_LinewiseDeleteThenMoreStil
   }
 }
 
+TEST_F(CompositionOptimizerGoalPosTest, ClampedColumn_OnlyStartNeedsExactCurswant) {
+  // `j` lands on (1, 0) with curswant 1, where the one stored edit is `dds…`.
+  Lines initial = {"2vl", " ", "vn%|Ece2a", "?Meh`"};
+  Lines goal = {"2vl", "v", "n%|Ece2a", "?Meh`"};
+  CursorPos initialPos(0, 1);
+  CursorPos goalPos(2, 3);
+
+  CompositionResult res = opt.optimize(
+      initial, initialPos, goal, goalPos, CompositionOptimizerParams{}.withMaxResults(5));
+  const auto& results = res.getResults();
+  ASSERT_FALSE(results.empty());
+
+  for (size_t i = 0; i < results.size(); i++) {
+    verifyGoalReached(results[i], initial, initialPos, goal, goalPos,
+                      "ClampedOnlyStart result " + to_string(i));
+  }
+}
+
+TEST_F(CompositionOptimizerGoalPosTest, ClampedColumn_DeleteOntoShorterLineThenMore) {
+  // `dd` from the clamped (1, 2) lands on "xy"'s last column whatever curswant is.
+  Lines initial = {"0123456789ab", "abc", "xy", "tail"};
+  Lines goal = {"0123456789ab", "x", "tail"};
+  CursorPos initialPos(0, 10);
+  CursorPos goalPos(1, 0);
+
+  CompositionResult res = opt.optimize(
+      initial, initialPos, goal, goalPos, CompositionOptimizerParams{}.withMaxResults(5));
+  const auto& results = res.getResults();
+  ASSERT_FALSE(results.empty());
+
+  for (size_t i = 0; i < results.size(); i++) {
+    verifyGoalReached(results[i], initial, initialPos, goal, goalPos,
+                      "ClampedDeleteOntoShorter result " + to_string(i));
+  }
+}
+
 TEST_F(CompositionOptimizerGoalPosTest, CursorInsideRegionMovesToSolvedStart) {
   // The cursor starts inside the region `␣↵~` but the edit is only solved from (0, 1).
   Lines initial = {"~ ", "~"};
@@ -291,5 +327,16 @@ TEST_F(CompositionOptimizerGoalPosTest, SplitIndentedLineReachesGoal) {
     verifyGoalReached(results[i], initial, initialPos, goal, goalPos,
                       "SplitIndentedLineReachesGoal result " +
                           to_string(i));
+  }
+}
+
+TEST_F(CompositionOptimizerGoalPosTest, EditPastColumnOneThousand) {
+  const string prefix(1000, 'a');
+  const Lines initial = {prefix + "x"}, goal = {prefix + "y"};
+  const CursorPos pos(0, 1000);
+  const auto res = opt.optimize(initial, pos, goal, pos);
+  ASSERT_FALSE(res.getResults().empty());
+  for (const Result& r : res.getResults()) {
+    verifyGoalReached(r, initial, pos, goal, pos, "long line");
   }
 }

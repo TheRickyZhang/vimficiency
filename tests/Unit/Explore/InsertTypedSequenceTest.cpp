@@ -84,7 +84,7 @@ TEST_F(InsertTypedSequenceTest, MatchesCompositionStrategies) {
 
     vector<pair<string, CursorPos>> enumerated;
     CompositionStrategies::enumerateInsertions(
-        diff, c.initial, [&](const CompositionStrategies::Insertion& s) {
+        diff, c.initial, {}, [&](const CompositionStrategies::Insertion& s) {
           string typed = s.insertCmd.substr(s.structural.size());
           ASSERT_TRUE(typed.ends_with("<Esc>"));
           typed.resize(typed.size() - 5);

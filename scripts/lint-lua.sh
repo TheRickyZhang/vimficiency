@@ -33,7 +33,6 @@ declare -A PCALL_CEILING=(
   [lua/vimficiency/explore/input/handlers.lua]=1
   [lua/vimficiency/explore/runtime/lifecycle.lua]=1
   [lua/vimficiency/explore/runtime/init.lua]=1
-  [lua/vimficiency/ffi/config.lua]=2
   [lua/vimficiency/ffi/core.lua]=1
   [lua/vimficiency/ffi/explore.lua]=1
   [lua/vimficiency/health.lua]=1

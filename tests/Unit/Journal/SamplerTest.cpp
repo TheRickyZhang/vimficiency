@@ -365,6 +365,27 @@ TEST_F(JournalSamplerTest, EverySampledRunIsSlicedAgainAsItWasScored) {
     EXPECT_EQ(got->start_col(), in.initialPos.col);
     EXPECT_EQ(got->end_row(), in.goalPos.line);
     EXPECT_EQ(got->end_col(), in.goalPos.col);
+    const auto& recording = got->recording();
+    EXPECT_EQ(recording.row(), in.initialPos.line);
+    EXPECT_EQ(recording.col(), in.initialPos.col);
+    ASSERT_EQ(recording.steps_size(), sample.commands_size());
+    vector<string> rendered(got->lines().begin(), got->lines().end());
+    for (int i = 0; i < recording.steps_size(); i++) {
+      const auto& step = recording.steps(i);
+      EXPECT_EQ(step.keys(), sample.commands(i).keys());
+      EXPECT_EQ(step.mode(), "n");
+      for (const auto& delta : step.deltas()) {
+        ASSERT_GE(delta.first(), 0);
+        ASSERT_LE(delta.first() + delta.old_count(), ssize(rendered));
+        auto pos = rendered.begin() + delta.first();
+        pos = rendered.erase(pos, pos + delta.old_count());
+        rendered.insert(pos, delta.lines().begin(), delta.lines().end());
+      }
+      ASSERT_GE(step.row(), 0);
+      ASSERT_LT(step.row(), ssize(rendered));
+    }
+    EXPECT_TRUE(ranges::equal(rendered, got->goal_lines()));
+    EXPECT_EQ(recording.steps(recording.steps_size() - 1).row(), in.goalPos.line);
     ASSERT_LT(got->end_row(), ssize(in.goalLines));
     EXPECT_LT(got->end_col(), max<int>(1, ssize(in.goalLines[got->end_row()])));
   }

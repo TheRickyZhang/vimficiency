@@ -15,7 +15,7 @@
 ---@field store_recall            fun(record: VF.Session.Active)
 ---@field append_atom             fun(record: VF.Session.Active, atom: VF.Atom)
 ---@field ingest_recall_atom      fun(atom: VF.Atom)
----@field abort_recall            fun(buf: integer, win: integer)
+---@field abort_recall            fun(buf: integer, win: integer, tick: integer?)
 ---
 --- Lifecycle
 ---@field convert_to_finished           fun(id: string, result: VF.Session.Result, finish_alias: string|nil, kind?: VF.Session.Kind): boolean
@@ -104,7 +104,8 @@ end
 ---@field win          integer           # Window where session started
 ---@field buf          integer           # Buffer where session started
 ---@field start_state  VF.ViewState      # Cursor/viewport at start. Mark/watch: a VF.BufferState, so the start text rides along
----@field start_seq    integer|nil       # Recall only: `buffer_history` seq to rebuild the start text from, in place of `start_state.lines`
+---@field start_seq    integer|nil       # Buffer history at the start
+---@field history? VF.BufferHistory.State # Keeps a named session's history alive while its buffer is unloaded
 ---@field atoms        VF.Atom[]
 ---@field last_atom_mono_ns integer|nil # vim.uv.hrtime() of the last appended atom; nil until the first. Drives idle eviction
 ---@field stream_sub   string|nil        # Atom listener name this record owns (mark/watch); nil for recall (shared listener)
@@ -124,6 +125,7 @@ end
 
 --- VF.Session.Result: data for a completed session, ready for simulate().
 ---@class VF.Session.Result
+---@field recording? VF.Replay.Recording
 ---@field lines string[]               # Trimmed buffer lines used for optimization
 ---@field goal_lines string[]          # Goal buffer slice for recomputing explore recommendations
 ---@field start_row integer            # 0-indexed, relative to lines
@@ -136,8 +138,9 @@ end
 ---@field suffix string                # Reserved boundary suffix; empty at the whole-buffer level
 ---@field diffs VF.Diff.Region[]       # Optimizer character-level diff regions for column highlighting
 ---@field window_height integer        # Captured window height for page/scroll semantics
+---@field indent? VF.IndentOptions
 ---@field scroll_amount integer        # Captured 'scroll' option for Ctrl-D/U semantics
----@field user_seq string              # What ran: the user's keys after mappings (keytrans string). Replayed and bounds the search
+---@field user_seq string              # What ran: the user's keys after mappings (keytrans string). Bounds the search
 ---@field user_typed string|nil        # What the user pressed (keytrans string), mouse events stripped. Behind user_cost. Absent on files saved before it existed
 ---@field user_typed_insert string|nil # Of user_typed, the insert text (`VF.Atom.typed_insert`). The command tables count insert text by these. Absent on files saved before it existed
 ---@field optimizer_overrides string|nil # Encoded overrides the analyze ran with; with results_calculated, completes the replayable request. Absent on files saved before 0.3.0
@@ -180,21 +183,35 @@ function M.new_active_session(id, stream_sub, win, buf, start_state, kind)
   assert(CREATABLE_KINDS[kind],
     "kind must be 'mark', 'watch', or 'recall', got: " .. tostring(kind))
 
+  local start_seq, history
+  if kind ~= "recall" then start_seq, history = buffer_history.mark(buf) end
   return {
     id = id,
     stream_sub = stream_sub,
     win = win,
     buf = buf,
     start_state = start_state,
+    start_seq = start_seq,
+    history = history,
     started_mono_ns = vim.uv.hrtime(),
     atoms = {},
     kind = kind,
   }
 end
 
+---@param atom VF.Atom
+---@return VF.Session.RecallMark
+local function mark_atom(atom)
+  if not atom.mark then
+    atom.mark = { view = capture_state.capture_view(atom.buf, atom.win), seq = buffer_history.mark(atom.buf) }
+  end
+  return atom.mark
+end
+
 ---@param record VF.Session.Active
 ---@param atom VF.Atom
 function M.append_atom(record, atom)
+  mark_atom(atom)
   table.insert(record.atoms, atom)
   record.last_atom_mono_ns = vim.uv.hrtime()
 end
@@ -659,20 +676,18 @@ end
 ---@field view VF.ViewState
 ---@field seq  integer        # `buffer_history` seq of the buffer text at this point
 
--- Buffer state immediately *before* the next atom in each buffer. A CmdAtom
--- fires after its action, so a recall record created at atom i needs the state
--- that preceded it — which is the state marked right after atom i-1. We keep
--- one rolling mark per buffer and shift it forward each atom. The first atom in
--- a buffer has no predecessor, so it seeds the mark without spawning a record
--- (recalling "before the very first command" is not meaningful).
+-- The last observed delivery seeds the next burst in this buffer.
 ---@type table<integer, VF.Session.RecallMark>
 local recall_prev_state = {}
 
----@param buf integer
----@param win integer
----@return VF.Session.RecallMark
-local function recall_mark(buf, win)
-  return { view = capture_state.capture_view(buf, win), seq = buffer_history.mark(buf) }
+---@type table<integer, {tick:integer?, start:VF.Session.RecallMark?, atoms:VF.Atom[]}>
+local bursts = {}
+
+local function trim_history(buf, through)
+  for _, session in pairs(active_sessions) do
+    if session.buf == buf and session.start_seq then through = math.min(through, session.start_seq) end
+  end
+  buffer_history.trim(buf, through)
 end
 
 --- Ingest one recorded atom into the rolling recall ring.
@@ -681,15 +696,21 @@ end
 --- buffer/window validity.
 ---@param atom VF.Atom
 function M.ingest_recall_atom(atom)
+  local mark = mark_atom(atom)
   -- Extend every still-active recall record in this buffer with this atom.
   for _, id in ipairs(recall_id_order) do
     local rec = active_sessions[id]
     if rec and rec.buf == atom.buf then M.append_atom(rec, atom) end
   end
 
-  local prev = recall_prev_state[atom.buf]
-  -- Shift: this atom's post-state becomes the predecessor for the next one.
-  recall_prev_state[atom.buf] = recall_mark(atom.buf, atom.win)
+  local burst = bursts[atom.buf]
+  if not burst or not atom.tick or burst.tick ~= atom.tick then
+    burst = { tick = atom.tick, start = recall_prev_state[atom.buf], atoms = {} }
+    bursts[atom.buf] = burst
+  end
+  burst.atoms[#burst.atoms + 1] = atom
+  local prev = burst.start
+  recall_prev_state[atom.buf] = mark
 
   -- Without a predecessor mark we can't frame "before this atom"; seed and wait.
   if not prev then return end
@@ -697,18 +718,10 @@ function M.ingest_recall_atom(atom)
   local id = util.new_id(atom.buf)
   local rec = M.new_active_session(id, nil, atom.win, atom.buf, prev.view, "recall")
   rec.start_seq = prev.seq
-  M.append_atom(rec, atom)
+  rec.atoms = vim.list_slice(burst.atoms)
+  rec.last_atom_mono_ns = rec.started_mono_ns
   M.store_recall(rec)
-
-  -- Seqs grow along the ring, so the buffer's oldest active record bounds what
-  -- any of them can still ask `buffer_history` to rebuild.
-  for _, rid in ipairs(recall_id_order) do
-    local oldest = active_sessions[rid]
-    if oldest and oldest.buf == atom.buf then
-      buffer_history.trim(atom.buf, oldest.start_seq)
-      break
-    end
-  end
+  trim_history(atom.buf, prev.seq)
 end
 
 --- `buf`'s active recall records can no longer be finished: drop them and the
@@ -720,21 +733,28 @@ local function drop_recall(buf)
     if rec and rec.buf == buf then M.remove(id) end
   end
   recall_prev_state[buf] = nil
+  bursts[buf] = nil
 end
 
-buffer_history.set_reset_handler(drop_recall)
+buffer_history.set_reset_handler(function(buf)
+  drop_recall(buf)
+  for _, session in pairs(active_sessions) do
+    if session.buf == buf then return true end
+  end
+  return false
+end)
 
 --- An unreplayable atom changed `buf`: its active recall records can no longer
 --- reach their end state, so drop them and restart the predecessor chain from
 --- the post-abort state.
 ---@param buf integer
 ---@param win integer
-function M.abort_recall(buf, win)
+function M.abort_recall(buf, win, tick)
   drop_recall(buf)
-  local mark = recall_mark(buf, win)
-  -- No record is left to rebuild anything older.
-  buffer_history.trim(buf, mark.seq)
+  local mark = { view = capture_state.capture_view(buf, win), seq = buffer_history.mark(buf) }
+  trim_history(buf, mark.seq)
   recall_prev_state[buf] = mark
+  bursts[buf] = { tick = tick, atoms = {} }
 end
 
 --------------------------------------------------------------------------------

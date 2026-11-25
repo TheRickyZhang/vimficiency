@@ -54,7 +54,7 @@ CharDeletionBufferEffect applyCharDeletionToBuffer(
   lines.erase(lines.begin() + r.begin.line + 1, lines.begin() + r.end.line + 1);
 
   if (firstLn.empty() && realBufferHasAnotherLine(lines, context) &&
-      mode != Mode::Insert) {
+      mode == Mode::Normal) {
     lines.erase(lines.begin() + r.begin.line);
     effect.removedAnchorLine = true;
     effect.removedAllVisibleLines = lines.empty();
@@ -285,6 +285,18 @@ void deleteRangeAndUpdatePos(
       ? charDeletionAnchorCol(r, originalPos)
       : r.begin.col;
   placeCursorAfterCharDeletion(lines, r.begin.line, anchorCol, pos, mode);
+}
+
+void deleteVisualSelection(Lines& lines, CursorPos anchor, CursorPos& pos, Mode mode) {
+  assert(mode == Mode::Visual || mode == Mode::Insert);
+  CursorPos first = min(anchor, pos);
+  CursorPos end = max(anchor, pos);
+  if (end.col < lines.getSize(end.line)) {
+    end.setCol(end.col + 1);
+  } else if (end.line < lines.lastLine()) {
+    end = CursorPos(end.line + 1, 0);
+  }
+  deleteRangeAndUpdatePos(lines, CharRange(first, end), pos, mode);
 }
 
 void deleteCharLineRangeAndUpdatePos(Lines& lines, const CharLineRange& range,
@@ -598,14 +610,11 @@ void joinLineRange(Lines& lines, CursorPos& pos, int count, bool insertSpace) {
 
 namespace {
 
-int openLineAt(Lines& lines, CursorPos& pos, int newLine) {
+int openLineAt(Lines& lines, CursorPos& pos, int newLine, const IndentOptions& options) {
   assert(!lines.empty());
   assert(pos.line >= 0 && pos.line < static_cast<int>(lines.size()));
 
-  std::string indent;
-  if constexpr (VimOptions::autoindent()) {
-    indent = std::string(leadingIndent(lines[pos.line]));
-  }
+  std::string indent = options.openedIndent(lines[pos.line]);
   const int indentLen = static_cast<int>(indent.size());
   lines.insert(lines.begin() + newLine, std::move(indent));
   pos.line = newLine;
@@ -615,12 +624,12 @@ int openLineAt(Lines& lines, CursorPos& pos, int newLine) {
 
 }  // namespace
 
-int openLineBelow(Lines& lines, CursorPos& pos) {
-  return openLineAt(lines, pos, pos.line + 1);
+int openLineBelow(Lines& lines, CursorPos& pos, const IndentOptions& options) {
+  return openLineAt(lines, pos, pos.line + 1, options);
 }
 
-int openLineAbove(Lines& lines, CursorPos& pos) {
-  return openLineAt(lines, pos, pos.line);
+int openLineAbove(Lines& lines, CursorPos& pos, const IndentOptions& options) {
+  return openLineAt(lines, pos, pos.line, options);
 }
 
 } // namespace VimCore

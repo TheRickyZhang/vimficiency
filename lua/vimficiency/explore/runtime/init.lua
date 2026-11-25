@@ -42,7 +42,7 @@ function M.start(label, result, header_handlers)
   local store = settings.settings_store()
   local request = result_mod.search_request(result, source_win, state_mod.resolve_overrides())
 
-  local layout = layout_mod.build(label, result.lines, source_buf, source_win)
+  local layout = layout_mod.build(label, result.lines, source_buf, source_win, request.indent)
   local view = view_model.create(label, result, nil, layout, header_handlers)
 
   view.augroup = v.nvim_create_augroup("VimficiencyExplore" .. layout.scratch_tab, { clear = true })

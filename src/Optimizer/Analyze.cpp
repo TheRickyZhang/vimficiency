@@ -19,21 +19,6 @@ using namespace std;
 
 namespace {
 
-pair<int, int> findDiffRange(const Lines& a, const Lines& b) {
-  int firstDiff = -1;
-  int lastDiff = -1;
-  const int maxLen = max(ssize(a), ssize(b));
-  for (int i = 0; i < maxLen; ++i) {
-    const string* lhs = i < ssize(a) ? &a[i] : nullptr;
-    const string* rhs = i < ssize(b) ? &b[i] : nullptr;
-    if (!lhs || !rhs || *lhs != *rhs) {
-      if (firstDiff < 0) firstDiff = i;
-      lastDiff = i;
-    }
-  }
-  return {firstDiff, lastDiff};
-}
-
 void replaceAll(string& text, string_view from, string_view to) {
   for (size_t at = text.find(from); at != string::npos; at = text.find(from, at + to.size())) {
     text.replace(at, from.size(), to);
@@ -47,10 +32,6 @@ string approximateScreenMotions(string_view userSeq) {
   replaceAll(out, "gj", "j");
   replaceAll(out, "gk", "k");
   return out;
-}
-
-Lines rows(const Lines& lines, pair<int, int> region) {
-  return lines.getLineRange(region.first, min(region.second + 1, static_cast<int>(lines.size())));
 }
 
 }  // namespace
@@ -69,34 +50,50 @@ NavBoundary sliceBoundary(const Lines& lines, bool hasLinesAbove, bool hasLinesB
                      hasLinesAbove, hasLinesBelow);
 }
 
-pair<int, int> computeSearchRegion(
+SearchRegion computeSearchRegion(
     int startRow, int endRow, const Lines& startLines, const Lines& endLines,
-    int padding) {
-  int minRow = min(startRow, endRow);
-  int maxRow = max(startRow, endRow);
-  const auto [firstDiff, lastDiff] = findDiffRange(startLines, endLines);
-  if (firstDiff >= 0) {
-    minRow = min(minRow, firstDiff);
-    maxRow = max(maxRow, lastDiff);
+    int padding, UntouchedRows untouched) {
+  startRow = clamp(startRow, 0, startLines.lastLine());
+  endRow = clamp(endRow, 0, endLines.lastLine());
+  const int initialHeight = startLines.lastLine() + 1;
+  const int goalHeight = endLines.lastLine() + 1;
+  untouched.include(startRow, initialHeight - startRow - 1);
+  untouched.include(endRow, goalHeight - endRow - 1);
+  padding = max(0, padding);
+  if (&startLines == &endLines) {
+    const int end = initialHeight - untouched.below;
+    return {untouched.above, end, end, min(untouched.above, padding), min(untouched.below, padding)};
   }
 
-  const int bufferLen = max(ssize(startLines), ssize(endLines));
-  const int regionStart = max(0, minRow - padding);
-  const int regionEnd = min(bufferLen - 1, maxRow + padding);
-  return {regionStart, regionEnd};
+  int begin = 0;
+  while (begin < untouched.above && startLines[begin] == endLines[begin]) {
+    ++begin;
+  }
+
+  int initialEnd = initialHeight;
+  int goalEnd = goalHeight;
+  while (initialHeight - initialEnd < untouched.below &&
+         startLines[initialEnd - 1] == endLines[goalEnd - 1]) {
+    --initialEnd;
+    --goalEnd;
+  }
+
+  return {begin, initialEnd, goalEnd, min(begin, padding), min(initialHeight - initialEnd, padding)};
 }
 
 SearchSlice sliceSearch(
     const Lines& initialLines, const Lines& goalLines, const SessionEnds& ends,
-    string_view userSeq, string_view userTyped, pair<int, int> region) {
+    string_view userSeq, string_view userTyped, const SearchRegion& region) {
+  const int paddedBegin = region.begin - region.paddingAbove;
+  const int paddedInitialEnd = region.initialEnd + region.paddingBelow;
   SearchSlice slice;
-  slice.initialLines = rows(initialLines, region);
-  slice.goalLines = rows(goalLines, region);
+  slice.initialLines = initialLines.getLineRange(paddedBegin, paddedInitialEnd);
+  slice.goalLines = goalLines.getLineRange(paddedBegin, region.goalEnd + region.paddingBelow);
   slice.ends = ends;
-  slice.ends.startRow -= region.first;
-  slice.ends.endRow -= region.first;
-  slice.hasLinesAbove = region.first > 0;
-  slice.hasLinesBelow = region.second < max(ssize(initialLines), ssize(goalLines)) - 1;
+  slice.ends.startRow -= paddedBegin;
+  slice.ends.endRow -= paddedBegin;
+  slice.hasLinesAbove = paddedBegin > 0;
+  slice.hasLinesBelow = paddedInitialEnd <= initialLines.lastLine();
   slice.userSeq = approximateScreenMotions(userSeq);
   slice.userTyped = userTyped;
   return slice;
@@ -116,6 +113,7 @@ SearchInputs searchInputs(SearchSlice slice, OptimizerParamOverrides overrides) 
   in.initialPos = in.initialLines.clamp(CursorPos(slice.ends.startRow, slice.ends.startCol));
   in.goalPos = in.goalLines.clamp(CursorPos(slice.ends.endRow, slice.ends.endCol));
   in.boundary = sliceBoundary(in.initialLines, slice.hasLinesAbove, slice.hasLinesBelow);
+  in.indent = slice.ends.indent;
   in.navContext = NavContext(slice.ends.windowHeight, slice.ends.scrollAmount);
   return in;
 }
@@ -147,9 +145,10 @@ AnalyzeOutput analyze(const SearchInputs& in, int resultsCalculated,
   } else {
     CompositionOptimizer opt(config);
 
-    const CompositionOptimizerParams compParams = in.overrides.resolved(
+    CompositionOptimizerParams compParams = in.overrides.resolved(
         CompositionOptimizerParams{}.withMaxResults(resultsCalculated));
 
+    compParams.transform.indent = in.indent;
     const CompositionResult composed = opt.optimize(
         in.initialLines, in.initialPos, in.goalLines, in.goalPos, compParams,
         in.userSeq, in.boundary, in.navContext, control);

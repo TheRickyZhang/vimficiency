@@ -49,10 +49,10 @@ local request = ffi_optimizer.build_search_request({
 ```
 
 - Lua sends the whole buffers; C++ (`vf_build_search_request`, `src/Optimizer/Analyze.cppm`) does the rest and returns the sliced `SearchRequest`
-- `computeSearchRegion`: the span covering both cursor rows and every changed line, plus `SLICE_PADDING` (configurable, default 5) lines above and below
+- Capture supplies the smallest untouched prefix and suffix across observed cursor positions and changed line ranges. Within a burst, Neovim reports command starting rows even when only the final text is observable. If the buffer height changed during the burst, the smallest observed height gives a conservative bound on the suffix below those rows. `computeSearchRegion` trims matching rows within those margins, then adds up to `SLICE_PADDING` matching rows on either side. The initial and goal slices share a start row and can have different lengths.
 - A region taller than `MAX_SEARCH_LINES` is rejected before any search runs
 - `sliceSearch` converts positions to slice-relative coordinates and sets the boundary flags (`has_lines_above`, `has_lines_below`)
-- The journal sampler (`src/Journal/Evaluate.cpp`) calls the same two functions, so a sampled window is sliced exactly like a live session
+- The journal sampler (`src/Journal/Evaluate.cpp`) shares the live session slice and uses the larger unpadded position count as the query size
 
 ### 2. NavOptimizer
 

@@ -49,7 +49,7 @@ public:
   SimulationResult simulate(const Lines &lines,
                             int startRow, // 0-indexed
                             int startCol, // 0-indexed
-                            const std::string &keys);
+                            const std::string &keys, std::string_view indentOptions = {});
 
   // Simulate parsed Normal-mode tokens separately in one Neovim buffer.
   SimulationResult simulateTokens(const Lines &lines,
@@ -91,7 +91,7 @@ private:
                                   int startCol,
                                   const std::vector<std::string>& chunks,
                                   bool asSeparateUserActions,
-                                  int scrollAmount = -1);
+                                  int scrollAmount = -1, std::string_view indentOptions = {});
 };
 
 }  // export

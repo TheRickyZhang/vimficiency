@@ -11,10 +11,7 @@ local SCRATCH_BUFFER_DEFAULTS = {
 }
 
 local BUFFER_OPTIONS = {
-  "shiftwidth",
-  "tabstop",
   "softtabstop",
-  "expandtab",
   "iskeyword",
   "matchpairs",
   "virtualedit",

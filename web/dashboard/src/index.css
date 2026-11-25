@@ -46,6 +46,16 @@ p { text-align: center; }
   @apply text-brand no-underline font-semibold hover:underline;
 }
 
+.exploration-chart:fullscreen {
+  display: flex;
+  flex-direction: column;
+}
+
+.exploration-chart:fullscreen > div {
+  flex: 1;
+  min-height: 0;
+}
+
 .fullscreen-btn {
   @apply absolute top-3 right-3 w-8 h-8 flex items-center justify-center rounded-md bg-[#f0f0f0] hover:bg-[#e0e0e0] border border-[#ccc] text-[#555] cursor-pointer;
 }

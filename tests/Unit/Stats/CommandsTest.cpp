@@ -146,14 +146,13 @@ TEST(StatsCommands, AScreenLineMotionSharesARowWithItsLineMotionUnlessItStayedOn
   EXPECT_EQ(compared.less[0].text, "w");
 }
 
-TEST(StatsCommands, CommandsOnlyTheUserUsesOrderByUseAndAreCut) {
+TEST(StatsCommands, CommandsOnlyTheUserUsesOrderByUse) {
   Stats::CommandCounts user;
   for (int n = 10; n < 17; n++) {
     for (int i = 0; i < n; i++) Stats::countKeys(user, format("{}w", n), true);
   }
   const auto compared = Stats::compareCommands(user, repeated("b", 10));
-  ASSERT_EQ(compared.never.size(), 5u);
+  ASSERT_EQ(compared.never.size(), 7u);
   EXPECT_EQ(compared.never[0].text, "16w");
-  EXPECT_EQ(compared.never[4].text, "12w");
-  EXPECT_EQ(compared.neverCut, 2);
+  EXPECT_EQ(compared.never[6].text, "10w");
 }

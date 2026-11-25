@@ -16,13 +16,13 @@ using namespace std;
 namespace {
 
 bool applyInsertSpecial(Lines& lines, CursorPos& cursor, Mode& mode,
-                        string_view special, int* pendingAutoindentLen) {
+                        string_view special, int* pendingAutoindentLen, const IndentOptions& options) {
   // `<CR>` carries autoindent semantics — route through `applyEdit` so the
   // strip-leading-RHS-and-prepend-autoindent rule fires and pendingAutoindent
   // gets set for the next `<Esc>`.
   if (special == "<CR>") {
     Edit::applyEdit(lines, cursor, mode, ParsedEdit(special), nullptr, false,
-                    0, 0, false, pendingAutoindentLen);
+                    0, 0, false, pendingAutoindentLen, options);
     return true;
   }
 
@@ -42,7 +42,7 @@ bool applyInsertSpecial(Lines& lines, CursorPos& cursor, Mode& mode,
   if (find(editSpecials.begin(), editSpecials.end(), special)
       != editSpecials.end()) {
     Edit::applyEdit(lines, cursor, mode, ParsedEdit(special), nullptr, false,
-                    0, 0, false, pendingAutoindentLen);
+                    0, 0, false, pendingAutoindentLen, options);
     if (pendingAutoindentLen != nullptr) *pendingAutoindentLen = 0;
     return true;
   }
@@ -50,16 +50,22 @@ bool applyInsertSpecial(Lines& lines, CursorPos& cursor, Mode& mode,
 }
 
 void applyTypedText(Lines& lines, CursorPos& cursor, Mode& mode,
-                    string_view text, int* pendingAutoindentLen = nullptr) {
+                    string_view text, int* pendingAutoindentLen, const IndentOptions& options) {
   assert(mode == Mode::Insert);
   size_t i = 0;
   while (i < text.size()) {
+    if (text.substr(i).starts_with("<C-v><Tab>")) {
+      VimCore::insertText(lines, cursor, "\t");
+      *pendingAutoindentLen = 0;
+      i += std::string_view("<C-v><Tab>").size();
+      continue;
+    }
     if (text[i] == '<') {
       size_t close = text.find('>', i);
       if (close != string_view::npos) {
         string_view special = text.substr(i, close - i + 1);
         if (applyInsertSpecial(lines, cursor, mode, special,
-                               pendingAutoindentLen)) {
+                               pendingAutoindentLen, options)) {
           i = close + 1;
           continue;
         }
@@ -78,7 +84,7 @@ void applyTypedText(Lines& lines, CursorPos& cursor, Mode& mode,
 }  // namespace
 
 InterpreterReplayResult applyUserSequence(
-    Lines lines, CursorPos cursor, string_view sequence) {
+    Lines lines, CursorPos cursor, string_view sequence, const IndentOptions& options) {
   Mode mode = Mode::Normal;
   auto tokens = parseSequence(sequence);
   assert(tokens.has_value());
@@ -115,17 +121,17 @@ InterpreterReplayResult applyUserSequence(
         if (parsed && !parsed->empty()) {
           for (const ParsedEdit& pe : *parsed) {
             Edit::applyEdit(lines, cursor, mode, pe, &lastEdit, false,
-                            0, 0, false, &pendingAutoindentLen);
+                            0, 0, false, &pendingAutoindentLen, options);
           }
         } else {
           Edit::applyEdit(lines, cursor, mode, ParsedEdit(text), &lastEdit,
-                          false, 0, 0, false, &pendingAutoindentLen);
+                          false, 0, 0, false, &pendingAutoindentLen, options);
         }
         break;
       }
       case TokenKind::TypedText:
         flushMovements();
-        applyTypedText(lines, cursor, mode, text, &pendingAutoindentLen);
+        applyTypedText(lines, cursor, mode, text, &pendingAutoindentLen, options);
         break;
     }
   }

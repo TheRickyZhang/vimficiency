@@ -241,9 +241,13 @@ optimizeImpl(
       int targetBeginLine, int targetEndLine,
       const Lines& fromLines,
       int maxResults, bool keepMultiplePerLanding,
-      auto&& makeLocalInterval) {
+      auto&& makeLocalInterval, std::span<const Pos> exactTargetColLandings = {}) {
     auto slice = sliceMotionSubset(pos, targetBeginLine, targetEndLine, fromLines);
     CharInterval localInterval = makeLocalInterval(slice.subset, slice.beginLine);
+    vector<Pos> localExactLandings;
+    for (const Pos& p : exactTargetColLandings) {
+      localExactLandings.emplace_back(p.line - slice.beginLine, p.col);
+    }
 
     auto navParams = navParamsForCompositionMotion(params)
         .withMaxResults(maxResults)
@@ -251,7 +255,7 @@ optimizeImpl(
     auto navResult = navOptimizer.optimize(
         slice.subset, slice.localPos, localInterval,
         navParams, "", slice.subsetBoundary, navigationContext,
-        slice.bufferIndex, slice.bufferIndexLineOffset, ctx.control);
+        slice.bufferIndex, slice.bufferIndexLineOffset, ctx.control, localExactLandings);
     ctx.navNodesExplored += navResult.getStats().nodesExplored();
 
     for (const LandingResult& movResult : navResult.getResults()) {
@@ -320,49 +324,45 @@ optimizeImpl(
     const Lines& currentLines = ctx.getLinesAfter(editsCompleted);
     const DiffState& nextEdit = ctx.getDiffState(editsCompleted);
 
-    // Pure insertion: no edit region to enter. Strategies are shared with
-    // CompositionFrontier so the two never drift.
+    auto dispatchInsertion = [&](const CompositionStrategies::Insertion& s) {
+      const bool inRange = (pos.line == s.targetLine &&
+                            pos.col >= s.beginCol && pos.col < s.endCol);
+
+      if (inRange) {
+        enqueueEditTransition(
+            current, Sequence(s.insertCmd), 0.0, s.goalPos, editsCompleted + 1);
+        return;
+      }
+
+      auto search = buildCompositionRangeMotionSearch(
+          currentLines, pos, s.targetLine, s.beginCol, s.endCol,
+          boundary, params);
+      if (!search) return;
+      auto navResult = optimizeCompositionRangeMotion(
+          navOptimizer, *search, navigationContext, params, 1, ctx.control);
+      ctx.navNodesExplored += navResult.getStats().nodesExplored();
+
+      for (const LandingResult& movResult : navResult.getResults()) {
+        if (movResult.getSequence().empty()) continue;
+
+        const CursorPos& localGoal = movResult.getGoalPos();
+        assert(localGoal >= search->localRangeBegin && localGoal < search->localRangeEnd &&
+               "Insert-mode entry motion goal must be subset-local and inside target range");
+        // localGoal stays subset-local: the transition lands on the
+        // strategy's post-insert position, not the motion endpoint.
+        Sequence fullSeq = movResult.getSequence();
+        const uint32_t motionBytes = static_cast<uint32_t>(fullSeq.size());
+        fullSeq.append(s.insertCmd);
+        enqueueEditTransition(
+            current, fullSeq, movResult.getPenalty(), s.goalPos, editsCompleted + 1, motionBytes);
+      }
+    };
+
     if (nextEdit.isPureInsertion()) {
-      debug("  pure insertion at", nextEdit.beginPos,
-            "text='" + VF::prettify(nextEdit.insertedText) + "'");
-
-      auto dispatchInsertion = [&](const CompositionStrategies::Insertion& s) {
-        const bool inRange = (pos.line == s.targetLine &&
-                              pos.col >= s.beginCol && pos.col < s.endCol);
-
-        if (inRange) {
-          enqueueEditTransition(
-              current, Sequence(s.insertCmd), 0.0, s.goalPos, editsCompleted + 1);
-          return;
-        }
-
-        auto search = buildCompositionRangeMotionSearch(
-            currentLines, pos, s.targetLine, s.beginCol, s.endCol,
-            boundary, params);
-        if (!search) return;
-        auto navResult = optimizeCompositionRangeMotion(
-            navOptimizer, *search, navigationContext, params, 1, ctx.control);
-        ctx.navNodesExplored += navResult.getStats().nodesExplored();
-
-        for (const LandingResult& movResult : navResult.getResults()) {
-          if (movResult.getSequence().empty()) continue;
-
-          const CursorPos& localGoal = movResult.getGoalPos();
-          assert(localGoal >= search->localRangeBegin && localGoal < search->localRangeEnd &&
-                 "pure insertion motion goal must be subset-local and inside target range");
-          // localGoal stays subset-local: the transition lands on the
-          // strategy's post-insert position, not the motion endpoint.
-          Sequence fullSeq = movResult.getSequence();
-          const uint32_t motionBytes = static_cast<uint32_t>(fullSeq.size());
-          fullSeq.append(s.insertCmd);
-          enqueueEditTransition(
-              current, fullSeq, movResult.getPenalty(), s.goalPos, editsCompleted + 1, motionBytes);
-        }
-      };
-
-      CompositionStrategies::enumerateInsertions(nextEdit, currentLines, dispatchInsertion);
+      CompositionStrategies::enumerateInsertions(nextEdit, currentLines, params.transform.indent, dispatchInsertion);
       continue;
     }
+    CompositionStrategies::enumerateLineBreakReplacements(nextEdit, currentLines, params.transform.indent, dispatchInsertion);
 
     const TransformResult& transformResult = ctx.edits[editsCompleted].transformResult;
 
@@ -380,7 +380,7 @@ optimizeImpl(
     // Edit: bracket/quote text-object strategies anchored at this cursor.
     if (bqContext.line == pos.line) {
       CompositionStrategies::enumerateBracketQuotes(
-          nextEdit, currentLines, bqContext,
+          nextEdit, currentLines, bqContext, params.transform.indent,
           [&](const CompositionStrategies::BracketQuote& s) {
             if (s.line != pos.line || s.col != pos.col) return;
             debug("    text-object strategy at col", s.col, ":", s.body);
@@ -422,13 +422,21 @@ optimizeImpl(
         if (first == last) return;
         const CursorPos& firstStart = *first;
         const CursorPos& lastStart = *(last - 1);
+        // Starts whose edits all need curswant at the column: a clamped landing there is stuck.
+        vector<Pos> exactTargetColStarts;
+        for (auto it = first; it != last; ++it) {
+          if (!transformResult.hasEditFrom(CursorPos(it->line, it->col, TARGETCOL_EOL))) {
+            exactTargetColStarts.push_back(it->pos());
+          }
+        }
         exploreMotionsToInterval(
             current, pos, firstStart.line, lastStart.line,
             currentLines, static_cast<int>(last - first), false,
             [&](const Lines&, int beginLine) -> CharInterval {
               return CharInterval(CursorPos(firstStart.line - beginLine, firstStart.col),
                                   CursorPos(lastStart.line - beginLine, lastStart.col));
-            });
+            },
+            exactTargetColStarts);
       };
       auto before = partition_point(starts.begin(), starts.end(),
                                     [&](const CursorPos& s) { return s < pos; });

@@ -36,15 +36,14 @@ local LOCKED = "another sampler is scoring the journal"
 ---@type (fun(err: string|nil))[]|nil
 local waiters = nil
 
----@type { group: integer, timer: uv.uv_timer_t|nil }|nil
+---@class VF.Stats.BackgroundRun
+---@field group integer
+---@field timer? uv.uv_timer_t
+---@field last_run_ms number
+---@field scored_bytes? integer
+---@field err? string
+---@type VF.Stats.BackgroundRun|nil
 local background_run
-local background = {
-  ---@type integer|nil  journal bytes when the last background run started
-  journal_bytes = nil,
-  last_run_ms = -math.huge,
-  ---@type string|nil
-  err = nil,
-}
 local AUGROUP = "VimficiencyJournalSampling"
 
 local function tool_path()
@@ -137,7 +136,7 @@ end
 --- Why the last background run failed; nil once one succeeds.
 ---@return string|nil
 function M.last_error()
-  return background.err
+  return background_run and background_run.err
 end
 
 ---@return integer
@@ -154,14 +153,13 @@ end
 local function maybe_run()
   local run = background_run
   if not run or waiters or not vim.uv.fs_stat(journal.dir()) then return end
-  if vim.uv.now() - background.last_run_ms < RUN_INTERVAL_MS then return end
+  if vim.uv.now() - run.last_run_ms < RUN_INTERVAL_MS then return end
   local bytes = journal_bytes()
-  if bytes == background.journal_bytes then return end
-  background.journal_bytes = bytes
-  background.last_run_ms = vim.uv.now()
+  if bytes == run.scored_bytes then return end
+  run.last_run_ms = vim.uv.now()
   M.refresh(function(err)
-    -- The active sampler is doing this run's work.
-    if background_run == run and err ~= LOCKED then background.err = err end
+    if not err then run.scored_bytes = bytes end
+    if err ~= LOCKED then run.err = err end
   end)
 end
 
@@ -170,7 +168,7 @@ end
 function M.start_background()
   M.stop_background()
   if not config.journal.sampling.auto then return end
-  local run = { group = vim.api.nvim_create_augroup(AUGROUP, { clear = true }) }
+  local run = { group = vim.api.nvim_create_augroup(AUGROUP, { clear = true }), last_run_ms = -math.huge }
   background_run = run
   vim.api.nvim_create_autocmd("CursorHold", { group = run.group, callback = maybe_run })
   run.timer = vim.defer_fn(function()

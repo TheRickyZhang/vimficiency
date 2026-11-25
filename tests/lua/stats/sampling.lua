@@ -1,5 +1,5 @@
--- The Journal section of `:Vimfy stats`, and end-to-end runs of the real
--- `vimfy_journal` over a journal written here, read back through the summary.
+-- End-to-end runs of the real `vimfy_journal` over a journal written here,
+-- read back through the summary and the `:Vimfy stats` tab.
 
 local config    = require("vimficiency.config")
 local journal   = require("vimficiency.capture.journal")
@@ -57,14 +57,11 @@ local function enter_line(name, text)
   error("no line with " .. text .. " in " .. name)
 end
 
-local JOURNAL_ROWS = { nav = "Movement only:", edit = "With edits:" }
-
---- From the stats, opens the journal's chart and lists the runs of its row
---- `kind`. <Esc> twice comes back to the stats.
----@param kind "nav"|"edit"
-local function open_journal_runs(kind)
+--- From the stats, opens the journal's chart and lists its movement-only
+--- runs. <Esc> twice comes back to the stats.
+local function open_movement_runs()
   enter_line("overview", "Daily percent efficiency")
-  enter_line("chart", JOURNAL_ROWS[kind])
+  enter_line("chart", "Movement only")
 end
 
 --- Runs a refresh to completion.
@@ -84,18 +81,12 @@ local function journal_summary()
   return stats_query.summary(TOP).journal
 end
 
----@param summary VF.Stats.Summary
----@param background VF.Stats.Background
----@return VF.Stats.Page
-local function page_of(summary, background)
-  return render.build_page(summary, background)
-end
-
 --- Journals `count` single-`l` atoms over one line, one tick each, after a
 --- resync at the start of the line.
 ---@param count integer
 ---@param filetype? string
-local function journal_moves(count, filetype)
+---@param before_stop? fun(path: string)
+local function journal_moves(count, filetype, before_stop)
   local buf = h.new_buf({ "alpha beta gamma delta epsilon", "second line" })
   vim.bo[buf].filetype = filetype or ""
   vim.wait(5, function() return false end)
@@ -107,74 +98,10 @@ local function journal_moves(count, filetype)
     vim.api.nvim_win_set_cursor(0, { 1, col })
     journal._for_test.listener(atom, "record")
   end
+  if before_stop then before_stop(assert(journal.path())) end
   journal.stop()
   vim.api.nvim_buf_delete(buf, { force = true })
 end
-
---- Lines of a summary with no sessions and the journal fields overridden.
----@param fields table
----@param background? VF.Stats.Background
----@return string[] lines     # the stats
----@return string[] details   # the journal chart's own page
-local function lines_with_journal(fields, background)
-  h.use_temp_data_home()
-  local summary = stats_query.summary(TOP)
-  summary.journal = vim.tbl_extend("force", summary.journal,
-    { present = true, scored_bytes = 100, journal_bytes = 100 }, fields)
-  return page_of(summary, background or { scoring = false }).lines, render.chart_page(summary, "journal", 80, 30).lines
-end
-
-test("stats journal section: shows progress and never waits for scoring", function()
-  h.use_temp_data_home()
-  assert_true(line_with(page_of(stats_query.summary(TOP), { scoring = false }).lines,
-    "journal = { enabled = true }") ~= nil)
-  local lines = lines_with_journal({ scored_bytes = 25 }, { scoring = true })
-  assert_true(line_with(lines, "Scoring journal…") ~= nil)
-  assert_eq(line_with(lines, "average |"), nil)
-  assert_eq(line_with(lines, "No scored runs"), nil)
-  -- Scoring that needs nothing is not in the stats.
-  assert_eq(line_with(lines_with_journal({ scored_bytes = 25 }), "of the journal"), nil)
-  assert_true(line_with((lines_with_journal({}, { scoring = false, err = "boom" })),
-    "Last background scoring failed: boom") ~= nil)
-  h.with_patch({ { config.journal.sampling, "auto", false } }, function()
-    assert_true(line_with((lines_with_journal({ scored_bytes = 0 })),
-      ":Vimfy stats refresh scores the rest") ~= nil)
-  end)
-end)
-
-test("stats journal section: charts one size and lists every size on one line", function()
-  local lines, details = lines_with_journal({
-    charted_size = 8,
-    sizes = {
-      { size = 4, score = { spans = 1, score = 90 } },
-      { size = 8, score = { spans = 2, score = 75 } },
-      { size = 16, score = { spans = 0, score = 0 } },
-    },
-    score = { spans = 2, score = 75 }, chart_score = { spans = 2, score = 75 },
-    nav = { spans = 1, score = 100 },
-    edit = { spans = 1, score = 50 },
-    days = { { days_ago = 0, score = 75, spans = 2, drill = { days = { first = 20000, last = 20000 } } } },
-    unscored = { { outcome = "too_large", runs = 1, drill = {} }, { outcome = "no_result", runs = 2, drill = {} } },
-    deadline_hit = 1,
-  })
-  assert_true(line_with(lines, "    Run length: [4] [8] [16]") ~= nil)
-  assert_true(line_with(lines, "    Daily percent efficiency") ~= nil)
-  assert_true(line_with(lines, "    75.0% average | 2 samples") ~= nil)
-  assert_eq(line_with(lines, "By run length"), nil)
-  -- The rest of the section is on the chart's own page.
-  local rest = {
-    "Efficiency:     75.0%  (2 runs of 8 commands)",
-    "Movement only:  100.0% (1 run)",
-    "With edits:     50.0% (1 run)",
-    "Not scored:     1 too large",
-    "                2 no result",
-    "Search cut short by the deadline: 1 run",
-  }
-  for _, text in ipairs(rest) do
-    assert_eq(line_with(lines, text), nil, text)
-    assert_true(line_with(details, text) ~= nil, text)
-  end
-end)
 
 test("sampling.refresh: nothing to do without a journal directory", function()
   h.use_temp_data_home()
@@ -207,12 +134,30 @@ test("sampling.refresh: scores a journal written by this Neovim, once", function
     assert_eq(j.charted_size, 2)
     assert_eq(j.score.spans, 3)
     assert_eq(j.nav.spans, 3)
-    assert_eq(stats_query.summary(TOP).commands.runs, 3)
+    assert_eq(j.nav_timing[1].timing.n, 3)
+    assert_true(j.nav_timing[1].timing.p50 > 0)
+    assert_eq(stats_query.summary(TOP).journal.commands.spans, 3)
     local lock = journal.dir() .. "/sampler.lock"
     local inode = assert(vim.uv.fs_stat(lock)).ino
     assert_eq(refresh(), nil)
     assert_eq(assert(vim.uv.fs_stat(lock)).ino, inode)
     assert_eq(journal_summary().score.spans, 3)
+
+    stats_view.open()
+    enter_line("overview", "Movement search · 3 samples")
+    local chart, lines = stats_pane("chart")
+    assert_true(line_with(lines, "median ms (t)") ~= nil)
+    assert_true(line_with(lines, "Buffer positions in the larger unpadded region") ~= nil)
+    local title = vim.api.nvim_win_get_config(chart).title[1][1]
+    assert_match(title, "Movement search · 1–64 ·")
+    assert_match(title, "ms p50 · n=3")
+    h.feed("<CR>")
+    local runs, listed = stats_pane("runs")
+    assert_match(vim.api.nvim_win_get_config(runs).title[1][1], "sort: slowest ▼")
+    assert_eq(listed[#listed], "runs 1–3 of 3")
+    h.feed("q")
+    h.feed("q")
+    h.feed("q")
   end)
 end)
 
@@ -261,25 +206,40 @@ test("stats view: narrows to the movement-only journal runs", function()
   h.with_patch({ { config.journal.sampling, "window_sizes", { 2 } } }, function()
     assert_eq(refresh(), nil)
     stats_view.open()
-    local runs
-    for _, kind in ipairs({ "nav", "edit" }) do
-      open_journal_runs(kind)
-      local runs_win
-      runs_win, runs = stats_pane("runs")
-      local title = vim.api.nvim_win_get_config(runs_win).title[1][1]
-      assert_true(title:find("Stats › " .. kind, 1, true) ~= nil, title)
-      assert_eq(runs[#runs], kind == "nav" and "runs 1–3 of 3" or "no runs to list of 0")
-      local _, preview = stats_pane("preview")
-      if kind == "nav" then
-        assert_eq(preview[1], " you:   l l")
-        assert_true(line_with(preview, " before ") ~= nil, "the text before")
-        assert_true(line_with(preview, " │ after ") ~= nil, "the text after")
-      else
-        assert_eq(preview, { "" })
-      end
-      h.feed("<Esc>")
-      h.feed("<Esc>")
-    end
+    open_movement_runs()
+    local chart_win = stats_pane("chart")
+    local chart_title = vim.api.nvim_win_get_config(chart_win).title[1][1]
+    assert_true(chart_title:match("^ Stats › Journal · [%d.]+%% efficiency · 3 runs of 2 commands · Movement only: [%d.]+%% · 3 runs $")
+      ~= nil, chart_title)
+    local runs_win, runs = stats_pane("runs")
+    local title = vim.api.nvim_win_get_config(runs_win).title[1][1]
+    assert_true(title:find("Stats › Movement only", 1, true) ~= nil, title)
+    assert_eq(runs[#runs], "runs 1–3 of 3")
+    local _, preview = stats_pane("preview")
+    assert_eq(preview[1], " you:   l l")
+    assert_true(line_with(preview, " before ") ~= nil, "the text before")
+    assert_true(line_with(preview, " │ after ") ~= nil, "the text after")
+    h.feed("<Esc>")
+    -- Under the whole bar, its runs by unpadded region size.
+    h.feed("j")
+    local _, chart_lines = stats_pane("chart")
+    local bar_row = vim.api.nvim_win_get_cursor(chart_win)[1]
+    assert_match(chart_lines[bar_row - 1], "▄", "movement bar uses half blocks")
+    local bar, caption = chart_lines[bar_row], chart_lines[bar_row + 1]
+    local left = assert(bar:find("▄", 1, true)) - 1
+    local right = vim.api.nvim_win_get_width(chart_win) - vim.fn.strdisplaywidth(bar)
+    assert_eq(left, right, "the bar is centered")
+    assert_match(caption, "    Size ")
+    local first, last = caption:find("1–64", 1, true)
+    local before = vim.fn.strdisplaywidth(caption:sub(1, first - 1)) - left
+    local after = vim.fn.strdisplaywidth(caption:sub(last + 1))
+    assert_true(math.abs(before - after) <= 1, "the range is centered under the bar")
+    assert_eq(line_with(chart_lines, "Efficiency:"), nil)
+    h.feed("<CR>")
+    runs_win, runs = stats_pane("runs")
+    title = vim.api.nvim_win_get_config(runs_win).title[1][1]
+    assert_true(title:find("Stats › Movement only · 1–64 positions", 1, true) ~= nil, title)
+    assert_eq(runs[#runs], "runs 1–3 of 3")
     vim.cmd("silent! tabonly")
   end)
 end)
@@ -294,7 +254,7 @@ local function in_nav_runs(fn)
     assert_eq(refresh(), nil)
     local nav_drill = stats_query.summary(TOP).journal.nav_drill
     stats_view.open()
-    open_journal_runs("nav")
+    open_movement_runs()
     local rows = stats_query.runs({ current_only = false, weight = "effort", filter = nav_drill, charted_size = 0 }, "worst", false, 0, 50).runs
     assert_eq(#rows, 3)
     local runs_win = stats_pane("runs")
@@ -328,6 +288,9 @@ test("stats view: <CR> on a journal run replays it, and q comes back to the same
     assert_true(vim.wait(5000, function() return #simulate._debug_get_windows() == 2 end), "replay opened")
     assert_true(vim.api.nvim_get_current_tabpage() ~= stats_tab, "a replay tab")
     local pool = simulate._debug_get_pool()
+    assert_eq(#detail.commands, row.window_size)
+    assert_eq(#assert(pool.user).tokens, #detail.recording.steps)
+    assert_eq(pool.user.tokens[1].kind, "recorded")
     assert_eq(token_text(assert(pool.user).tokens), row.user_keys)
     assert_eq(#pool.suggestions, 1)
     assert_eq(token_text(pool.suggestions[1].tokens), row.best_seq)
@@ -346,6 +309,52 @@ test("stats view: <CR> on a journal run replays it, and q comes back to the same
     assert_eq(#vim.api.nvim_list_tabpages(), tabs)
     for _, name in ipairs({ "overview", "runs" }) do stats_pane(name) end
     assert_eq(stats_header(), header)
+  end)
+end)
+
+test("journal and session Play show the same recorded edits regardless of their keys", function()
+  local simulate = require("vimficiency.simulate")
+  in_nav_runs(function(runs_win, rows)
+    local detail = assert(stats_query.run(rows[2].id))
+    detail.commands = {
+      { keys = "l", kind = "motion" }, { keys = "==", kind = "operator" },
+      { keys = "iconst<Esc>", kind = "insert" },
+    }
+    detail.keys = "l==iconst<Esc>"
+    detail.goal_lines = { "const" }
+    detail.end_row, detail.end_col = 0, 4
+    detail.recording.steps = {
+      { keys = "l", row = detail.start_row, col = detail.start_col + 1, mode = "n", deltas = {} },
+      { keys = "==iconst<Esc>", row = 0, col = 4, mode = "n",
+        deltas = { { first = 0, old_count = #detail.lines, lines = detail.goal_lines } } },
+    }
+    local function user_states()
+      assert_true(vim.wait(5000, function() return #simulate._debug_get_windows() > 0 end))
+      local user = assert(simulate._debug_get_pool().user)
+      assert_eq(user.tokens[2].text, "==iconst<Esc>")
+      assert_eq(user.tokens[2].kind, "recorded")
+      assert_eq(#user.states, 3)
+      assert_eq(user.states[2].cursor, { detail.start_row + 1, detail.start_col + 1 })
+      assert_eq(user.states[3], { lines = { "const" }, cursor = { 1, 4 }, mode = "n" })
+      return user.states
+    end
+    local journal_states
+    h.with_patch({ { stats_query, "run", function() return detail end } }, function()
+      vim.api.nvim_win_set_cursor(runs_win, { 3, 0 })
+      h.feed("<CR>")
+      journal_states = user_states()
+      simulate.cleanup_compare()
+    end)
+    local store = require("vimficiency.session.store")
+    local id = store.register_fetched_result("replaygap", h.fake_result({
+      lines = detail.lines, goal_lines = detail.goal_lines,
+      start_row = detail.start_row, start_col = detail.start_col, end_row = 0, end_col = 4,
+      commands = detail.commands, user_seq = detail.keys, key_count = #detail.commands, recording = detail.recording,
+    }))
+    require("vimficiency.session.playback").simulate("replaygap")
+    assert_eq(user_states(), journal_states)
+    simulate.cleanup_compare()
+    store.remove(id)
   end)
 end)
 
@@ -375,13 +384,13 @@ test("stats view: right on the run length row switches the chart and runs", func
 
   h.with_patch({ { config.journal.sampling, "window_sizes", { 2, 4 } } }, function()
     assert_eq(refresh(), nil)
-    local targets = render.build_page(stats_query.summary(TOP), { scoring = false }).items
+    local targets = render.build_page(stats_query.summary(TOP), TOP, { scoring = false }).items
     stats_view.open()
     local overview_win, overview = stats_pane("overview")
     assert_true(line_with(overview, "    Run length: [2] [4]") ~= nil)
     ---@return string footer
     local function nav_runs()
-      open_journal_runs("nav")
+      open_movement_runs()
       local _, runs = stats_pane("runs")
       h.feed("<Esc>")
       h.feed("<Esc>")
@@ -390,8 +399,7 @@ test("stats view: right on the run length row switches the chart and runs", func
     assert_eq(nav_runs(), "runs 1–3 of 3")
 
     for _, t in ipairs(targets) do
-      -- The page's rows are under the two header lines.
-      if t.id == "run_length" then vim.api.nvim_win_set_cursor(overview_win, { t.cursor[1] + 3, t.cursor[2] }) end
+      if t.id == "run_length" then vim.api.nvim_win_set_cursor(overview_win, { t.cursor[1] + 1, t.cursor[2] }) end
     end
     h.feed("l")
     local header = stats_header()
@@ -405,15 +413,18 @@ end)
 
 test("sampling.refresh: an old journal is rolled up and deleted, and still counts", function()
   h.use_temp_data_home()
-  journal_moves(6)
-  local path
-  for name in vim.fs.dir(journal.dir()) do
-    if name:match("%.vfj$") then path = vim.fs.joinpath(journal.dir(), name) end
-  end
   local old = os.time() - (config.journal.keep_days + 1) * 86400
-  vim.uv.fs_utime(path, old, old)
-
   h.with_patch({ { config.journal.sampling, "window_sizes", { 2 } } }, function()
+    local path
+    journal_moves(6, nil, function(active_path)
+      path = active_path
+      journal._for_test.close_tick()
+      vim.wait(10, function() return false end)
+      assert(vim.uv.fs_utime(path, old, old))
+      assert_eq(refresh(), nil)
+      assert_true(vim.uv.fs_stat(path) ~= nil, "an idle writer still owns the journal")
+    end)
+    assert(vim.uv.fs_utime(path, old, old))
     assert_eq(refresh(), nil)
 
     assert_eq(vim.uv.fs_stat(path), nil)
@@ -423,7 +434,7 @@ test("sampling.refresh: an old journal is rolled up and deleted, and still count
     assert_eq(j.journal_bytes, 0)
     assert_eq(j.score.spans, 3)
     assert_eq(j.nav.spans, 3)
-    assert_eq(stats_query.summary(TOP).commands.runs, 3)
+    assert_eq(stats_query.summary(TOP).journal.commands.spans, 3)
   end)
 end)
 
@@ -475,6 +486,32 @@ test("sampling background: scores new journal content, then waits out the interv
   sampling._for_test.maybe_run()
   assert_true(not sampling.running(), "no second run within the interval")
   sampling.stop_background()
+end)
+
+test("sampling background: retries unchanged bytes after a failed run", function()
+  h.use_temp_data_home()
+  journal_moves(4)
+  local now, attempts = 0, 0
+  h.with_patch({
+    { vim.uv, "now", function() return now end },
+    { sampling, "refresh", function(done)
+      attempts = attempts + 1
+      done(attempts == 1 and "failed" or nil)
+    end },
+  }, function()
+    sampling.start_background()
+    sampling._for_test.maybe_run()
+    sampling._for_test.maybe_run()
+    assert_eq(attempts, 1)
+    now = now + 300000
+    sampling._for_test.maybe_run()
+    assert_eq(attempts, 2)
+    assert_eq(sampling.last_error(), nil)
+    now = now + 300000
+    sampling._for_test.maybe_run()
+    assert_eq(attempts, 2)
+    sampling.stop_background()
+  end)
 end)
 
 test("sampling background: off when journal.sampling.auto is", function()

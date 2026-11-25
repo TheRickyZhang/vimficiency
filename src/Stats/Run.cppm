@@ -26,10 +26,13 @@ struct Run {
   // An unbeaten run's is its user cost.
   double bestCost = 0;
   double analyzeMs = 0;
+  int querySize = 0;
   std::string userKeys;
   std::string bestSeq;
   RunCommands user;
   RunCommands optimizer;
+
+  inline bool hasTiming() const { return analyzeMs > 0 && std::isfinite(analyzeMs); }
 };
 
 // Tallies a `vf.journal.Sample` or `vf.stats.Session` and `run.bestSeq`. One
@@ -68,6 +71,7 @@ Run journalRun(const Sample& sample) {
           .userCost = sample.user_cost(),
           .bestCost = sample.outcome() == Sample::unbeaten ? sample.user_cost() : sample.best_cost(),
           .analyzeMs = sample.analyze_ms(),
+          .querySize = sample.query_size(),
           .bestSeq = sample.best_seq()};
   for (const auto& command : sample.commands()) run.userKeys += command.keys();
   tallyCommands(run, sample, {sample.within_line().data(), size_t(sample.within_line_size())});

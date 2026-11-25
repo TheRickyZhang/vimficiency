@@ -1,3 +1,4 @@
+import { FullscreenButton } from './FullscreenButton';
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { hierarchy, tree as d3tree } from 'd3-hierarchy';
 import { select } from 'd3-selection';
@@ -245,7 +246,6 @@ export function ExplorationTree({ states, results, selectedSeqs, expandableToken
   const gRef = useRef<SVGGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [overrides, setOverrides] = useState<Map<string, number>>(new Map());
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; node: VisibleNode } | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tokenIndex: number; tokenText: string } | null>(null);
@@ -316,18 +316,6 @@ export function ExplorationTree({ states, results, selectedSeqs, expandableToken
     return () => { select(svg).on('.zoom', null); };
   }, []);
 
-  // Fullscreen API
-  useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', handler);
-    return () => document.removeEventListener('fullscreenchange', handler);
-  }, []);
-
-  const toggleFullscreen = useCallback(() => {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else containerRef.current?.requestFullscreen();
-  }, []);
-
   // Click node to cycle expansion (0 → 1 → 2 → 0)
   const solRef = useRef(solutionPaths);
   solRef.current = solutionPaths;
@@ -353,14 +341,13 @@ export function ExplorationTree({ states, results, selectedSeqs, expandableToken
   return (
     <div
       ref={containerRef}
-      className="relative"
-      style={{ height: isFullscreen ? '100vh' : 500, background: '#fafafa' }}
+      className="relative h-[500px] bg-[#fafafa] [&:fullscreen]:h-screen"
     >
       <svg
         ref={svgRef}
         width="100%"
         height="100%"
-        style={{ cursor: 'grab', background: '#fafafa', borderRadius: isFullscreen ? 0 : 8 }}
+        className="cursor-grab bg-[#fafafa] rounded-lg [:fullscreen>&]:rounded-none"
       >
         <g ref={gRef}>
           {links.map((link, i) => {
@@ -472,20 +459,7 @@ export function ExplorationTree({ states, results, selectedSeqs, expandableToken
         </g>
       </svg>
 
-      {/* Fullscreen toggle */}
-      <button
-        onClick={toggleFullscreen}
-        className="fullscreen-btn"
-        title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-      >
-        <svg viewBox="0 0 16 16" width="14" height="14">
-          {isFullscreen ? (
-            <path d="M5 2v3H2M11 2v3h3M2 11h3v3M14 11h-3v3" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          ) : (
-            <path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          )}
-        </svg>
-      </button>
+      <FullscreenButton target={containerRef} />
 
       {/* Exploration order toggle */}
       <button

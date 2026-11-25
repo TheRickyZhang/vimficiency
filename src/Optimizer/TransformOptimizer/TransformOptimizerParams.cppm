@@ -5,10 +5,12 @@ export module vf.Optimizer.TransformOptimizer.TransformOptimizerParams;
 
 import std.compat;
 export import vf.Optimizer.OptimizerParamsBase;
+export import vf.VimCore.VimOptions;
 
 export {
 
 struct TransformOptimizerParams : OptimizerParamsBase {
+  IndentOptions indent;
   TRANSFORM_FIELDS(VF_PARAMS_DECLARE_OWN_FIELD)
   enum class Field { TRANSFORM_ALL_FIELDS(VF_PARAMS_FIELD_ENUM) COUNT };
 

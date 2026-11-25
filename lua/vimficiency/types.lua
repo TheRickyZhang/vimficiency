@@ -18,6 +18,7 @@
 ---@field has_lines_above boolean
 ---@field has_lines_below boolean
 ---@field window_height integer
+---@field indent? VF.IndentOptions
 ---@field scroll_amount integer
 ---@field user_seq string                   # Resolved keys; bound the search
 ---@field user_typed? string                # Pressed keys; cost the user. Only analyze reads them
@@ -48,7 +49,8 @@
 
 ---@class VF.Sequence.Token
 ---@field text string
----@field kind "movement"|"delete"|"change"|"visual"|"typed"|"escape"
+---@field kind "movement"|"delete"|"change"|"visual"|"typed"|"escape"|"unavailable"|"recorded"
+---@field error? string
 ---@field index integer?
 ---@field hl string?
 

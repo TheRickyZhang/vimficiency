@@ -334,9 +334,9 @@ void NeovimOracle::restart() {
 
 SimulationResult NeovimOracle::simulate(const Lines &lines,
                                         int startRow, int startCol,
-                                        const std::string &keys) {
+                                        const std::string &keys, std::string_view indentOptions) {
   return simulateChunks(lines, startRow, startCol, {keys},
-                        /*asSeparateUserActions=*/false);
+                        /*asSeparateUserActions=*/false, -1, indentOptions);
 }
 
 SimulationResult NeovimOracle::simulateTokens(
@@ -368,10 +368,11 @@ int NeovimOracle::windowHeight() {
 // boundaries for autoindent), then capture lines/cursor/mode, force back to
 // Normal, and delete the buffer. Collapses ~10 round-trips into one.
 constexpr const char* SIMULATE_LUA = R"(
-local lines, start_row, start_col, chunks, separate, scroll_amount = ...
+local lines, start_row, start_col, chunks, separate, scroll_amount, indent_options = ...
 local buf = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 vim.api.nvim_set_current_buf(buf)
+if indent_options ~= '' then vim.cmd('setlocal ' .. indent_options) end
 -- scroll_amount < 0 means "leave 'scroll' at nvim's default"; only the
 -- specialized scroll-motion path passes a value. Clamp to [1, height] so
 -- 'scroll' is never set larger than the window (which would raise E49).
@@ -411,7 +412,7 @@ SimulationResult NeovimOracle::simulateChunks(
     int startCol,
     const std::vector<std::string>& chunks,
     bool asSeparateUserActions,
-    int scrollAmount) {
+    int scrollAmount, std::string_view indentOptions) {
   if (++callsSinceRestart_ >= AUTO_RESTART_INTERVAL) {
     restart();
   }
@@ -431,7 +432,7 @@ SimulationResult NeovimOracle::simulateChunks(
   msgpack::zone z;
   auto luaArgs = std::make_tuple(
       linesVec, startRow, startCol, convertedChunks, asSeparateUserActions,
-      scrollAmount);
+      scrollAmount, std::string(indentOptions));
   auto args = msgpack::object(std::make_tuple(
       std::string(SIMULATE_LUA), luaArgs), z);
   impl_->send_request("nvim_exec_lua", args);

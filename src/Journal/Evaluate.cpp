@@ -21,15 +21,23 @@ bool supported(const Lines& lines) {
   });
 }
 
+int countPositions(const Lines& lines, int begin, int end) {
+  int count = 0;
+  for (int row = begin; row < end; ++row) {
+    count += lines[row].effectiveSize();
+  }
+  return count;
+}
+
 }  // namespace
 
 WindowSlice sliceWindow(const Window& window, const EvaluateParams& params) {
   const Lines& initialLines = *window.start.lines;
   const Lines& goalLines = *window.end.lines;
 
-  const pair<int, int> region = computeSearchRegion(
-      window.start.row, window.end.row, initialLines, goalLines, params.slicePadding);
-  if (region.second - region.first > params.maxSearchLines) {
+  const SearchRegion region = computeSearchRegion(
+      window.start.row, window.end.row, initialLines, goalLines, params.slicePadding, window.untouched);
+  if (region.paddedHeight() - 1 > params.maxSearchLines) {
     return {.outcome = Outcome::TooLarge};
   }
 
@@ -42,12 +50,15 @@ WindowSlice sliceWindow(const Window& window, const EvaluateParams& params) {
           .endCol = window.end.col,
           .windowHeight = window.start.windowHeight,
           .scrollAmount = window.start.scrollAmount,
+          .indent = window.start.indent,
       },
       window.keys, window.typed, region);
   if (!supported(slice.initialLines) || !supported(slice.goalLines)) {
     return {.outcome = Outcome::Unsupported};
   }
-  return {.inputs = searchInputs(std::move(slice), params.overrides)};
+  const int querySize = max(countPositions(initialLines, region.begin, region.initialEnd),
+                            countPositions(goalLines, region.begin, region.goalEnd));
+  return {.inputs = searchInputs(std::move(slice), params.overrides), .querySize = querySize};
 }
 
 Sample evaluate(const Window& window, const EvaluateParams& params, const Config& config) {
@@ -63,6 +74,7 @@ Sample evaluate(const Window& window, const EvaluateParams& params, const Config
                    in.initialPos.col == in.goalPos.col;
   if (sample.netZero) return sample;
 
+  sample.querySize = sliced.querySize;
   using Clock = SearchControl::Clock;
   const Clock::time_point begun = Clock::now();
   const Clock::time_point deadline = params.deadlineMs > 0

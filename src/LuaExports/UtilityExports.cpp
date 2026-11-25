@@ -77,7 +77,7 @@ VFByteSlice vf_tokenize_sequence(const char* request, size_t request_len) {
   return guardedRequest<vf::session::SequenceRequest>(
       storage, request, request_len, [](const vf::session::SequenceRequest& req) -> ProtoResult {
         auto tokens = parseSequence(req.seq());
-        if (!tokens) return unexpectedError(formatSequenceParseError(tokens.error()));
+        if (!tokens) return unexpectedError(formatSequenceParseError(tokens.error(), req.seq()));
 
         vf::session::Tokens msg;
         for (const auto& tok : *tokens) addToken(msg, tok.kind, tok.token);

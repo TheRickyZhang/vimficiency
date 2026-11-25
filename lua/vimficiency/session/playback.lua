@@ -3,6 +3,7 @@ local archive = require("vimficiency.session.archive")
 local disk = require("vimficiency.session.disk")
 local session_store = require("vimficiency.session.store")
 local simulate = require("vimficiency.simulate")
+local recording = require("vimficiency.capture.recording")
 
 local M = {}
 
@@ -11,23 +12,17 @@ local M = {}
 ---@param count integer|nil
 local function run_compare(result, label, count)
   local optimal_results = result.optimal_results
-  local user_seq = result.user_seq
-  local first_optimal = optimal_results[1] and optimal_results[1].seq or ""
-
-  local user_is_top = user_seq ~= "" and user_seq == first_optimal
-  local user_item = nil
-  if user_seq ~= "" and not user_is_top then
-    user_item = { seq = user_seq, cost = string.format("%.2f", result.user_cost) }
+  if not result.recording then
+    vim.notify("Vimfy: older save format (v1). Play shows the recorded start and finish in one step.",
+      vim.log.levels.WARN)
   end
+  local user_item = { recording = result.recording or recording.endpoints(result), cost = string.format("%.2f", result.user_cost) }
 
   local suggestions = {}
   for _, r in ipairs(optimal_results) do
-    table.insert(suggestions, { seq = r.seq, cost = string.format("%.2f", r.cost) })
-  end
-
-  if user_item == nil and #suggestions == 0 then
-    vim.notify("No sequences to simulate", vim.log.levels.WARN)
-    return
+    table.insert(suggestions, {
+      seq = r.seq, cost = string.format("%.2f", r.cost),
+    })
   end
 
   simulate.simulate_compare(
@@ -36,11 +31,11 @@ local function run_compare(result, label, count)
     result.start_col,
     {
       user = user_item,
-      user_is_top = user_is_top,
       suggestions = suggestions,
     },
     {
       label = label,
+      indent = result.indent,
       end_row = result.end_row,
       end_col = result.end_col,
       initial_window_count = count,

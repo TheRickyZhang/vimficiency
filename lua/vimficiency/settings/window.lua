@@ -1,8 +1,7 @@
 -- Shared settings widget for Vimfy.
 --
--- Two presentations use it: the explore `gs` side panel (a botright
--- vsplit) and the play `gs` modal (a centered float). Callers create
--- their own buffer + window in whichever shape they want, then call
+-- Explore uses a side panel. Replay and Appearance use centered floats.
+-- Callers create their own buffer + window, then call
 -- `M.attach(buf, win, opts)`. The widget owns rendering, allow-list-only
 -- keymaps (j/k/Down/Up navigate · Tab/Right/S-Tab/Left step ·
 -- CR/i smart-input · q/Esc/gs close), cursor hiding, and the close
@@ -285,7 +284,7 @@ local function render_selection(state)
   v.nvim_buf_set_extmark(state.buf, selection_ns, line_idx, 0, {
     end_row = line_idx,
     end_col = #line_text,
-    hl_group = "CursorLine",
+    hl_group = highlights.NAV_CURRENT,
     hl_eol = true,
     priority = 50,
   })
@@ -398,6 +397,7 @@ local function full_render(state)
   render_lines(state)
   render_selection(state)
   render_expansion(state)
+  if state.on_render then state.on_render(state.buf, state.layout.line_for_row, state.layout_opts.row_prefix or "  ") end
   pin_cursor_to_selection(state)
 end
 
@@ -405,8 +405,11 @@ end
 -- attach
 -- =============================================================================
 
+---@alias VF.SettingsWidget.RenderHook fun(buf: integer, line_for_row: integer[], row_prefix: string)
+
 ---@class VF.SettingsWidget.Opts
 ---@field rows table[]
+---@field on_render? VF.SettingsWidget.RenderHook
 ---@field on_change fun()|nil   -- fired after a successful adjust / run / prompt
 ---@field on_close fun()|nil    -- fired when the widget closes (including externally)
 ---@field row_prefix string|nil
@@ -419,6 +422,7 @@ end
 ---@field selection integer|nil
 ---@field layout table
 ---@field layout_opts { row_prefix?: string, value_gap?: string }
+---@field on_render? VF.SettingsWidget.RenderHook
 ---@field on_change fun()|nil
 ---@field on_close fun()|nil
 ---@field cleanup_cursor fun()|nil
@@ -458,6 +462,7 @@ function M.attach(buf, win, opts)
       value_gap = opts.value_gap,
     },
     on_change = opts.on_change,
+    on_render = opts.on_render,
     on_close = opts.on_close,
     closed = false,
   }

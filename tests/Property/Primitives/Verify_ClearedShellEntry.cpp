@@ -11,6 +11,7 @@
 
 import std.compat;
 import vf.Optimizer.TransformOptimizer.ChangeGoalHandler;
+import vf.Optimizer.BuildTypedCommands;
 import vf.Keyboard.KeyedSequence;
 import vf.Types.CursorPos;
 import vf.Types.Lines;
@@ -69,7 +70,7 @@ class VerifyClearedShellEntry {
 
     KeyedSequence seq =
         ChangeGoalHandler::buildClearedShellEntry(totalLines, cursorLine, cursorCol);
-    seq += ChangeGoalHandler::buildCollapseSequence(totalLines, cursorLine);
+    seq += buildCollapseSequence(totalLines, cursorLine);
     seq += KeyedSequence::Esc;
 
     string joined = spec.pre + spec.suf;

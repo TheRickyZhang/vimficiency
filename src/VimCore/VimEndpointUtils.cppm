@@ -133,12 +133,21 @@ CharRange wordTextObjectChangeRange(CursorPos cursor,
                                     bool isBigWord,
                                     WordBoundaryContext boundary = {});
 
+CharRange quotePairRange(std::string_view line, Pos open, int closeCol, bool isInner);
+bool isBackslashEscaped(std::string_view line, int col);
+std::size_t nextUnescapedQuote(std::string_view line, std::size_t from, char quote);
+
 CharRange quoteTextObjectRange(CursorPos cursor,
                                const Lines& lines,
                                bool isInner,
                                char quote,
                                int leftColOffset = 0,
                                int rightColOffset = 0);
+
+char textObjectBracketAt(std::string_view line, int col, char open, char close);
+std::pair<int, int> bracketForwardEntryColumns(const Lines& lines, Pos opener, char close,
+                                            bool hasHiddenLinesAbove);
+CursorPos matchingBracketClose(const Lines& lines, CursorPos opener, char close, int lastLine);
 
 CharRange bracketTextObjectRange(CursorPos cursor,
                                  const Lines& lines,

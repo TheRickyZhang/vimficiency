@@ -26,7 +26,7 @@
 - By abstracting away direct edit commands into planned edit transitions over diffs, our search alternates between call types:
   - Intra-transform: refer to TransformResult to apply the current planned edit
   - Inter-transform: move from one transform end to the next transform start (`NavOptimizer::optimize` with a `CharInterval` goal)
-- The motion goal is the edit's solved start positions, not the whole diff region, split at the cursor. NavOptimizer never expands a start that already lies in its goal, so a cursor inside the region but past the solved starts would otherwise dead-end. Solved starts have so far always formed one run from the region's beginning (112/112 journal regions, uniform keyboard), but nothing guarantees it.
+- The motion goal uses the edit's solved start positions, split at the cursor. NavOptimizer never expands a start that already lies in its goal, so a cursor inside the region but past the solved starts would otherwise dead-end.
   - Trip wire: a gap between solved starts. Landings in the gap dead-end and use up nav result slots, so a real start past the gap can be missed.
   - If that shows up, give NavOptimizer a goal set rather than one interval. A hull interval plus excluded positions keeps its heuristic and directional pruning unchanged; a union of ranges would rewrite both.
   - `JournalNoResult.StartDistribution` in `tests/Debug/JournalNoResult.cpp` measures the run shape over a journal directory.
@@ -35,6 +35,7 @@
   - `Followed`: a lone `dd`-style delete; it lands at `min(entry curswant, lastCol)` and resets curswant there.
   - `Required`: such a delete followed by more commands; usable only when `targetCol == col`.
 - `TransformResult::forEachEditFrom(cursor, linesAfter, visit)` is the one place that applies this. Movement is explored only when it visits nothing.
+- A start whose results are all `Required` is passed to NavOptimizer as an exact-`targetCol` landing, so the motion search skips clamped landings there and keeps looking for one with `targetCol == col`.
 - By storing the previous edit command, we can also quickly check if . will work. (TODO)
 
 ### Explore boundary
@@ -138,13 +139,15 @@ J plan efforts are included in `computeSuffixEditCosts()` alongside regular tran
 
 ## Quote/Bracket Motions
 - Motions like ci"/cab allow us to combine an Inter-transform with the next Intra-transform.
-- Since we are moving in order, quotes are only valid if the first quote on this line, and the quote after that are within the next transform region.
-(Note "within" could be one outside region, as doing iw -> still only affect what is inside. Greedily picking inside if matches is optimal)
-- Brackets are a bit more complex because they must form a MATCHING pair, but we can simply track bracket depth with a stack (balance of 0 = will search right), and we can leverage the fact that actions will match with the outermost bracket in region
-- Thus, we can use a bitmask prefix for quotes, matching with FIRST pair in region, and count prefix for brackets, matching with OUTERMOST pair in region.
+- A quote command is eligible when its inner or around range matches the planned edit. The closing search skips backslash-escaped quotes. Around includes trailing spaces and tabs, or leading ones when there are none after the closing quote.
+- The diff boundaries identify candidate inner and around bracket pairs. VimCore checks the closing partner with Neovim's quote rules. To offer a forward search from before the pair, Composition must also establish that no earlier opener takes precedence. Hidden lines can prevent that check. Batch search records the eligible columns once per planned edit.
+- Quote entry masks cover the matching pair, plus the columns before it when it is the first pair on the line.
 - Since each planned edit can introduce new destructive content, we must calculate this context per planned edit.
 
-## Pure Insertions
+## Insert-mode entries
+
+For a replacement whose deleted text consists entirely of line breaks, batch composition tries `A` anywhere on the first line followed by one `<Del>` per break, and `i` at column zero of the last line followed by one `<BS>` per break. Both entries type the same replacement at the join point and compete with Transform and join plans.
+
 - Because a pure insertion has no starting point, we must handle it from the higher composition level.
 - We perform a similar movement search, but augmented with the option of using o/O if we need a new line, and I/A in place of a final $/^ movement, and i/a otherwise.
 - Each strategy defines a range of valid cursor positions from which its mode-entry command produces the correct edit:

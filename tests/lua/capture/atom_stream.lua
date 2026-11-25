@@ -192,6 +192,15 @@ local function run_cases()
     end
   end)
 
+  check("a nested reindent with reported keys preserves the capture", function()
+    local buf = reset_buf()
+    vim.keymap.set("i", "<F5>", "<CR>```<Cmd>normal! ====<CR><Up><End><CR>", { buffer = buf })
+    feed("o```cpp<F5><Esc>")
+    truthy(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"):find("```cpp", 1, true),
+      "the buffer contains the fence")
+    eq(captured[#captured].verdict, "record", "keep the event and the observed result")
+  end)
+
   check("synthetic count=1 is stripped; genuine counts kept", function()
     reset_buf(); feed("ifoo<Esc>");  eq(recorded_keys(), "ifoo<Esc>", "no synthetic 1i")
     reset_buf(); feed("2ifoo<Esc>"); eq(recorded_keys(), "2ifoo<Esc>", "genuine count kept")
@@ -359,6 +368,49 @@ local function run_cases()
     eq(#captured, 2, "two atoms")
     eq(captured[1].atom.typed, "dwdw", "first carries the burst")
     eq(captured[2].atom.typed, "", "second carries none")
+  end)
+
+  check("recorded replay and search share visited lines and complete input bursts", function()
+    local buf = reset_buf()
+    local lines = {}
+    for i = 1, 40 do lines[i] = "line " .. i end
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.api.nvim_win_set_cursor(0, { 8, 0 })
+    local session = require("vimficiency.session")
+    local store = require("vimficiency.session.store")
+    local compute = require("vimficiency.session.compute")
+    local disk = require("vimficiency.session.disk")
+    require("vimficiency.capture.recall").start_continuous_capture()
+    session.start("observed")
+    feed("30G")
+    feed("Vd")
+    feed("u")
+    feed("8G")
+    feed("G8Gx")
+    feed("ll")
+    local recall = assert(store.get_active("1"))
+    eq(#recall.atoms, 2, "recall inside a burst includes both commands")
+    eq(recall.start_state.col, 0, "start before the burst")
+    local active = assert(store.get_active("observed"))
+    local result = compute.compute_result_for_active(active, compute.capture_end_state(active))
+    local recording = assert(result.recording)
+    eq(#recording.steps, 6, "one frame per delivered burst")
+    eq(recording.steps[2].keys, "Vd", "record visual delete directly")
+    eq(recording.steps[6].keys, "ll", "keep the burst together")
+    eq(recording.steps[6].col, 2, "only the observed landing")
+    eq(result.lines[#result.lines], "line 40", "visit and return within an editing burst")
+    eq(result.lines[recording.steps[1].row + 1], "line 30", "the search includes the excursion")
+    local user = assert(require("vimficiency.simulate.pool").build({
+      user = { recording = recording }, suggestions = {},
+    }, result.lines).user)
+    local local_row = recording.steps[1].row + 1
+    eq(user.states[3].lines[local_row], "line 31", "line after the visual deletion")
+    eq(user.states[4].lines[local_row], "line 30", "undo restores the deleted line")
+    eq(user.states[7].lines, result.goal_lines, "recorded final slice")
+    result.kind = "mark"
+    disk.save("observed", result)
+    eq(assert(disk.load("observed")).recording, recording, "archive preserves the steps")
+    session.close("observed")
   end)
 
   -- Neovim emits a nil-keys `mapping` atom for a mapped move inside a selection,

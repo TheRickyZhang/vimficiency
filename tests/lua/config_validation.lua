@@ -290,6 +290,67 @@ test("validate stats: weight is effort by default, or uniform", function()
     "unknown key", "unknown sub-key must error")
 end)
 
+test("appearance settings: edit shared selection styles and restore setup defaults", function()
+  h.use_temp_data_home()
+  local appearance = require("vimficiency.ui.appearance")
+  local command = require("vimficiency.subcommands").appearance
+  local origin = vim.api.nvim_get_current_win()
+  local tab = vim.api.nvim_get_current_tabpage()
+  command.run({})
+  assert_eq(vim.api.nvim_get_current_tabpage(), tab)
+  assert_eq(vim.api.nvim_win_get_config(0).relative, "editor", "appearance opens in a float")
+  local buf = vim.api.nvim_get_current_buf()
+  local ns = vim.api.nvim_get_namespaces().vimfy_appearance
+  local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  assert_match(lines[marks[1][2] + 1], "yellow, LightBlue, tomato")
+  assert_match(lines[marks[1][2] + 1], "IncSearch")
+  assert_eq(marks[2][4].hl_group, "VimficiencyNavCurrent")
+  assert_eq(marks[3][4].hl_group, "Special")
+  assert_match(lines[marks[4][2] + 1], "All settings are in your Vimficiency setup")
+  assert_true(validate.is_selection_color("#4488cc"))
+  assert_true(not validate.is_selection_color("not-a-color"))
+  local answer = "yellow"
+  h.with_patch({ { vim.ui, "input", function(_, confirm) confirm(answer) end } }, function()
+    h.feed("<CR>j")
+    answer = "100"
+    h.feed("<CR>")
+    assert_eq(vim.api.nvim_get_hl(0, { name = "VimficiencyNavCurrent", link = false }).bg, 0xffff00)
+    h.feed("q")
+  end)
+  assert_eq(vim.api.nvim_get_current_win(), origin)
+  assert_eq(appearance.current(), { selection_color = "yellow", selection_strength = 100 })
+  assert_eq(validate.normalize_ui({ selection_color = "yellow", selection_strength = 100, selection_outline = true }),
+    appearance.current())
+
+  command.run({})
+  h.feed("jj<CR>q")
+  assert_eq(appearance.current(), config.ui)
+end)
+
+test("appearance settings: the default IncSearch tint follows the active colorscheme", function()
+  h.use_temp_data_home()
+  local appearance = require("vimficiency.ui.appearance")
+  local api = vim.api
+  local get_hl = api.nvim_get_hl
+  local background = 0xff9e64
+  assert_eq(appearance.current().selection_color, "IncSearch")
+  assert_eq(appearance.current().selection_strength, 35)
+  appearance.save({ selection_strength = 100 })
+  h.with_patch({ { api, "nvim_get_hl", function(ns, opts)
+    if opts.name == "IncSearch" then return { bg = background } end
+    return get_hl(ns, opts)
+  end } }, function()
+    api.nvim_exec_autocmds("ColorScheme", { group = "VimfySelectionColors" })
+    assert_eq(api.nvim_get_hl(0, { name = "VimficiencyNavCurrent", link = false }).bg, background)
+    background = 0x4488cc
+    api.nvim_exec_autocmds("ColorScheme", { group = "VimfySelectionColors" })
+    assert_eq(api.nvim_get_hl(0, { name = "VimficiencyNavCurrent", link = false }).bg, background)
+  end)
+  appearance.reset()
+  api.nvim_exec_autocmds("ColorScheme", { group = "VimfySelectionColors" })
+end)
+
 test("validate lossy_mappings: three modes, anything else errors", function()
   for _, mode in ipairs({ "drop", "warn", "allow" }) do
     assert_eq(validate.normalize_lossy_mappings(mode), mode)

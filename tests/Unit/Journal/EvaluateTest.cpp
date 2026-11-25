@@ -46,14 +46,23 @@ Sample evaluate(const Window& w, const Journal::EvaluateParams& params = PARAMS)
 }  // namespace
 
 TEST(JournalEvaluateTest, ScoresAMovementAgainstTheBestOne) {
-  const Sample sample = evaluate(window(state(TEXT, 0, 0), state(TEXT, 3, 0), "jjj"));
+  const Sample sample = evaluate(window(state(TEXT, 1, 0), state(TEXT, 3, 0), "jj"));
 
   EXPECT_EQ(sample.outcome, Outcome::Scored);
   EXPECT_TRUE(sample.navOnly);
   EXPECT_FALSE(sample.netZero);
+  EXPECT_EQ(sample.querySize, TEXT[1].effectiveSize() + TEXT[2].effectiveSize() +
+                                  TEXT[3].effectiveSize());
   EXPECT_GT(sample.userCost, 0);
   EXPECT_GT(sample.bestCost, 0);
   EXPECT_LE(sample.bestCost, sample.userCost);
+}
+
+TEST(JournalEvaluateTest, SameLineMovementUsesTheUnpaddedLineSize) {
+  const Sample sample = evaluate(window(state(TEXT, 1, 0), state(TEXT, 1, 6), "w"));
+
+  EXPECT_EQ(sample.outcome, Outcome::Scored);
+  EXPECT_EQ(sample.querySize, TEXT[1].effectiveSize());
 }
 
 TEST(JournalEvaluateTest, AWindowThatEndsWhereItBeganCostsNothingAtBest) {
@@ -62,6 +71,7 @@ TEST(JournalEvaluateTest, AWindowThatEndsWhereItBeganCostsNothingAtBest) {
   EXPECT_EQ(sample.outcome, Outcome::Scored);
   EXPECT_TRUE(sample.navOnly);
   EXPECT_TRUE(sample.netZero);
+  EXPECT_EQ(sample.querySize, 0);
   EXPECT_GT(sample.userCost, 0);
   EXPECT_EQ(sample.bestCost, 0);
 }
@@ -75,7 +85,7 @@ TEST(JournalEvaluateTest, ScoresAnEditLikeTheSessionPathDoes) {
   EXPECT_EQ(sample.outcome, Outcome::Scored);
   EXPECT_FALSE(sample.navOnly);
 
-  const pair<int, int> region = computeSearchRegion(1, 1, TEXT, goal, PARAMS.slicePadding);
+  const SearchRegion region = computeSearchRegion(1, 1, TEXT, goal, PARAMS.slicePadding);
   const SearchInputs inputs = searchInputs(
       sliceSearch(TEXT, goal,
                   SessionEnds{.startRow = 1, .endRow = 1, .windowHeight = 40, .scrollAmount = 20},
@@ -84,6 +94,7 @@ TEST(JournalEvaluateTest, ScoresAnEditLikeTheSessionPathDoes) {
   const AnalyzeOutput analyzed =
       analyze(inputs, PARAMS.resultsCalculated, Config::qwerty(), SearchControl::NEVER_STOP);
   ASSERT_FALSE(analyzed.results.empty());
+  EXPECT_EQ(sample.querySize, TEXT[1].effectiveSize());
   EXPECT_EQ(sample.bestCost, analyzed.results.front().getCost());
   EXPECT_EQ(sample.userCost, analyzed.userCost);
   EXPECT_LT(sample.bestCost, sample.userCost);
@@ -123,6 +134,30 @@ TEST(JournalEvaluateTest, APasteNothingModeledComesCloseToIsUnbeaten) {
 
   EXPECT_EQ(sample.outcome, Outcome::Unbeaten);
   EXPECT_GT(sample.userCost, 0);
+}
+
+TEST(JournalEvaluateTest, LineInsertionAndDeletionExcludeTheMatchingTailFromTheSize) {
+  Lines before = {"top", "anchor"};
+  before.resize(100, "unchanged");
+  Lines after = before;
+  after.insert(after.begin() + 2, "");
+  auto params = PARAMS;
+  params.maxSearchLines = 6;
+
+  const Window insertion = window(state(before, 1, 0), state(after, 2, 0), "o<Esc>");
+  const Window deletion = window(state(after, 2, 0), state(before, 2, 0), "dd");
+  const auto inserted = Journal::sliceWindow(insertion, params);
+  const auto deleted = Journal::sliceWindow(deletion, params);
+
+  ASSERT_EQ(inserted.outcome, Outcome::Scored);
+  EXPECT_EQ(inserted.querySize, 7);
+  EXPECT_EQ(inserted.inputs.initialLines, (Lines{"top", "anchor", "unchanged", "unchanged"}));
+  EXPECT_EQ(inserted.inputs.goalLines, (Lines{"top", "anchor", "", "unchanged", "unchanged"}));
+  EXPECT_TRUE(inserted.inputs.boundary.hasLinesBelow());
+  ASSERT_EQ(deleted.outcome, Outcome::Scored);
+  EXPECT_EQ(deleted.querySize, 10);
+  EXPECT_EQ(deleted.inputs.goalPos.line, 2);
+  EXPECT_EQ(evaluate(deletion, params).outcome, Outcome::Scored);
 }
 
 TEST(JournalEvaluateTest, ACursorPastTheEndOfItsLineIsClamped) {

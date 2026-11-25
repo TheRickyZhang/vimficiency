@@ -1,79 +1,49 @@
 # DP walkthrough animation
 
-3blue1brown-style walkthrough of the VimDiff planner's out/in DP.
+`aa b cc` → `xx b zz` shows how the planner fills the normal and insert
+tables. At (5, 5), a move and an insert exit tie on cost. The exit wins on the
+fewer-regions tie-break. Following the final backpointers yields one change
+with score 11. Keeping the middle and editing both ends separately costs 14,
+including the two region charges.
 
-- Acts 1–5: the `aa b cc` → `xx b zz` example — grid, step types, code-order
-  fill with backpointers, per-cell candidate competition, traceback (the fused
-  change-form plan at 10 beats two edits at 12).
-- Act 6: a larger `main()` (5-statement loop body) where a 62-char matched run
-  seals mid-paragraph, splitting the DP into two blocks — 75% of cells never
-  built. The elimination is shown first (code view), then the shrinking grid,
-  then a magnified inset fills part of block 1 in full detail; `maxPlans=2`
-  surfaces tied partitions. `trace2.json` is the slimmed export
-  (example/blocks/plans + the inset's cell window).
+In the larger `main()` example a 62-character sealed span separates the two
+blocks. The inset shows their cell format at the first edit. The planner hands
+four regions to search, with a total estimated cost of 56.6.
 
-## Data source
+## Regenerate the traces
 
-`trace.json` is exported by `tests/Debug/VimDiffTraceExport.cpp`, which dumps
-`VimDiff::trace()` — the production DP tables and path, so the animation cannot
-drift from the real planner.
-
-The committed traces predate four planner changes and still render as is.
-Regenerating would need the scene adjusted:
-- the export no longer writes the per-relaxation `events` list (Acts 3–4
-  animate candidate competition from it)
-- `plans` is a one-element list since the planner's K-best removal (Act 5 and
-  Act 6 compare `plans[1]`, and `maxPlans` is gone)
-- every region now pays `REGION_PENALTY`, so the example's optimum is 11
-  against two edits at 14, not 10 against 12
-- `<Esc>` is charged on `EXIT`, where the scene narrates it as prepaid on
-  entering insert mode; `enterExtra` is now the entry key alone
-
-Regenerate (from the repo root; `VIMFY_TRACE_INITIAL` / `VIMFY_TRACE_GOAL`
-override the buffers, literal `\n` for newlines):
+From the repo root, run the production trace exporter with the uniform keyboard
+and project its output to the fields used on screen. The winner and its
+backpointers come from `VimDiff::trace()`. The two-edit comparison uses the
+exported span prices, typed-key costs, exit cost and region charge.
 
 ```bash
 cmake --build build --target vimfy_debug
-VIMFY_TRACE_OUT=anim/dp-walkthrough/trace.json \
-  ./build/tests/vimfy_debug --gtest_filter='VimDiffTraceExport.*'
-VIMFY_TRACE_INITIAL='int main() {\n  int x = 0;\n  for(int i = 0; i < 10; i++) {\n    int a = bar(i);\n    int b = baz(a);\n    int c = qux(b);\n    int d = quux(c);\n    int e = corge(d);\n    x += a + b + c + d + e;\n  }\n}' \
-VIMFY_TRACE_GOAL='int main() {\n  int x = 0;\n  int n = 10;\n  for(int i = 0; i < n; i++) {\n    int a = bar(i);\n    int b = baz(a);\n    int c = qux(b);\n    int d = quux(c);\n    int e = corge(d);\n    x -= foo(a + b + c + d + e);\n  }\n}' \
-VIMFY_TRACE_OUT=/tmp/trace2-full.json \
-  ./build/tests/vimfy_debug --gtest_filter='VimDiffTraceExport.*'
-jq '{example, blocks, plans,
-     insetWin: {i0:24, i1:34, j0:26, j1:42},
-     insetOut: (.cells.out[0][24:35] | map(.[26:43])),
-     insetIn:  (.cells.in[0][24:35]  | map(.[26:43]))}' \
-  /tmp/trace2-full.json > anim/dp-walkthrough/trace2.json
+mkdir -p anim/.cache
+VIMFY_TRACE_OUT=anim/.cache/planner-small.json \
+  ./build/tests/vimfy_debug --gtest_filter=VimDiffTraceExport.ExportExample
+jq -L anim/dp-walkthrough 'include "walkthrough"; small' \
+  anim/.cache/planner-small.json > anim/dp-walkthrough/trace.json
+
+VIMFY_TRACE_INITIAL="$(jq -r .example.initial anim/dp-walkthrough/trace2.json)" \
+VIMFY_TRACE_GOAL="$(jq -r .example.goal anim/dp-walkthrough/trace2.json)" \
+VIMFY_TRACE_OUT=anim/.cache/planner-large.json \
+  ./build/tests/vimfy_debug --gtest_filter=VimDiffTraceExport.ExportExample
+jq -L anim/dp-walkthrough 'include "walkthrough"; large' \
+  anim/.cache/planner-large.json > anim/dp-walkthrough/trace2.json
 ```
 
 ## Render
 
-Manim Community edition, no LaTeX required (formulas are set as text). One
-venv and one `manim.cfg` are shared by every animation under `anim/`, so
-render from `anim/`:
+Both scenes use Manim Community and `anim/manim.cfg`. Set up the shared
+environment once from `anim/`:
 
 ```bash
-cd anim
-uv venv .venv --python 3.12          # once
+uv venv .venv --python 3.12
 uv pip install --python .venv/bin/python manim
-.venv/bin/manim render -qh dp-walkthrough/scene.py DPWalkthrough
 ```
 
-Layout, all set by `anim/manim.cfg`:
-
-```
-anim/
-  manim.cfg                 shared render config
-  out/<quality>/            final videos    → out/1080p60/DPWalkthrough.mp4   (ignored)
-  .cache/                   partial movies, text SVGs, logs — safe to delete  (ignored)
-  .venv/                    manim install                                     (ignored)
-  dp-walkthrough/
-    scene.py trace.json trace2.json README.md                                (tracked)
-```
-
-The "partial movie directory is full" INFO line is manim pruning its per-`play()`
-segment cache; the config raises the cap so re-renders reuse segments. To
-embed in the repo README, drag-drop the mp4 into the GitHub web editor so it
-becomes an inline-playable `user-attachments` asset — the video is not
-committed.
+Run `anim/dp-walkthrough/render.sh` from the repo root to render the 1080p60
+master and encode `web/docs/public/planner-walkthrough.mp4` for the docs player.
+To update the README player, attach that MP4 to GitHub and replace the planner
+attachment URL under **How it works**. Keep the URL on its own line.

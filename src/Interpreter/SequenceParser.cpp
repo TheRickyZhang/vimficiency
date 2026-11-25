@@ -1,26 +1,32 @@
 // SequenceParser.cpp - Implementation of sequence parsing for animation
 
-module;
-#include <cassert>
-
 module vf.Interpreter.SequenceParser;
 
 import std.compat;
 import vf.Interpreter.ParserChar;
 import vf.Types.KeyNotation;
+import vf.Utils.PrettyText;
 import vf.Keyboard.ToKeys.MovementToKeys;
 
 using namespace std;
 
-string formatSequenceParseError(const SequenceParseError& error) {
-  switch (error.kind) {
-  case SequenceParseErrorKind::UnknownCharacter:
-    return "unknown character at offset " + to_string(error.offset);
-  case SequenceParseErrorKind::MalformedSpecialKey:
-    return "malformed special key at offset " + to_string(error.offset);
-  }
-  assert(false && "Unhandled SequenceParseErrorKind");
-  return "unknown parse error";
+string formatSequenceParseError(const SequenceParseError& error, string_view seq) {
+  constexpr size_t PREVIEW_BYTES = 40;
+  auto quote = [=](string_view text) {
+    string quoted = format("{:?}", VF::prettify(text.substr(0, PREVIEW_BYTES)));
+    if (text.size() > PREVIEW_BYTES) quoted += "...";
+    return quoted;
+  };
+
+  const string_view tail = seq.substr(error.offset);
+  const string_view key = firstKey(tail);
+  const bool incomplete = error.kind == SequenceParseErrorKind::MalformedSpecialKey && key == "<";
+  const size_t begin = seq.size() > PREVIEW_BYTES && error.offset > PREVIEW_BYTES / 2
+      ? error.offset - PREVIEW_BYTES / 2 : 0;
+  return format("{} {} at byte {} of {}{}",
+                incomplete ? "incomplete special key" : "unrecognized key",
+                quote(incomplete ? tail : key), error.offset + 1,
+                begin ? "..." : "", quote(seq.substr(begin)));
 }
 
 namespace {

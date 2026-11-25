@@ -19,6 +19,8 @@
 --     as a convenience.)
 
 local v = vim.api
+local appearance = require("vimficiency.ui.appearance")
+local validate = require("vimficiency.config.validate")
 
 local M = {}
 
@@ -51,6 +53,11 @@ M.STATS_SECTION_TITLE = "VimficiencyStatsSectionTitle" -- overview section title
 M.STATS_DRILL         = "VimficiencyStatsDrill"        -- overview rows <CR> narrows to
 M.STATS_EFFICIENCY    = "VimficiencyStatsEfficiency"   -- a line chart's scores
 M.STATS_VOLUME        = "VimficiencyStatsVolume"       -- a line chart's sample counts
+M.STATS_RULE          = "VimficiencyStatsRule"         -- the line between the overview's bands
+M.STATS_MOVEMENT      = "VimficiencyStatsMovement"     -- a breakdown bar's movement-only runs
+M.STATS_EDIT          = "VimficiencyStatsEdit"         -- a breakdown bar's runs with edits
+M.STATS_NOT_SCORED    = "VimficiencyStatsNotScored"    -- rows of runs left out of the score
+M.STATS_UNBEATEN      = "VimficiencyStatsUnbeaten"     -- rows of unbeaten runs
 
 -- Item navigation (`ui/item_nav.lua`)
 M.NAV_CURRENT = "VimficiencyNavCurrent" -- the item the keys act on
@@ -58,6 +65,41 @@ M.NAV_CURRENT = "VimficiencyNavCurrent" -- the item the keys act on
 -- Shared settings modal
 M.SETTINGS_ACTION_ACTIVE = "VimficiencySettingsActionActive" -- selected action row
 M.SETTINGS_CURSOR_HIDDEN = "VimficiencySettingsCursorHidden" -- selected row only; no cursor cell
+
+local function blend(base, tint, strength)
+  local color = 0
+  for shift = 16, 0, -8 do
+    local normal = bit.band(bit.rshift(base, shift), 0xff)
+    local selected = bit.band(bit.rshift(tint, shift), 0xff)
+    local channel = math.floor((normal * (100 - strength) + selected * strength) / 100)
+    color = color + bit.lshift(channel, shift)
+  end
+  return color
+end
+
+local function selection_style(name, style, legacy)
+  local generated = name .. "Default"
+  v.nvim_set_hl(0, generated, style)
+  local current = v.nvim_get_hl(0, { name = name, create = false })
+  v.nvim_set_hl(0, name, { link = generated, default = not vim.deep_equal(current, legacy) })
+end
+
+function M.refresh_selection()
+  local prefs = appearance.current()
+  local normal = v.nvim_get_hl(0, { name = "Normal", link = false })
+  local visual = v.nvim_get_hl(0, { name = "Visual", link = false })
+  local dark = vim.o.background == "dark"
+  local base = normal.bg or (dark and 0x000000 or 0xffffff)
+  local color = prefs.selection_color
+  local group = validate.selection_color_group(color) == "IncSearch"
+    and v.nvim_get_hl(0, { name = "IncSearch", link = false }) or visual
+  local background = group.reverse and (group.fg or normal.fg) or group.bg
+  local tint = validate.selection_color_rgb(color) or background or visual.bg or normal.fg
+    or (dark and 0xffffff or 0x000000)
+  local strength = prefs.selection_strength
+  selection_style(M.NAV_CURRENT, { bg = blend(base, tint, strength) },
+    visual.bg and { bg = blend(base, visual.bg, 50) } or { link = "Visual" })
+end
 
 -- =============================================================================
 -- Install
@@ -88,22 +130,13 @@ function M.refresh()
   v.nvim_set_hl(0, M.STATS_DRILL,         { link = "Identifier", default = true })
   v.nvim_set_hl(0, M.STATS_EFFICIENCY,    { link = "String",     default = true })
   v.nvim_set_hl(0, M.STATS_VOLUME,        { link = "Comment",    default = true })
+  v.nvim_set_hl(0, M.STATS_RULE,          { link = "NonText",    default = true })
+  v.nvim_set_hl(0, M.STATS_MOVEMENT,      { link = "Function",   default = true })
+  v.nvim_set_hl(0, M.STATS_EDIT,          { link = "Type",       default = true })
+  v.nvim_set_hl(0, M.STATS_NOT_SCORED,    { link = "DiagnosticError", default = true })
+  v.nvim_set_hl(0, M.STATS_UNBEATEN,      { link = "DiagnosticOk",    default = true })
 
-  -- Half of Visual's background over the editor's: CursorLine is too faint to
-  -- see in many themes, and Visual reads as a selection.
-  local visual = v.nvim_get_hl(0, { name = "Visual", link = false }).bg
-  if visual then
-    local base = v.nvim_get_hl(0, { name = "Normal", link = false }).bg
-      or (vim.o.background == "dark" and 0x000000 or 0xffffff)
-    local mixed = 0
-    for shift = 16, 0, -8 do
-      local channel = bit.rshift(bit.band(visual, bit.lshift(0xff, shift)) + bit.band(base, bit.lshift(0xff, shift)), 1)
-      mixed = mixed + bit.band(channel, bit.lshift(0xff, shift))
-    end
-    v.nvim_set_hl(0, M.NAV_CURRENT, { bg = mixed, default = true })
-  else
-    v.nvim_set_hl(0, M.NAV_CURRENT, { link = "Visual", default = true })
-  end
+  M.refresh_selection()
 
   v.nvim_set_hl(0, M.SETTINGS_ACTION_ACTIVE, { bold = true, default = true })
   -- `blend = 100` makes the cursor cell fully transparent. Combined with the
@@ -114,5 +147,9 @@ function M.refresh()
 end
 
 M.refresh()
+v.nvim_create_autocmd("ColorScheme", {
+  group = v.nvim_create_augroup("VimfySelectionColors", { clear = true }),
+  callback = M.refresh_selection,
+})
 
 return M

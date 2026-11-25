@@ -66,6 +66,17 @@ test("build_search_request: keeps rows only the longer buffer has", function()
   assert_eq(request.has_lines_below, false)
 end)
 
+test("an excursion expands the submitted slice and counts toward the size limit", function()
+  local input = span({
+    initial_lines = NINE, goal_lines = NINE, start_row = 4, end_row = 4,
+    untouched_above = 1, untouched_below = 2,
+  })
+  local request = ffi_optimizer.build_search_request(input, 1, 7)
+  assert_eq(request.initial_lines, { "a", "b", "c", "d", "e", "f", "g", "h" })
+  assert_eq(request.goal_lines, request.initial_lines)
+  assert_error(function() ffi_optimizer.build_search_request(input, 1, 6) end, "MAX_SEARCH_LINES")
+end)
+
 test("build_search_request: bounds the search by screen-line motions as line motions", function()
   local request = ffi_optimizer.build_search_request(span({
     initial_lines = NINE,

@@ -54,16 +54,48 @@ constexpr bool autoindent() {
 
 // Shiftwidth: number of spaces per indent level.
 // Affects <BS> in autoindent context (deletes to previous shiftwidth boundary).
-// Runtime-configurable via FFI (auto-detected from Neovim's vim.o.shiftwidth).
-inline int& shiftwidthRef() {
-    static int sw = 8;
+// Fallback for requests recorded before buffer-local options were captured.
+inline std::atomic<int>& shiftwidthRef() {
+    static std::atomic<int> sw{8};
     return sw;
 }
 
 inline int shiftwidth() {
-    return shiftwidthRef();
+    return shiftwidthRef().load(std::memory_order_relaxed);
 }
 
 } // namespace VimOptions
+
+struct IndentOptions {
+    bool autoindent = VimOptions::autoindent();
+    bool expandtab = false;
+    bool copyindent = false;
+    int tabstop = 8;
+    int shiftwidth = 8;
+
+    inline int backspaceWidth() const { return shiftwidth == 0 ? tabstop : shiftwidth; }
+
+    inline int columns(std::string_view indent) const {
+        int col = 0;
+        for (char c : indent) col += c == '\t' ? tabstop - col % tabstop : 1;
+        return col;
+    }
+
+    // cc keeps the original bytes. o, O and <CR> recreate the displayed indent.
+    inline std::string openedIndent(std::string_view line) const {
+        if (!autoindent) return {};
+        const auto indent = leadingIndent(line);
+        if (copyindent || indent.empty()) return std::string(indent);
+        const bool tabs = indent.find('\t') != indent.npos;
+        if (!tabs && (expandtab || std::ssize(indent) < tabstop)) return std::string(indent);
+        const int width = tabs ? columns(indent) : std::ssize(indent);
+        if (expandtab) return std::string(width, ' ');
+        return std::string(width / tabstop, '\t') + std::string(width % tabstop, ' ');
+    }
+
+    static inline std::string_view leadingIndent(std::string_view line) {
+        return line.substr(0, line.find_first_not_of(" \t"));
+    }
+};
 
 }  // export

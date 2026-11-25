@@ -477,7 +477,7 @@ function M.open()
     border = "rounded", style = "minimal",
     title = " Vimfy Sessions ", title_pos = "center",
   })
-  ui_windows.configure_scratch_window(win, { cursorline = true })
+  ui_windows.configure_scratch_window(win, { cursorline = true, winhighlight = "CursorLine:" .. highlights.NAV_CURRENT })
 
   -- Prompt split (bottom, 1 line, full float width).
   vim.cmd("belowright split")

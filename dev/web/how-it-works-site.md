@@ -1,8 +1,8 @@
 # "How it works" on the docs site
 
 The algorithm explainer lives on the Starlight site (`web/docs/`) as a chapter
-group, not in the README. The README keeps a summary, the two walkthrough
-videos, and a link. Each chapter leads with a concept diagram or a live widget
+group, not in the README. The README embeds both walkthroughs as GitHub video attachments. The site
+serves the planner MP4 from `web/docs/public/`. Each chapter leads with a concept diagram or a live widget
 and puts the precise statement after it.
 
 The widgets run the **real planner**, compiled to WebAssembly from the same

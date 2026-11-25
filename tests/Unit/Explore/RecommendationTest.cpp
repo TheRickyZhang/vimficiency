@@ -233,12 +233,11 @@ TEST_F(ExploreViewTest, TransformFrontierExcludesVisualDeleteMacros) {
       TransformBoundary{});
   const Config uniform = Config::uniform();
   const EffortBank bank(uniform);
-  auto recs = rankTransformFrontier(
+  auto recs = collectTransformEdits(
       TransformFrontierQuery{
           FrontierQuery{
               .lines = lines,
               .cursor = {0, 0},
-              .maxCount = 50,
           },
           diff,
       },
@@ -327,12 +326,11 @@ TEST(TransformFrontier, PreservesDistinctResultsFromSameStart) {
   // override is needed to surface multiple tokens.
   const Config uniform = Config::uniform();
   const EffortBank bank(uniform);
-  auto recs = rankTransformFrontier(
+  auto recs = collectTransformEdits(
       TransformFrontierQuery{
           FrontierQuery{
               .lines = Lines{Line("x")},
               .cursor = {0, 0},
-              .maxCount = 10,
           },
           diff,
       },
@@ -343,6 +341,26 @@ TEST(TransformFrontier, PreservesDistinctResultsFromSameStart) {
   EXPECT_NE(recs[0].token, recs[1].token);
 }
 
+TEST(TransformFrontier, LinewiseDeletePreservesRequestedLineCount) {
+  const Config config = Config::uniform();
+  const EffortBank bank(config);
+  auto suggests = [&](const Lines& lines, CursorPos begin, CursorPos end, string_view token) {
+    DiffState diff(begin, end, lines.getSpan(begin, end).flatten(), "",
+                   TransformBoundary(lines, begin, end));
+    auto recs = collectTransformEdits(
+        TransformFrontierQuery{FrontierQuery{.lines = lines, .cursor = begin}, diff},
+        config, bank);
+    return ranges::any_of(recs, [&](const Suggestion& s) { return s.token == token; });
+  };
+
+  const Lines lines{"above", "one", "two", "below"};
+  EXPECT_FALSE(suggests(lines, {1, 0}, {1, 3}, "dd"));
+  EXPECT_TRUE(suggests(lines, {1, 0}, {2, 0}, "dd"));
+  EXPECT_FALSE(suggests(lines, {1, 0}, {2, 3}, "dj"));
+  EXPECT_TRUE(suggests(lines, {1, 0}, {3, 0}, "dj"));
+  EXPECT_TRUE(suggests(Lines{"one"}, {0, 0}, {0, 3}, "dd"));
+}
+
 // A replacement whose edit region is two empty lines ("\n"): a bare J joins
 // them to the cleared shell ([prefix+suffix] = [""]) that the goal text is then
 // typed into. deleteToChangeChar has no J case, so routing J through the
@@ -351,12 +369,11 @@ TEST(TransformFrontier, JoinReachingClearedShellInReplacementEmitsRawJoin) {
   DiffState diff(CursorPos(0, 0), CursorPos(1, 0), "\n", "x", TransformBoundary{});
   const Config uniform = Config::uniform();
   const EffortBank bank(uniform);
-  auto recs = rankTransformFrontier(
+  auto recs = collectTransformEdits(
       TransformFrontierQuery{
           FrontierQuery{
               .lines = Lines{Line(""), Line("")},
               .cursor = {0, 0},
-              .maxCount = 10,
           },
           diff,
       },

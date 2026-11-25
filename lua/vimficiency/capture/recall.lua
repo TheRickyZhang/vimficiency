@@ -12,7 +12,7 @@ local function recall_listener(atom, decision)
   if decision == "record" then
     session_store.ingest_recall_atom(atom)
   elseif decision == "abort" then
-    session_store.abort_recall(atom.buf, atom.win)
+    session_store.abort_recall(atom.buf, atom.win, atom.tick)
   end
 end
 

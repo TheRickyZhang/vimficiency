@@ -10,66 +10,11 @@ import vf.Optimizer.BuildTypedCommands;
 import vf.Optimizer.TransformOptimizer.TransformExplorer;
 import vf.Utils.Debug;
 import vf.VimCore.VimEditUtils;
+import vf.VimCore.VimEndpointUtils;
 
 using namespace std;
 
 namespace {
-
-tuple<int, int, bool> findMatchingQuotePair(
-    const string& line,
-    int beginCol,
-    int endCol,
-    char quote) {
-  vector<int> quotePositions;
-  for (int i = 0; i < static_cast<int>(line.size()); i++) {
-    if (line[i] == quote) quotePositions.push_back(i);
-  }
-
-  for (size_t i = 0; i + 1 < quotePositions.size(); i += 2) {
-    int open = quotePositions[i];
-    int close = quotePositions[i + 1];
-    if (open + 1 == beginCol && close == endCol) return {open, close, false};
-    if (open == beginCol && close + 1 == endCol) return {open, close, true};
-  }
-  return {-1, -1, false};
-}
-
-tuple<int, int, bool> findMatchingBracketPair(
-    const string& line,
-    int beginCol,
-    int endCol,
-    char open,
-    char close) {
-  int bestOpen = -1;
-  int bestClose = -1;
-  bool bestIsAround = false;
-
-  vector<int> openStack;
-  for (int i = 0; i < static_cast<int>(line.size()); i++) {
-    if (line[i] == open) {
-      openStack.push_back(i);
-    } else if (line[i] == close && !openStack.empty()) {
-      int openPos = openStack.back();
-      openStack.pop_back();
-
-      if (openPos + 1 == beginCol && i == endCol &&
-          (bestOpen == -1 || openPos > bestOpen)) {
-        bestOpen = openPos;
-        bestClose = i;
-        bestIsAround = false;
-      }
-
-      if (openPos == beginCol && i + 1 == endCol &&
-          (bestOpen == -1 || openPos > bestOpen)) {
-        bestOpen = openPos;
-        bestClose = i;
-        bestIsAround = true;
-      }
-    }
-  }
-
-  return {bestOpen, bestClose, bestIsAround};
-}
 
 void scanQuotesForEdit(
     BracketQuoteContext& ctx,
@@ -81,68 +26,56 @@ void scanQuotesForEdit(
 
   ctx.validQuoteMask.resize(lineLen);
 
-  for (char quote : {'"', '\'', '`'}) {
-    auto [openCol, closeCol, isAround] =
-        findMatchingQuotePair(line, beginCol, endCol, quote);
-    if (openCol == -1 || closeCol >= lineLen) continue;
-
-    if (isAround) ctx.useAroundQuote.add(quote);
-
-    int firstQuoteOfType = -1;
-    for (int col = 0; col < lineLen; col++) {
-      if (line[col] == quote) {
-        firstQuoteOfType = col;
+  for (char quote : QuoteFlags::ALL_QUOTES) {
+    const size_t first = line.find(quote);
+    for (size_t open = first; open < size_t(endCol);) {
+      const size_t close = VimCore::nextUnescapedQuote(line, open + 1, quote);
+      if (close == string::npos || close > size_t(endCol)) break;
+      const bool inner = open < size_t(beginCol);
+      const CharRange range = VimCore::quotePairRange(line, {ctx.line, static_cast<int>(open)},
+                                                     static_cast<int>(close), inner);
+      if (range.begin.col == beginCol && range.end.col == endCol) {
+        if (!inner) ctx.useAroundQuote.add(quote);
+        const bool inside = open == first || !VimCore::isBackslashEscaped(line, open);
+        for (size_t col = open == first ? 0 : open; col <= close; ++col) {
+          if (inside || line[col] == quote) ctx.validQuoteMask[col].add(quote);
+        }
         break;
       }
-    }
-
-    if (firstQuoteOfType == openCol) {
-      for (int col = 0; col <= closeCol; col++) {
-        ctx.validQuoteMask[col].add(quote);
-      }
-    } else {
-      for (int col = openCol; col <= closeCol; col++) {
-        ctx.validQuoteMask[col].add(quote);
-      }
+      open = line.find(quote, close + 1);
     }
   }
 }
 
-void scanBracketsForEdit(
-    BracketQuoteContext& ctx,
-    const string& line,
-    int beginCol,
-    int endCol) {
-  int lineLen = static_cast<int>(line.size());
-  if (lineLen == 0) return;
+void scanBracketsForEdit(BracketQuoteContext& ctx, const Lines& lines, int begin, int end,
+                         bool hasHiddenLinesAbove) {
+  const Line& line = lines[ctx.line];
+  const int size = lines.getSize(ctx.line);
+  for (const bool around : {true, false}) {
+    const int left = around ? begin : begin - 1;
+    const int right = around ? end - 1 : end;
+    if (left < 0 || right >= size || left >= right) continue;
+    const char open = line[left];
+    constexpr string_view opens = "([{<", closes = ")]}>";
+    const size_t kind = opens.find(open);
+    if (kind == string_view::npos || ctx.useAroundBracket.seen(open)) continue;
+    const char close = closes[kind];
+    if (line[right] != close || VimCore::textObjectBracketAt(line, left, open, close) != open)
+      continue;
+    if (VimCore::matchingBracketClose(lines, {ctx.line, left}, close, ctx.line).col != right)
+      continue;
 
-  ctx.validBracketMask.resize(lineLen);
-
-  for (auto [open, close] :
-       vector<pair<char, char>>{{'(', ')'}, {'[', ']'}, {'{', '}'}, {'<', '>'}}) {
-    auto [openCol, closeCol, isAround] =
-        findMatchingBracketPair(line, beginCol, endCol, open, close);
-    if (openCol == -1 || openCol >= lineLen || closeCol >= lineLen) continue;
-
-    if (isAround) ctx.useAroundBracket.add(open);
-
-    vector<int> firstOpenForward(lineLen, -1);
-    int nextOpen = -1;
-    for (int col = lineLen - 1; col >= 0; col--) {
-      if (line[col] == open) nextOpen = col;
-      firstOpenForward[col] = nextOpen;
-    }
-
-    int balance = 0;
-    for (int col = 0; col < lineLen; col++) {
-      bool insidePair = (col >= openCol && col <= closeCol);
-      bool forwardReachesPair =
-          (col < openCol && balance == 0 && firstOpenForward[col] == openCol);
-      if (insidePair || forwardReachesPair) {
-        ctx.validBracketMask[col].add(open);
-      }
-      if (line[col] == open) balance++;
-      else if (line[col] == close) balance--;
+    if (around) ctx.useAroundBracket.add(open);
+    ctx.validBracketMask.resize(size);
+    const auto [first, endForward] = VimCore::bracketForwardEntryColumns(
+        lines, {ctx.line, left}, close, hasHiddenLinesAbove);
+    for (int col = first; col < endForward; ++col) ctx.validBracketMask[col].add(open);
+    int depth = 0;
+    for (int col = left; col < size; ++col) {
+      const char bracket = VimCore::textObjectBracketAt(line, col, open, close);
+      if (bracket == open) ++depth;
+      if (depth == 1) ctx.validBracketMask[col].add(open);
+      if (bracket == close && --depth == 0) break;
     }
   }
 }
@@ -249,14 +182,14 @@ TransformResult computeTransformResultForDiff(
     Lines insertLines = Lines::unflatten(diff.insertedText);
     KeyedSequence full = KeyedSequence::i;
     full += buildTypedCommands(
-        insertLines, "", diff.boundary.prefix(), diff.boundary.suffix());
+        insertLines, "", diff.boundary.prefix(), diff.boundary.suffix(), params.transform.indent);
     RunningEffort runningEffort(full.keys, config);
 
     vector<vector<Result>> insertResultsByStart(1);
     insertResultsByStart[0].emplace_back(std::move(full.seq), runningEffort);
 
     CursorPos goalPos = typedCommandsExitCursor(
-        diff.beginPos, insertLines, diff.boundary.suffix());
+        diff.beginPos, insertLines, diff.boundary.suffix(), params.transform.indent);
     Lines singlePoint = {""};
     return TransformResult(std::move(insertResultsByStart), {}, singlePoint,
                       diff.beginPos.line, diff.beginPos.col, goalPos);
@@ -269,10 +202,6 @@ TransformResult computeTransformResultForDiff(
           .withMaxResultsPerStartPos(params.transformMaxResultsPerStartPos);
 
   if (diff.isPureDeletion()) {
-    if (diff.deletedText.find('\n') == string::npos &&
-        (diff.boundary.hasLinesAbove() || diff.boundary.hasLinesBelow())) {
-      editParams.withLinewisePureDeletion(false);
-    }
     TransformResult result = transformOptimizer.optimizePureDeletion(
         diff.deletedLines(), diff.boundary, editParams,
         diff.beginPos.line, diff.beginPos.col, diff.beginPos);
@@ -294,7 +223,7 @@ TransformResult computeTransformResultForDiff(
 
 BracketQuoteContext computeTextObjectContextForDiff(
     const DiffState& diff,
-    const Lines& preEditLines) {
+    const Lines& preEditLines, bool hasHiddenLinesAbove) {
   BracketQuoteContext ctx;
 
   if (diff.isPureInsertion()) return ctx;
@@ -304,7 +233,7 @@ BracketQuoteContext computeTextObjectContextForDiff(
   const string& line = preEditLines[diff.beginPos.line];
   ctx.line = diff.beginPos.line;
   scanQuotesForEdit(ctx, line, diff.beginPos.col, diff.endPos.col);
-  scanBracketsForEdit(ctx, line, diff.beginPos.col, diff.endPos.col);
+  scanBracketsForEdit(ctx, preEditLines, diff.beginPos.col, diff.endPos.col, hasHiddenLinesAbove);
   return ctx;
 }
 

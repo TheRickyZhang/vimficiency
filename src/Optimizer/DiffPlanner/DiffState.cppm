@@ -51,6 +51,9 @@ struct DiffState {
   inline bool isPureInsertion() const { return beginPos == endPos && !insertedText.empty(); }
   inline bool isPureDeletion() const { return beginPos != endPos && insertedText.empty(); }
   inline bool isReplacement() const { return beginPos != endPos && !insertedText.empty(); }
+  inline bool isLineBreakReplacement() const {
+    return isReplacement() && deletedText.find_first_not_of('\n') == std::string::npos;
+  }
   inline bool hasDeletedContent() const { return beginPos != endPos; }
 
   inline bool contains(const CursorPos& pos) const {

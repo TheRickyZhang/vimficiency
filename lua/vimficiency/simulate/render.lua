@@ -27,9 +27,12 @@ end
 ---@param mode string
 ---@return string
 local function mode_label(mode)
+  if mode == "" then return "unrecorded" end
+  if mode:sub(1, 1) == "R" then return "REPLACE" end
+  if mode == "s" or mode == "S" or mode == "\19" then return "SELECT" end
   if mode:sub(1, 1) == "i" then return "INSERT" end
   if mode == "v" or mode == "V" or mode == "\22" then return "VISUAL" end
-  return "NORMAL"
+  return mode == "n" and "NORMAL" or mode
 end
 
 ---@param ctx table
@@ -80,7 +83,7 @@ local function build_virt_lines(ctx, entry)
 
   local info_row = {
     { header_label(ctx, entry), label_hl },
-    { string.format("Local %d/%d", local_step, #tokens), "Comment" },
+    { string.format("%s %d/%d", entry.is_user and "Recorded" or "Simulated", local_step, #tokens), "Comment" },
   }
   if is_active and not entry.is_user
      and entry.default_rank and entry.seq_idx ~= entry.default_rank then
@@ -98,6 +101,11 @@ local function build_virt_lines(ctx, entry)
       { mode_label(snap.mode), "Normal" },
     },
   }
+  local last = tokens[#tokens]
+  if last and last.error then
+    local label = "Replay unavailable · " .. last.error
+    vim.list_extend(virt_lines, wrap_chunks({ { label, "WarningMsg" } }, width))
+  end
   if pool_entry.cost then
     virt_lines[#virt_lines + 1] = {
       { "Cost ", "Comment" },

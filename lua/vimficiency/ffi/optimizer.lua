@@ -48,6 +48,8 @@ end
 
 --- A session over its whole buffers; rows and columns are 0-indexed.
 ---@class VF.Optimizer.SessionSpan
+---@field untouched_above? integer
+---@field untouched_below? integer
 ---@field initial_lines string[]
 ---@field goal_lines string[]
 ---@field start_row integer
@@ -55,6 +57,7 @@ end
 ---@field end_row integer
 ---@field end_col integer
 ---@field window_height integer
+---@field indent? VF.IndentOptions
 ---@field scroll_amount integer
 ---@field user_seq string
 ---@field user_typed string

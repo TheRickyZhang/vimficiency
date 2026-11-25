@@ -1,5 +1,4 @@
 module;
-#include <cassert>
 #include "Utils/CheckMacro.h"
 
 module vf.Optimizer.CompositionOptimizer.CompositionSearchContext;
@@ -32,18 +31,9 @@ CompositionSearchContext::CompositionSearchContext(
       boundary(boundary),
       control(control),
       goalPos(goalPos),
-      maxLineLength(1000),
       maxEffort(userSequence.empty()
                     ? std::numeric_limits<double>::max()
                     : getEffort(userSequence, config) * params.exploreFactor) {
-
-  // Ensure proper hashing - line lengths must fit in maxLineLength
-  for (const string& s : initialLines) {
-    assert(s.size() < static_cast<size_t>(maxLineLength - 10));
-  }
-  for (const string& s : goalLines) {
-    assert(s.size() < static_cast<size_t>(maxLineLength - 10));
-  }
 
   const bool timePhases = std::getenv("VIMFY_TIME_PHASES") != nullptr;
   auto phaseClock = std::chrono::steady_clock::now();
@@ -338,7 +328,7 @@ vector<Lines> CompositionSearchContext::calculateLinesAfterDiffs(
 void CompositionSearchContext::computeTextObjectContexts() {
   for (int i = 0; i < totalEdits(); i++) {
     edits[i].bracketQuoteContext = computeTextObjectContextForDiff(
-        edits[i].diffState, linesAfterNEdits_[i]);
+        edits[i].diffState, linesAfterNEdits_[i], boundary.hasLinesAbove());
   }
 }
 

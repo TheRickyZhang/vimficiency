@@ -4,6 +4,7 @@ import std.compat;
 export import vf.Types.CursorPos;
 export import vf.Types.Lines;
 export import vf.Types.Mode;
+export import vf.VimCore.VimOptions;
 
 export {
 
@@ -14,6 +15,6 @@ struct InterpreterReplayResult {
 };
 
 InterpreterReplayResult applyUserSequence(
-    Lines lines, CursorPos cursor, std::string_view sequence);
+    Lines lines, CursorPos cursor, std::string_view sequence, const IndentOptions& options = {});
 
 }  // export

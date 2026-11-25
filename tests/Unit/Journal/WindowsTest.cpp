@@ -86,6 +86,19 @@ TEST(JournalWindowsTest, WindowsCarryTheTextAtBothEnds) {
   EXPECT_NE(windows[0].start.textVersion, windows[0].end.textVersion);
 }
 
+TEST(JournalWindowsTest, KeepsVisitedRowsAndTemporaryEditsInChangingCoordinates) {
+  JournalBuilder j;
+  j.header(5000).snapshot({"0", "1", "2", "3", "4", "5", "6", "7"}).resync(4, 0);
+  j.next().delta(1, 0, {"inserted", "lines"}).atom("p", 4, 0);
+  j.next().atom("j", 8, 0);
+  j.next().delta(1, 2, {}).atom("u", 4, 0).tickEnd();
+  const vector<Window> windows = cut(j.bytes(), {3});
+  ASSERT_EQ(windows.size(), 1u);
+  EXPECT_EQ(*windows[0].start.lines, *windows[0].end.lines);
+  EXPECT_EQ(windows[0].untouched.above, 1);
+  EXPECT_EQ(windows[0].untouched.below, 1);
+}
+
 TEST(JournalWindowsTest, TheLastGroupIsNotCutUntilALaterTickArrives) {
   JournalBuilder j = opened();
   moveRight(j, 2);

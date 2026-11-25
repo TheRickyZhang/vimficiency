@@ -22,7 +22,7 @@ struct TransformResult {
 - In Navigation/Composition, we pop state -> check if goal position -> explore commands.
 But here, we pop state -> explore deletions -> check if goal, so that we can convert to change before it is committed.
 - This is a bit more costly but not significant.
-- Note we handle a pure deletion case in separate call, as we no longer need to worry about going into insert mode.
+- For pure deletion, a linewise command may remove every line of the slice only when the slice covers the whole buffer. With neighboring lines, the goal retains one line inside the slice. A linewise delete can leave the cursor on a line made entirely of protected text. That line still borders an editable newline, so the search can move to the line above the newline and try a join that preserves the boundary text.
 
 ## Multi-source Handling
 Every start position searches independently: `startIndex` is part of the state key, so one start never consumes another's states.
@@ -89,13 +89,13 @@ Every edit writes curswant, so only a path's first command can read the caller's
 | First command | Class |
 |---|---|
 | Charwise delete, join, any change-mode goal emission (`dd` is emitted as `cc`/`0C`) | `Ignored` |
-| Linewise delete placed by `deleteLineRangeAndUpdatePos` (`dd`, `{n}dd`) | `Followed` |
-| Any other linewise delete, boundary-escape `j`/`k` | `Required` |
+| Linewise delete placed by `deleteLineRangeAndUpdatePos` (`dd`, `{n}dd`) | `Followed`, or `Ignored` when the line it lands on is no longer than the entry column |
+| Delete a motion promoted to linewise (`d}`, `dw`, `dge`, …) | `Ignored` or `Followed`, decided by replaying it from an end-of-line curswant; `Required` if neither fits |
+| Boundary-escape `j`/`k` | `Required` |
 | Visual delete spanning lines (`vj…d`) | `Required` |
 
 Conservative choices, all safe but possibly skipping usable edits at clamped columns:
 
-- Non-`dd` linewise deletes are `Required`, although Neovim's `dj` follows curswant like `dd`.
 - A change-mode result that ends right after a `Followed` delete is stored as `Required`, because the fixed `goalPos` cannot follow curswant.
 - A suffix-cache hit is `Required` unless its prefix is `Ignored`.
 
@@ -186,7 +186,7 @@ TODO may need more elaboration
 
 ## Auto-indent Handling
 
-When `VimOptions::autoindent()` is true (Neovim default), entering insert mode via `cc`/`c{motion}` copies leading whitespace from the source line. Each subsequent `<CR>` copies indent from the current line. The `buildTypedCommands` function (in `src/Optimizer/BuildTypedCommands.cppm`, shared by TransformOptimizer and CompositionOptimizer) accounts for this:
+When the buffer enables `autoindent`, a linewise change preserves the original indent bytes. Each subsequent `<CR>` rebuilds the indent according to `copyindent`, `expandtab`, and `tabstop`. The `buildTypedCommands` function (in `src/Optimizer/BuildTypedCommands.cppm`, shared by TransformOptimizer and CompositionOptimizer) accounts for this:
 
 
 | Case | Condition | Action |

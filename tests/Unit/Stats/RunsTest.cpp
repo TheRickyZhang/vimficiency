@@ -114,7 +114,7 @@ TEST_F(StatsRunsTest, SourceLeavesTheOtherOut) {
   EXPECT_EQ(runs(sessions).total(), 14);
   EXPECT_EQ(summarize(sessions).journal().score().spans(), 0);
   EXPECT_EQ(summarize(sessions).sessions().sessions(), 14);
-  EXPECT_EQ(summarize(sessions).commands().runs(), 0);
+  EXPECT_EQ(summarize(sessions).journal().commands().spans(), 0);
 }
 
 TEST_F(StatsRunsTest, DaysAreInclusive) {
@@ -159,7 +159,7 @@ TEST_F(StatsRunsTest, AChartedSizeIsChartedAndKeepsSessions) {
   EXPECT_EQ(summary.journal().charted_size(), 2);
   EXPECT_EQ(summary.journal().score().spans(), 8);
   EXPECT_GT(summary.journal().sizes(1).score().spans(), 0);
-  EXPECT_EQ(summary.commands().runs(), 8);
+  EXPECT_EQ(summary.journal().commands().spans(), 8);
 }
 
 TEST_F(StatsRunsTest, AFilteredWindowSizeOutranksTheChartedSize) {
@@ -250,6 +250,32 @@ TEST_F(StatsRunsTest, OutcomesAreASet) {
   EXPECT_EQ(summary.journal().unscored(0).runs(), 2);
 }
 
+TEST_F(StatsRunsTest, SummaryAndRunListRejectUnknownFilterOutcomes) {
+  for (const int outcome : {-1, Sample::Outcome_MAX + 1, 32}) {
+    auto scope = request();
+    scope.mutable_filter()->add_outcomes(Sample::scored);
+    scope.mutable_filter()->mutable_outcomes()->Add(outcome);
+    const auto summary = Stats::summarize(scope.SerializeAsString(), NOW);
+    ASSERT_FALSE(summary.has_value());
+    EXPECT_EQ(summary.error(), format("unknown filter outcome {}", outcome));
+
+    RunsRequest list;
+    *list.mutable_scope() = scope;
+    const auto result = Stats::listRuns(list.SerializeAsString());
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), summary.error());
+  }
+}
+
+TEST_F(StatsRunsTest, UnknownStoredOutcomesCannotMatchAScoredFilter) {
+  journal("mixed", 10, params, {sample(4, 8, 4), sample(4, 8, 0, Sample::Outcome(32))});
+  Filter filter;
+  filter.add_outcomes(Sample::scored);
+  const auto list = runs(filter);
+  ASSERT_EQ(list.runs_size(), 1);
+  EXPECT_EQ(list.runs(0).outcome(), Sample::scored);
+}
+
 TEST_F(StatsRunsTest, CommandsMatchOnTheirSide) {
   populate();
   // User `w`: 6 sessions and 4 runs per journal.
@@ -282,7 +308,8 @@ TEST_F(StatsRunsTest, OverTypedListsTheRunsThatTypedMoreAndTypedOrdersByTheExces
     EXPECT_EQ(row.best_typed_chars(), 0);
   }
 
-  const auto drill = summarize().commands().typed_drill();
+  const auto drill = summarize().sessions().commands().typed_drill();
+  EXPECT_EQ(runs(drill).total(), list.total());
   EXPECT_TRUE(drill.over_typed());
   ASSERT_EQ(drill.outcomes_size(), 1);
   EXPECT_EQ(drill.outcomes(0), Sample::scored);
@@ -340,37 +367,80 @@ TEST_F(StatsRunsTest, EveryDrillFilterListsWhatItsRowCounted) {
       }
     }
 
-    const auto& commands = summary.commands();
-    ASSERT_GT(commands.more_size(), 0);
-    ASSERT_GT(commands.less_size(), 0);
-    for (const auto* table : {&commands.more(), &commands.less(), &commands.never()}) {
-      for (const auto& row : *table) {
-        const auto [user, optimizer] = uses(runs(row.drill()), row);
-        EXPECT_EQ(user, row.user()) << row.text();
-        EXPECT_EQ(optimizer, row.optimizer()) << row.text();
+    ASSERT_GT(sessions.commands().more_size(), 0);
+    // One journal's runs are too few for a row.
+    if (!base.has_days()) ASSERT_GT(journal.commands().less_size(), 0);
+    for (const auto* commands : {&sessions.commands(), &journal.commands()}) {
+      for (const auto* table : {&commands->more(), &commands->less(), &commands->never()}) {
+        for (const auto& row : *table) {
+          const auto [user, optimizer] = uses(runs(row.drill()), row);
+          EXPECT_EQ(user, row.user()) << row.text();
+          EXPECT_EQ(optimizer, row.optimizer()) << row.text();
+        }
       }
     }
   }
 }
 
+TEST_F(StatsRunsTest, UnbeatenTagsCountTheRunsHoldingTheirCommands) {
+  auto unbeaten = [](int lastAtom, initializer_list<string> commands) {
+    auto s = sample(4, 10, 0, Sample::unbeaten);
+    s.set_last_atom(lastAtom);
+    for (const string& keys : commands) addCommand(s, keys);
+    return s;
+  };
+  auto scored = sample(4, 10, 5);
+  scored.set_last_atom(3);
+  addCommand(scored, "p");
+  journal("a", 10, params, {unbeaten(0, {"p"}), unbeaten(1, {"u", "P"}), unbeaten(2, {"w"}), scored});
+  auto undone = session(8, 0, vf::stats::Session::unbeaten);
+  addCommand(undone, "<C-r>");
+  append(stamp, undone);
+
+  const auto summary = summarize();
+  const auto& tags = summary.journal().unbeaten_tags();
+  ASSERT_EQ(tags.size(), 3);
+  EXPECT_EQ(tags[0].name(), "paste");
+  EXPECT_EQ(tags[0].runs(), 2);
+  EXPECT_EQ(tags[1].name(), "undo or redo");
+  EXPECT_EQ(tags[1].runs(), 1);
+  EXPECT_EQ(tags[2].name(), "other");
+  EXPECT_EQ(tags[2].runs(), 1);
+  for (const auto& tag : tags) EXPECT_EQ(runs(tag.drill()).total(), tag.runs()) << tag.name();
+  const auto other = runs(tags[2].drill());
+  ASSERT_EQ(other.runs_size(), 1);
+  EXPECT_EQ(other.runs(0).id().journal().last_atom(), 2);
+
+  Filter scoredOnly;
+  scoredOnly.add_outcomes(Sample::scored);
+  EXPECT_EQ(summarize(scoredOnly).journal().unbeaten_tags_size(), 0);
+
+  const auto& sessionTags = summary.sessions().unbeaten_tags();
+  ASSERT_EQ(sessionTags.size(), 1);
+  EXPECT_EQ(sessionTags[0].name(), "undo or redo");
+  EXPECT_EQ(runs(sessionTags[0].drill()).total(), 1);
+}
+
 TEST_F(StatsRunsTest, AMergedRowDrillsIntoEitherVariant) {
   populate();
   const auto summary = summarize();
-  const auto& more = summary.commands().more();
+  const auto& more = summary.sessions().commands().more();
   const auto merged = ranges::find(more, "ce|cw", &vf::stats::CommandRow::text);
   ASSERT_NE(merged, more.end());
-  EXPECT_EQ(merged->split(), "ce 6 · cw 8");
+  EXPECT_EQ(merged->split(), "ce 6");
   const auto list = runs(merged->drill());
   int ce = 0;
   int cw = 0;
   for (const auto& row : list.runs()) {
     EXPECT_EQ(row.outcome(), Sample::scored);
+    EXPECT_TRUE(row.id().has_session());
     ce += row.user_keys().starts_with("ce");
-    cw += row.user_keys().starts_with("cw") || row.best_seq().starts_with("cw");
+    cw += row.best_seq().starts_with("cw");
   }
   EXPECT_EQ(ce, 6);
-  EXPECT_GT(cw, 0);
-  EXPECT_EQ(list.total(), 6 + 8 + 2);
+  EXPECT_EQ(cw, 4);
+  // The optimizer's `cw` answers two of the `ce` sessions.
+  EXPECT_EQ(list.total(), 6 + 4 - 2);
 }
 
 TEST_F(StatsRunsTest, RollupsCountButAreNotListedAndCommandsLeaveThemOut) {

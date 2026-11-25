@@ -25,7 +25,7 @@ struct SampleRun {
 // dies on it, the next run records it as crashed and moves past it.
 SampleRun sampleJournals(std::string_view request);
 
-// Appends to `rollup.vfr` the runs of every journal in `dir` unmodified for
+// Appends to `rollup.vfr` the runs of every closed journal in `dir` unmodified for
 // `keepDays` whose samples cover all of it under `params` (a serialized,
 // stamped `vf.journal.SampleParams`), then deletes the journal and its
 // samples. Returns how many journals it deleted.

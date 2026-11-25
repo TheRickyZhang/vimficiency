@@ -130,6 +130,7 @@ VFByteSlice vf_explore_start_async(const char* request, size_t request_len) {
         if (!inputs) return unexpected(inputs.error());
         CompositionOptimizerParams compositionParams =
             inputs->overrides.resolved(CompositionOptimizerParams{});
+        compositionParams.transform.indent = inputs->indent;
 
         auto job = std::make_unique<ExploreJob>(
             ExploreState{std::move(*inputs), std::move(compositionParams), g_config_internal, {}},

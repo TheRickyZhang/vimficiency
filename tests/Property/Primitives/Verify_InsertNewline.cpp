@@ -19,6 +19,7 @@ import vf.Types.CursorPos;
 import vf.Types.Lines;
 import vf.tests.Utils.NeovimOracle;
 import vf.tests.Utils.OracleReplay;
+import vf.Optimizer.BuildTypedCommands;
 
 using namespace std;
 
@@ -75,6 +76,21 @@ class VerifyInsertNewline {
     OracleReplay::expectModelMatchesOracle(oracle_, lines, cursor, seq, "insert <CR>/<BS> primitive");
   }
 
+  void TypedIndentMatchesOracle(const string& source, const vector<string>& target,
+                                bool ai, bool et, bool ci, int ts, int sw) {
+    const IndentOptions options{ai, et, ci, ts, sw};
+    const Lines goal(target);
+    const string command = "O" + buildTypedCommands(goal, options.openedIndent(source), "", "", options).seq.str();
+    const string settings = format("{}ai {}et {}ci ts={} sw={}", ai ? "" : "no", et ? "" : "no",
+                                   ci ? "" : "no", ts, sw);
+    const auto actual = oracle_.simulate({source}, 0, 0, command, settings);
+    Lines expected = goal;
+    expected.push_back(source);
+    EXPECT_EQ(actual.lines, expected) << settings << " " << command;
+    EXPECT_EQ(CursorPos(actual.row, actual.col), typedCommandsExitCursor({0, 0}, goal));
+    EXPECT_EQ(actual.mode, Mode::Normal);
+  }
+
  private:
   NeovimOracle oracle_{};
 };
@@ -83,3 +99,12 @@ class VerifyInsertNewline {
 
 FUZZ_TEST_F(VerifyInsertNewline, InsertNewlineMatchesOracle)
     .WithDomains(InsertNewlineSpecDomain());
+
+FUZZ_TEST_F(VerifyInsertNewline, TypedIndentMatchesOracle)
+    .WithDomains(fuzztest::StringOf(fuzztest::ElementOf<char>({' ', '\t', 'x'})).WithMaxSize(12),
+                 fuzztest::VectorOf(fuzztest::StringOf(fuzztest::ElementOf<char>({' ', '\t', 'y'}))
+                                        .WithMaxSize(12)).WithMinSize(1).WithMaxSize(3),
+                 fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>(),
+                 fuzztest::InRange(1, 8), fuzztest::InRange(0, 8))
+    .WithSeeds({{"        x", {"        y"}, true, false, false, 8, 0},
+                {" \t   x", {" \t   ", "\t", "  y"}, true, true, true, 4, 2}});

@@ -42,20 +42,25 @@ inline std::optional<char> parseDisplayChar(std::string_view s) {
   return std::nullopt;
 }
 
-// Splits a sequence into keys: `<...>` names and single UTF-8 characters. It
-// knows no commands; a `<` that opens no name is a character.
+// A `<...>` name or a single UTF-8 character. A `<` that opens no name is a character.
+inline std::string_view firstKey(std::string_view keys) {
+  if (keys.empty()) return {};
+  size_t size = 1;
+  if (keys.front() == '<') {
+    const size_t close = keys.find_first_of("<>", 1);
+    if (close != std::string_view::npos && keys[close] == '>') size = close + 1;
+  } else {
+    while (size < keys.size() && (keys[size] & 0xC0) == 0x80) size++;
+  }
+  return keys.substr(0, size);
+}
+
 inline std::vector<std::string_view> splitKeys(std::string_view keys) {
   std::vector<std::string_view> out;
   while (!keys.empty()) {
-    size_t size = 1;
-    if (keys.front() == '<') {
-      const size_t close = keys.find_first_of("<>", 1);
-      if (close != std::string_view::npos && keys[close] == '>') size = close + 1;
-    } else {
-      while (size < keys.size() && (keys[size] & 0xC0) == 0x80) size++;
-    }
-    out.push_back(keys.substr(0, size));
-    keys.remove_prefix(size);
+    const std::string_view key = firstKey(keys);
+    out.push_back(key);
+    keys.remove_prefix(key.size());
   }
   return out;
 }

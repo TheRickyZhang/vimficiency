@@ -20,6 +20,8 @@ void moveCol(CursorPos& pos, const Lines& lines, int dx);
 // Move line by dy, clamping to valid range and updating column
 void moveLine(CursorPos& pos, const Lines& lines, int dy);
 
+void moveVisualLine(CursorPos& pos, const Lines& lines, int dy);
+
 // =============================================================================
 // Word Motions
 // =============================================================================

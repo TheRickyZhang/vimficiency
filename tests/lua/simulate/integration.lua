@@ -136,7 +136,7 @@ end
 ---@param lines string[]
 ---@param fn fun()
 ---@param next fun(ok: boolean, err: any)
----@param opts { start_row: integer?, start_col: integer?, user_seq: string?, filetype: string? }?   0-indexed; default (0, 0)
+---@param opts { start_row: integer?, start_col: integer?, recording: VF.Replay.Recording?, filetype: string?, end_row: integer?, end_col: integer? }?   0-indexed; default (0, 0)
 local function with_replay(sequences, lines, fn, next, opts)
   local prev_notify = vim.notify
   local prev_echo = vim.api.nvim_echo
@@ -147,7 +147,7 @@ local function with_replay(sequences, lines, fn, next, opts)
 
   local start_row = (opts and opts.start_row) or 0
   local start_col = (opts and opts.start_col) or 0
-  local user_seq = opts and opts.user_seq or nil
+  local recording = opts and opts.recording
 
   helpers.new_buf({ "simulate source" })
   vim.api.nvim_win_set_cursor(0, { 1, 0 })
@@ -160,14 +160,14 @@ local function with_replay(sequences, lines, fn, next, opts)
   -- Seed play settings so every pane in the test set is visible. Without
   -- this the tests would be clamped to the default window_count (2).
   local play = require("vimficiency.simulate.settings")
-  local expected_windows = #suggestions + (user_seq and 1 or 0)
+  local expected_windows = #suggestions + (recording and 1 or 0)
   play.set_setting("window_count", math.min(4, math.max(1, expected_windows)))
-  play.set_setting("include_user_sequence", user_seq ~= nil)
+  play.set_setting("include_user_sequence", recording ~= nil)
   sim.simulate_compare(lines, start_row, start_col,
     {
-      user = user_seq and { seq = user_seq } or nil,
+      user = recording and { recording = recording } or nil,
       suggestions = suggestions,
-    }, { filetype = opts and opts.filetype or nil })
+    }, opts)
 
   local tries = 0
   local function finish(ok, err)

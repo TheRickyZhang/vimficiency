@@ -62,10 +62,10 @@ the lifetime of in-progress sessions.
 
 | Field | Default | Meaning |
 |-------|---------|---------|
-| `KEY_SESSION_CAPACITY` | `200` | Maximum commands retained in the recall ring. |
-| `MAX_RETENTION_SECONDS` | `120` | Maximum age of recall history. The oldest entries are evicted once **both** the capacity and the age limit are exceeded. |
+| `KEY_SESSION_CAPACITY` | `200` | Number of recent commands always kept once captured. |
+| `MAX_RETENTION_SECONDS` | `120` | Age in seconds before a Recall entry can be evicted. An older entry is evicted only when the ring also exceeds `KEY_SESSION_CAPACITY`. |
 | `MANUAL_IDLE_TIMEOUT_SECONDS` | `300` | A manual (`start`/`finish`) session left idle this long is auto-ended with a warning. |
-| `lossy_mappings` | `"warn"` | A key mapped to a Lua function (flash.nvim's `f`, a `vim.keymap.set` callback) that moves the cursor or edits text cannot be captured as replayable keys. `"drop"`: a session spanning it ends, and the warning names the mapping. `"warn"`: the keys you typed are recorded instead, with a once-per-session notice. `"allow"`: recorded silently. Replay is faithful only when the function did what those keys do in plain Vim. |
+| `lossy_mappings` | `"warn"` | For a Lua mapping that moves the cursor or edits text, `"drop"` ends the session and names the mapping. `"warn"` records its typed keys with a once-per-session notice. `"allow"` records silently. Play shows the observed cursor and edit under those keys. |
 
 ## Journal
 
@@ -81,7 +81,7 @@ require('vimficiency').setup({ journal = { enabled = true } })
 |-------|---------|---------|
 | `journal.enabled` | `false` | Record every command, the cursor after it, and every text change. |
 | `journal.snapshot_every` | `500` | Commands per buffer between full-text snapshots. Text changes are recorded exactly either way; a lower value only makes a file quicker to read from the middle. |
-| `journal.keep_days` | `90` | Once a file has gone this many days unchanged and is fully scored, its scores are kept as daily totals and the file is deleted. |
+| `journal.keep_days` | `90` | Once a closed journal has gone this many days unchanged and is fully scored, its scores are kept as daily totals and the file is deleted. |
 | `journal.sampling.auto` | `true` | Score new journal content in the background, at low priority. When off, only `:Vimfy stats refresh` scores it. |
 | `journal.sampling.window_sizes` | `{ 4, 8, 16 }` | Run lengths, in commands, that [`:Vimfy stats`](11-commands.md) scores. The middle one is charted until `<CR>` on another in the stats switches it. |
 | `journal.sampling.deadline_ms` | `2000` | Search budget per run. `0` lets every search run to its natural caps. |
@@ -89,8 +89,8 @@ require('vimficiency').setup({ journal = { enabled = true } })
 
 Each Neovim instance writes its own file under
 `stdpath('data')/vimficiency/journal/`, and `:Vimfy stats` keeps its scores in
-a `.samples` file beside each one. After `keep_days`, both are replaced by
-daily totals in `rollup.vfr`.
+a `.samples` file beside each one. Rollup replaces the closed journal and its
+samples with daily totals in `rollup.vfr`.
 
 Changing a sampling field other than `auto`, the keyboard, or an effort weight
 rescores the whole journal in the background. Days already rolled up cannot be
@@ -101,6 +101,18 @@ rescored, so they drop out of the current scores.
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `stats.weight` | `"effort"` | How [`:Vimfy stats`](11-commands.md) averages sessions and journal runs into a score. `"effort"` counts each by the effort you spent on it, so long ones count more; `"uniform"` counts each once. The stats tab opens with this weight; `w` there switches it for that tab only. |
+
+## UI
+
+Open `:Vimfy appearance` to customize selection highlighting. The selection
+preview updates as you edit. Changes apply immediately, persist across Neovim
+restarts, and override the values from `setup()`. Use **Reset to defaults**
+to restore those values.
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `ui.selection_color` | `"IncSearch"` | Tint for the faded selection background. Use `"IncSearch"` for the active theme’s search highlight, `"colorscheme"` for its `Visual` highlight, a color name such as `"yellow"`, or a `"#RRGGBB"` color. |
+| `ui.selection_strength` | `35` | How much of the tint to blend into the background, from `0` to `100`. Applies to the shared selection highlight used in the stats, settings, and session picker. |
 
 ## Idle end-detection
 
@@ -135,9 +147,9 @@ effort-model values that aren't listed above.
 
 ## Shiftwidth
 
-Your Neovim `shiftwidth` is auto-detected at setup time and passed to the
-optimizer so suggested sequences match your indentation. To override
-explicitly:
+Each session captures the source buffer’s `autoindent`, `expandtab`, `copyindent`,
+`tabstop`, and `shiftwidth` for search and replay. A `shiftwidth` of zero follows
+that buffer’s `tabstop`. You can override `shiftwidth` for new captures.
 
 ```lua
 require('vimficiency').setup({ shiftwidth = 4 })

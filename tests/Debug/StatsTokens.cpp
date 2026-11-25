@@ -87,7 +87,7 @@ TEST(StatsTokens, Histogram) {
         size_t off = toks.error().offset;
         size_t close = s[off] == '<' ? s.find('>', off) : string::npos;
         failAt[side][close == string::npos ? s.substr(off, 1) : s.substr(off, close - off + 1)]++;
-        cout << "PARSEFAIL side=" << side << " rec=" << r.idx << " " << formatSequenceParseError(toks.error())
+        cout << "PARSEFAIL side=" << side << " rec=" << r.idx << " " << formatSequenceParseError(toks.error(), s)
              << " seq=" << VF::prettify(*seqs[side]) << "\n";
         continue;
       }

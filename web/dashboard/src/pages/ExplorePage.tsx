@@ -5,7 +5,7 @@ export function ExplorePage() {
   const data = exploreRoute.useLoaderData();
   const search = exploreRoute.useSearch();
 
-  if (!data) {
+  if (!data?.entries.length) {
     return (
       <>
         <h1>Search Space Explorer</h1>

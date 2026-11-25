@@ -104,6 +104,19 @@ TEST_F(TransformOptimizer_ManualTest, VisualDeleteFallbackRejectsExclusiveNextLi
   EXPECT_FALSE(visual.has_value());
 }
 
+TEST_F(TransformOptimizer_ManualTest, RepeatedDeletionCanStillEnterBeforeSurvivingSuffix) {
+  const Lines source{"", "word", "xxx"};
+  const Lines full{"", "word", "xxxZ"};
+  TransformBoundary boundary(full, {0, 0}, {2, 3});
+  TransformOptimizer optimizer(Config::qwerty());
+  auto result = optimizer.optimizeTransform(source, Lines{"Q"}, boundary, regressionParams(160, 20));
+  const auto bucket = result.resultsAt(2, 1);
+  const string sequence = "dge.iQ<Esc>";
+  ASSERT_TRUE(ranges::any_of(bucket, [&](const Result& r) { return r.getSequence().str() == sequence; }));
+  EXPECT_TRUE(OracleReplay::matches(*oracle, full, {2, 1}, sequence, Lines{"QZ"},
+                                    CursorPos(0, 0), Mode::Normal, "repeat before suffix"));
+}
+
 TEST_F(TransformOptimizer_ManualTest, BackwardWordChangeFromEmptyLineMatchesVim) {
   // `cb` has no property coverage (only the d-variants are generated).
   OracleReplay::expectModelMatchesOracle(*oracle, {"~~~~", ""}, {1, 0}, "cb<Esc>");

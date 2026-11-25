@@ -28,29 +28,31 @@ how to tune it to your layout.
 ## Simulating
 
 `:Vimfy play <alias> [count]` opens a new tab with side-by-side windows and
-animates your sequence (leftmost) and the top suggestions (one per additional
-window).
-- `count` — how many optimal sequences to show. **Default: 1**, paired
-  with your sequence for a clean side-by-side "yours vs. best" pane.
-- The layout is a 4-wide grid that wraps to a second row once more than
-  four windows are needed. **Max: 8 windows total**; a higher count is
-  silently trimmed (with a notice) so the grid stays readable.
+shows your recording alongside simulated optimizer suggestions.
+`count` sets the number of panes, up to four. The default layout pairs
+your recording with the best suggestion.
 
 Replay opens after a brief precompute phase. Step forward with
 `<Right>`, back with `<Left>`. Close the replay with `q`.
 
-The precompute phase runs each sequence through a hidden Neovim probe
-window — a real oracle — so every intermediate state (cursor, lines,
-mode) reflects exactly what your keystrokes would do in a live buffer.
-Scrubbing is `O(1)` after that: seeking back and forth through the
-sequence is an index lookup, not a re-simulation. The drain strategy
-that keeps the oracle accurate is documented for contributors in
-`dev/lua/replay-precompute.md`.
+The `[you] Recorded` pane shows the text, cursor and mode Neovim reported.
+A Visual deletion such as `Vd` shows the line disappearing in one step.
+When several commands arrive together, one step shows their combined result.
+Plugin edits appear as they happened, even when a mapping’s reported keys
+omit some of the text it inserted.
+
+Each numbered `Simulated` pane runs a suggestion in a hidden Neovim buffer.
+You can compare the two even when you used the same keys as the top suggestion.
+Both panes use the same slice, including lines you visited and temporary edits
+you later undid. A step advances each pane to its next available state.
+
+Opening an older v1 save shows a warning. Its user pane has one step between
+the two states that file contains. Suggestions still animate normally.
 
 Each replay window shows a virtual header above the buffer:
 
 - progress through the global and local step counts, plus the current
-  simulated mode (`NORMAL`, `INSERT`, `VISUAL`)
+  editor mode
 - the replay sequence itself, wrapped to the window width, with the
   current token highlighted
 

@@ -11,10 +11,11 @@ export namespace Stats {
 enum class Change : uint8_t { Any, Nav, Edit };
 enum class Side : uint8_t { Either, User, Optimizer };
 
-// Any of `commands`, interned, on `side`.
+// Any of `commands`, interned, on `side`; none of them when `absent`.
 struct CommandMatch {
   std::vector<int> commands;
   Side side = Side::Either;
+  bool absent = false;
 };
 
 // A `vf.stats.Filter`.
@@ -28,17 +29,19 @@ struct Selection {
   int windowSize = 0;
   std::optional<std::pair<int64_t, int64_t>> epochSeconds;
   Change change = Change::Any;
-  // A bit per `vf.journal.Sample.Outcome`; 0 for every one.
-  uint32_t outcomes = 0;
+  // Selected `vf.journal.Sample.Outcome` values; empty includes all outcomes.
+  std::vector<int> outcomes;
   // Each must hold.
   std::vector<CommandMatch> commands;
   // Only runs whose user typed more insert text than the best sequence.
   bool overTyped = false;
   // Only runs whose keys cost less than the best sequence found.
   bool beats = false;
+  bool timed = false;
+  std::optional<std::pair<int64_t, int64_t>> querySize;
 
   // Whether it reads each run on its own, which rollups do not keep.
-  inline bool readsRuns() const { return !commands.empty() || overTyped || beats; }
+  inline bool readsRuns() const { return !commands.empty() || overTyped || beats || timed || querySize; }
 };
 
 // A journal total's fields; commands are not checked.

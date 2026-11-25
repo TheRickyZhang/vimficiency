@@ -26,10 +26,7 @@ local function encode_pretty(value, level)
     local mt = getmetatable(value)
     if mt and mt.__jsontype == "array" then return "[]" end
     if not vim.islist(value) then return "{}" end
-    error(
-      "encode_pretty: bare empty table is shape-ambiguous; " ..
-      "use vim.empty_dict() for objects or disk.empty_array() for arrays"
-    )
+    return "[]"
   end
   if vim.islist(value) then
     local parts = {}
@@ -51,8 +48,7 @@ local function encode_pretty(value, level)
   return "{\n" .. table.concat(parts, ",\n") .. "\n" .. pad .. "}"
 end
 
--- Bump on any schema change; `decode` rejects every other version.
-M.FORMAT_VERSION = 1
+M.FORMAT_VERSION = 2
 
 ---@param filename string
 ---@param result VF.Session.Result
@@ -61,7 +57,7 @@ function M.save(filename, result)
   local save_dir = M.save_dir()
   vim.fn.mkdir(save_dir, "p")
   local path = save_dir .. "/" .. filename .. ".json"
-  local versioned = vim.tbl_extend("error", result, { version = M.FORMAT_VERSION })
+  local versioned = vim.tbl_extend("error", result, { version = result.recording and M.FORMAT_VERSION or 1 })
   local lines = vim.split(encode_pretty(versioned), "\n")
   local ok, err = pcall(vim.fn.writefile, lines, path)
   if not ok then error(tostring(err), 0) end
@@ -91,6 +87,7 @@ local REQUIRED_FIELDS = {
 }
 
 local OPTIONAL_FIELDS = {
+  { key = "indent", kind = "table" },
   { key = "commands",      kind = "table" },
   { key = "user_typed",    kind = "string" },
   { key = "user_typed_insert", kind = "string" },
@@ -98,6 +95,39 @@ local OPTIONAL_FIELDS = {
   { key = "optimizer_overrides", kind = "string" },
   { key = "results_calculated",  kind = "number" },
 }
+
+local function index(n)
+  return type(n) == "number" and n >= 0 and n % 1 == 0
+end
+
+local function valid_lines(lines)
+  if type(lines) ~= "table" or not vim.islist(lines) then return false end
+  for _, line in ipairs(lines) do
+    if type(line) ~= "string" or line:find("\n", 1, true) then return false end
+  end
+  return true
+end
+
+local function valid_position(frame, height)
+  return index(frame.row) and frame.row < height and index(frame.col) and type(frame.mode) == "string"
+end
+
+local function valid_recording(recording, height)
+  if type(recording) ~= "table"
+      or type(recording.steps) ~= "table" or not vim.islist(recording.steps) then return false end
+  if not valid_position(recording, height) then return false end
+  for _, step in ipairs(recording.steps) do
+    if type(step) ~= "table" or type(step.keys) ~= "string"
+        or type(step.deltas) ~= "table" or not vim.islist(step.deltas) then return false end
+    for _, delta in ipairs(step.deltas) do
+      if type(delta) ~= "table" or not index(delta.first) or not index(delta.old_count)
+          or delta.first + delta.old_count > height or not valid_lines(delta.lines) then return false end
+      height = height + #delta.lines - delta.old_count
+    end
+    if not valid_position(step, height) then return false end
+  end
+  return true
+end
 
 ---@param data any
 ---@return string|nil err
@@ -115,8 +145,17 @@ function M.validate(data)
       return string.format("non-%s '%s' field", f.kind, f.key)
     end
   end
+  local indent = data.indent
+  if indent and (type(indent.autoindent) ~= "boolean" or type(indent.expandtab) ~= "boolean"
+      or type(indent.copyindent) ~= "boolean" or not index(indent.shiftwidth)
+      or not index(indent.tabstop) or indent.tabstop < 1 or indent.tabstop > 9999) then
+    return "invalid 'indent' field"
+  end
   if #data.lines == 0 then
     return "empty 'lines' field"
+  end
+  if data.recording ~= nil and not valid_recording(data.recording, #data.lines) then
+    return "invalid 'recording' field"
   end
   for i, r in ipairs(data.optimal_results) do
     if type(r) ~= "table" then
@@ -143,10 +182,15 @@ function M.decode(json_str)
   if type(data) ~= "table" then
     return nil, "Malformed result file: top-level must be a JSON object"
   end
-  if data.version ~= M.FORMAT_VERSION then
+  if data.version ~= M.FORMAT_VERSION and data.version ~= 1 then
     return nil, string.format(
-      "Unsupported result file format version %s (expected %d); re-record the session",
+      "Unsupported result file format version %s (supported versions are 1 and %d)",
       data.version == nil and "<none>" or tostring(data.version), M.FORMAT_VERSION)
+  end
+  if data.version == 1 then
+    data.recording = nil
+  elseif data.recording == nil then
+    return nil, "Malformed result file: missing 'recording' field"
   end
   data.version = nil
   local schema_err = M.validate(data)

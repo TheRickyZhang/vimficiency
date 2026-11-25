@@ -338,3 +338,99 @@ TEST(DebugTest, DISABLED_NewlineReplacementTransform) {
   for (size_t i = 0; i < buckets.size(); i++)
     cout << "start " << i << ": " << buckets[i].size() << " results\n";
 }
+
+namespace {
+const char* entryCurswantName(EntryCurswant e) {
+  switch (e) {
+    case EntryCurswant::Ignored: return "Ignored";
+    case EntryCurswant::Followed: return "Followed";
+    case EntryCurswant::Required: return "Required";
+  }
+  return "?";
+}
+
+void showStickyLanding(const char* label, const Lines& initial, CursorPos start, const Lines& goal,
+                       CursorPos end, int transformPerStart) {
+  const Config config = Config::uniform();
+  CompositionOptimizerParams params = CompositionOptimizerParams{}.withMaxResults(8);
+  params.transformMaxResultsPerStartPos = transformPerStart;
+  CompositionOptimizer opt(config);
+  auto res = opt.optimize(initial, start, goal, end, params, "", NavBoundary(), NavContext(),
+                          SearchControl::NEVER_STOP, nullptr);
+  cout << "== " << label << " perStart=" << transformPerStart << " results "
+       << res.getResults().size() << " pops " << res.getStats().totalPops() << "\n";
+  for (int e = 0; e < res.totalEdits(); e++) {
+    const PlannedEditView view = res.plannedEditAt(e);
+    cout << "   diff " << view.diff.beginPos << "-" << view.diff.endPos << " del=["
+         << VF::prettify(view.diff.deletedText) << "] ins=["
+         << VF::prettify(view.diff.insertedText) << "]\n";
+    for (const CursorPos& sp : view.transformResult.startPositions())
+      for (const Result& r : view.transformResult.resultsAt(sp.line, sp.col))
+        cout << "      start " << sp << " " << entryCurswantName(r.getEntryCurswant()) << " "
+             << r.getCost() << "  " << VF::prettify(r.getSequence().str()) << "\n";
+  }
+  vector<Result> results = res.getResults();
+  sort(results.begin(), results.end(),
+       [](const Result& a, const Result& b) { return a.getCost() < b.getCost(); });
+  for (const Result& r : results)
+    cout << "   " << r.getCost() << "  " << VF::prettify(r.getSequence().str()) << "\n";
+}
+}  // namespace
+
+// A clamped nav landing (`k` onto a shorter line keeps curswant) meets a start
+// whose only stored edit is EntryCurswant::Required.
+TEST(DebugTest, DISABLED_StickyLandingNoResult) {
+  for (int perStart : {1, 2}) {
+    showStickyLanding("a/b/~~", Lines({"a", "b", "~~"}), {2, 1}, Lines({"a", "x", "y", "z~"}),
+                      {3, 1}, perStart);
+    showStickyLanding("b/~~", Lines({"b", "~~"}), {1, 1}, Lines({"x", "y", "z~"}), {2, 1},
+                      perStart);
+    showStickyLanding("a//~~", Lines({"a", "", "~~"}), {2, 1}, Lines({"a", "x", "y", "z~"}),
+                      {3, 1}, perStart);
+    showStickyLanding("k onto empty line", Lines({"D", "HHHHH", "", "         "}), {3, 8},
+                      Lines({"D", "HHHHH", " "}), {2, 0}, perStart);
+  }
+}
+
+// VimDiff merges an end-of-line insert and a next-line insert into one
+// replacement of the newline, which Transform cannot solve from any start.
+TEST(DebugTest, DISABLED_NewlineReplacementPlan) {
+  const Config config = Config::uniform();
+  const Lines initial({"", "~", ""});
+  const Lines goal({"", "~~", " "});
+  showStickyLanding("same family", Lines({"~", ""}), {1, 0}, Lines({"~~  "}), {0, 3}, 1);
+  showStickyLanding("same family", Lines({" ", ""}), {1, 0}, Lines({"     "}), {0, 4}, 1);
+  showComposition("planner", config, initial, {2, 0}, goal, {1, 0}, "");
+
+  const vector<DiffState> twoInserts = {
+      DiffState(CursorPos{1, 1}, CursorPos{1, 1}, "", "~",
+                TransformBoundary(initial, CursorPos{1, 1}, CursorPos{1, 1})),
+      DiffState(CursorPos{2, 0}, CursorPos{2, 0}, "", " ",
+                TransformBoundary(Lines({"", "~~", ""}), CursorPos{2, 0}, CursorPos{2, 0})),
+  };
+  CompositionOptimizer opt(config);
+  auto res = opt.optimize(initial, {2, 0}, goal, {1, 0},
+                          CompositionOptimizerParams{}.withMaxResults(8), "", NavBoundary(),
+                          NavContext(), SearchControl::NEVER_STOP, &twoInserts);
+  cout << "== two insertions forced: " << res.getResults().size() << " results\n";
+  for (const Result& r : res.getResults())
+    cout << "   " << r.getCost() << "  " << VF::prettify(r.getSequence().str()) << "\n";
+
+  const VimDiff::CostOptions costOptions{};
+  const VimDiff::FlatText flatInitial(initial), flatGoal(goal);
+  VimDiff::TilingCost delCost(flatInitial, costOptions.moveDeleteScale, costOptions.maxPrefixCount,
+                              VimDiff::TilingCost::Kind::Delete);
+  VimDiff::TilingCost moveCost(flatInitial, costOptions.moveDeleteScale, costOptions.maxPrefixCount,
+                               VimDiff::TilingCost::Kind::Move);
+  const VimDiff::Typing typing(flatGoal, config);
+  auto at = [&](const Lines& lines, int line, int col) {
+    return DiffText::positionToFlatIndex(CursorPos{line, col}, lines);
+  };
+  const int newline = at(initial, 2, 0) - 1;
+  cout << "pieces: del(newline)=" << delCost.query(newline, newline + 1)
+       << " move(newline)=" << moveCost.query(newline, newline + 1)
+       << " ins(~)=" << typing.ins(at(goal, 1, 1), at(goal, 1, 2))
+       << " ins(~ nl sp)=" << typing.ins(at(goal, 1, 1), at(goal, 2, 1))
+       << " ins(sp)=" << typing.ins(at(goal, 2, 0), at(goal, 2, 1))
+       << " esc=" << typing.esc << "\n";
+}

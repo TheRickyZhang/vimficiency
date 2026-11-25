@@ -48,14 +48,16 @@ struct NavOptimizer {
     const SearchControl& control = SearchControl::NEVER_STOP
   );
 
-  // Same overload but takes a pre-built BufferIndex
+  // Same overload but takes a pre-built BufferIndex.
+  // A landing on one of `exactTargetColLandings` counts only with targetCol == col.
   LandingNavResult optimize(
     const Lines& lines, const CursorPos& initialPos, const CharInterval& goalInterval,
     NavOptimizerParams params, std::string_view userSequence,
     const NavBoundary& boundary,
     const NavContext& navigationContext,
     const BufferIndex& bufferIndex, int lineOffset,
-    const SearchControl& control = SearchControl::NEVER_STOP
+    const SearchControl& control = SearchControl::NEVER_STOP,
+    std::span<const Pos> exactTargetColLandings = {}
   );
 
   // single-cursor goal overload, underlying implementation is the same.

@@ -41,7 +41,7 @@ void applyExclusiveMotionEdit(Lines& lines,
                                      Mode& mode,
                                      CharRange range,
                                      VimCore::LineDeleteContext lineDeleteContext,
-                                     bool change) {
+                                     bool change, const IndentOptions& options) {
   auto resolved = change
       ? VimCore::resolveExclusiveChangeRange(range, lines)
       : VimCore::resolveExclusiveDeleteRange(range, lines, true);
@@ -50,7 +50,7 @@ void applyExclusiveMotionEdit(Lines& lines,
     lineRange.normalize();
     VimCore::linewiseChangeWithAutoindent(
         lines, pos, mode,
-        lineRange.beginLine, lineRange.endLine - 1, lines[lineRange.beginLine]);
+        lineRange.beginLine, lineRange.endLine - 1, lines[lineRange.beginLine], options);
     return;
   }
   VimCore::deleteResolvedRangeAndUpdatePos(
@@ -307,7 +307,7 @@ void deleteBackToWordEnd(Lines& lines, CursorPos& pos, int count, bool big, Mode
 void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
                DotRepeat* lastEdit, bool hasLinesBelow,
                int leftColOffset, int rightColOffset,
-               bool hasLinesAbove, int* pendingAutoindentLen) {
+               bool hasLinesAbove, int* pendingAutoindentLen, const IndentOptions& options) {
   // Lines invariant: buffer always has at least one line (minimum: {""})
   assert(!lines.empty());
 
@@ -326,7 +326,7 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
       repeat = ParsedEdit{repeat.edit, count};
     }
     applyEdit(lines, pos, mode, repeat, nullptr, hasLinesBelow,
-              leftColOffset, rightColOffset, hasLinesAbove);  // don't update lastEdit
+              leftColOffset, rightColOffset, hasLinesAbove, pendingAutoindentLen, options);  // don't update lastEdit
     return;
   }
 
@@ -406,25 +406,18 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
     auto motions = parseEdits(movementSeq);
     assert(motions);
     for (const auto& motion : *motions) {
-      applyEdit(lines, pos, mode, motion);
+      const int steps = motion.effectiveCount();
+      if (motion.edit == "j" || motion.edit == "k") {
+        VimCore::moveVisualLine(pos, lines, motion.edit == "j" ? steps : -steps);
+      } else if (motion.edit == "h" || motion.edit == "l") {
+        const int delta = motion.edit == "h" ? -steps : steps;
+        pos.setCol(pos.col + clamp(delta, -pos.col, lines.getSize(pos.line) - pos.col));
+      } else {
+        applyEdit(lines, pos, mode, motion, nullptr, false, 0, 0, false, nullptr, options);
+      }
     }
-
-    // Visual mode is inclusive of both endpoints; the half-open operator range
-    // extends one past the HIGHER of {anchor, cursor}. For a backward selection
-    // the cursor sits below the anchor, so the anchor takes the +1, not cursor.
-    const bool backward = pos.line < anchor.line ||
-                          (pos.line == anchor.line && pos.col < anchor.col);
-    CursorPos lo = backward ? pos : anchor;
-    CursorPos hi = backward ? anchor : pos;
-    CharRange r(lo, CursorPos(hi.line, std::min(hi.col + 1, lines.getSize(hi.line))));
-
-    // Apply operator
-    if (op == 'd') {
-      VimCore::deleteRangeAndUpdatePos(lines, r, pos);
-    } else {  // op == 'c'
-      VimCore::deleteRangeAndUpdatePos(lines, r, pos, Mode::Insert);
-      mode = Mode::Insert;
-    }
+    VimCore::deleteVisualSelection(lines, anchor, pos, op == 'c' ? Mode::Insert : Mode::Visual);
+    if (op == 'c') mode = Mode::Insert;
     return;
   }
 
@@ -545,12 +538,12 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
         return;
 
       case hash("cc"): case hash("S"):
-        VimCore::linewiseChangeWithAutoindent(lines, pos, mode, pos.line, pos.line, lines[pos.line]);
+        VimCore::linewiseChangeWithAutoindent(lines, pos, mode, pos.line, pos.line, lines[pos.line], options);
         return;
 
       case hash("o"): case hash("O"): {
-        const int autoindentLen = e == "o" ? VimCore::openLineBelow(lines, pos)
-                                           : VimCore::openLineAbove(lines, pos);
+        const int autoindentLen = e == "o" ? VimCore::openLineBelow(lines, pos, options)
+                                           : VimCore::openLineAbove(lines, pos, options);
         if (pendingAutoindentLen != nullptr) *pendingAutoindentLen = autoindentLen;
         mode = Mode::Insert;
         return;
@@ -720,7 +713,7 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
           int linesBelow = n - 1 - pos.line;
           int actualCount = std::min(count, linesBelow);
           int lastLine = pos.line + actualCount;
-          VimCore::linewiseChangeWithAutoindent(lines, pos, mode, pos.line, lastLine, lines[pos.line]);
+          VimCore::linewiseChangeWithAutoindent(lines, pos, mode, pos.line, lastLine, lines[pos.line], options);
         }
         return;
 
@@ -730,7 +723,7 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
           if (pos.line == 0) return;  // k motion fails → no-op
           int actualCount = std::min(count, pos.line);
           int beginLine = pos.line - actualCount;
-          VimCore::linewiseChangeWithAutoindent(lines, pos, mode, beginLine, pos.line, lines[beginLine]);
+          VimCore::linewiseChangeWithAutoindent(lines, pos, mode, beginLine, pos.line, lines[beginLine], options);
         }
         return;
 
@@ -953,7 +946,7 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
               range.end = CursorPos(goalPos.line, std::min(goalPos.col + 1, lines.getSize(goalPos.line)));
             }
             applyExclusiveMotionEdit(
-                lines, pos, mode, range, lineDeleteContext, e[0] == 'c');
+                lines, pos, mode, range, lineDeleteContext, e[0] == 'c', options);
           }
           if (e[0] == 'c') mode = Mode::Insert;
         }
@@ -968,7 +961,7 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
           if (initialPos < pos) {
             CharRange range(initialPos, pos);
             applyExclusiveMotionEdit(
-                lines, pos, mode, range, lineDeleteContext, e[0] == 'c');
+                lines, pos, mode, range, lineDeleteContext, e[0] == 'c', options);
           }
           if (e[0] == 'c') mode = Mode::Insert;
         }
@@ -1006,7 +999,7 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
             CursorPos hi = motionPos < pos ? pos : motionPos;
             CharRange range(lo, hi);
             applyExclusiveMotionEdit(
-                lines, pos, mode, range, lineDeleteContext, e[0] == 'c');
+                lines, pos, mode, range, lineDeleteContext, e[0] == 'c', options);
           }
           if (e[0] == 'c') mode = Mode::Insert;
         }
@@ -1057,6 +1050,7 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
       if (obj == '"' || obj == '\'' || obj == '`') {
         r = VimCore::quoteTextObjectRange(
             pos, lines, inner, obj, leftColOffset, rightColOffset);
+        if (!r.isValid()) return;
       }
       // Bracket objects - handle both opening and closing chars
       else if (obj == '(' || obj == ')' || obj == 'b') {
@@ -1076,7 +1070,6 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
         r = VimCore::bracketTextObjectRange(
             pos, lines, inner, '<', '>', leftColOffset, rightColOffset);
       } else if (obj == 's') {
-        isBracketObj = true;  // route through exclusive-linewise resolver
         r = VimCore::sentenceTextObjectRange(pos, lines, inner);
       } else if (obj == 'p') {
         // Paragraph text object: always linewise. Handle directly here and
@@ -1113,8 +1106,8 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
           // over empty quotes.
           pos = r.begin;
           if (op == 'c') mode = Mode::Insert;
-        } else if (isBracketObj && r.spansMultiple()) {
-          // Multi-line bracket text object may need linewise promotion
+        } else if ((isBracketObj || obj == 's') && r.spansMultiple()) {
+          // Multi-line bracket or sentence text objects may need linewise promotion
           // (op_delete in Vim merges the leading-blanks/full-line case into a
           // linewise delete) or backed-up adjustment (`:help exclusive-linewise`).
           VimCore::ResolvedDeleteRange resolved =
@@ -1150,9 +1143,7 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
             }
           }
         }
-        if (op == 'c' && !wordFailed) {
-          // Non-word text objects, or empty range that nonetheless succeeded:
-          // still enter insert mode for `c`.
+        if (op == 'c' && !wordFailed && !isBracketObj) {
           mode = Mode::Insert;
         }
       }
@@ -1207,21 +1198,22 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
           // (`i<BS>  <BS><Esc>` on `[" ", " ", ""]` — the final `<BS>` must
           // delete the whole `"  "` indent, not one space).
           const std::string& line = lines[pos.line];
-          bool inLeadingWhitespace = true;
-          for (int c = 0; c < pos.col; c++) {
-            if (line[c] != ' ' && line[c] != '\t') {
-              inLeadingWhitespace = false;
-              break;
-            }
-          }
+          const auto before = std::string_view(line).substr(0, pos.col);
           int deleteToCol = pos.col - 1;
-          if (inLeadingWhitespace) {
-            int sw = VimOptions::shiftwidth();
-            deleteToCol = ((pos.col - 1) / sw) * sw;
+          int fill = 0;
+          if (IndentOptions::leadingIndent(before).size() == before.size()) {
+            const int step = options.backspaceWidth();
+            const int target = ((options.columns(before) - 1) / step) * step;
+            int width = 0;
+            for (deleteToCol = 0; width < target; ++deleteToCol) {
+              const int next = width + (before[deleteToCol] == '\t' ? options.tabstop - width % options.tabstop : 1);
+              if (next > target) break;
+              width = next;
+            }
+            fill = target - width;
           }
-          CharRange r(CursorPos(pos.line, deleteToCol),
-                      CursorPos(pos.line, pos.col));
-          VimCore::deleteRangeAndUpdatePos(lines, r, pos, Mode::Insert);
+          lines[pos.line].replace(deleteToCol, pos.col - deleteToCol, fill, ' ');
+          pos.setCol(deleteToCol + fill);
         }
         return;
 
@@ -1256,7 +1248,7 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
         // Trip wires: `Verify_InsertNewline` (`ib<CR><Esc>` strips moved
         // trailing whitespace; `i<CR><CR><Esc>` truncates the first
         // autoindented line on the second `<CR>`).
-        if constexpr (!VimOptions::autoindent()) {
+        if (!options.autoindent) {
           VimCore::insertText(lines, pos, "\n");
           return;
         }
@@ -1271,13 +1263,7 @@ void applyEdit(Lines& lines, CursorPos& pos, Mode& mode, const ParsedEdit& edit,
           rightStart++;
         }
         rightPart.erase(0, rightStart);
-        size_t indentLen = 0;
-        while (indentLen < leftPart.size() &&
-               (leftPart[indentLen] == ' ' ||
-                leftPart[indentLen] == '\t')) {
-          indentLen++;
-        }
-        std::string autoindent = leftPart.substr(0, indentLen);
+        std::string autoindent = options.openedIndent(leftPart);
         bool truncateOldLine =
             pendingAutoindentLen != nullptr && *pendingAutoindentLen > 0;
         std::string newLineContent = autoindent + rightPart;

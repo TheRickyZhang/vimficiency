@@ -1,12 +1,14 @@
 ---@class (exact) VF.Stats.Render
 ---@field SPLIT_MIN_WIDTH integer
----@field build_page fun(summary: VF.Stats.Summary, background: VF.Stats.Background, width?: integer): VF.Stats.Page
----@field chart_page fun(summary: VF.Stats.Summary, name: VF.Stats.ChartName, width: integer, height: integer): VF.Stats.Page
+---@field build_page fun(summary: VF.Stats.Summary, query: VF.Stats.Scope, background: VF.Stats.Background, width?: integer, expanded_commands?: VF.Stats.ExpandedCommands): VF.Stats.Page
+---@field chart_page fun(summary: VF.Stats.Summary, name: VF.Stats.ChartName, width: integer, height: integer, shown: VF.Stats.ChartLines, scale?: VF.Stats.ChartScale): VF.Stats.Page
+---@field journal_efficiency fun(summary: VF.Stats.JournalSummary): string
 ---@field run_lines fun(list: VF.Stats.RunList, offset: integer, sort?: VF.Stats.RunSort): string[]
 ---@field run_items fun(lines: string[], count: integer): VF.Stats.RunCell[]
 ---@field run_preview fun(row: VF.Stats.RunRow, detail: VF.Stats.RunDetail|nil, err: string|nil, width: integer): VF.Stats.RunPreview
 local M = {}
 
+local log = require("vimficiency.stats.log")
 local config = require("vimficiency.config")
 local highlights = require("vimficiency.ui.highlights")
 local sequence_display = require("vimficiency.ui.sequence_display")
@@ -25,18 +27,53 @@ local sequence_display = require("vimficiency.ui.sequence_display")
 ---@field scoring boolean   # a run is in flight
 ---@field err? string       # why the last background run failed
 
----@alias VF.Stats.ChartName "sessions"|"journal"
+---@alias VF.Stats.ChartName "sessions"|"journal"|"nav_timing"|"edit_timing"
 
---- Something in the stats the keys act on: a row that lists its runs, a daily
---- chart, a bucket of a chart opened on its own, or a selector row.
+---@class VF.Stats.ChartScale
+---@field unit string
+---@field bucket_size integer
+---@field buckets integer
+---@field tick_step integer
+---@field overview? boolean
+
+--- Which of a chart float's lines are drawn.
+---@class VF.Stats.ChartLines
+---@field primary boolean
+---@field samples boolean
+
+---@class VF.Stats.LinePoint
+---@field value number
+---@field count integer
+---@field id string
+---@field label string
+---@field detail string
+---@field drill VF.Stats.Filter
+
+---@class VF.Stats.LinePlot
+---@field buckets integer
+---@field points table<integer, VF.Stats.LinePoint>
+---@field history? VF.Stats.ChartScale
+---@field labels? string[]
+---@field primary_legend string
+---@field secondary_legend string
+
+---@alias VF.Stats.Source "sessions"|"journal"
+---@alias VF.Stats.CommandSection "less"|"more"|"never"
+---@alias VF.Stats.ExpandedCommands table<VF.Stats.Source, table<VF.Stats.CommandSection, boolean>>
+
+--- Something in the stats the keys act on.
 ---@class VF.Stats.Item : VF.Ui.NavItem
----@field kind "drill"|"chart"|"day"|"run_length"|"chart_unit"
+---@field kind "drill"|"chart"|"day"|"timing_bucket"|"run_length"|"chart_unit"|"command_toggle"
+---@field source? VF.Stats.Source  # whose band of the stats it is in
 ---@field drill? VF.Stats.Filter   # the runs <CR> lists: a row's or a day's
 ---@field label? string            # those runs' title
+---@field detail? string           # the selected point's values
+---@field order? VF.Stats.Order
 ---@field chart? VF.Stats.ChartName
 ---@field score? number            # a day's
 ---@field samples? integer         # the runs a day's score is over
 ---@field selector? { values: (string|integer)[], index: integer }
+---@field command_section? VF.Stats.CommandSection
 
 ---@class VF.Stats.Mark
 ---@field row integer       # 0-indexed
@@ -53,7 +90,9 @@ local sequence_display = require("vimficiency.ui.sequence_display")
 local SPARK_LEVELS = { "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█" }
 
 local CHART_BUCKETS = 30
+-- The fewest a chart is drawn with.
 local CHART_ROWS = 5
+local OVERVIEW_CHART_ROWS = 10
 local TIME_TICK_STEP = 5
 -- "100" + " ┤": the axis tick.
 local CHART_AXIS_WIDTH = 3 + 2
@@ -70,6 +109,26 @@ end
 ---@return string
 local function pad(s, width)
   return s .. string.rep(" ", width - vim.fn.strdisplaywidth(s))
+end
+
+--- `line` cut to `width` display columns, ending in `…` when cut.
+---@param line string
+---@param width integer
+---@return string
+local function fit(line, width)
+  if width < 1 then return "" end
+  local prefix = vim.fn.strcharpart(line, 0, width, true)
+  if #prefix == #line and vim.fn.strdisplaywidth(prefix) <= width then return line end
+  local low, high = 0, width - 1
+  while low < high do
+    local mid = math.ceil((low + high) / 2)
+    if vim.fn.strdisplaywidth(vim.fn.strcharpart(prefix, 0, mid, true)) < width then
+      low = mid
+    else
+      high = mid - 1
+    end
+  end
+  return vim.fn.strcharpart(prefix, 0, low, true) .. "…"
 end
 
 --- Marks the last pushed line's text.
@@ -117,13 +176,14 @@ end
 ---@param drill VF.Stats.Filter
 ---@param label string
 ---@param id? string   # when the label holds counts, which change
-local function drillable(out, drill, label, id)
+---@param hl? string
+local function drillable(out, drill, label, id, hl)
   local row = #out.lines - 1
   out.items[#out.items + 1] = {
     row = row, last_row = row, cursor = { row, out.lines[#out.lines]:find("%S") - 1 },
     id = id or label, kind = "drill", drill = drill, label = label,
   }
-  mark_text(out, highlights.STATS_DRILL)
+  mark_text(out, hl or highlights.STATS_DRILL)
 end
 
 ---@param score VF.Stats.Score
@@ -180,18 +240,34 @@ local function chart_scale(room)
   return rows, score_step, tick_spacing
 end
 
---- The line of time labels under a chart whose buckets are `day_width` columns.
----@param axis_indent string
----@param day_width integer
+---@param unit string
+---@return VF.Stats.ChartScale
+local function overview_scale(unit)
+  return { unit = unit, bucket_size = 1, buckets = CHART_BUCKETS, tick_step = TIME_TICK_STEP }
+end
+
+---@param ago integer
 ---@param unit string
 ---@return string
-local function time_axis(axis_indent, day_width, unit)
+local function time_label(ago, unit)
+  if unit == "minutes" and ago % 60 == 0 then return ago / 60 .. "h" end
+  if unit == "hours" and ago % 24 == 0 then return ago / 24 .. "d" end
+  return ago .. unit:sub(1, 1)
+end
+
+--- The line of time labels under a chart whose buckets are `bucket_width` columns.
+---@param axis_indent string
+---@param bucket_width integer
+---@param scale VF.Stats.ChartScale
+---@return string
+local function time_axis(axis_indent, bucket_width, scale)
   local axis = axis_indent
-  local plot_width = day_width * CHART_BUCKETS
+  local plot_width = bucket_width * scale.buckets
   local label_end = 0
-  for ago = CHART_BUCKETS, 0, -TIME_TICK_STEP do
-    local label = ago .. unit:sub(1, 1)
-    local tick = (CHART_BUCKETS - ago) * day_width
+  local tick_unit = time_label(scale.tick_step * scale.bucket_size, scale.unit):sub(-1)
+  for ago = scale.buckets, 0, -scale.tick_step do
+    local label = ago == 0 and "0" .. tick_unit or time_label(ago * scale.bucket_size, scale.unit)
+    local tick = (scale.buckets - ago) * bucket_width
     local col = math.max(0, math.min(tick - math.floor(#label / 2), plot_width - #label))
     axis = axis .. string.rep(" ", col - label_end) .. label
     label_end = col + #label
@@ -212,19 +288,14 @@ end
 ---@param indent string
 ---@param width integer
 ---@param height integer
----@return VF.Stats.Item[] day_items   # each day with data as its column, most recent first
 local function push_chart(out, days, indent, width, height, unit)
   local by_ago = {}
   for _, day in ipairs(days) do by_ago[day.days_ago] = day end
-  local first = #out.lines
   local day_width = math.floor(width / CHART_BUCKETS)
   local gap = day_width >= 3 and 1 or 0
   local bar = day_width - gap
   local rows, score_step, tick_spacing = chart_scale(math.max(CHART_ROWS, height - 2))
 
-  -- Each day's highlighted cells, by days_ago: its bar in every row.
-  ---@type table<integer, { [1]: integer, [2]: integer, [3]: integer }[]>
-  local spans = {}
   ---@param prefix string
   ---@param cell_of fun(day: VF.Stats.DayScore|nil, ago: integer): string
   ---@param fill? string   # what the gap after a day is drawn with
@@ -232,8 +303,6 @@ local function push_chart(out, days, indent, width, height, unit)
     local line = prefix
     for ago = CHART_BUCKETS - 1, 0, -1 do
       local cell = cell_of(by_ago[ago], ago)
-      spans[ago] = spans[ago] or {}
-      table.insert(spans[ago], { #out.lines, #line, #line + #cell })
       line = line .. cell .. string.rep(fill or " ", gap)
     end
     push(out, line)
@@ -247,32 +316,12 @@ local function push_chart(out, days, indent, width, height, unit)
       return string.rep(chart_cell(day and day.score, row - 1, rows), bar)
     end)
   end
-  local baseline = #out.lines
   push_row(indent .. "  0 └", function(_, ago)
     if (ago + 1) % TIME_TICK_STEP == 0 then return "┬" .. string.rep("─", bar - 1) end
     return string.rep("─", bar)
   end, "─")
   local axis_indent = indent .. string.rep(" ", CHART_AXIS_WIDTH)
-  push(out, time_axis(axis_indent, day_width, unit))
-
-  ---@type VF.Stats.Item[]
-  local items = {}
-  local plot = vim.fn.strdisplaywidth(axis_indent)
-  for ago = 0, CHART_BUCKETS - 1 do
-    local day = by_ago[ago]
-    if day then
-      local left = (CHART_BUCKETS - 1 - ago) * day_width
-      items[#items + 1] = {
-        row = first, last_row = spans[ago][#spans[ago]][1],
-        left = plot + left, right = plot + left + bar,
-        cursor = { baseline, spans[ago][rows + 1][2] },
-        spans = spans[ago],
-        id = day_id(day, unit), kind = "day",
-        drill = day.drill, label = day_label(day), score = day.score, samples = day.spans,
-      }
-    end
-  end
-  return items
+  push(out, time_axis(axis_indent, day_width, overview_scale(unit)))
 end
 
 -- A braille cell's dots, by column then row from the top.
@@ -283,28 +332,55 @@ local DOTTED_PERIOD = 3
 -- "├ " and a count.
 local RIGHT_AXIS_WIDTH = 2 + 3
 
---- Two lines over the same buckets: the scores against the left axis and the
+---@param value number
+---@return number
+local function latency_step(value)
+  if value == 0 then return 1 end
+  local power = 10 ^ math.floor(math.log10(value))
+  local ratio = value / power
+  return power * (ratio <= 1 and 1 or ratio <= 2 and 2 or ratio <= 5 and 5 or 10)
+end
+
+---@param indent string
+---@param width integer
+---@param labels string[]
+---@return string
+local function size_axis(indent, width, labels)
+  local parts = { indent }
+  for _, label in ipairs(labels) do
+    if vim.fn.strdisplaywidth(label) > width then label = label:gsub("^%d+–", "≤") end
+    local left = math.max(0, math.floor((width - vim.fn.strdisplaywidth(label)) / 2))
+    parts[#parts + 1] = pad(string.rep(" ", left) .. label, width)
+  end
+  return table.concat(parts)
+end
+
+--- Two lines over the same buckets: the values against the left axis and the
 --- sample counts against the right. A line breaks where a bucket has no data.
 ---@param out VF.Stats.Page
----@param days VF.Stats.DayScore[]
----@param indent string
----@param width integer    # of the plot
+---@param width integer
 ---@param height integer
----@param unit string
----@return VF.Stats.Item[] day_items   # each day with data as its column, most recent first
-local function push_line_chart(out, days, indent, width, height, unit)
-  local by_ago = {}
-  local most = 0
-  for _, day in ipairs(days) do
-    by_ago[day.days_ago] = day
-    most = math.max(most, day.spans)
+---@param data VF.Stats.LinePlot
+---@param shown VF.Stats.ChartLines
+---@return VF.Stats.Item[] bucket_items
+local function push_line_chart(out, width, height, data, shown)
+  local history = data.history
+  local most, highest = 0, 0
+  for _, entry in pairs(data.points) do
+    most = math.max(most, entry.count)
+    highest = math.max(highest, entry.value)
   end
-  local day_width = math.floor(width / CHART_BUCKETS)
-  local bar = day_width - (day_width >= 3 and 1 or 0)
-  local cells = day_width * CHART_BUCKETS
+  local indent, label_width = " ", history and 3 or 8
+  local axis_indent = indent .. string.rep(" ", label_width + 2)
+  local plot_width = math.max(CHART_BUCKETS, width - #axis_indent - RIGHT_AXIS_WIDTH - 1)
+  local buckets = data.buckets
+  local bucket_width = math.floor(plot_width / buckets)
+  local bar = bucket_width - (bucket_width >= 3 and 1 or 0)
+  local cells = bucket_width * buckets
   -- Over the plot a legend; under it the baseline and the time labels.
   local rows, score_step, tick_spacing = chart_scale(math.max(CHART_ROWS, height - 3))
   local ticks = 100 / score_step
+  local value_step = history and score_step or latency_step(highest / ticks)
   -- The counts' labels are whole: they take the most of the ticks, evenly
   -- spaced, that the busiest bucket has samples for.
   local count_ticks = 1
@@ -334,16 +410,16 @@ local function push_line_chart(out, days, indent, width, height, unit)
   ---@return integer x
   ---@return integer y
   local function point(ago, share)
-    return (CHART_BUCKETS - 1 - ago) * day_width * 2 + bar, math.floor(share * (rows * 4 - 1) + 0.5)
+    return (buckets - 1 - ago) * bucket_width * 2 + bar, math.floor(share * (rows * 4 - 1) + 0.5)
   end
   for series, share_of in ipairs({
-    function(day) return day.score / 100 end,
-    function(day) return day.spans / (count_step * count_ticks) end,
+    function(entry) return entry.value / (value_step * ticks) end,
+    function(entry) return entry.count / (count_step * count_ticks) end,
   }) do
-    for ago = CHART_BUCKETS - 1, 0, -1 do
-      local day, following = by_ago[ago], by_ago[ago - 1]
-      if day then
-        local x, y = point(ago, share_of(day))
+    for ago = buckets - 1, 0, -1 do
+      local entry, following = data.points[ago], data.points[ago - 1]
+      if entry and (series == 1 and shown.primary or series == 2 and shown.samples) then
+        local x, y = point(ago, share_of(entry))
         local row = rows - math.floor(y / 4)
         points[series][row] = points[series][row] or {}
         points[series][row][math.floor(x / 2) + 1] = true
@@ -378,14 +454,17 @@ local function push_line_chart(out, days, indent, width, height, unit)
   local function mark(col, text, hl)
     out.marks[#out.marks + 1] = { row = #out.lines, col = col, end_col = col + #text, hl = hl }
   end
-  local axis_indent = indent .. string.rep(" ", CHART_AXIS_WIDTH)
-  local legend = { "⠒⠒ efficiency %", "⠂⠂ samples per " .. unit:sub(1, -2) }
-  mark(#axis_indent, legend[1], highlights.STATS_EFFICIENCY)
-  mark(#axis_indent + #legend[1] + 3, legend[2], highlights.STATS_VOLUME)
+  -- Each line with the key that toggles it; a hidden one loses its sample and colour.
+  local legend = {
+    (shown.primary and "⠒⠒ " or "   ") .. data.primary_legend,
+    (shown.samples and "⠂⠂ " or "   ") .. data.secondary_legend,
+  }
+  if shown.primary then mark(#axis_indent, legend[1], highlights.STATS_EFFICIENCY) end
+  if shown.samples then mark(#axis_indent + #legend[1] + 3, legend[2], highlights.STATS_VOLUME) end
   push(out, axis_indent .. legend[1] .. "   " .. legend[2])
 
   local first = #out.lines
-  -- Each day's highlighted cells, by days_ago: its column in every row.
+  -- Each bucket's highlighted cells, by offset: its column in every row.
   ---@type table<integer, { [1]: integer, [2]: integer, [3]: integer }[]>
   local spans = {}
   ---@param prefix string
@@ -401,8 +480,8 @@ local function push_line_chart(out, days, indent, width, height, unit)
       col = col + #text
     end
     starts[cells + 1] = col
-    for ago = 0, CHART_BUCKETS - 1 do
-      local left = (CHART_BUCKETS - 1 - ago) * day_width
+    for ago = 0, buckets - 1 do
+      local left = (buckets - 1 - ago) * bucket_width
       spans[ago] = spans[ago] or {}
       table.insert(spans[ago], { #out.lines, starts[left + 1], starts[left + bar + 1] })
     end
@@ -414,7 +493,8 @@ local function push_line_chart(out, days, indent, width, height, unit)
     local tick = from_bottom % tick_spacing == 0 and from_bottom / tick_spacing
     local scores, counts = dots[1][row] or {}, dots[2][row] or {}
     local score_points, count_points = points[1][row] or {}, points[2][row] or {}
-    local label = tick and string.format("%3d", tick * score_step) or "   "
+    local label = tick and string.format(history and "%3d" or "%8.2g", tick * value_step)
+      or string.rep(" ", label_width)
     local line = plot_row(indent .. label .. (tick and " ┤" or " │"),
       function(cell)
         if score_points[cell] then return POINT, highlights.STATS_EFFICIENCY end
@@ -435,26 +515,31 @@ local function push_line_chart(out, days, indent, width, height, unit)
     push(out, line)
   end
   local baseline = #out.lines
-  push(out, plot_row(indent .. "  0 └", function(cell)
-    local ago = CHART_BUCKETS - 1 - math.floor((cell - 1) / day_width)
-    return (cell - 1) % day_width == 0 and (ago + 1) % TIME_TICK_STEP == 0 and "┬" or "─"
+  push(out, plot_row(indent .. string.rep(" ", label_width - 1) .. "0 └", function(cell)
+    local ago = buckets - math.floor((cell - 1) / bucket_width)
+    local at = (cell - 1) % bucket_width
+    local tick = history and at == 0 and ago % history.tick_step == 0
+      or not history and at == math.floor(bar / 2)
+    return tick and "┬" or "─"
   end) .. "┘ 0")
-  push(out, time_axis(axis_indent, day_width, unit))
+  push(out, history and time_axis(axis_indent, bucket_width, history) or size_axis(axis_indent, bucket_width, data.labels))
 
   ---@type VF.Stats.Item[]
   local items = {}
   local plot_left = vim.fn.strdisplaywidth(axis_indent)
-  for ago = 0, CHART_BUCKETS - 1 do
-    local day = by_ago[ago]
-    if day then
-      local left = (CHART_BUCKETS - 1 - ago) * day_width
+  for index = 1, buckets do
+    local ago = history and index - 1 or buckets - index
+    local entry = data.points[ago]
+    if entry then
+      local left = (buckets - 1 - ago) * bucket_width
       items[#items + 1] = {
         row = first, last_row = baseline,
         left = plot_left + left, right = plot_left + left + bar,
         cursor = { baseline, spans[ago][rows + 1][2] },
         spans = spans[ago],
-        id = day_id(day, unit), kind = "day",
-        drill = day.drill, label = day_label(day), score = day.score, samples = day.spans,
+        id = entry.id, kind = history and "day" or "timing_bucket",
+        drill = entry.drill, label = entry.label, detail = entry.detail,
+        score = entry.value, samples = entry.count, order = not history and "slowest" or nil,
       }
     end
   end
@@ -467,10 +552,39 @@ local function centered(text, width)
   return string.rep(" ", padding) .. text
 end
 
+---@param days VF.Stats.DayScore[]
+---@param scale VF.Stats.ChartScale
+---@return VF.Stats.LinePlot
+local function history_plot(days, scale)
+  local points = {}
+  for _, day in ipairs(days) do
+    local label = day_label(day)
+    points[day.days_ago] = {
+      value = day.score, count = day.spans, drill = day.drill, id = day_id(day, scale.unit), label = label,
+      detail = string.format("%s: %.1f%% · %d samples", label, day.score, day.spans),
+    }
+  end
+  local bucket = scale.bucket_size == 1 and scale.unit:sub(1, -2) or scale.bucket_size .. " " .. scale.unit
+  return {
+    history = scale, buckets = scale.buckets, points = points,
+    primary_legend = "efficiency % (e)", secondary_legend = "samples per " .. bucket .. " (s)",
+  }
+end
+
 local function push_average(out, score, width)
   local caption = string.format("%s average | %d sample%s", format_score(score), score.spans,
     score.spans == 1 and "" or "s")
   push(out, centered(caption, width))
+end
+
+---@param out VF.Stats.Page
+---@param name VF.Stats.ChartName
+---@param first integer
+local function chart_item(out, name, first)
+  out.items[#out.items + 1] = {
+    row = first, last_row = #out.lines - 1, cursor = { first, #PROSE_INDENT },
+    id = "chart:" .. name, kind = "chart", chart = name,
+  }
 end
 
 --- The chart under its title, as one item, with as many whole columns per day as fit.
@@ -482,18 +596,15 @@ local function push_daily_chart(out, name, days, width, unit)
   local first = #out.lines
   local titles = { days = "Daily", weeks = "Weekly", hours = "Hourly", minutes = "Minute" }
   push(out, "    " .. titles[unit] .. " percent efficiency")
-  local indent = "    "
-  push_chart(out, days, indent,
-    math.max(CHART_BUCKETS, (width or 0) - #indent - CHART_AXIS_WIDTH - 1), CHART_ROWS + 2, unit)
-  out.items[#out.items + 1] = {
-    row = first, last_row = #out.lines - 1, cursor = { first, #indent },
-    id = "chart:" .. name, kind = "chart", chart = name,
-  }
+  push_chart(out, days, PROSE_INDENT,
+    math.max(CHART_BUCKETS, (width or 0) - #PROSE_INDENT - CHART_AXIS_WIDTH - 1), OVERVIEW_CHART_ROWS + 2, unit)
+  chart_item(out, name, first)
 end
 
 local function format_ratio(r)
   if r == math.huge then return "∞×" end
-  return string.format("%.2f×", r)
+  local text = string.format("%.2f×", r)
+  return r > 0 and text == "0.00×" and "<0.01×" or text
 end
 
 ---@param n integer
@@ -503,7 +614,62 @@ local function plural(n, noun)
   return string.format("%d %s%s", n, noun, n == 1 and "" or "s")
 end
 
---- In the stats: the score and its chart. The rest is the chart's own page.
+---@param ms number
+---@return string
+local function millis(ms)
+  return string.format(ms < 1 and "%.2f" or "%.1f", ms)
+end
+
+---@param bucket VF.Stats.TimingBucket
+---@return string   # `1`, `2–3`, `11+`
+local function bucket_range(bucket)
+  local first, last = bucket.first, bucket.last
+  return last == 0 and (first .. "+") or first == last and tostring(first) or first .. "–" .. last
+end
+
+---@param bins VF.Stats.TimingBucket[]
+---@return VF.Stats.LinePlot
+local function timing_plot(bins)
+  local points, labels = {}, {}
+  for i, bucket in ipairs(bins) do
+    local first = bucket.first
+    local range = bucket_range(bucket)
+    labels[i] = range
+    local t = bucket.timing
+    if t.n > 0 then
+      local label = range .. " positions"
+      local detail = string.format("%s · %s ms p50 · n=%d", range, millis(t.p50), t.n)
+      if t.n >= 100 then detail = detail .. " · " .. millis(t.p95) .. " ms p95" end
+      if bucket.deadline_hit > 0 then detail = detail .. " · " .. plural(bucket.deadline_hit, "deadline hit") end
+      points[#bins - i] = {
+        value = t.p50, count = t.n, drill = t.drill, id = "timing:" .. first,
+        label = label, detail = detail,
+      }
+    end
+  end
+  return {
+    buckets = #bins, points = points, labels = labels,
+    primary_legend = "median ms (t)", secondary_legend = "samples (s)",
+  }
+end
+
+---@param out VF.Stats.Page
+---@param name "nav_timing"|"edit_timing"
+---@param title string
+---@param bins VF.Stats.TimingBucket[]
+---@param width? integer
+local function push_timing_chart(out, name, title, bins, width)
+  local count = 0
+  for _, bucket in ipairs(bins) do count = count + bucket.timing.n end
+  if count == 0 then return end
+  local row = #out.lines
+  push_prose(out, string.format("%s · %s", title, plural(count, "sample")), width)
+  chart_item(out, name, row)
+  mark_text(out, highlights.STATS_DRILL)
+end
+
+--- In the stats: the score, its chart and the optimizer's response time. The
+--- rest is the chart's own page.
 ---@param out VF.Stats.Page
 ---@param summary VF.Stats.Summary
 ---@param width? integer
@@ -515,6 +681,43 @@ local function push_sessions(out, summary, width)
   end
   push_average(out, sessions.chart_score, width)
   push_daily_chart(out, "sessions", sessions.days, width, summary.chart_unit)
+  local t = sessions.timing
+  if t then
+    local row = #out.lines
+    push_prose(out, string.format("Optimizer response, last 30 days · %s ms median · %s",
+      millis(t.p50), plural(t.n, "session")), width)
+    drillable(out, t.drill, "Session response times", "session_timing")
+    local item = out.items[#out.items]
+    item.row, item.order = row, "slowest"
+  else
+    push_prose(out, "No response times in the last 30 days.", width)
+  end
+end
+
+--- A heading, then a row per category of its runs. Only the categories list runs.
+---@param out VF.Stats.Page
+---@param heading string
+---@param title string   # the heading's runs, in a run list's title
+---@param hl string
+---@param categories { runs: integer, name: string, drill: VF.Stats.Filter }[]
+local function push_categories(out, heading, title, hl, categories)
+  push(out, PROSE_INDENT .. heading)
+  mark_text(out, hl)
+  local width = 0
+  for _, category in ipairs(categories) do width = math.max(width, #tostring(category.runs)) end
+  for _, category in ipairs(categories) do
+    push(out, string.format("%s    %" .. width .. "d %s", PROSE_INDENT, category.runs, category.name))
+    drillable(out, category.drill, title .. " · " .. category.name, nil, hl)
+  end
+end
+
+---@param out VF.Stats.Page
+---@param section VF.Stats.SessionSummary|VF.Stats.JournalSummary
+---@param noun string
+local function push_unbeaten(out, section, noun)
+  if section.unbeaten == 0 then return end
+  push_categories(out, "Unbeaten (100% efficient): " .. plural(section.unbeaten, noun),
+    "unbeaten " .. noun .. "s", highlights.STATS_UNBEATEN, section.unbeaten_tags)
 end
 
 ---@param out VF.Stats.Page
@@ -524,17 +727,15 @@ local function push_sessions_details(out, summary)
   push(out, string.format("    %s  (mark %d · watch %d · recall %d · suggest %d) · %s",
     plural(lifetime.sessions, "session"), lifetime.mark, lifetime.watch, lifetime.recall, lifetime.suggest,
     plural(lifetime.commands, "command")))
-  if sessions.unbeaten > 0 then
-    push(out, string.format("    Unbeaten (100%% efficient): %s", plural(sessions.unbeaten, "session")))
-    drillable(out, sessions.unbeaten_drill, "unbeaten sessions")
-  end
+  push_unbeaten(out, sessions, "session")
   if sessions.beats > 0 then
     push(out, string.format("    You beat the optimizer: %s", plural(sessions.beats, "session")))
     drillable(out, sessions.beats_drill, "sessions that beat the optimizer")
   end
   if sessions.no_result > 0 then
-    push(out, string.format("    Not scored: %s with no solution found", plural(sessions.no_result, "session")))
-    drillable(out, sessions.no_result_drill, "no-result sessions")
+    push_categories(out, "Not scored: " .. plural(sessions.no_result, "session"), "sessions not scored",
+      highlights.STATS_NOT_SCORED,
+      { { runs = sessions.no_result, name = "no result", drill = sessions.no_result_drill } })
   end
 end
 
@@ -566,8 +767,8 @@ local function journal_scored(summary)
   return summary.journal_bytes > 0 and 100 * summary.scored_bytes / summary.journal_bytes or 100
 end
 
---- In the stats: the run lengths and the chart, and the scoring only while
---- it needs attention. The rest is the chart's own page.
+--- In the stats: the chart, the run lengths and the search times, and the
+--- scoring only while it needs attention. The rest is the chart's own page.
 ---@param out VF.Stats.Page
 ---@param summary VF.Stats.JournalSummary
 ---@param background VF.Stats.Background
@@ -591,38 +792,204 @@ local function push_journal(out, summary, background, width, unit)
 
   if summary.score.spans > 0 then
     push_daily_chart(out, "journal", summary.days, width, unit)
-  elseif not background.scoring then
+  elseif #summary.unscored > 0 or not background.scoring then
+    local row = #out.lines
     push(out, string.format("    No scored runs of %d commands yet.", summary.charted_size))
+    if #summary.unscored > 0 then
+      chart_item(out, "journal", row)
+      mark_text(out, highlights.STATS_DRILL)
+    end
   end
   local sizes = {}
   for _, entry in ipairs(summary.sizes) do sizes[#sizes + 1] = entry.size end
   push_options(out, "Run length", "run_length", sizes, summary.charted_size)
+  local before = #out.items
+  push_timing_chart(out, "nav_timing", "Movement search", summary.nav_timing, width)
+  push_timing_chart(out, "edit_timing", "Composition search", summary.edit_timing, width)
+  if #out.items == before then push_prose(out, "No search times for this run length.", width) end
+end
+
+--- `cells` shared out in proportion to `counts`, each getting at least one.
+---@param counts integer[]
+---@param cells integer
+---@return integer[]
+local function share_cells(counts, cells)
+  local total = 0
+  for _, count in ipairs(counts) do total = total + count end
+  local widths, rest, used = {}, {}, 0
+  for i, count in ipairs(counts) do
+    local exact = count / total * cells
+    widths[i] = math.max(1, math.floor(exact))
+    rest[i] = exact - widths[i]
+    used = used + widths[i]
+  end
+  -- What rounding left over goes to, or comes from, whichever is furthest off.
+  while used ~= cells do
+    local step = used < cells and 1 or -1
+    local pick
+    for i in ipairs(widths) do
+      if (step > 0 or widths[i] > 1) and (not pick or step * rest[i] > step * rest[pick]) then pick = i end
+    end
+    if not pick then break end
+    widths[pick], rest[pick], used = widths[pick] + step, rest[pick] - step, used + step
+  end
+  return widths
+end
+
+--- A row of cells a column apart.
+---@param out VF.Stats.Page
+---@param prefix string
+---@param cells { text: string, hl?: string }[]
+---@return { [1]: integer, [2]: integer, [3]: integer }[] spans   # each cell's
+local function push_cells(out, prefix, cells)
+  local row, parts, col, spans = #out.lines, { prefix }, #prefix, {}
+  for i, cell in ipairs(cells) do
+    if i > 1 then
+      parts[#parts + 1] = " "
+      col = col + 1
+    end
+    spans[i] = { row, col, col + #cell.text }
+    if cell.hl then out.marks[#out.marks + 1] = { row = row, col = col, end_col = col + #cell.text, hl = cell.hl } end
+    parts[#parts + 1] = cell.text
+    col = col + #cell.text
+  end
+  push(out, table.concat(parts))
+  return spans
+end
+
+--- The scored runs as a bar split into movement and edits, over the same runs
+--- split again by query size. Every segment whose runs can be listed is an item.
+---@param out VF.Stats.Page
+---@param summary VF.Stats.JournalSummary
+---@param width integer
+local function push_kind_bars(out, summary, width)
+  local kinds = {
+    { id = "nav", title = "Movement only", score = summary.nav, drill = summary.nav_drill,
+      buckets = summary.nav_timing, hl = highlights.STATS_MOVEMENT },
+    { id = "edit", title = "With edits", score = summary.edit, drill = summary.edit_drill,
+      buckets = summary.edit_timing, hl = highlights.STATS_EDIT },
+  }
+  -- Per kind, its size buckets with runs, then the runs that kept no size.
+  local parts, counts = {}, {}
+  for _, kind in ipairs(kinds) do
+    kind.first = #parts + 1
+    local sized = 0
+    for _, bucket in ipairs(kind.buckets) do
+      local score = bucket.score
+      if score.spans > 0 then
+        sized = sized + score.spans
+        local range = bucket_range(bucket)
+        local label = string.format("%s · %s positions", kind.title, range)
+        parts[#parts + 1] = {
+          kind = kind, text = range, glyph = "▄", id = kind.id .. ":" .. bucket.first, drill = bucket.drill,
+          label = label, detail = string.format("%s: %s · %s", label, format_score(score), plural(score.spans, "run")),
+        }
+        counts[#counts + 1] = score.spans
+      end
+    end
+    if kind.score.spans > sized then
+      parts[#parts + 1] = { kind = kind, text = "no size", glyph = "░" }
+      counts[#counts + 1] = kind.score.spans - sized
+    end
+    kind.last = #parts
+  end
+  if #parts == 0 then return end
+
+  local size_label = PROSE_INDENT .. "Size   "
+  local gutter = string.rep(" ", #size_label)
+  local widths = share_cells(counts, math.max(#parts, width - 2 * #gutter - (#parts - 1)))
+  local column = #gutter
+  for i, part in ipairs(parts) do
+    part.left, part.right = column, column + widths[i]
+    column = part.right + 1
+  end
+
+  local shown, bars = {}, {}
+  for _, kind in ipairs(kinds) do
+    if kind.last >= kind.first then
+      kind.left, kind.right = parts[kind.first].left, parts[kind.last].right
+      kind.detail = string.format("%s: %s · %s", kind.title, format_score(kind.score), plural(kind.score.spans, "run"))
+      shown[#shown + 1] = kind
+      bars[#bars + 1] = { text = string.rep("▄", kind.right - kind.left), hl = kind.hl }
+    end
+  end
+  -- A title starts over its segment, moved only as far as it takes to fit:
+  -- after the one before it, and the last one inside the bar.
+  local title_row, titles, title_spans = #out.lines, "", {}
+  for i, kind in ipairs(shown) do
+    local text = string.format("%s  %s · %s", kind.title, format_score(kind.score), plural(kind.score.spans, "run"))
+    local at = kind.left
+    if i == #shown then at = math.min(at, kind.right - vim.fn.strdisplaywidth(text)) end
+    titles = pad(titles, math.max(at, i > 1 and vim.fn.strdisplaywidth(titles) + 2 or #gutter))
+    if i > 1 then title_spans[i - 1][3] = #titles end
+    title_spans[i] = { title_row, #titles, #titles + #text }
+    out.marks[#out.marks + 1] = { row = title_row, col = #titles, end_col = #titles + #text, hl = kind.hl }
+    titles = titles .. text
+  end
+  titles = pad(titles, math.max(vim.fn.strdisplaywidth(titles), shown[#shown].right))
+  title_spans[#title_spans][3] = #titles
+  push(out, titles)
+  local sizes, labels = {}, {}
+  for i, part in ipairs(parts) do
+    sizes[i] = { text = string.rep(part.glyph, widths[i]), hl = part.kind.hl }
+    local text = vim.fn.strdisplaywidth(part.text) <= widths[i] and part.text or ""
+    labels[i] = { text = pad(centered(text, widths[i]), widths[i]) }
+  end
+
+  -- The cursor rests on the bar: a title can start left of its segment.
+  ---@param segment table   # a kind or a part
+  ---@param bar { [1]: integer, [2]: integer, [3]: integer }
+  ---@param caption { [1]: integer, [2]: integer, [3]: integer }
+  local function add_item(segment, bar, caption)
+    out.items[#out.items + 1] = {
+      row = math.min(bar[1], caption[1]), last_row = math.max(bar[1], caption[1]),
+      left = segment.left, right = segment.right,
+      cursor = { bar[1], bar[2] }, spans = { bar, caption },
+      id = segment.id, kind = "drill", drill = segment.drill, label = segment.label or segment.title,
+      detail = segment.detail,
+    }
+  end
+  local bar_spans = push_cells(out, gutter, bars)
+  for i, kind in ipairs(shown) do add_item(kind, bar_spans[i], title_spans[i]) end
+  local size_spans = push_cells(out, gutter, sizes)
+  local label_spans = push_cells(out, size_label, labels)
+  for i, part in ipairs(parts) do
+    if part.drill then add_item(part, size_spans[i], label_spans[i]) end
+  end
+  push(out, "")
 end
 
 ---@param out VF.Stats.Page
 ---@param summary VF.Stats.JournalSummary
-local function push_journal_details(out, summary)
-  push(out, string.format("    Efficiency:     %s  (%s of %d commands)",
-    format_score(summary.score), plural(summary.score.spans, "run"), summary.charted_size))
-  push(out, string.format("    Scored under the current settings: %d%% of the journal",
-    math.floor(journal_scored(summary))))
-  push(out, string.format("    Movement only:  %s (%s)", format_score(summary.nav), plural(summary.nav.spans, "run")))
-  drillable(out, summary.nav_drill, "nav")
-  push(out, string.format("    With edits:     %s (%s)", format_score(summary.edit), plural(summary.edit.spans, "run")))
-  drillable(out, summary.edit_drill, "edit")
+---@param width integer
+local function push_journal_details(out, summary, width)
+  push_kind_bars(out, summary, width)
 
+  local unscored, total = {}, 0
   for i, entry in ipairs(summary.unscored) do
-    local outcome = entry.outcome:gsub("_", " ")
-    push(out, string.format("    %-16s%d %s", i == 1 and "Not scored:" or "", entry.runs, outcome))
-    drillable(out, entry.drill, outcome)
+    unscored[i] = { runs = entry.runs, name = (entry.outcome:gsub("_", " ")), drill = entry.drill }
+    total = total + entry.runs
   end
-  if summary.unbeaten > 0 then
-    push(out, string.format("    Unbeaten (100%% efficient): %s", plural(summary.unbeaten, "run")))
-    drillable(out, summary.unbeaten_drill, "unbeaten runs")
+  if total > 0 then
+    push_categories(out, "Not scored: " .. plural(total, "run"), "runs not scored",
+      highlights.STATS_NOT_SCORED, unscored)
   end
+  push_unbeaten(out, summary, "run")
   if summary.deadline_hit > 0 then
     push(out, string.format("    Search cut short by the deadline: %s", plural(summary.deadline_hit, "run")))
   end
+end
+
+function M.journal_efficiency(summary)
+  return string.format("%s efficiency · %s of %d commands",
+    format_score(summary.score), plural(summary.score.spans, "run"), summary.charted_size)
+end
+
+---@param share number
+---@return string
+local function format_share(share)
+  local text = string.format("%.1f%%", share * 100)
+  return share > 0 and text == "0.0%" and "<0.1%" or text
 end
 
 --- A command row's cells: its name, ratio and the two shares.
@@ -630,41 +997,64 @@ end
 ---@return string[]
 local function command_cells(row)
   return {
-    row.text, format_ratio(row.ratio),
-    string.format("%.1f%%", row.user_share * 100), string.format("%.1f%%", row.optimizer_share * 100),
+    row.text, format_ratio(row.ratio), format_share(row.user_share), format_share(row.optimizer_share),
   }
 end
 
 local COMMAND_CELL_GAP = "   "
+local COMMAND_LIMIT = 5
+---@type VF.Stats.Source[]
+local SOURCES = { "sessions", "journal" }
+local SOURCE_TITLES = { sessions = "Sessions", journal = "Journal" }
 
 --- One list as a table: the name left-aligned and the numbers right-aligned,
 --- so the `vs` line up.
 ---@param out VF.Stats.Page
+---@param source VF.Stats.Source
 ---@param rows VF.Stats.CommandRow[]
 ---@param side string   # breadcrumb suffix
-local function push_command_rows(out, rows, side)
+---@param section VF.Stats.CommandSection
+---@param expanded boolean
+---@param width? integer
+local function push_command_rows(out, source, rows, side, section, expanded, width)
   if #rows == 0 then
     push(out, "    (no command is used 10 times yet)")
     return
   end
+  local shown = expanded and #rows or math.min(#rows, COMMAND_LIMIT)
   local widths = { 0, 0, 0, 0 }
-  for _, row in ipairs(rows) do
-    for i, cell in ipairs(command_cells(row)) do
+  for index = 1, shown do
+    for i, cell in ipairs(command_cells(rows[index])) do
       widths[i] = math.max(widths[i], vim.fn.strdisplaywidth(cell))
     end
   end
-  ---@param s string
-  ---@param width integer
-  local function right(s, width)
-    return string.rep(" ", width - vim.fn.strdisplaywidth(s)) .. s
+  if width then
+    local numeric_width = widths[2] + widths[3] + widths[4] + 2 * #COMMAND_CELL_GAP + #" vs "
+    widths[1] = math.min(widths[1], math.max(1, width - #PROSE_INDENT - numeric_width))
   end
-  for _, row in ipairs(rows) do
+  ---@param s string
+  ---@param cell_width integer
+  local function right(s, cell_width)
+    return string.rep(" ", cell_width - vim.fn.strdisplaywidth(s)) .. s
+  end
+  for index = 1, shown do
+    local row = rows[index]
     local cells = command_cells(row)
-    push(out, "    " .. pad(cells[1], widths[1]) .. COMMAND_CELL_GAP .. right(cells[2], widths[2])
+    push(out, PROSE_INDENT .. pad(fit(cells[1], widths[1]), widths[1]) .. COMMAND_CELL_GAP .. right(cells[2], widths[2])
       .. COMMAND_CELL_GAP .. right(cells[3], widths[3]) .. " vs " .. right(cells[4], widths[4]))
     -- A merged row's split goes with its runs.
-    local id = row.text .. " " .. side
-    drillable(out, row.drill, row.split ~= "" and id .. " · " .. row.split or id, id)
+    local name = row.text .. " " .. side
+    local label = SOURCE_TITLES[source] .. " › " .. name
+    drillable(out, row.drill, row.split ~= "" and label .. " · " .. row.split or label, source .. ":" .. name)
+    if index == COMMAND_LIMIT and #rows > COMMAND_LIMIT then
+      push(out, expanded and "    Show fewer" or string.format("    … and %d more", #rows - COMMAND_LIMIT))
+      local toggle_row = #out.lines - 1
+      out.items[#out.items + 1] = {
+        row = toggle_row, last_row = toggle_row, cursor = { toggle_row, 4 },
+        id = "command_toggle:" .. source .. ":" .. section, kind = "command_toggle", command_section = section,
+      }
+      mark_text(out, highlights.STATS_DRILL)
+    end
   end
 end
 
@@ -689,10 +1079,11 @@ end
 --- that spanned its page's width spans its column's.
 ---@param left VF.Stats.Page
 ---@param right VF.Stats.Page
+---@param left_width integer
+---@param right_width integer
 ---@return VF.Stats.Page
-local function beside(left, right, left_width)
+local function beside(left, right, left_width, right_width)
   local out = new_page()
-  local right_width = page_width(right)
   local gap = string.rep(" ", COLUMN_GAP)
   -- Per line, the bytes each side's cell starts and ends at.
   local zero, left_ends, right_starts, right_ends = {}, {}, {}, {}
@@ -754,10 +1145,8 @@ local function stacked(top, bottom)
 end
 
 ---@param summary VF.Stats.Summary
----@param background VF.Stats.Background
----@param width? integer
 ---@return VF.Stats.Page
-local function overview_page(summary, background, width)
+local function top_page(summary)
   local out = new_page()
   push(out, "")
   if summary.hidden_runs > 0 then
@@ -765,51 +1154,64 @@ local function overview_page(summary, background, width)
     push(out, "")
   end
   push_options(out, "Look back", "chart_unit", { "minutes", "hours", "days", "weeks" }, summary.chart_unit)
-  push_title(out, centered("Sessions", width))
-  push_sessions(out, summary, width)
-  push(out, "")
-
-  push_title(out, centered("Journal", width))
-  push_journal(out, summary.journal, background, width, summary.chart_unit)
-  push(out, "")
   return out
 end
 
+---@param source VF.Stats.Source
 ---@param summary VF.Stats.Summary
----@return VF.Stats.Page
-local function footer_page(summary)
-  local out = new_page()
-  local t = summary.sessions.timing
-  if t then
-    push_title(out, "  Dev")
-    push(out, string.format(
-      "    Optimizer time, last 30 days: p50 %.1f · p95 %.1f · p99 %.1f · max %.1f ms  (n=%d)",
-      t.p50, t.p95, t.p99, t.max, t.n))
-    push(out, "")
-  end
-  push(out, "  h/j/k/l move · h/l change options on selector rows · <CR> opens · ? for keys")
-  push(out, "")
-  return out
-end
-
----@param summary VF.Stats.Summary
+---@param background VF.Stats.Background
 ---@param width? integer
 ---@return VF.Stats.Page
-local function commands_page(summary, width)
+local function source_page(source, summary, background, width)
   local out = new_page()
-  local commands = summary.commands
+  push_title(out, centered(SOURCE_TITLES[source], width))
+  if source == "sessions" then
+    push_sessions(out, summary, width)
+  else
+    push_journal(out, summary.journal, background, width, summary.chart_unit)
+  end
+  push(out, "")
+  return out
+end
+
+---@param width integer
+---@return VF.Stats.Page
+local function rule_page(width)
+  local out = new_page()
+  push(out, "  " .. string.rep("─", width - 4))
+  mark_text(out, highlights.STATS_RULE)
+  push(out, "")
+  return out
+end
+
+---@return VF.Stats.Page
+local function footer_page()
+  local out = new_page()
+  push(out, "  h/j/k/l move · h/l change selector options · <CR> opens or expands · ? for keys")
+  push(out, "")
+  return out
+end
+
+---@param source VF.Stats.Source
+---@param summary VF.Stats.Summary
+---@param width? integer
+---@param expanded table<VF.Stats.CommandSection, boolean>
+---@return VF.Stats.Page
+local function commands_page(source, summary, width, expanded)
+  local out = new_page()
+  local commands = summary[source].commands
+  local counted = source == "sessions" and plural(commands.spans, "scored session")
+    or string.format("%s of %d commands", plural(commands.spans, "scored run"), summary.journal.charted_size)
+  push_prose(out, "Commands · " .. counted, width)
   push_title(out, "  Underused commands")
-  push_command_rows(out, commands.less, "(you less)")
+  push_command_rows(out, source, commands.less, "(you less)", "less", expanded.less == true, width)
   push(out, "")
   push_title(out, "  Overused commands")
-  push_command_rows(out, commands.more, "(you more)")
+  push_command_rows(out, source, commands.more, "(you more)", "more", expanded.more == true, width)
   push(out, "")
   if #commands.never > 0 then
     push_title(out, "  Never used by the optimizer")
-    push_command_rows(out, commands.never, "(you only)")
-    if commands.never_cut > 0 then
-      push(out, string.format("    … and %d more", commands.never_cut))
-    end
+    push_command_rows(out, source, commands.never, "(you only)", "never", expanded.never == true, width)
     push(out, "")
   end
   local user, optimizer = commands.user_typed_chars, commands.optimizer_typed_chars
@@ -821,73 +1223,99 @@ local function commands_page(summary, width)
   local first = #out.lines
   push_prose(out, typed, width)
   if user > optimizer then
-    drillable(out, commands.typed_drill, "extra typed text")
+    drillable(out, commands.typed_drill, SOURCE_TITLES[source] .. " › extra typed text", source .. ":extra typed text")
     out.items[#out.items].row = first
   end
   push(out, "")
   return out
 end
 
---- One daily chart on its own page, `width` by `height`: every day with data
+--- One chart in a `width` by `height` viewport: every bucket with data
 --- an item, over what the stats leave out of its section.
 ---@param summary VF.Stats.Summary
 ---@param name VF.Stats.ChartName
 ---@param width integer
 ---@param height integer
+---@param shown VF.Stats.ChartLines
+---@param scale? VF.Stats.ChartScale
 ---@return VF.Stats.Page
-function M.chart_page(summary, name, width, height)
+function M.chart_page(summary, name, width, height, shown, scale)
+  local out = new_page()
   local details = new_page()
   push(details, "")
-  local days = name == "journal" and summary.journal.days or summary.sessions.days
+  local plot
   if name == "journal" then
-    push_journal_details(details, summary.journal)
-  else
+    plot = history_plot(summary.journal.days, scale or overview_scale(summary.chart_unit))
+    local scored = journal_scored(summary.journal)
+    if scored < 100 then
+      push_prose(out, string.format("Scored under the current settings: %d%% of the journal", math.floor(scored)), width)
+    end
+    push_journal_details(details, summary.journal, width)
+  elseif name == "sessions" then
+    plot = history_plot(summary.sessions.days, scale or overview_scale(summary.chart_unit))
     push_sessions_details(details, summary)
+  else
+    local bins = name == "nav_timing" and summary.journal.nav_timing or summary.journal.edit_timing
+    plot = timing_plot(bins)
+    push(details, centered("Buffer positions in the larger unpadded region", width))
   end
 
-  local out = new_page()
-  local indent = " "
-  out.items = push_line_chart(out, days, indent,
-    math.max(CHART_BUCKETS, width - #indent - CHART_AXIS_WIDTH - RIGHT_AXIS_WIDTH - 1),
-    height - #details.lines, summary.chart_unit)
+  out.items = push_line_chart(out, width, math.floor(height * 0.9) - #out.lines, plot, shown)
   out = stacked(out, details)
   for _ = #out.lines + 1, height do push(out, "") end
   return out
 end
 
---- The stats in one page: Sessions and Journal, the Commands tables, then Dev.
---- The Commands go beside Sessions and Journal when `width` has the room, and
---- under them when not or without one.
+--- The stats in one page: the Sessions band over the Journal's, each its
+--- chart and its own Commands tables. The Commands go beside their chart when
+--- `width` has the room, and under it when not or without one.
 ---@param summary VF.Stats.Summary
+---@param query VF.Stats.Scope
 ---@param background VF.Stats.Background
 ---@param width? integer   # display columns to draw in
+---@param expanded_commands? VF.Stats.ExpandedCommands
 ---@return VF.Stats.Page
-function M.build_page(summary, background, width)
-  local footer = footer_page(summary)
+function M.build_page(summary, query, background, width, expanded_commands)
+  local expanded = expanded_commands or {}
+  local left_width, right_width = width, width
+  ---@type integer|nil
+  local room
   if width and width >= M.SPLIT_MIN_WIDTH then
     local columns = width - COLUMN_GAP
-    local room = math.max(OVERVIEW_MIN_WIDTH,
+    room = math.max(OVERVIEW_MIN_WIDTH,
       math.min(math.floor(columns * OVERVIEW_SHARE), columns - COMMANDS_MIN_WIDTH))
-    -- Level with the first section's title.
-    local right = new_page()
-    push(right, "")
-    local commands = stacked(right, commands_page(summary, columns - room))
-    return stacked(beside(overview_page(summary, background, room), commands, room), footer)
+    left_width, right_width = room, columns - room
   end
-  return stacked(stacked(overview_page(summary, background, width), commands_page(summary, width)), footer)
-end
-
---- `line` cut to `width` display columns, ending in `…` when cut.
----@param line string
----@param width integer
----@return string
-local function fit(line, width)
-  if vim.fn.strdisplaywidth(line) <= width then return line end
-  local chars = vim.fn.strcharlen(line)
-  while chars > 0 and vim.fn.strdisplaywidth(vim.fn.strcharpart(line, 0, chars)) > width - 1 do
-    chars = chars - 1
+  local recorded = { sessions = summary.lifetime.sessions > 0, journal = summary.journal.present }
+  ---@type table<VF.Stats.Source, VF.Stats.Page>
+  local commands = {}
+  -- One width for both bands' tables, so their rows highlight alike.
+  local commands_width = 0
+  for _, source in ipairs(SOURCES) do
+    commands[source] = recorded[source] and commands_page(source, summary, right_width, expanded[source] or {})
+      or new_page()
+    commands_width = math.max(commands_width, page_width(commands[source]))
   end
-  return vim.fn.strcharpart(line, 0, chars) .. "…"
+  ---@param left VF.Stats.Page
+  ---@param right VF.Stats.Page
+  ---@return VF.Stats.Page
+  local function band(left, right)
+    return room and beside(left, right, room, commands_width) or stacked(left, right)
+  end
+  local page = new_page()
+  push(page, string.format(" Stats    %s · weight: %s · runs of %d",
+    query.current_only and summary.scoring_label or "all scorings", query.weight, summary.journal.charted_size))
+  push(page, " Log      " .. vim.fn.fnamemodify(log.path(), ":~"))
+  stacked(page, band(top_page(summary), new_page()))
+  for i, source in ipairs(SOURCES) do
+    if i > 1 then
+      page = stacked(page, rule_page(room and room + COLUMN_GAP + commands_width or width or page_width(page)))
+    end
+    local both = band(source_page(source, summary, background, left_width), commands[source])
+    for _, item in ipairs(both.items) do item.source = source end
+    page = stacked(page, both)
+  end
+  return stacked(page, footer_page())
 end
 
 --- How much less effort the best sequence takes, or why there is none.
@@ -928,7 +1356,7 @@ local RUN_COLUMNS = {
       if extra < 0 then return "−" .. -extra end
       return (extra > 0 and "+" or "") .. extra
     end },
-  { title = "search ms", order = "slowest", width = 11,
+  { title = "time ms", order = "slowest", width = 11,
     cell = function(row) return string.format("%.1f", row.analyze_ms) end },
 }
 local RUN_COLUMN_GAP = 2
@@ -1095,7 +1523,7 @@ function M.run_preview(row, detail, err, width)
   push_pair("before", "after")
 
   local changed_before, changed_after = {}, {}
-  local hunks = vim.diff(joined(detail.lines), joined(detail.goal_lines), { result_type = "indices" })
+  local hunks = vim.text.diff(joined(detail.lines), joined(detail.goal_lines), { result_type = "indices" })
   for _, hunk in ipairs(hunks --[[@as integer[][] ]]) do
     for i = hunk[1], hunk[1] + hunk[2] - 1 do changed_before[i] = true end
     for i = hunk[3], hunk[3] + hunk[4] - 1 do changed_after[i] = true end

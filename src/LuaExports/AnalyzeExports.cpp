@@ -87,9 +87,15 @@ VFByteSlice vf_build_search_request(const char* request, size_t request_len) {
         auto goalLines = payload::linesFrom(req.goal_lines());
         if (!goalLines) return unexpected(goalLines.error());
 
-        const pair<int, int> region = computeSearchRegion(
-            req.start_row(), req.end_row(), *initialLines, *goalLines, req.padding());
-        if (region.second - region.first > req.max_search_lines())
+        auto indent = logic::decodeIndentOptions(req);
+        if (!indent) return unexpected(indent.error());
+        UntouchedRows untouched;
+        if (req.has_untouched_above()) untouched.above = req.untouched_above();
+        if (req.has_untouched_below()) untouched.below = req.untouched_below();
+        if (untouched.above < 0 || untouched.below < 0) return unexpectedError("negative untouched rows");
+        const SearchRegion region = computeSearchRegion(
+            req.start_row(), req.end_row(), *initialLines, *goalLines, req.padding(), untouched);
+        if (region.paddedHeight() - 1 > req.max_search_lines())
           return unexpectedError("search range exceeds MAX_SEARCH_LINES");
 
         const SearchSlice slice = sliceSearch(
@@ -101,6 +107,7 @@ VFByteSlice vf_build_search_request(const char* request, size_t request_len) {
                 .endCol = req.end_col(),
                 .windowHeight = req.window_height(),
                 .scrollAmount = req.scroll_amount(),
+                .indent = *indent,
             },
             req.user_seq(), req.user_typed(), region);
 
@@ -115,6 +122,7 @@ VFByteSlice vf_build_search_request(const char* request, size_t request_len) {
         msg.set_has_lines_below(slice.hasLinesBelow);
         msg.set_window_height(slice.ends.windowHeight);
         msg.set_scroll_amount(slice.ends.scrollAmount);
+        if (req.has_indent()) *msg.mutable_indent() = req.indent();
         msg.set_user_seq(slice.userSeq);
         msg.set_user_typed(slice.userTyped);
         return proto(msg);

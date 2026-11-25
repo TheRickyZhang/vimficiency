@@ -197,6 +197,52 @@ function M.normalize_stats(merged)
   return merged
 end
 
+---@class VF.Ui.Preferences
+---@field selection_color string
+---@field selection_strength integer
+
+---@param value string
+---@return integer?
+function M.selection_color_rgb(value)
+  local rgb = vim.api.nvim_get_color_by_name(value)
+  if rgb >= 0 then return rgb end
+end
+
+---@param value string
+---@return "Visual"|"IncSearch"|nil
+function M.selection_color_group(value)
+  local name = value:lower()
+  if name == "colorscheme" then return "Visual" end
+  if name == "incsearch" then return "IncSearch" end
+end
+
+---@param value any
+---@return boolean
+function M.is_selection_color(value)
+  return type(value) == "string" and (M.selection_color_group(value) ~= nil or M.selection_color_rgb(value) ~= nil)
+end
+
+---@param value any
+---@return boolean
+function M.is_selection_strength(value)
+  return type(value) == "number" and value >= 0 and value <= 100 and value % 1 == 0
+end
+
+---@param merged any
+---@return VF.Ui.Preferences
+function M.normalize_ui(merged)
+  expect_table("ui", merged)
+  expect_exact_keys("ui", merged, { selection_color = true, selection_strength = true, selection_outline = true })
+  if not M.is_selection_color(merged.selection_color) then
+    error('ui.selection_color must be "colorscheme", "IncSearch", a Neovim color name, or a #RRGGBB color', 0)
+  end
+  if not M.is_selection_strength(merged.selection_strength) then
+    error("ui.selection_strength must be an integer from 0 to 100", 0)
+  end
+  merged.selection_outline = nil
+  return merged
+end
+
 local LOSSY_MAPPINGS_MODES ={ drop = true, warn = true, allow = true }
 
 ---@param raw any

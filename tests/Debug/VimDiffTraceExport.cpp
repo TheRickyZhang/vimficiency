@@ -1,13 +1,13 @@
 // tests/Debug/VimDiffTraceExport.cpp
 //
 // Exports the DP trace of the VimDiff planner for one (initial, goal) example,
-// feeding the README dp-walkthrough animation (anim/dp-walkthrough). Dumps
+// feeding the planner walkthrough animation (anim/dp-walkthrough). Dumps
 // VimDiff::trace() — the production tables, not a re-run — so it cannot drift
 // from the planner; the traced optimum is still asserted against
 // calculateBreakdown as a sanity check on the path walk.
 //
 // Run:
-//   VIMFY_TRACE_OUT=anim/dp-walkthrough/trace.json \
+//   VIMFY_TRACE_OUT=anim/.cache/planner-full.json \
 //     ./build/tests/vimfy_debug --gtest_filter='VimDiffTraceExport.*'
 // Optional: VIMFY_TRACE_INITIAL / VIMFY_TRACE_GOAL override the example
 // (literal "\n" for newlines). Without VIMFY_TRACE_OUT the equality check
@@ -141,9 +141,7 @@ TEST(VimDiffTraceExport, ExportExample) {
   out["optPath"] = path;
 
   // The plan with raw spans reconstructed from the kept-run identity (b-side
-  // begin = prev bEnd + gap on the a side). A one-element list: the animation
-  // scenes that compare alternatives read the committed trace files, which
-  // predate the planner's K-best removal.
+  // begin = prev bEnd + gap on the a side).
   json regs = json::array();
   int prevAEnd = 0, prevBEnd = 0;
   for (const RegionBreakdown& rb : trace.breakdown.regions) {

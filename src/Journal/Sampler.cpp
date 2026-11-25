@@ -144,9 +144,49 @@ expected<string, string> detailOf(const Window& window, const EvaluateParams& pa
   detail.set_start_col(in.initialPos.col);
   detail.set_end_row(in.goalPos.line);
   detail.set_end_col(in.goalPos.col);
+  for (const Command& command : window.commands) {
+    auto& out = *detail.add_commands();
+    out.set_keys(command.keys);
+    out.set_kind(command.kind);
+  }
   detail.set_keys(in.userSeq);
   detail.set_typed(window.typed);
   detail.set_filetype(window.start.filetype);
+  VF::LuaExports::logic::encodeIndentOptions(*detail.mutable_indent(), in.indent);
+  auto& recording = *detail.mutable_recording();
+  const int above = window.start.row - in.initialPos.line;
+  const int below = window.start.lines->size() - above - in.initialLines.size();
+  recording.set_row(in.initialPos.line);
+  recording.set_col(window.start.col);
+  recording.set_mode("n");
+  size_t command = 0;
+  SharedLines previous = window.start.lines;
+  for (const Window::Step& step : window.steps) {
+    auto& frame = *recording.add_steps();
+    while (command < step.commandEnd) *frame.mutable_keys() += window.commands[command++].keys;
+    frame.set_row(step.state.row - above);
+    frame.set_col(step.state.col);
+    frame.set_mode("n");
+    if (previous != step.state.lines) {
+      const auto before = span(*previous).subspan(above, previous->size() - above - below);
+      const auto after = span(*step.state.lines).subspan(above, step.state.lines->size() - above - below);
+      const auto mismatch = ranges::mismatch(before, after);
+      const auto first = mismatch.in1 - before.begin();
+      auto oldEnd = before.end();
+      auto newEnd = after.end();
+      while (oldEnd != mismatch.in1 && newEnd != mismatch.in2 && oldEnd[-1] == newEnd[-1]) {
+        --oldEnd;
+        --newEnd;
+      }
+      if (oldEnd != mismatch.in1 || newEnd != mismatch.in2) {
+        auto& delta = *frame.add_deltas();
+        delta.set_first(first);
+        delta.set_old_count(oldEnd - mismatch.in1);
+        for (auto it = mismatch.in2; it != newEnd; ++it) delta.add_lines(*it);
+      }
+    }
+    previous = step.state.lines;
+  }
   return detail.SerializeAsString();
 }
 
@@ -235,6 +275,7 @@ int sampleJournal(const fs::path& journal, const vf::journal::SampleParams& para
       sample.set_net_zero(scored.netZero);
       sample.set_deadline_hit(scored.deadlineHit);
       sample.set_analyze_ms(scored.analyzeMs);
+      sample.set_query_size(scored.querySize);
       append(out, record);
       fs::remove(progressPath);
       g_evaluating = 0;
@@ -297,6 +338,18 @@ expected<int, string> rollUpJournals(const fs::path& dir, string_view params, in
 
   int deleted = 0;
   for (const fs::directory_entry& entry : old) {
+    const int fd = ::open(entry.path().c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd == -1) {
+      const error_code error(errno, generic_category());
+      return unexpected(format("open {}: {}", entry.path().string(), error.message()));
+    }
+    const SamplingLock lock(fd);
+    if (::flock(fd, LOCK_EX | LOCK_NB) == -1) {
+      const error_code error(errno, generic_category());
+      if (error == errc::operation_would_block) continue;
+      return unexpected(format("lock {}: {}", entry.path().string(), error.message()));
+    }
+    if (fs::last_write_time(entry.path()) >= cutoff) continue;
     fs::path samplesPath = entry.path();
     samplesPath.replace_extension(".samples");
     Stats::RolledJournal rolled{.journal = entry.path().filename().string(),
@@ -393,17 +446,18 @@ expected<string, string> runDetail(string_view requestBytes) {
 
   const string bytes = readFrom(path, 0);
   Replay replay(bytes);
-  WindowCutter cutter = cutterOf(params);
+  const int size = id.window_size();
+  WindowCutter cutter(span(&size, 1), params.idle_gap_ms(), true);
   Event event;
   vector<Window> windows;
-  bool past = false;
-  while (!past && replay.next(event)) {
+  bool searching = ranges::contains(params.window_sizes(), size);
+  while (searching && replay.next(event)) {
     windows.clear();
     cutter.push(event, windows);
     for (const Window& window : windows) {
-      if (window.size != id.window_size() || window.lastAtom < id.last_atom()) continue;
+      if (window.lastAtom < id.last_atom()) continue;
       if (window.lastAtom > id.last_atom()) {
-        past = true;
+        searching = false;
         break;
       }
       return detailOf(window, evaluateParamsOf(params));

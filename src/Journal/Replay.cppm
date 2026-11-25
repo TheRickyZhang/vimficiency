@@ -2,10 +2,13 @@ export module vf.Journal.Replay;
 
 import std.compat;
 import vf.Types.Lines;
+import vf.Optimizer.Analyze;
 
 namespace Journal {
 
 struct BufferText {
+  UntouchedRows untouched;
+  int minHeight = std::numeric_limits<int>::max();
   std::shared_ptr<Lines> lines;
   int version = 0;
   bool discontinuous = false;
@@ -28,6 +31,8 @@ enum class Decision : uint8_t { Record, Skip, Abort };
 // A journal record that says where a window stands, with its buffer's text at
 // that point. Rows and columns are 0-indexed.
 struct Event {
+  UntouchedRows untouched;
+  int minHeight = std::numeric_limits<int>::max();
   EventKind kind = EventKind::Start;
   int64_t ms = 0;
   int tick = 0;
@@ -50,11 +55,13 @@ struct Event {
   int col = 0;
   int windowHeight = 0;
   int scrollAmount = 0;
+  IndentOptions indent;
   // Only then is the state one a command can start from.
   bool normalMode = false;
 
   // Atom only.
   int atomIndex = 0;  // among the journal's atom records
+  std::vector<int> visitedRows;
   std::string keys;
   // CmdAtom's `type`; empty in journals older than it.
   std::string atomKind;

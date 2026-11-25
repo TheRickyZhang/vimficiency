@@ -7,6 +7,7 @@ local ffi_optimizer = require("vimficiency.ffi.optimizer")
 local poller = require("vimficiency.async.poller")
 local ffi_session = require("vimficiency.ffi.session")
 local capture_state = require("vimficiency.capture.state")
+local recording = require("vimficiency.capture.recording")
 
 ---@class (exact) VF.SessionCompute
 ---@field capture_end_state               fun(active: VF.Session.Active): VF.BufferState
@@ -40,14 +41,6 @@ local function log_slow_fire(active, result)
         vim.fn.fnamemodify(path, ":~")), vim.log.levels.WARN)
     end)
   end)
-end
-
----@param atom_seq VF.Atom[]
----@return VF.Session.Command[]
-local function build_commands(atom_seq)
-  local commands = {}
-  for i, atom in ipairs(atom_seq) do commands[i] = { keys = atom.keys, kind = atom.kind } end
-  return #commands > 0 and commands or disk.empty_array()
 end
 
 ---@param buf integer
@@ -108,16 +101,20 @@ local function build_analyze_input(active, end_state)
   -- runs, and `commands` must describe the atoms user_seq was built from.
   -- CmdAtom already resolves mappings and operator-pending duplication, so the
   -- replayable sequence is just each atom's keys concatenated — no reduction.
-  local atom_seq = vim.list_extend({}, active.atoms)
+  local commands = {}
   local raw_parts, typed_parts, typed_insert_parts = {}, {}, {}
-  for i, atom in ipairs(atom_seq) do
+  for i, atom in ipairs(active.atoms) do
+    commands[i] = { keys = atom.keys, kind = atom.kind }
     raw_parts[i] = atom.keys
     typed_parts[i] = atom.typed
     typed_insert_parts[i] = atom.typed_insert
   end
 
+  local observed, above, below = recording.capture(active, initial_lines, end_state)
   local request = ffi_optimizer.build_search_request({
     initial_lines = initial_lines,
+    untouched_above = above,
+    untouched_below = below,
     goal_lines = end_state.lines,
     start_row = start_state.row,
     start_col = start_state.col,
@@ -125,17 +122,20 @@ local function build_analyze_input(active, end_state)
     end_col = end_state.col,
     window_height = start_state.window_height,
     scroll_amount = start_state.scroll_amount,
+    indent = start_state.indent,
     user_seq = table.concat(raw_parts),
     user_typed = table.concat(typed_parts),
   }, config.SLICE_PADDING, config.MAX_SEARCH_LINES)
+  recording.localize(observed, start_state.row - request.start_row)
   request.optimizer_overrides =
     ffi_optimizer.encode_optimizer_overrides({ shared = config.optimizer })
 
   return {
     active = active,
+    recording = observed,
     request = request,
     results_calculated = config.RESULTS_CALCULATED,
-    atom_seq = atom_seq,
+    commands = #commands > 0 and commands or disk.empty_array(),
     user_typed_insert = table.concat(typed_insert_parts),
   }
 end
@@ -175,6 +175,7 @@ local function build_result(input, analyze, analyze_ms)
 
   local request = input.request
   local result = {
+    recording = input.recording,
     lines = request.initial_lines,
     goal_lines = request.goal_lines,
     start_row = request.start_row,
@@ -192,6 +193,7 @@ local function build_result(input, analyze, analyze_ms)
     diffs = diffs,
     window_height = request.window_height,
     scroll_amount = request.scroll_amount,
+    indent = request.indent,
     user_seq = request.user_seq,
     user_typed = request.user_typed,
     user_typed_insert = input.user_typed_insert,
@@ -200,8 +202,8 @@ local function build_result(input, analyze, analyze_ms)
     user_cost = analyze.user_cost,
     optimal_results = optimal_results,
     unbeaten = analyze.unbeaten,
-    commands = build_commands(input.atom_seq),
-    key_count = #input.atom_seq,
+    commands = input.commands,
+    key_count = #input.commands,
     finished_wall_epoch = os.time(),
     analyze_ms = analyze_ms,
   }

@@ -49,7 +49,7 @@ c}: deletes "bc\ndef" → merged line "" → KEPT    → ["a", ""]  cursor (1,0)
 
 The TransformOptimizer explores deletion snapshots in Normal mode (`TransformSimulator` deletion helpers call VimCore deletion utilities with `Mode::Normal`). When converting a deletion to a change command for the goal suffix, the optimizer must compute the collapse sequence (`<BS>`/`<Del>` to join lines) based on **Insert mode** line counts, not Normal mode.
 
-`buildGoalSuffix` in `TransformOptimizer.cpp` re-simulates the deletion with `Mode::Insert` to get the correct line count. Without this, `c}` sequences would be missing the `<BS>` needed to join the extra empty line that Insert mode preserves.
+For resolved edits, the dispatcher computes the delete and change outcomes separately. The change command uses the Insert-mode outcome. A terminal `.` repeats the previous delete, so it can enter Insert only if the Normal-mode deletion leaves the editable region ready for typing.
 
 ### Position Clamping Also Differs
 
@@ -65,9 +65,9 @@ After deletion, cursor column is clamped differently:
 - So `dd` is the one edit whose landing depends on the curswant it is entered with: after `j` clamps the cursor from col 10 to col 2, `dd` onto a longer line lands at col 10.
 - With `startofline` it lands on the first non-blank instead.
 
-**`cc`/`S`:** Clears the line content but **keeps the line**. Enters Insert mode at col 0. With `autoindent` enabled, Neovim automatically inserts indentation matching the cleared line. Curswant on entry has no effect.
+**`cc`/`S`:** Clears the line content but **keeps the line**. With `autoindent` enabled, Insert mode starts after the original indent bytes, including mixed tabs and spaces. With `noautoindent`, it starts at column 0. Curswant on entry has no effect.
 
-**`o`/`O`:** The opened line copies the indent of the line the cursor is on: the line above for `o`, the line below for `O`. An immediate `<Esc>` strips that indent (`did_ai`), exactly like the autoindent `<CR>` inserts.
+**`o`/`O`:** Under `autoindent`, the opened line inherits the indent width of the source line. `copyindent` preserves its bytes. Otherwise `expandtab` emits spaces, and `noexpandtab` emits whole tabs followed by any remaining spaces at the buffer’s `tabstop`. An immediate `<Esc>` strips that indent (`did_ai`), exactly like the autoindent `<CR>` inserts.
 
 ### Autoindent Implications for the Optimizer
 
@@ -113,9 +113,8 @@ Both delete from cursor to end of line (with count: through multiple lines). The
 
 ## 8. Text Objects with Invalid Ranges
 
-When a text object produces an invalid/empty range (e.g., `ciw` on an empty line, `ci(` with no surrounding parens):
-- `d` + text object: does nothing, stays in Normal mode
-- `c` + text object: does nothing to the buffer but **still enters Insert mode**
+A failed bracket or quote search leaves the cursor in Normal mode for both `d` and `c`.
+A successful empty selection, such as `ci(` inside `()`, lets the change enter Insert mode at the selection.
 
 ## Summary: When Does It Matter?
 
