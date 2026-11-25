@@ -1,8 +1,8 @@
 {
-  "generated": 1794810214142,
+  "generated": 1795593149498,
   "binaries": {
     "Property": {
-      "totalCases": 39,
+      "totalCases": 41,
       "failures": 0,
       "suites": [
         {
@@ -129,6 +129,10 @@
           "cases": [
             {
               "name": "InsertNewlineMatchesOracle",
+              "passed": true
+            },
+            {
+              "name": "TypedIndentMatchesOracle",
               "passed": true
             }
           ]
@@ -272,6 +276,16 @@
           ]
         },
         {
+          "name": "TransformFrontierLandingPropertyTest",
+          "failures": 0,
+          "cases": [
+            {
+              "name": "DeletionSuggestionsReplay",
+              "passed": true
+            }
+          ]
+        },
+        {
           "name": "TransformOptimizerGeneratedPropertyTest",
           "failures": 0,
           "cases": [
@@ -300,7 +314,7 @@
               "passed": true
             },
             {
-              "name": "MultiLineEmbeddedChangeTopResultsReplay",
+              "name": "MultiLineEmbeddedAlternativesReplay",
               "passed": true
             }
           ]
