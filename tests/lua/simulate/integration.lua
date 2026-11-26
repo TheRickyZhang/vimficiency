@@ -156,12 +156,12 @@ local function with_replay(sequences, lines, fn, next, opts)
   for _, seq in ipairs(sequences) do
     suggestions[#suggestions + 1] = { seq = seq }
   end
-  -- Seed play settings so every pane in the test set is visible. Without
+  -- Seed view settings so every pane in the test set is visible. Without
   -- this the tests would be clamped to the default window_count (2).
-  local play = require("vimficiency.simulate.settings")
+  local view = require("vimficiency.simulate.settings")
   local expected_windows = #suggestions + (recording and 1 or 0)
-  play.set_setting("window_count", math.min(4, math.max(1, expected_windows)))
-  play.set_setting("include_user_sequence", recording ~= nil)
+  view.set_setting("window_count", math.min(4, math.max(1, expected_windows)))
+  view.set_setting("include_user_sequence", recording ~= nil)
   sim.simulate_compare(lines, start_row, start_col,
     {
       user = recording and { recording = recording } or nil,

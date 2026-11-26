@@ -74,7 +74,7 @@ A Lua Insert-mode mapping that inserts through the API (nvim-ts-autotag's `>`)
 leaves its text out of a non-nil `keys`, so the atom is recorded, not lossy,
 but capture still observes the edit. A nested `:normal!` in an Insert mapping can also
 truncate both `keys` and `lhs`. Capture keeps the event and the observed result.
-Play renders the observed text and cursor at each delivery boundary.
+View renders the observed text and cursor at each delivery boundary.
 
 `skip` is a measured no-effect fact, not a tolerance: it is what lets `:w`,
 `:noh`, and `:Vimfy` commands pass through a live session. An `abort` leaves
@@ -90,7 +90,7 @@ named-session listener surfaces it in the drop notice.
 
 `atom.typed` is what the user physically pressed for the atom, where
 `atom.keys` labels what ran. Scoring uses `typed` for the user's effort and
-`keys` for the search bound. Play uses the recorded states (`dev/decisions.md`).
+`keys` for the search bound. View uses the recorded states (`dev/decisions.md`).
 
 Neovim has no single source of them (measured on 0.13-dev-2069).
 `vim.on_key`'s `typed` is exact for every key the main loop reads, but skips
@@ -173,7 +173,7 @@ record is finished, undoing at most one delta per atom in the ring.
 
 The ring trims that history to the buffer's oldest active session, including
 Mark and Watch. Each delta keeps the old lines for Recall and the new lines
-for Play. An atom that edits two distant places stores every
+for View. An atom that edits two distant places stores every
 line between them.
 
 A pending range that disagrees with the buffer's line count is replaced by the

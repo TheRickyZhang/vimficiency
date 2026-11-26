@@ -65,7 +65,7 @@ the lifetime of in-progress sessions.
 | `KEY_SESSION_CAPACITY` | `200` | Number of recent commands always kept once captured. |
 | `MAX_RETENTION_SECONDS` | `120` | Age in seconds before a Recall entry can be evicted. An older entry is evicted only when the ring also exceeds `KEY_SESSION_CAPACITY`. |
 | `MANUAL_IDLE_TIMEOUT_SECONDS` | `300` | A manual (`start`/`finish`) session left idle this long is auto-ended with a warning. |
-| `lossy_mappings` | `"warn"` | For a Lua mapping that moves the cursor or edits text, `"drop"` ends the session and names the mapping. `"warn"` records its typed keys with a once-per-session notice. `"allow"` records silently. Play shows the observed cursor and edit under those keys. |
+| `lossy_mappings` | `"warn"` | For a Lua mapping that moves the cursor or edits text, `"drop"` ends the session and names the mapping. `"warn"` records its typed keys with a once-per-session notice. `"allow"` records silently. View shows the observed cursor and edit under those keys. |
 
 ## Saved sessions
 

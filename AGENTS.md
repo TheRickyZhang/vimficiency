@@ -61,8 +61,8 @@ C++ (Internal representation):
 
 Lua (User concepts):
 - **Session**: Captured editing instance and stored optimization result
-- **View**: Anything that lets you interactively engage with a finished session. Currently includes play and explore.
-- **Scoped Settings**: Settings that only apply for a certain view
+- **View**: The page that replays your sequence beside the optimizer's (`:Vimfy view`)
+- **Scoped Settings**: Settings that only apply to View or to Explore
 
 **Important:**
 - Never use `rm -rf build` unless something appears corrupted. The build directory contains downloaded libraries (googletest, etc.) that take time to re-fetch.

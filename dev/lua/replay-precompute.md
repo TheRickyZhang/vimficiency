@@ -1,6 +1,6 @@
 # Replay precompute (`simulate/precompute.lua`, `simulate/tokenize.lua`)
 
-Play indexes precomputed `{ lines, cursor, mode }` states when scrubbing.
+View indexes precomputed `{ lines, cursor, mode }` states when scrubbing.
 The user pane expands the recorded line replacements from the search slice's
 initial text. Cursor-only steps share the preceding text. A delivery tick
 contributes one step, with its commands' resolved keys as the label. A change

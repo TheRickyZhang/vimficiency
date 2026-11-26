@@ -26,7 +26,7 @@ title: "Known limitations"
 - **Mappings to Lua callbacks can't be audited as motion.** A key mapped to a
   Lua function that edits the buffer or moves the cursor produces an
   unreplayable capture event. By default (`lossy_mappings = "warn"`) the keys
-  you typed label the action and a once-per-session notice appears. Play
+  you typed label the action and a once-per-session notice appears. View
   shows the observed effect, including edits made through plugin APIs.
   `"allow"` records silently, and `"drop"` ends the session with a warning that
   names the mapping (see [Configuration](09-configuration.md)). Mappings whose
@@ -37,7 +37,7 @@ title: "Known limitations"
 
 - **Some recorded keys are inaccurate** until Neovim reports them per command.
   Text a Lua Insert-mode mapping inserts (nvim-ts-autotag's `>`) is missing
-  from the key label. Play still shows the inserted text at the next observation.
+  from the key label. View still shows the inserted text at the next observation.
   Your cost can be off by a key when commands arrive in one burst, or when a
   Vimscript plugin reads keys with `getchar()`.
 

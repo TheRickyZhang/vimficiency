@@ -61,7 +61,7 @@ local function render_suggestion(result, started_mono_ns)
 
   local timing = result.analyze_ms and string.format(" · %.0fms", result.analyze_ms) or ""
   local body = string.format(
-    "vimfy regression · %s · %.0f → %.0f%s\n:Vimfy view $  ·  play $  ·  explore $",
+    "vimfy regression · %s · %.0f → %.0f%s\n:Vimfy view $  ·  explore $",
     ago, result.user_cost, optimal.cost, timing)
 
   vim.notify(body, vim.log.levels.INFO, { title = "vimfy suggest", id = "vimfy_suggest" })

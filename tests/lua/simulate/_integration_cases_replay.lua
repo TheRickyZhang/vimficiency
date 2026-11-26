@@ -10,7 +10,7 @@ return function(ctx)
 
   return {
   {
-    name = "Play shows observed plugin edits and groups commands in the same delivery",
+    name = "View shows observed plugin edits and groups commands in the same delivery",
     run = function(next)
       with_replay({}, { "abc" }, function()
         local user = assert(sim._debug_get_pool().user)
@@ -62,7 +62,7 @@ return function(ctx)
     end,
   },
   {
-    name = "Play uses the saved buffer's tab stop for the probe and pane",
+    name = "View uses the saved buffer's tab stop for the probe and pane",
     run = function(next)
       local seq = "oX<Esc>"
       with_replay({ seq }, { "    source" }, function()

@@ -25,9 +25,9 @@ Cost is a keyboard-effort score (lower is better), not a keystroke count.
 See [10. The effort model](10-effort-model.md) for how it's computed and
 how to tune it to your layout.
 
-## Simulating
+## Viewing a result
 
-`:Vimfy play <alias> [count]` opens a new tab with side-by-side windows and
+`:Vimfy view <alias> [count]` opens a new tab with side-by-side windows and
 shows your recording alongside simulated optimizer suggestions.
 `count` sets the number of panes, up to four. The default layout pairs
 your recording with the best suggestion.
@@ -96,24 +96,9 @@ Shows the active sessions and the pins.
 Every finished session is active in memory until it rotates out, and is saved
 to disk as it finishes. `:Vimfy pin` keeps a copy under a filename you choose.
 
-`:Vimfy play <alias>|<filename>` works against all three: it replays from
-memory first, then a pin, then a saved session. See
-[7a. Session storage](07a-session-storage.md) for the full model and a worked
-example.
+`:Vimfy view <alias>|<filename>` works against all three: it replays from
+memory first, then a pin, then a saved session. Tab completion on `:Vimfy view`
+lists the aliases and pins.
 
-## Viewing a saved result
-
-```vim
-:Vimfy view my-refactor
-```
-
-Reads back a result textually (without replaying): a pin here, or any alias
-or saved session. Tab-complete on `:Vimfy view` lists the aliases and pins.
-
-## Saved result buffer keys
-
-Press `:h g?` in a saved-result buffer to open this section directly.
-
-- `q` — close the current saved-result view
-- `?` — show the short keymap summary popup
-- `g?` — open the full help section for saved-result buffers
+See [7a. Session storage](07a-session-storage.md) for the full model and a
+worked example.

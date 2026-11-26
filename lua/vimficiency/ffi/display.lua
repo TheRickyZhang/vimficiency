@@ -44,24 +44,6 @@ function M.sequence_display_typed_chunks(chunks, tokenize)
     { chunks = chunks, tokenize = tokenize }, "vf.Text").text
 end
 
----@param result VF.Session.Result
----@return string
-function M.format_result_position(result)
-  return core.call(lib.vf_format_result_position, "vf.display.SessionResult", {
-    start_row = result.start_row,
-    start_col = result.start_col,
-    end_row = result.end_row,
-    end_col = result.end_col,
-  }, "vf.Text").text
-end
-
----@param result VF.Session.Result
----@return string
-function M.format_result_kind_suffix(result)
-  return core.call(lib.vf_format_result_kind_suffix, "vf.display.SessionResult",
-    { kind = result.kind }, "vf.Text").text
-end
-
 ---@param title string
 ---@param result VF.Session.Result
 ---@param tokenize boolean

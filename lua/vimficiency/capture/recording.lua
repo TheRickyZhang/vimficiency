@@ -20,7 +20,7 @@ local history = require("vimficiency.capture.buffer_history")
 ---@class (exact) VF.Capture.Recording
 ---@field capture fun(active: VF.Session.Active, initial: string[], final: VF.BufferState): VF.Replay.Recording, integer, integer
 ---@field localize fun(recording: VF.Replay.Recording, above: integer)
----@field endpoints fun(result: VF.Session.Playable): VF.Replay.Recording
+---@field endpoints fun(result: VF.Session.Viewable): VF.Replay.Recording
 local M = {}
 
 function M.localize(recording, above)

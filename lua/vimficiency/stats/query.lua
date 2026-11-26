@@ -2,7 +2,7 @@
 ---@field summary     fun(scope: VF.Stats.Scope, scale?: VF.Stats.ChartScale): VF.Stats.Summary
 ---@field journal_coverage fun(): VF.Stats.JournalCoverage
 ---@field runs        fun(scope: VF.Stats.Scope, order: VF.Stats.Order, ascending: boolean, offset: integer, limit: integer): VF.Stats.RunList
----@field run         fun(row: VF.Stats.RunRow): VF.Session.Playable|nil, string|nil
+---@field run         fun(row: VF.Stats.RunRow): VF.Session.Viewable|nil, string|nil
 local M = {}
 
 local disk = require("vimficiency.session.disk")
@@ -69,7 +69,7 @@ end
 --- journal runs differ only here: a session's result was saved as it finished,
 --- a journal run is cut from its journal again.
 ---@param row VF.Stats.RunRow
----@return VF.Session.Playable|nil run
+---@return VF.Session.Viewable|nil run
 ---@return string|nil err
 function M.run(row)
   if row.id.run == "session" then

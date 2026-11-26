@@ -38,6 +38,6 @@ Once finished, a session is **active** in memory, keyed by its alias, and
 **saved** to disk under a filename of its own. Mark and Watch share a cap of
 100 active named sessions, and Recall entries age out of the rolling ring.
 
-**Pin** a session to keep a copy under a filename you choose, and **play** it
+**Pin** a session to keep a copy under a filename you choose, and **view** it
 whether it's in memory or on disk. See
 [7a. Session storage](07a-session-storage.md) for the full model.

@@ -65,8 +65,8 @@ A pin is a copy you keep on purpose.
 
 ## What an alias or filename resolves to
 
-`play`, `view`, `explore` and `pin` take an alias or a filename, and look it
-up in this order:
+`view`, `explore` and `pin` take an alias or a filename, and look it up in
+this order:
 
 1. an alias in this Neovim's memory
 2. a pin
@@ -101,8 +101,8 @@ Once an alias is gone, the session is still reachable by its saved filename.
 :Vimfy pin a important       " pinned/important.json
 
 " ... later, even after a restart ...
-:Vimfy play important
-:Vimfy play a-20261126-031401
+:Vimfy view important
+:Vimfy view a-20261126-031401
 ```
 
 ## Finding a session
@@ -110,13 +110,16 @@ Once an alias is gone, the session is still reachable by its saved filename.
 - `:Vimfy list` shows the active sessions and the pins.
 - The run lists in `:Vimfy stats` show every logged session with its saved
   filename. `<CR>` replays the current one and `p` pins it.
-- Tab completion offers aliases and pins for `play` / `view` / `explore` /
-  `pin`, pins for `unpin`, and saved filenames for `rm`.
+- Tab completion offers aliases and pins for `view` / `explore` / `pin`, pins
+  for `unpin`, and saved filenames for `rm`.
 
-## Coming from `save`, `store` and `fetch`
+## Coming from `save`, `store`, `fetch` and `play`
 
-Those three commands are gone: every session is saved, and `play` reads disk
-directly. `rm` used to delete a named save; that is `unpin` now.
+`save`, `store` and `fetch` are gone: every session is saved, and `view` reads
+disk directly. `rm` used to delete a named save; that is `unpin` now.
+
+`play` is now `view`, and the `play = { ... }` setup block is `view = { ... }`.
+The older `view`, a static before/after window, is removed.
 
 Files in the old `saved/` directory become pins. The directory is renamed to
-`pinned/` the first time pins are used, and every old filename still plays.
+`pinned/` the first time pins are used, and every old filename still opens.

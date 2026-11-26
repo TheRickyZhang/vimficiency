@@ -72,13 +72,13 @@ return function(ctx)
       })
 
       helpers.new_buf({ "session simulate source" })
-      local play = require("vimficiency.simulate.settings")
-      play.set_setting("include_user_sequence", true)
-      play.set_setting("window_count", 3)
+      local view = require("vimficiency.simulate.settings")
+      view.set_setting("include_user_sequence", true)
+      view.set_setting("window_count", 3)
       local warned = false
       helpers.with_patch({ { vim, "notify", function(message, level)
         if level == vim.log.levels.WARN and message:find("older save format (v1)", 1, true) then warned = true end
-      end } }, function() playback.play(result, "simreplay", 3) end)
+      end } }, function() playback.view(result, "simreplay", 3) end)
 
       local tries = 0
       local function finish(ok, err)
@@ -93,7 +93,7 @@ return function(ctx)
         if #windows == 3 and #states == 3 then
           local ok, err = pcall(function()
             local user = assert(sim._debug_get_pool().user, "missing user replay pool entry")
-            assert_true(warned, "Play warns that this is a v1 save")
+            assert_true(warned, "View warns that this is a v1 save")
             assert_eq(#user.tokens, 1, "older sessions show their recorded endpoints")
             assert_eq(user.states[2].lines, result.goal_lines, "v1 finish text")
             assert_eq(user.states[2].cursor, { result.end_row + 1, result.end_col }, "v1 finish cursor")
@@ -138,7 +138,7 @@ return function(ctx)
 
       helpers.new_buf({ "session simulate source" })
       require("vimficiency.simulate.settings").set_setting("include_user_sequence", true)
-      playback.play(result, "simcap", 4)
+      playback.view(result, "simcap", 4)
 
       local tries = 0
       local function finish(ok, err)

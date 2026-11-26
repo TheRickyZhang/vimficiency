@@ -62,7 +62,7 @@ local function make_session_listener(alias, id)
         session.lossy_warned = true
         vim.schedule(function()
           vim.notify("Vimfy: session [" .. alias .. "] recorded Lua mapping `" .. atom.keys ..
-            "` by its typed keys; Play shows the recorded result " ..
+            "` by its typed keys; View shows the recorded result " ..
             "(lossy_mappings = \"allow\" silences this)", vim.log.levels.WARN)
         end)
       end

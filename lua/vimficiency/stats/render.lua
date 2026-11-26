@@ -7,7 +7,7 @@
 ---@field run_lines fun(list: VF.Stats.RunList, offset: integer, sort?: VF.Stats.RunSort): string[]
 ---@field run_items fun(lines: string[], count: integer): VF.Stats.RunCell[]
 ---@field run_name fun(row: VF.Stats.RunRow): string
----@field run_preview fun(row: VF.Stats.RunRow, detail: VF.Session.Playable|nil, err: string|nil, width: integer): VF.Stats.RunPreview
+---@field run_preview fun(row: VF.Stats.RunRow, detail: VF.Session.Viewable|nil, err: string|nil, width: integer): VF.Stats.RunPreview
 local M = {}
 
 local log = require("vimficiency.stats.log")
@@ -1502,7 +1502,7 @@ local function cursor_cell(text, col, tab)
   return vim.fn.strdisplaywidth(before), #before, (char == "" or char == "\t") and 1 or #char
 end
 
---- What a run is filed under: a session's saved filename, which `:Vimfy play`
+--- What a run is filed under: a session's saved filename, which `:Vimfy view`
 --- and `pin` take, or a journal run's file and where in it the run ends.
 ---@param row VF.Stats.RunRow
 ---@return string
@@ -1518,7 +1518,7 @@ end
 --- by side with the changed lines marked and the cursor's cell shaded in each.
 --- `detail` is nil for a run whose text is gone (`err` says why).
 ---@param row VF.Stats.RunRow
----@param detail VF.Session.Playable|nil
+---@param detail VF.Session.Viewable|nil
 ---@param err string|nil
 ---@param width integer
 ---@return VF.Stats.RunPreview

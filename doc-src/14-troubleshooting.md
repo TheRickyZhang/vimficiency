@@ -54,7 +54,7 @@ a `vim.keymap.set` callback) and Neovim cannot report replayable keys for
 it. The notice names the mapping. `lossy_mappings` decides what happens:
 `"warn"` (default) records the keys you typed with a once-per-session
 notice, `"allow"` records them silently, `"drop"` ends the session.
-Play shows the recorded effect of an admitted mapping. The key label can
+View shows the recorded effect of an admitted mapping. The key label can
 omit work the plugin performed. See [13. Limitations](13-limitations.md).
 
 ## Suggestions look wrong or worse than what I did

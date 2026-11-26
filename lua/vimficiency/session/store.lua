@@ -123,9 +123,9 @@ end
 ---@field keys string  # The atom's replayable keys
 ---@field kind string  # CmdAtom `type` (`VF.Atom.kind`)
 
---- What the stats preview and play read of a run. A session's result has it
+--- What the stats preview and view read of a run. A session's result has it
 --- all; a journal run is mapped onto it (`stats/query.lua`).
----@class VF.Session.Playable
+---@class VF.Session.Viewable
 ---@field recording? VF.Replay.Recording
 ---@field lines string[]               # Trimmed buffer lines used for optimization
 ---@field goal_lines string[]          # Goal buffer slice for recomputing explore recommendations
@@ -140,7 +140,7 @@ end
 ---@field optimal_results VF.Optimizer.Result[] # Top N results from optimizer (seq + cost)
 
 --- VF.Session.Result: data for a completed session, ready for simulate().
----@class VF.Session.Result : VF.Session.Playable
+---@class VF.Session.Result : VF.Session.Viewable
 ---@field has_lines_above boolean      # Whether the optimization slice omitted lines above
 ---@field has_lines_below boolean      # Whether the optimization slice omitted lines below
 ---@field prefix string                # Reserved boundary prefix; empty at the whole-buffer level (see compute.lua)

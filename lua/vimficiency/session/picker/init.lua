@@ -299,7 +299,7 @@ local function act_open()
       it.name .. "' first.", vim.log.levels.INFO)
     return
   end
-  -- Play opens its own window, so close the picker first.
+  -- View opens its own window, so close the picker first.
   close()
   vim.schedule(util.entry(function()
     if it.pane == "active" then
@@ -309,7 +309,7 @@ local function act_open()
     -- By shelf, not by handle: a live alias of the same name would win.
     local result, err = disk.load("pinned", it.name)
     if not result then error(err, 0) end
-    playback.play(result, it.name)
+    playback.view(result, it.name)
   end))
 end
 

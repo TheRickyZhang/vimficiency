@@ -3,17 +3,17 @@ local simulate = require("vimficiency.simulate")
 local recording = require("vimficiency.capture.recording")
 
 ---@class (exact) VF.SessionPlayback
----@field play     fun(run: VF.Session.Playable, label: string, count: integer|nil)
+---@field view     fun(run: VF.Session.Viewable, label: string, count: integer|nil)
 ---@field simulate fun(alias_or_filename: string, count: integer|nil)
 local M = {}
 
 --- Replays what the user did beside each found sequence.
----@param run VF.Session.Playable
+---@param run VF.Session.Viewable
 ---@param label string
 ---@param count integer|nil
-function M.play(run, label, count)
+function M.view(run, label, count)
   if not run.recording then
-    vim.notify("Vimfy: older save format (v1). Play shows the recorded start and finish in one step.",
+    vim.notify("Vimfy: older save format (v1). View shows the recorded start and finish in one step.",
       vim.log.levels.WARN)
   end
   local user_item = { recording = run.recording or recording.endpoints(run), cost = string.format("%.2f", run.user_cost) }
@@ -47,7 +47,7 @@ end
 ---@param alias_or_filename string
 ---@param count integer|nil
 function M.simulate(alias_or_filename, count)
-  M.play(archive.resolve_result(alias_or_filename), alias_or_filename, count)
+  M.view(archive.resolve_result(alias_or_filename), alias_or_filename, count)
 end
 
 return M

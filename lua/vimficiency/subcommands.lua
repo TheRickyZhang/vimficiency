@@ -86,9 +86,9 @@ return {
 
 
   -- View a finished result.
-  play = {
-    desc = "Play your sequence side-by-side with the optimizer's suggestions",
-    usage = "play <alias>|<filename> [windows]",
+  view = {
+    desc = "Replay your sequence side-by-side with the optimizer's suggestions",
+    usage = "view <alias>|<filename> [windows]",
     min_args = 1,
     complete = { aliases_and_pins },
     run = function(args) playback.simulate(args[1], tonumber(args[2])) end,
@@ -111,13 +111,6 @@ return {
     desc = "Restore the side-by-side replay layout",
     usage = "escape",
     run = function() require("vimficiency.simulate").escape() end,
-  },
-
-  view = {
-    desc = "View a finished result full-screen",
-    usage = "view [<alias>|<filename>]",
-    complete = { aliases_and_pins },
-    run = function(args) archive.view(args[1]) end,
   },
 
   explore = {

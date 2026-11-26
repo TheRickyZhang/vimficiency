@@ -15,12 +15,12 @@ require('vimficiency').setup({
 ```
 
 Edit naturally. Every pause surfaces suggestions. When something catches
-your eye, `:Vimfy play 3s` (or whatever window the suggestion targeted)
+your eye, `:Vimfy view 3s` (or whatever window the suggestion targeted)
 to see it animated.
 
 Pair with [8. Keymaps](08-keymaps.md):
 ```vim
-nnoremap <leader>vv <Cmd>Vimfy play a<CR>  " or ...bind to play b / play c / etc.
+nnoremap <leader>vv <Cmd>Vimfy view a<CR>  " or ...bind to view b / view c / etc.
 ```
 ...so replaying a suggestion is a single keystroke.
 
@@ -32,7 +32,7 @@ Mark sessions give the cleanest boundaries:
 :Vimfy start a
 " ... the edit ...
 :Vimfy finish a
-:Vimfy play a
+:Vimfy view a
 ```
 
 ## "I know the start but not when I'll stop"
@@ -57,7 +57,7 @@ Recall is built for this:
 " Recall is always recording — just query it.
 " ... clumsy edit, say 5 keys ...
 :Vimfy recall 5     " or `recall 3s` if time is the easier estimate
-:Vimfy play 5
+:Vimfy view 5
 ```
 
 ## "I want to revisit this later / share it"

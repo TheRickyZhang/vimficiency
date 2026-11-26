@@ -53,8 +53,6 @@ VFByteSlice vf_sequence_display_inline(const char* request, size_t request_len);
 VFByteSlice vf_sequence_display_key_notation(const char* request, size_t request_len);  // vf.Text -> vf.Text
 VFByteSlice vf_sequence_display_typed_text(const char* request, size_t request_len);    // TypedTextRequest -> vf.Text
 VFByteSlice vf_sequence_display_typed_chunks(const char* request, size_t request_len);  // TypedChunksRequest -> vf.Text
-VFByteSlice vf_format_result_position(const char* request, size_t request_len);         // SessionResult -> vf.Text
-VFByteSlice vf_format_result_kind_suffix(const char* request, size_t request_len);      // SessionResult -> vf.Text
 VFByteSlice vf_format_result_message(const char* request, size_t request_len);          // ResultMessageRequest -> vf.Text
 
 // vf.explore (InteractiveExports.cpp)

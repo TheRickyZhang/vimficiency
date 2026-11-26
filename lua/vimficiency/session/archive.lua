@@ -1,11 +1,10 @@
 -- Finished results by handle. An alias (any kind: named, recall window, `@`,
 -- `$`) resolves through the in-memory store; a filename names a result on
--- disk, a pin before a saved session. `play`/`view`/`explore`/`pin` take
--- either and try the store first.
+-- disk, a pin before a saved session. `view`/`explore`/`pin` take either and
+-- try the store first.
 
 local alias_mod = require("vimficiency.session.alias")
 local disk = require("vimficiency.session.disk")
-local result_window = require("vimficiency.session.result_window")
 local session_store = require("vimficiency.session.store")
 
 ---@class (exact) VF.SessionArchive
@@ -18,8 +17,6 @@ local session_store = require("vimficiency.session.store")
 --- Workspace only
 ---@field rename_active    fun(old_alias: string, new_alias: string)
 ---@field duplicate_active fun(src_alias: string, dst_alias: string)
---- Display
----@field view             fun(alias_or_filename: string|nil)
 local M = {}
 
 ---@param filename string
@@ -130,21 +127,6 @@ function M.duplicate_active(src_alias, dst_alias)
   local result = session_store.get_result(src_alias)
   if not result then error(missing_message(src_alias), 0) end
   session_store.add_finished(dst_alias, result, session_store.get_saved_filename(src_alias))
-end
-
---- View a finished result full-screen; no arg lists the pins.
----@param alias_or_filename string|nil
-function M.view(alias_or_filename)
-  if not alias_or_filename or alias_or_filename == "" then
-    local pins = disk.list("pinned")
-    if #pins == 0 then
-      vim.notify("No pins found", vim.log.levels.INFO)
-    else
-      vim.notify("Pins:\n  " .. table.concat(pins, "\n  "), vim.log.levels.INFO)
-    end
-    return
-  end
-  result_window.open(alias_or_filename, M.resolve_result(alias_or_filename))
 end
 
 return M

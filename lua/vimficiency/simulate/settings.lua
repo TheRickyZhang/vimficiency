@@ -1,11 +1,11 @@
--- Play-screen UI preferences.
+-- View-screen UI preferences.
 --
 -- Mirror of the explore settings pattern:
---   - hardcoded defaults in config/init.lua's `fields.play`
+--   - hardcoded defaults in config/init.lua's `fields.view`
 --   - user setup declarations merged over by `config.apply`
 --   - sidecar file auto-layered on top, mutated on every toggle
 --
--- The only things local to a play session are:
+-- The only things local to a view session are:
 --   1. include_user_sequence: whether the user's typed sequence is
 --      shown as the leftmost pane.
 --   2. window_count: total side-by-side panes (1..4). If
@@ -13,7 +13,7 @@
 --      and the remaining slots surface the top-ranked optimal_results.
 --
 -- Settings modal opened via `gs` from
--- the replay grid. Unlike explore, play itself has no persistent
+-- the replay grid. Unlike explore, view itself has no persistent
 -- single-buffer controller; the settings still live outside the replay
 -- state machine.
 local config = require("vimficiency.config")
@@ -23,19 +23,19 @@ local settings_ui = require("vimficiency.settings.modal")
 local M = {}
 
 -- Session-scoped in-memory store. Seeded lazily from
--- `config.play` + sidecar; mutated by the settings modal.
+-- `config.view` + sidecar; mutated by the settings modal.
 ---@type table|nil
 local current_settings
 
-local PLAY_SCHEMA_VERSION = 1
+local VIEW_SCHEMA_VERSION = 1
 
 local function settings_store()
   if current_settings == nil then
-    current_settings = vim.deepcopy(config.play or {})
-    local envelope = settings_profile.load("play")
-    if envelope.version == PLAY_SCHEMA_VERSION then
+    current_settings = vim.deepcopy(config.view or {})
+    local envelope = settings_profile.load("view")
+    if envelope.version == VIEW_SCHEMA_VERSION then
       for k, v in pairs(envelope.data) do
-        if current_settings[k] ~= nil or config.play[k] == nil then
+        if current_settings[k] ~= nil or config.view[k] == nil then
           current_settings[k] = v
         end
       end
@@ -47,7 +47,7 @@ end
 local function update_setting(key, value)
   local store = settings_store()
   store[key] = value
-  settings_profile.save("play", PLAY_SCHEMA_VERSION, store)
+  settings_profile.save("view", VIEW_SCHEMA_VERSION, store)
 end
 
 ---Public accessor — `simulate/pool.lua` reads these on every replay to
@@ -94,14 +94,14 @@ function M.open_settings(opts)
     { kind = "action",
       label = "reset to default settings",
       run = function()
-        settings_profile.clear("play")
+        settings_profile.clear("view")
         current_settings = nil
-        vim.notify("vimfy play: settings reset to defaults",
+        vim.notify("vimfy view: settings reset to defaults",
           vim.log.levels.INFO)
       end },
   }
   return settings_ui.open(schema, opts.on_change, {
-    title = "Play Settings",
+    title = "View Settings",
     on_close = opts.on_close,
   })
 end

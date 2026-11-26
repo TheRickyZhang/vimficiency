@@ -313,7 +313,7 @@ test("stats view: <CR> on a journal run replays it, and q comes back to the same
   end)
 end)
 
-test("journal and session Play show the same recorded edits regardless of their keys", function()
+test("journal and session View show the same recorded edits regardless of their keys", function()
   local simulate = require("vimficiency.simulate")
   in_nav_runs(function(runs_win, rows)
     local detail = assert(stats_query.run(rows[2]))
@@ -346,7 +346,7 @@ test("journal and session Play show the same recorded edits regardless of their 
       journal_states = user_states()
       simulate.cleanup_compare()
     end)
-    require("vimficiency.session.playback").play(h.fake_result({
+    require("vimficiency.session.playback").view(h.fake_result({
       lines = detail.lines, goal_lines = detail.goal_lines,
       start_row = detail.start_row, start_col = detail.start_col, end_row = 0, end_col = 4,
       commands = commands, user_seq = detail.user_seq, key_count = #commands, recording = detail.recording,

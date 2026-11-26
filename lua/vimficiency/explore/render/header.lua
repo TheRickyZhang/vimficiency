@@ -266,7 +266,7 @@ end
 ---even when the buffer fills the window. Without this, virt_lines on
 ---row 0 with `virt_lines_above` are silently dropped whenever the
 ---buffer is tall enough to fill the window vertically — same trick the
----play panes use (see simulate/init.lua's apply_virt_lines).
+---view panes use (see simulate/init.lua's apply_virt_lines).
 ---@param win integer
 ---@param count integer
 local function reserve_topfill(win, count)

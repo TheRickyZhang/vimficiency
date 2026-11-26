@@ -42,7 +42,6 @@ declare -A PCALL_CEILING=(
   [lua/vimficiency/session/picker/init.lua]=3
   [lua/vimficiency/session/picker/popups.lua]=5
   [lua/vimficiency/session/picker/preview.lua]=1
-  [lua/vimficiency/session/result_window.lua]=2
   [lua/vimficiency/settings/profile.lua]=1
   [lua/vimficiency/simulate/init.lua]=1
   [lua/vimficiency/simulate/windows.lua]=1

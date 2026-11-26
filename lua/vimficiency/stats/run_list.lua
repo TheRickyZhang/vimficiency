@@ -34,7 +34,7 @@ local ns = v.nvim_create_namespace("vimfy_stats_runs")
 ---@field preview_win integer
 ---@field preview_row? VF.Stats.RunRow
 ---@field preview_width? integer
----@field details table<VF.Stats.RunRow, { detail?: VF.Session.Playable, err?: string }>   # the listed runs looked up so far
+---@field details table<VF.Stats.RunRow, { detail?: VF.Session.Viewable, err?: string }>   # the listed runs looked up so far
 ---@field refresh fun()   # re-queries, as after a scoring run
 ---@field close fun()
 
@@ -76,7 +76,7 @@ end
 --- A listed run's text, looked up once.
 ---@param view VF.Stats.RunListView
 ---@param row VF.Stats.RunRow
----@return VF.Session.Playable|nil detail
+---@return VF.Session.Viewable|nil detail
 ---@return string|nil err
 local function detail_of(view, row)
   if not view.details[row] then
@@ -165,7 +165,7 @@ local function open_run(view)
     vim.notify("run not available: " .. err, vim.log.levels.WARN)
     return
   end
-  playback.play(detail, render.run_name(row))
+  playback.view(detail, render.run_name(row))
 end
 
 --- Pins the current run's saved session under a filename asked for.

@@ -13,10 +13,9 @@ title: "Commands reference"
 | `:Vimfy close <alias>`                     | Discard a session without optimizing.                |
 | `:Vimfy pin <alias>\|<filename> [<filename>]` | Keep a copy of a finished result. The filename defaults to the one it was saved under. |
 | `:Vimfy unpin <filename>`                  | Delete a pin.                                        |
-| `:Vimfy play <alias>\|<filename> [count]`   | Animate results side-by-side (memory, then pins, then saved sessions). |
+| `:Vimfy view <alias>\|<filename> [count]`   | Replay results side-by-side (memory, then pins, then saved sessions). |
 | `:Vimfy focus <N>`                         | Focus the active replay on the Nth buffer (full-screen).|
 | `:Vimfy escape`                            | Restore the side-by-side replay layout.              |
-| `:Vimfy view [<alias>\|<filename>]`         | View a finished result full-screen (no arg lists the pins). |
 | `:Vimfy rm <filename>`                     | Delete a saved session's result. Its stats row stays. |
 | `:Vimfy list`                              | Open the interactive session picker (see below).     |
 | `:Vimfy stats`                             | Open the stats tab (see below).                      |
@@ -48,7 +47,7 @@ Which aliases a subcommand accepts:
 | `start` / `watch` / `finish` | A named alias.                                      |
 | `recall`                     | `N` or `Ns`.                                        |
 | `close`                      | Any alias.                                          |
-| `play` / `view` / `explore` / `pin` | Any alias or a filename (memory first, then pins, then saved sessions). |
+| `view` / `explore` / `pin`   | Any alias or a filename (memory first, then pins, then saved sessions). |
 | `unpin`                      | A pin's filename.                                   |
 | `rm`                         | A saved session's filename.                         |
 
@@ -107,8 +106,8 @@ entry; `<Esc>` returns to the list.
 
 **Per-pane action semantics:**
 
-- `<CR>` — on either pane, opens a `:Vimfy play`-style view: of a
-  finished session on Active, of the pin on Pinned.
+- `<CR>` — on either pane, opens it as `:Vimfy view` does: a finished
+  session on Active, the pin on Pinned.
 - `d` — on Active, discards the session (equivalent to `:Vimfy close`);
   on Pinned, unpins (equivalent to `:Vimfy unpin`).
 - `r` / `y` — on Pinned, renames/duplicates the file. On Active, renames
@@ -182,7 +181,7 @@ characters you typed in insert mode and the search time. Its title holds the row
 two fifths of the screen and the preview under it the rest.
 
 The preview follows the current run. Its first line is the run's id: a
-session's saved filename, which `play` and `pin` take, or a journal run's file
+session's saved filename, which `view` and `pin` take, or a journal run's file
 and position.
 
 Under the id are your keys and the best sequence, spaced by command and cut to
@@ -204,7 +203,7 @@ Every cell of the list is an item, as in the stats:
 | `j` / `k`     | The run below / above, in the same column.                    |
 | `h` / `l`     | The column to the left / right. The arrow keys move the same way. |
 | `s`           | Sort by the current column: largest first, then smallest first, then off. Unsorted, the worst runs come first (your effort minus the best). |
-| `<CR>`        | Replay the run as `:Vimfy play` does, your keys beside what was found, highlighted as the file was. A session shows every sequence found, a journal run the best one. `q` there returns to the list. |
+| `<CR>`        | Replay the run as `:Vimfy view` does, your keys beside what was found, highlighted as the file was. A session shows every sequence found, a journal run the best one. `q` there returns to the list. |
 | `p`           | Pin the current session. Asks for the filename, which defaults to its saved one. |
 | `]` / `[`     | Next / previous page of runs.                                 |
 | `<Esc>` / `q` | Back to the stats.                                            |
@@ -362,8 +361,8 @@ Works on:
 - Named aliases for `start`, `watch`, and `finish`.
 - `3s`/`5s`/`10s`/`30s` hints for `recall`.
 - Live aliases plus time hints for `close`.
-- Every alias (including `@` and `$`) plus pins for `play`, `view`, `explore`
-  and `pin`. Saved sessions are left out: there is one per finished session.
+- Every alias (including `@` and `$`) plus pins for `view`, `explore` and
+  `pin`. Saved sessions are left out: there is one per finished session.
 - Pins for `unpin`, saved filenames for `rm`.
 - `on` / `off` / `toggle` for `suggest`.
 - `refresh` for `stats`.

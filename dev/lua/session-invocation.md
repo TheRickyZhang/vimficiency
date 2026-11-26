@@ -35,7 +35,7 @@ A filename names a result on disk, a pin or a saved session
 (`alias.is_valid_filename`, `^[%w_][%w._-]*$`). Each command declares the alias
 kinds it accepts with `alias.expect(alias, kinds)`.
 
-`play`/`view`/`explore`/`pin` take an alias or a filename and try the store,
+`view`/`explore`/`pin` take an alias or a filename and try the store,
 then the pins, then the saved sessions (`archive.resolve_result`). Parameters
 are named `alias`, `filename`, or `alias_or_filename` after the grammar they
 accept.
@@ -68,7 +68,7 @@ An auto-suggest regression shows a terse, replaceable toast instead
 
 ```
 vimfy regression · 17 keys · 3s ago · 15 → 8
-:Vimfy view $  ·  play $  ·  explore $
+:Vimfy view $  ·  explore $
 ```
 
 Sequences are tokenized by the C++ `SequenceParser`. On failure the tokenizer

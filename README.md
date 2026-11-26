@@ -131,7 +131,7 @@ Recall is always on, so the lowest-friction entry point is:
 ```vim
 " ... edit something ...
 :Vimfy recall 6     " analyze the last 6 keystrokes (or 'recall 3s' for time)
-:Vimfy play 6       " animate the suggested sequence
+:Vimfy view 6       " animate the suggested sequence
 ```
 
 For the full set of commands, saved sessions and pins, configuration, and the effort model, see the user guide.

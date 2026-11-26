@@ -26,7 +26,7 @@ is already saved as a session, reachable with the `$` alias (the most
 recent suggestion):
 
 ```vim
-:Vimfy play $           " side-by-side: before/after buffer + your vs suggested sequences
+:Vimfy view $           " side-by-side: before/after buffer + your vs suggested sequences
 :Vimfy explore $        " step through interactively
 :Vimfy pin $            " keep a copy as pinned/suggest-<date>-<time>.json
 ```

@@ -17,7 +17,7 @@ kind becomes an id; see `session-invocation.md` § Handles for the kinds.
 
 Aliases and filenames are separate namespaces, and every name or recall alias
 is also a valid filename (`@`/`$` are not). The command grammar disambiguates:
-`unpin` and `rm` take a filename, and `play`/`explore`/`view`/`pin` accept
+`unpin` and `rm` take a filename, and `view`/`explore`/`pin` accept
 either via `archive.resolve_result`, which tries the store, then `pinned/`,
 then `sessions/`.
 
@@ -58,8 +58,8 @@ name a different record by the time it is resolved.
 - The picker's rename and duplicate act on `pinned/` (`disk.rename`,
   `disk.duplicate`). On an alias, `archive.duplicate_active` adds a second one
   for the same result with `store.add_finished`, carrying its `saved_filename`.
-- `playback.play` takes a `VF.Session.Playable`, the part of a result that
-  Play and the stats preview read. `playback.simulate` resolves an alias or
+- `playback.view` takes a `VF.Session.Viewable`, the part of a result that
+  View and the stats preview read. `playback.simulate` resolves an alias or
   filename and calls it.
 
 ## JSON schema
@@ -74,11 +74,11 @@ the file's only clock), and
 `disk.decode` accepts v2 and legacy v1. V2 adds `recording`, a starting
 cursor/mode and a list of steps with resolved keys, post-step cursor/mode
 and changed line ranges. Coordinates refer to the same slice as `lines`.
-Play warns when opening a v1 result and shows its two recorded endpoints.
+View warns when opening a v1 result and shows its two recorded endpoints.
 Pinning that result preserves v1. Unknown or missing versions are rejected. All fields
 are required except these:
 - `analyze_ms`, debug-only.
-- `indent` and `filetype`, the buffer's as the session started. Play replays
+- `indent` and `filetype`, the buffer's as the session started. View replays
   with that indent and highlights its panes by the filetype.
 - `user_typed`, the pressed keys behind `user_cost` (`user_seq` is what ran).
 - `user_typed_insert`, the insert text in `user_typed` (`atom.typed_insert`,
@@ -223,13 +223,13 @@ rows, optionally a span of display columns, with the cells to highlight.
   run without a slice, a deleted journal, or params that no longer cut that
   window are errors, which `ffi/stats.run` returns rather than raises.
 - `stats/query.run(row)` is the one lookup that differs by kind, and returns a
-  `VF.Session.Playable` or `nil, err`. A session is `disk.load("sessions",
+  `VF.Session.Viewable` or `nil, err`. A session is `disk.load("sessions",
   row.saved_filename)`; a journal run is the `vf_stats_run` detail, with the
   row's cost and best sequence as `user_cost` and `optimal_results`.
 - The run list caches lookups by row until it lists again. The preview opens
   with the run's id (`render.run_name`), then shows `lines` beside
   `goal_lines`, or the lookup's error.
-- `<CR>` hands the run to `playback.play`, so a session replays with every
+- `<CR>` hands the run to `playback.view`, so a session replays with every
   sequence it found and a journal run with its best, a step per complete
   recorded tick. `filetype` highlights only the visible panes.
 - `p` pins the current row's saved session through `archive.pin`, asking for

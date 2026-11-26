@@ -31,7 +31,7 @@ local fields = {
   -- A Lua-callback mapping that moves the cursor or changes text is lossy: Neovim
   -- cannot report replayable keys for it. "drop" ends the session; "warn" and
   -- "allow" record the typed keys (`lhs`) instead, "warn" with a once-per-session
-  -- notice. Play uses the observed state.
+  -- notice. View uses the observed state.
   lossy_mappings = "warn",
 
   sessions = {
@@ -106,8 +106,8 @@ local fields = {
   -- sidecar (`settings/profile.lua`), layered over these overrides.
   explore = {},
 
-  play = {
-    include_user_sequence = true,                  -- show the user's typed sequence as the leftmost pane
+  view = {
+    include_user_sequence = true,                 -- show the user's typed sequence as the leftmost pane
     window_count = 2,                              -- total panes shown side-by-side; 1..4 (user pane consumes one slot if included)
   },
 

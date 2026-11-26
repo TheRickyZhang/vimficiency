@@ -10,12 +10,12 @@ Plugin entry points and domain modules:
 |------|---------|
 | `init.lua` | Plugin entry point: `setup()`, the `:Vimfy` dispatcher and its tab completion, teardown and reload. |
 | `session/init.lua` | Live capture lifecycle: start, watch, finish, recall, close. Argument errors raise to the `:Vimfy` boundary. |
-| `session/archive.lua` | Finished results by handle: alias resolution through the store, filename resolution on disk (a pin, then a saved session), pin/unpin/rm, view. |
+| `session/archive.lua` | Finished results by handle: alias resolution through the store, filename resolution on disk (a pin, then a saved session), pin/unpin/rm. |
 | `simulate/init.lua` | Side-by-side animation of motion sequences. Required as `vimficiency.simulate`. |
 | `explore/init.lua` | Interactive result exploration view. Required as `vimficiency.explore`. |
 | `explore/input/key_tracking.lua` | Reduces raw `vim.on_key()` events for interactive Explore's frontier replay. |
-| `simulate/settings.lua` | Play-screen settings and modal wiring. |
-| `stats/query.lua` | Builds requests for stats summaries and run lists. `run` turns a listed row into a `VF.Session.Playable`, the one place a session and a journal run are looked up differently. |
+| `simulate/settings.lua` | View-screen settings and modal wiring. |
+| `stats/query.lua` | Builds requests for stats summaries and run lists. `run` turns a listed row into a `VF.Session.Viewable`, the one place a session and a journal run are looked up differently. |
 | `stats/render.lua` | Formats summary pages, charts, drill targets, and run rows. |
 | `stats/view.lua` | The `:Vimfy stats` tab handles weight and scoring keys, Look back and run-length selectors, and `<CR>` to expand lists or open runs and charts. |
 | `ui/item_nav.lua` | Item navigation for a rendered buffer: `h`/`j`/`k`/`l` between a view's items (blocks of rows and columns), the current one highlighted whole with the cursor hidden, `<CR>`/`<Esc>` acting on it. Used by the stats tab; the model for new views. |
@@ -38,9 +38,8 @@ Subdirectories hold supporting modules for each domain:
 | `session/alias.lua` | The alias grammar (name, recall window, `@`, `$`) and the filename grammar; every handle is one or the other. |
 | `session/compute.lua` | Active-session capture normalization and optimizer invocation. |
 | `session/disk.lua` | Result JSON encoding and validation, and the two shelves on disk: `sessions` (written at finish) and `pinned`. |
-| `session/playback.lua` | Replays a `VF.Session.Playable`, a finished result or a stats run, beside the sequences found for it. |
-| `session/result_view.lua` | Lua adapter for C++ result report formatting shared by `finish` and auto-suggest. |
-| `session/result_window.lua` | Full-screen side-by-side viewer (`:Vimfy view`): initial/final panes, diff + cursor highlights. |
+| `session/playback.lua` | `:Vimfy view`: replays a `VF.Session.Viewable`, a finished result or a stats run, beside the sequences found for it. |
+| `session/result_view.lua` | Lua adapter for the C++ result report `finish` announces. |
 | `session/store.lua` | Canonical session records + manual/recall indexing. |
 
 ### `session/picker/` — session picker
@@ -137,7 +136,7 @@ field. Past the constructor nothing re-checks shape, type, or handle validity.
   constructor is a fixture bug.
 
 Result files carry `disk.FORMAT_VERSION`. V1 remains readable for endpoint-only
-Play and produces a warning when opened there. Reject unknown versions.
+View and produces a warning when opened there. Reject unknown versions.
 
 Bump the current version when a required field is added or a field changes
 meaning. A new optional field (`disk.lua` `OPTIONAL_FIELDS`) needs no bump.
@@ -157,7 +156,7 @@ Every user-typed handle is one of two things (`session/alias.lua`):
   `^[%w_][%w._-]*$`), resolved by `session/disk.lua`: a pin, or a saved
   session, whose filename `disk.save_new` made at finish.
 
-`play`/`view`/`explore`/`pin` take an `alias_or_filename` and try the store,
+`view`/`explore`/`pin` take an `alias_or_filename` and try the store,
 then the pins, then the saved sessions (`archive.resolve_result`). Parameters
 are named after the grammar they accept.
 
@@ -188,7 +187,7 @@ BOTH `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS` say drop. See
   shapes extend `VF.Session.Core` (`id`, `kind`, `started_mono_ns`).
 - **VF.Session.Result**: Optimizer output + position + `key_count` +
   `finished_wall_epoch`, built at finish; `convert_to_finished` stamps `kind`.
-  It extends `VF.Session.Playable`, the part Play and the stats preview read,
+  It extends `VF.Session.Viewable`, the part View and the stats preview read,
   which a journal run fills too.
 
 Clocks: anything that stays in the process (`*_mono_ns`) is `vim.uv.hrtime()`,
@@ -203,7 +202,7 @@ Two tables keyed by id, `active_sessions` and `finished_sessions`;
 `named_to_id` and `recall_id_order` index across both. Finish moves the
 record from one table to the other — it does NOT unindex. This removes
 tombstones from `recall_id_order` entirely: a finished session stays reachable
-via its recall alias (for `:Vimfy play Ns`) until the ring slot rotates out.
+via its recall alias (for `:Vimfy view Ns`) until the ring slot rotates out.
 
 ## Atom stream (capture/atom_stream.lua)
 
@@ -301,13 +300,12 @@ resolve; without it LuaLS treats `vim` as untyped and misses real mismatches.
 :Vimfy finish <alias>   -- Finish a manual session (Mark/Watch)
 :Vimfy recall <N|Ns>    -- Finish a retrospective recall window
 :Vimfy close <alias>    -- Discard session
-:Vimfy play <alias>     -- Animate results
+:Vimfy view <alias|filename> -- Replay results side-by-side
 :Vimfy focus <N>        -- Focus replay on Nth buffer (full-screen)
 :Vimfy escape           -- Restore side-by-side replay layout
 :Vimfy pin <alias|filename> [filename] -- Keep a copy of a finished result
 :Vimfy unpin <filename> -- Delete a pin
 :Vimfy rm <filename>    -- Delete a saved session's result
-:Vimfy view [alias|filename] -- View a finished result
 :Vimfy list             -- Show active sessions and pins
 :Vimfy suggest <on|off|toggle> -- Toggle auto-suggest (needs `auto_suggest = {...}` in setup)
 :Vimfy config           -- Show C++ config state

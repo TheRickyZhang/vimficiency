@@ -34,7 +34,7 @@ summary="$(mktemp)"
 : > "$summary"
 export VF_TEST_SUMMARY_FILE="$summary"
 
-# Tests persist play/explore settings and saved results; keep them out of the
+# Tests persist view/explore settings and saved results; keep them out of the
 # developer's real stdpath("data").
 data_home="$(mktemp -d)"
 export XDG_DATA_HOME="$data_home"
