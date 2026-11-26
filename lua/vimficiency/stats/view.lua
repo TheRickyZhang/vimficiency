@@ -33,7 +33,7 @@ local ns = v.nvim_create_namespace("vimfy_stats")
 ---@field runs? VF.Stats.RunListView   # the last run list opened
 ---@field saved_tab integer
 ---@field saved_win integer
----@field waiting boolean   # a redraw is queued on the scoring run in flight
+---@field progress_timer? integer
 
 ---@param buf integer
 ---@param lines string[]
@@ -69,13 +69,28 @@ local function refresh(view)
   if view.chart and v.nvim_win_is_valid(view.chart.win) then view.chart.refresh() end
 end
 
---- Redraws once the scoring run in flight finishes, if the view is still open.
+---@param view VF.Stats.View
+local function stop_progress(view)
+  if view.progress_timer then vim.fn.timer_stop(view.progress_timer) end
+  view.progress_timer = nil
+end
+
 ---@param view VF.Stats.View
 function watch_scoring(view)
-  if view.waiting then return end
-  view.waiting = sampling.when_done(util.entry(function()
-    view.waiting = false
-    if not v.nvim_tabpage_is_valid(view.tab) then return end
+  if view.progress_timer or not sampling.running() then return end
+  view.progress_timer = vim.fn.timer_start(1000, util.entry(function()
+    if view.tab ~= v.nvim_get_current_tabpage() then return end
+    local coverage = stats_query.journal_coverage()
+    local journal = view.summary.journal
+    if render.journal_percent(journal) == render.journal_percent(coverage) then return end
+    journal.scored_bytes = coverage.scored_bytes
+    journal.journal_bytes = coverage.journal_bytes
+    draw(view)
+    if view.chart and v.nvim_win_is_valid(view.chart.win) then view.chart.update_coverage(coverage) end
+  end), { ["repeat"] = -1 })
+  sampling.when_done(util.entry(function()
+    stop_progress(view)
+    if not v.nvim_win_is_valid(view.win) then return end
     refresh(view)
     if view.runs and v.nvim_win_is_valid(view.runs.list_win) then view.runs.refresh() end
   end))
@@ -161,12 +176,13 @@ local function watch_view(view)
   v.nvim_create_autocmd("User", {
     group = group,
     pattern = "VimficiencyJournalScoringStarted",
-    callback = util.entry(function() draw(view) end),
+    callback = util.entry(function() refresh(view) end),
   })
   v.nvim_create_autocmd("WinClosed", {
     group = group,
     pattern = tostring(view.win),
     callback = function()
+      stop_progress(view)
       v.nvim_del_augroup_by_id(group)
       -- `q` closes the tab itself; by the time this runs, it is gone.
       vim.schedule(function()
@@ -231,7 +247,6 @@ function M.open()
     tab = tab, win = win, buf = buf,
     saved_tab = saved_tab,
     saved_win = saved_win,
-    waiting = false,
   }
   set_keymaps(view)
   watch_view(view)

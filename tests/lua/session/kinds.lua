@@ -49,12 +49,12 @@ test("convert_to_finished: promotes only recall -> suggest_*", function()
   h.seed_named("kindsmark", "test-kinds-mark")
   assert_error(function()
     session_store.convert_to_finished(
-      "test-kinds-mark", h.fake_result({ user_seq = "" }), "kindsmark", "suggest_idle")
+      "test-kinds-mark", h.fake_result({ user_seq = "" }), "suggest_idle")
   end, "promotes")
 
   h.seed_named("kindskeep", "test-kinds-keep")
   local result = h.fake_result({ user_seq = "" })
-  assert_eq(session_store.convert_to_finished("test-kinds-keep", result, "kindskeep"), true)
+  assert_eq(session_store.convert_to_finished("test-kinds-keep", result), true)
   assert_eq(result.kind, "mark", "convert_to_finished stamps the kind onto the result")
 end)
 

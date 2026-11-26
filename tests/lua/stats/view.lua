@@ -178,6 +178,25 @@ local function in_view(fn)
   if not ok then error(err, 0) end
 end
 
+test("journal chart: kind captions show efficiency, sample size and share of scored runs", function()
+  h.use_temp_data_home()
+  local s = summary()
+  s.journal.nav = { score = 41.2, spans = 755 }
+  s.journal.edit = { score = 69.6, spans = 512 }
+  s.journal.score.spans = 1267
+  for _, width in ipairs({ 140, 78 }) do
+    local page = render.chart_page(s, "journal", width, 40, { primary = true, samples = true })
+    local nav, edit = item(page.items, "nav"), item(page.items, "edit")
+    local nav_line, edit_line = page.lines[nav.row + 1], page.lines[edit.row + 1]
+    assert_match(nav_line, "Movement only  41.2% efficiency · 755 runs (0.596)")
+    assert_match(edit_line, "With edits  69.6% efficiency · 512 runs (0.404)")
+    assert_eq(nav.row == edit.row, width == 140)
+    assert_true(vim.fn.strdisplaywidth(nav_line) <= width and vim.fn.strdisplaywidth(edit_line) <= width)
+    assert_eq(nav.detail, "Movement only: 41.2% efficiency · 755 runs")
+    assert_eq(edit.detail, "With edits: 69.6% efficiency · 512 runs")
+  end
+end)
+
 test("stats pages: command rows show the ratio and the shares, and a merged row's split goes to its runs", function()
   h.use_temp_data_home()
   local s = with_sessions(1)
@@ -213,9 +232,12 @@ test("stats pages: command rows show the ratio and the shares, and a merged row'
 end)
 
 test("stats run list: the preview puts the text before and after side by side and marks what changed", function()
-  local row = { id = { run = "journal" }, user_keys = "gjdw", best_seq = "", outcome = "no_result" }
+  local row = {
+    id = { run = "journal", journal = { file = "a.vfj", window_size = 2, last_atom = 7 } },
+    user_keys = "gjdw", best_seq = "", outcome = "no_result",
+  }
   local detail = {
-    lines = { "a", "\tb", "c" }, goal_lines = { "a", "\tB", "c", "d" }, keys = "jdw",
+    lines = { "a", "\tb", "c" }, goal_lines = { "a", "\tB", "c", "d" }, user_seq = "jdw",
     start_row = 1, start_col = 1, end_row = 3, end_col = 1,
   }
   local preview
@@ -225,6 +247,7 @@ test("stats run list: the preview puts the text before and after side by side an
   end)
   local cell = string.rep(" ", 19)
   assert_eq(preview.lines, {
+    " id:    a.vfj · 2 commands to atom 7",
     -- The resolved keys, which parse into tokens.
     " you:   " .. sequence_display.inline("jdw"),
     " found: —",
@@ -238,16 +261,16 @@ test("stats run list: the preview puts the text before and after side by side an
   local divider = 1 + 20
   local after = divider + #" │ "
   assert_eq(preview.marks, {
-    { row = 5, col = 1, end_col = divider, hl = highlights.VIEW_DIFF_DELETE },
-    { row = 5, col = after, end_col = after + 20, hl = highlights.VIEW_DIFF_ADD },
+    { row = 6, col = 1, end_col = divider, hl = highlights.VIEW_DIFF_DELETE },
+    { row = 6, col = after, end_col = after + 20, hl = highlights.VIEW_DIFF_ADD },
     -- The cursor starts on the `b`, past its tab, and ends past the `d`.
-    { row = 5, col = 3, end_col = 4, hl = highlights.VIEW_CURSOR_START, priority = 200 },
-    { row = 7, col = after, end_col = after + 20, hl = highlights.VIEW_DIFF_ADD },
-    { row = 7, col = after + 1, end_col = after + 2, hl = highlights.VIEW_CURSOR_END, priority = 200 },
+    { row = 6, col = 3, end_col = 4, hl = highlights.VIEW_CURSOR_START, priority = 200 },
+    { row = 8, col = after, end_col = after + 20, hl = highlights.VIEW_DIFF_ADD },
+    { row = 8, col = after + 1, end_col = after + 2, hl = highlights.VIEW_CURSOR_END, priority = 200 },
   })
 
   ---@diagnostic disable-next-line: param-type-mismatch
-  assert_eq(render.run_preview(row, nil, "journal gone", 44).lines[4], " Text not available: journal gone")
+  assert_eq(render.run_preview(row, nil, "journal gone", 44).lines[5], " Text not available: journal gone")
 end)
 
 --- Opens the run list of the Commands row labelled `label`.

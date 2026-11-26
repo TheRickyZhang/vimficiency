@@ -3,9 +3,11 @@
 ---@field build_page fun(summary: VF.Stats.Summary, query: VF.Stats.Scope, background: VF.Stats.Background, width?: integer, expanded_commands?: VF.Stats.ExpandedCommands): VF.Stats.Page
 ---@field chart_page fun(summary: VF.Stats.Summary, name: VF.Stats.ChartName, width: integer, height: integer, shown: VF.Stats.ChartLines, scale?: VF.Stats.ChartScale): VF.Stats.Page
 ---@field journal_efficiency fun(summary: VF.Stats.JournalSummary): string
+---@field journal_percent fun(coverage: VF.Stats.JournalCoverage): integer
 ---@field run_lines fun(list: VF.Stats.RunList, offset: integer, sort?: VF.Stats.RunSort): string[]
 ---@field run_items fun(lines: string[], count: integer): VF.Stats.RunCell[]
----@field run_preview fun(row: VF.Stats.RunRow, detail: VF.Stats.RunDetail|nil, err: string|nil, width: integer): VF.Stats.RunPreview
+---@field run_name fun(row: VF.Stats.RunRow): string
+---@field run_preview fun(row: VF.Stats.RunRow, detail: VF.Session.Playable|nil, err: string|nil, width: integer): VF.Stats.RunPreview
 local M = {}
 
 local log = require("vimficiency.stats.log")
@@ -761,10 +763,10 @@ local function push_options(out, title, kind, values, selected)
   }
 end
 
----@param summary VF.Stats.JournalSummary
----@return number   # percent of the journal scored under the current settings
-local function journal_scored(summary)
-  return summary.journal_bytes > 0 and 100 * summary.scored_bytes / summary.journal_bytes or 100
+---@param coverage VF.Stats.JournalCoverage
+---@return integer   # percent of the journal scored under the current settings
+function M.journal_percent(coverage)
+  return coverage.journal_bytes > 0 and math.floor(100 * coverage.scored_bytes / coverage.journal_bytes) or 100
 end
 
 --- In the stats: the chart, the run lengths and the search times, and the
@@ -782,9 +784,9 @@ local function push_journal(out, summary, background, width, unit)
     push_prose(out, "Last background scoring failed: " .. background.err, width)
   end
   if background.scoring then
-    push(out, centered("Scoring journal…", width))
+    push(out, centered(string.format("Scoring journal… %d%%", M.journal_percent(summary)), width))
   else
-    if not config.journal.sampling.auto and journal_scored(summary) < 100 then
+    if not config.journal.sampling.auto and M.journal_percent(summary) < 100 then
       push_prose(out, "Background scoring is off; :Vimfy stats refresh scores the rest.", width)
     end
     push_average(out, summary.chart_score, width)
@@ -882,7 +884,7 @@ local function push_kind_bars(out, summary, width)
         local label = string.format("%s · %s positions", kind.title, range)
         parts[#parts + 1] = {
           kind = kind, text = range, glyph = "▄", id = kind.id .. ":" .. bucket.first, drill = bucket.drill,
-          label = label, detail = string.format("%s: %s · %s", label, format_score(score), plural(score.spans, "run")),
+          label = label, detail = string.format("%s: %s efficiency · %s", label, format_score(score), plural(score.spans, "run")),
         }
         counts[#counts + 1] = score.spans
       end
@@ -905,25 +907,37 @@ local function push_kind_bars(out, summary, width)
   end
 
   local shown, bars = {}, {}
+  local movement_share = math.floor(1000 * summary.nav.spans / summary.score.spans + 0.5) / 1000
   for _, kind in ipairs(kinds) do
     if kind.last >= kind.first then
       kind.left, kind.right = parts[kind.first].left, parts[kind.last].right
-      kind.detail = string.format("%s: %s · %s", kind.title, format_score(kind.score), plural(kind.score.spans, "run"))
+      local stats = string.format("%s efficiency · %s", format_score(kind.score), plural(kind.score.spans, "run"))
+      local share = kind.id == "nav" and movement_share or 1 - movement_share
+      kind.detail = kind.title .. ": " .. stats
+      kind.caption = string.format("%s  %s (%.3f)", kind.title, stats, share)
       shown[#shown + 1] = kind
       bars[#bars + 1] = { text = string.rep("▄", kind.right - kind.left), hl = kind.hl }
     end
   end
-  -- A title starts over its segment, moved only as far as it takes to fit:
-  -- after the one before it, and the last one inside the bar.
-  local title_row, titles, title_spans = #out.lines, "", {}
+  local titles, title_spans = "", {}
   for i, kind in ipairs(shown) do
-    local text = string.format("%s  %s · %s", kind.title, format_score(kind.score), plural(kind.score.spans, "run"))
+    local text = kind.caption
+    local text_width = vim.fn.strdisplaywidth(text)
     local at = kind.left
-    if i == #shown then at = math.min(at, kind.right - vim.fn.strdisplaywidth(text)) end
-    titles = pad(titles, math.max(at, i > 1 and vim.fn.strdisplaywidth(titles) + 2 or #gutter))
-    if i > 1 then title_spans[i - 1][3] = #titles end
-    title_spans[i] = { title_row, #titles, #titles + #text }
-    out.marks[#out.marks + 1] = { row = title_row, col = #titles, end_col = #titles + #text, hl = kind.hl }
+    if i == #shown then at = math.min(at, kind.right - text_width) end
+    if i > 1 then
+      local next_col = vim.fn.strdisplaywidth(titles) + 2
+      if next_col + text_width > width then
+        push(out, titles)
+        titles = ""
+      else
+        at = math.max(at, next_col)
+      end
+    end
+    titles = pad(titles, math.max(0, math.min(at, width - text_width)))
+    if i > 1 and title_spans[i - 1][1] == #out.lines then title_spans[i - 1][3] = #titles end
+    title_spans[i] = { #out.lines, #titles, #titles + #text }
+    out.marks[#out.marks + 1] = { row = #out.lines, col = #titles, end_col = #titles + #text, hl = kind.hl }
     titles = titles .. text
   end
   titles = pad(titles, math.max(vim.fn.strdisplaywidth(titles), shown[#shown].right))
@@ -1246,9 +1260,9 @@ function M.chart_page(summary, name, width, height, shown, scale)
   local plot
   if name == "journal" then
     plot = history_plot(summary.journal.days, scale or overview_scale(summary.chart_unit))
-    local scored = journal_scored(summary.journal)
+    local scored = M.journal_percent(summary.journal)
     if scored < 100 then
-      push_prose(out, string.format("Scored under the current settings: %d%% of the journal", math.floor(scored)), width)
+      push_prose(out, string.format("Scored under the current settings: %d%% of the journal", scored), width)
     end
     push_journal_details(details, summary.journal, width)
   elseif name == "sessions" then
@@ -1488,24 +1502,36 @@ local function cursor_cell(text, col, tab)
   return vim.fn.strdisplaywidth(before), #before, (char == "" or char == "\t") and 1 or #char
 end
 
---- A run's keys, spaced by token, then its text before and after side by side
---- with the changed lines marked and the cursor's cell shaded in each.
---- `detail` is nil for a session, which keeps no text, and for a run whose
---- journal is gone (`err` says why).
+--- What a run is filed under: a session's saved filename, which `:Vimfy play`
+--- and `pin` take, or a journal run's file and where in it the run ends.
 ---@param row VF.Stats.RunRow
----@param detail VF.Stats.RunDetail|nil
+---@return string
+function M.run_name(row)
+  local journal = row.id.journal
+  if journal then
+    return string.format("%s · %d commands to atom %d", journal.file, journal.window_size, journal.last_atom)
+  end
+  return row.saved_filename == "" and "—" or row.saved_filename
+end
+
+--- A run's name and keys, spaced by token, then its text before and after side
+--- by side with the changed lines marked and the cursor's cell shaded in each.
+--- `detail` is nil for a run whose text is gone (`err` says why).
+---@param row VF.Stats.RunRow
+---@param detail VF.Session.Playable|nil
 ---@param err string|nil
 ---@param width integer
 ---@return VF.Stats.RunPreview
 function M.run_preview(row, detail, err, width)
   local lines = {}
+  push_keys(lines, " id:", M.run_name(row), width)
   -- A journal run's resolved keys parse where its typed ones may not.
-  push_keys(lines, " you:", sequence_display.inline(detail and detail.keys or row.user_keys), width)
+  push_keys(lines, " you:", sequence_display.inline(detail and detail.user_seq or row.user_keys), width)
   push_keys(lines, " found:", row.best_seq == "" and "—" or sequence_display.inline(row.best_seq), width)
   lines[#lines + 1] = ""
   local marks = {}
   if not detail then
-    lines[#lines + 1] = " " .. (err and "Text not available: " .. err or "A session keeps no text.")
+    lines[#lines + 1] = " Text not available: " .. err
     return { lines = lines, marks = marks }
   end
 

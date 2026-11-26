@@ -41,7 +41,7 @@ local HELP_LINES = {
   "  Vimfy session picker",
   "",
   "  /          fuzzy search",
-  "  <Tab>      switch Active ↔ Saved pane",
+  "  <Tab>      switch Active ↔ Pinned pane",
   "  sn / sN    sort by name      (A→Z / Z→A)",
   "  sc / sC    sort by category  (A→Z / Z→A)",
   "  st / sT    sort by time      (newest / oldest)",

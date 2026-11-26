@@ -19,7 +19,7 @@ inline constexpr int SCORING_VERSION = 9;
 inline constexpr std::string_view JOURNAL_SCHEMA = "1ffa0ade60695e56";
 inline constexpr std::string_view SAMPLES_SCHEMA = "68cf6cc22e7a71e5";
 inline constexpr std::string_view ROLLUP_SCHEMA = "16fea25bce12ad21";
-inline constexpr std::string_view SESSION_LOG_SCHEMA = "4291f96a7f325b98";
+inline constexpr std::string_view SESSION_LOG_SCHEMA = "9d9a617387adf67e";
 inline constexpr std::string_view SCORING_SIGNATURE = "00ff95de3a22fc8c";
 
 }  // export

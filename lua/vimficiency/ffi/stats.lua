@@ -1,6 +1,7 @@
 ---@class (exact) VF.FfiStats
 ---@field append_session fun(path: string, stamp: table, session: VF.Stats.Session): string|nil
 ---@field summary        fun(request: VF.Stats.SummaryRequest): VF.Stats.Summary
+---@field stats_journal_coverage fun(request: table): VF.Stats.JournalCoverage
 ---@field runs           fun(request: VF.Stats.RunsRequest): VF.Stats.RunList
 ---@field run            fun(request: VF.Stats.RunRequest): VF.Stats.RunDetail|nil, string|nil
 local M = {}
@@ -22,6 +23,7 @@ local lib = core.lib
 ---@field typed_insert? string    # The pressed insert text; nil when the result predates it
 ---@field key_count integer
 ---@field analyze_ms number
+---@field saved_filename? string  # Its result's file on the `sessions` shelf; nil when it was not saved
 
 ---@alias VF.Stats.Outcome "scored"|"too_large"|"no_result"|"crashed"|"unsupported"|"unbeaten"
 ---@alias VF.Stats.Weight "effort"|"uniform"
@@ -112,10 +114,12 @@ local lib = core.lib
 ---@field commands VF.Stats.CommandSummary
 ---@field unbeaten_tags VF.Stats.UnbeatenTag[]
 
----@class VF.Stats.JournalSummary
----@field present boolean
+---@class VF.Stats.JournalCoverage
 ---@field scored_bytes integer
 ---@field journal_bytes integer
+
+---@class VF.Stats.JournalSummary: VF.Stats.JournalCoverage
+---@field present boolean
 ---@field sizes { size: integer, score: VF.Stats.Score }[]
 ---@field charted_size integer
 ---@field score VF.Stats.Score
@@ -183,6 +187,7 @@ local lib = core.lib
 ---@field best_display string
 ---@field user_typed_chars integer   # typed in insert mode
 ---@field best_typed_chars integer
+---@field saved_filename string   # a session's file on the `sessions` shelf; "" for a journal run or an unsaved session
 
 ---@class VF.Stats.RunList
 ---@field total integer   # rolled-up runs included
@@ -231,6 +236,12 @@ end
 ---@return VF.Stats.Summary
 function M.summary(request)
   return core.call(lib.vf_stats_summary, "vf.stats.SummaryRequest", request, "vf.stats.Summary")
+end
+
+---@param request table
+---@return VF.Stats.JournalCoverage
+function M.stats_journal_coverage(request)
+  return core.call(lib.vf_stats_journal_coverage, "vf.journal.SampleRequest", request, "vf.stats.JournalCoverage")
 end
 
 ---@param request VF.Stats.RunsRequest

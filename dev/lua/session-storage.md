@@ -1,9 +1,11 @@
-# Session storage: workspace (memory) vs. archive (disk)
+# Session storage: active, saved, pinned
 
-A finished result lives in the in-memory workspace (`session/store.lua`) and/or
-the on-disk archive (`session/archive.lua`, files at
-`stdpath('data')/vimficiency/saved/<filename>.json`). User-facing version:
-`doc-src/07a-session-storage.md`.
+A finished result is active in the in-memory workspace (`session/store.lua`),
+saved to disk as it finishes, and optionally pinned. The disk side is two
+shelves under `stdpath('data')/vimficiency/` (`session/disk.lua`), `sessions/`
+and `pinned/`, each one `<filename>.json` per result.
+
+User-facing version: `doc-src/07a-session-storage.md`.
 
 ## Indexing
 
@@ -15,23 +17,50 @@ kind becomes an id; see `session-invocation.md` § Handles for the kinds.
 
 Aliases and filenames are separate namespaces, and every name or recall alias
 is also a valid filename (`@`/`$` are not). The command grammar disambiguates:
-`save`/`store` take an alias and an optional filename, `fetch`/`rm` take a
-filename, and `play`/`explore`/`view` accept either via
-`archive.resolve_result`, which tries the store first.
+`unpin` and `rm` take a filename, and `play`/`explore`/`view`/`pin` accept
+either via `archive.resolve_result`, which tries the store, then `pinned/`,
+then `sessions/`.
 
-## Moving between the two
+`remove` takes an id, never an alias: recall aliases rotate, so an alias could
+name a different record by the time it is resolved.
 
-- `save` copies workspace → disk; `store` moves (removes the workspace record).
-  Both overwrite an existing file with a WARN (`disk.write_with_overwrite_warn`).
-  The filename defaults to the alias, or for `@`/`$` to the alias the record was
-  finished under; a suggest result gets `suggest-<timestamp>` instead, since its
-  recall alias would collide on every fire (`archive.default_filename`).
-- `fetch` copies disk → workspace and refuses an occupied alias
-  (`register_fetched_result` returns `nil, err`). The file is never touched.
-- `playback.simulate` is workspace-first with a disk fallback and an implicit
-  fetch for name aliases.
-- `remove` takes an id, never an alias: recall aliases rotate, so an alias could
-  name a different record by the time it is resolved.
+## Saved at finish
+
+- `store.convert_to_finished` calls `disk.save_new(base, result)` when
+  `config.sessions.save`, keeps the filename on the finished record as
+  `saved_filename`, and passes it to the session log.
+- The filename is `<base>-<YYYYmmdd>-<HHMMSS>`, the local time of
+  `finished_wall_epoch`. The base is the named alias for mark and watch, and
+  `session_type(kind)` (`recall`, `suggest`) otherwise, because a recall alias
+  is a position that moves.
+- The file is created exclusively (`fs_open` with `"wx"`), and `EEXIST` moves
+  on to `-2`, `-3`…. Two Neovims finishing in the same second cannot share a
+  filename.
+- A failed write warns and the session finishes without a filename
+  (`save_new` returns `nil, err`). A file not written whole is unlinked.
+- Nothing expires. Auto-suggest finishes a session on every fire, shown or
+  not, so `sessions/` gains a file per logged session.
+
+## Pins
+
+- `archive.pin(alias_or_filename, filename)` copies the resolved result to
+  `pinned/`. Without `filename` a live alias pins under its record's
+  `saved_filename`, and must be given one if it was not saved; a filename
+  pins under itself.
+- An active alias is refused before resolution, else it would fall through to
+  a pin of the same name. Writing over a pin warns (`disk.write_pin`).
+- `unpin` deletes from `pinned/` and `rm` from `sessions/`. Neither touches the
+  other shelf or the workspace.
+- `saved/` held the named saves from before pins, and nothing writes it any
+  more. `disk.dir("pinned")` renames one that exists to `pinned/` while
+  `pinned/` is absent, checked on every call so a second Neovim finds nothing
+  to move.
+- The picker's rename and duplicate act on `pinned/` (`disk.rename`,
+  `disk.duplicate`). On an alias, `archive.duplicate_active` adds a second one
+  for the same result with `store.add_finished`, carrying its `saved_filename`.
+- `playback.play` takes a `VF.Session.Playable`, the part of a result that
+  Play and the stats preview read. `playback.simulate` resolves an alias or
+  filename and calls it.
 
 ## JSON schema
 
@@ -46,9 +75,11 @@ the file's only clock), and
 cursor/mode and a list of steps with resolved keys, post-step cursor/mode
 and changed line ranges. Coordinates refer to the same slice as `lines`.
 Play warns when opening a v1 result and shows its two recorded endpoints.
-Saving that result again preserves v1. Unknown or missing versions are rejected. All fields
+Pinning that result preserves v1. Unknown or missing versions are rejected. All fields
 are required except these:
 - `analyze_ms`, debug-only.
+- `indent` and `filetype`, the buffer's as the session started. Play replays
+  with that indent and highlights its panes by the filetype.
 - `user_typed`, the pressed keys behind `user_cost` (`user_seq` is what ran).
 - `user_typed_insert`, the insert text in `user_typed` (`atom.typed_insert`,
   see `atom-stream.md`). The session log copies it as `typed_insert`.
@@ -62,7 +93,8 @@ The persisted clock is wall time because `hrtime` values from another boot are
 not comparable; the workspace keeps its own `*_mono_ns` stamps on the record
 instead. The session log (`stats/log.lua`) copies this value into its
 `finished_wall_epoch` rather than reading the clock again, so a saved file and
-its log record always agree.
+its log record always agree. The record also names the file, as
+`saved_filename`, empty when the session was not saved.
 
 ### The session log
 
@@ -81,7 +113,8 @@ leaves scoring alone keeps the stamp, so its history stays comparable.
   Neovims need no ordering. A duplicate stamp record from a race is harmless.
 - Lua never sees the id (LuaJIT has no 64-bit integers). The summary carries
   the current stamp's label, `scoring <N>·<id>` (`scoring_label`).
-- Sessions are never rescored: they keep no buffer text. The stats count every
+- Sessions are never rescored: the log keeps no buffer text, and nothing reads
+  the saved results back to score them. The stats count every
   stamp's sessions and rollups by default, on the assumption that scoring
   settles as the tool matures; `current_only` keeps the current stamp's (and
   the current params' rollups) and counts the rest in `hidden_runs`.
@@ -172,31 +205,38 @@ rows, optionally a span of display columns, with the cells to highlight.
 - Run rows carry `user_display`/`best_display` (`Stats::displayKeys`): each
   stretch of typed characters as `⟨n⟩`, line breaks and every other key as the
   sequence display renders them. Nothing in Lua reads them: the run list's
-  preview renders the keys themselves, cut to two lines. For a journal run
-  those are the detail's resolved `keys`, which tokenize where typed keys such
-  as `gj` do not.
+  preview renders the keys themselves, cut to two lines. Those are the looked-up
+  run's `user_seq`, which for a journal run is the detail's resolved `keys`;
+  they tokenize where typed keys such as `gj` do not.
 - `vf_stats_runs` pages the sessions in scope and the charted runs of the
   current params' samples by one `Order` column, largest first unless
   `ascending`; a run with no value in that column goes last either way, and
   ties go newest first, then by id. Rolled-up runs count in `total` but have
   no rows.
 - A journal run's `RunId` is its file, window size and `last_atom`; a session's
-  is its index among the log's sessions.
+  is its index among the log's sessions. A session's row also carries its
+  `saved_filename`, which is what the user sees and types.
 - `vf_stats_run` (`Journal::runDetail`) cuts a journal run's window again under
   the request's `sample_params` and returns it sliced as its search saw it
   (`Journal::sliceWindow`, shared with `evaluate`); `keys` are the sliced
   `userSeq`, gj/gk approximated as in a session's `user_seq`. A session's id, a
   run without a slice, a deleted journal, or params that no longer cut that
   window are errors, which `ffi/stats.run` returns rather than raises.
-- `<CR>` on a journal run feeds the detail to `simulate.simulate_compare`
-  with a step per complete recorded tick. The journal is read on demand.
-  `filetype` highlights only the visible panes. The preview shows the same
-  detail's `lines` beside its `goal_lines`; a session has neither.
+- `stats/query.run(row)` is the one lookup that differs by kind, and returns a
+  `VF.Session.Playable` or `nil, err`. A session is `disk.load("sessions",
+  row.saved_filename)`; a journal run is the `vf_stats_run` detail, with the
+  row's cost and best sequence as `user_cost` and `optimal_results`.
+- The run list caches lookups by row until it lists again. The preview opens
+  with the run's id (`render.run_name`), then shows `lines` beside
+  `goal_lines`, or the lookup's error.
+- `<CR>` hands the run to `playback.play`, so a session replays with every
+  sequence it found and a journal run with its best, a step per complete
+  recorded tick. `filetype` highlights only the visible panes.
+- `p` pins the current row's saved session through `archive.pin`, asking for
+  the filename. A journal run has no kind, diffs or window metrics to make a
+  full result, so it cannot be pinned.
 
 `diffs` is the planner's own partition (half-open, 0-indexed spans per side), so
 the viewer highlights exactly the regions the search ran against; `disk.validate`
 only type-checks it. `prefix`/`suffix` are always empty at whole-buffer scope
 (see `../core/boundary-logic.md`).
-
-A fetched file goes straight into `finished_sessions` with the file's `kind`
-and `finish_alias` set to the target alias.

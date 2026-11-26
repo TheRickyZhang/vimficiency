@@ -11,14 +11,13 @@ title: "Commands reference"
 | `:Vimfy finish <alias>`                    | Finish a Mark or Watch session and optimize.         |
 | `:Vimfy recall <N\|Ns>`                    | Finish a retrospective recall window.                |
 | `:Vimfy close <alias>`                     | Discard a session without optimizing.                |
-| `:Vimfy save <alias> [<filename>]`         | Copy a finished result to disk (keeps the workspace copy). Filename defaults to the alias. |
-| `:Vimfy store <alias> [<filename>]`        | Move a finished result to disk (removes from workspace). |
-| `:Vimfy fetch <filename> [<alias>]`        | Copy a saved result from disk into the current workspace. |
-| `:Vimfy play <alias>\|<filename> [count]`   | Animate results side-by-side (memory first, disk fallback). |
+| `:Vimfy pin <alias>\|<filename> [<filename>]` | Keep a copy of a finished result. The filename defaults to the one it was saved under. |
+| `:Vimfy unpin <filename>`                  | Delete a pin.                                        |
+| `:Vimfy play <alias>\|<filename> [count]`   | Animate results side-by-side (memory, then pins, then saved sessions). |
 | `:Vimfy focus <N>`                         | Focus the active replay on the Nth buffer (full-screen).|
 | `:Vimfy escape`                            | Restore the side-by-side replay layout.              |
-| `:Vimfy view [<alias>\|<filename>]`         | View a finished result full-screen (no arg lists saved files). |
-| `:Vimfy rm <filename>`                     | Delete a saved result from disk.                     |
+| `:Vimfy view [<alias>\|<filename>]`         | View a finished result full-screen (no arg lists the pins). |
+| `:Vimfy rm <filename>`                     | Delete a saved session's result. Its stats row stays. |
 | `:Vimfy list`                              | Open the interactive session picker (see below).     |
 | `:Vimfy stats`                             | Open the stats tab (see below).                      |
 | `:Vimfy stats refresh`                     | Score the journal now, without opening the stats.    |
@@ -32,7 +31,7 @@ title: "Commands reference"
 ## Aliases and filenames
 
 Every handle you type is either an **alias** (a session in memory) or a
-**filename** (a saved result on disk).
+**filename** (a result on disk: a pin, or a saved session).
 
 | Alias      | Means                                                                |
 |------------|----------------------------------------------------------------------|
@@ -48,36 +47,35 @@ Which aliases a subcommand accepts:
 |------------------------------|-----------------------------------------------------|
 | `start` / `watch` / `finish` | A named alias.                                      |
 | `recall`                     | `N` or `Ns`.                                        |
-| `close` / `save` / `store`   | Any alias.                                          |
-| `play` / `view` / `explore`  | Any alias or a filename (memory first, then disk).  |
-| `fetch` / `rm`               | A filename (`fetch` also takes the new named alias). |
+| `close`                      | Any alias.                                          |
+| `play` / `view` / `explore` / `pin` | Any alias or a filename (memory first, then pins, then saved sessions). |
+| `unpin`                      | A pin's filename.                                   |
+| `rm`                         | A saved session's filename.                         |
 
 `@` is handy when the session you want to keep is a recall window whose alias
 (`3s`) is moving out from under you:
 
 ```
 :Vimfy recall 3s
-:Vimfy save @ nested-refactor
+:Vimfy pin @ nested-refactor
 ```
 
 `:Vimficiency` is accepted as a full-name alias for `:Vimfy`.
 
-## Workspace vs. storage
+## Active, saved, pinned
 
-Finished sessions live in two places: **workspace** (in-memory,
-indexed by alias) and **storage** (on disk, indexed by filename). The
-namespaces are separate; the same text can name both. Move results
-between them with `save` / `store` / `fetch`; see
-[7a. Session storage](07a-session-storage.md) for the full model and
-collision rules. Omitting the second argument on `save` / `store` /
-`fetch` repeats the first argument verbatim; `fetch` requires the alias when
-the filename is not letters-only.
+A finished session is **active** in memory under its alias, and **saved** to
+disk under a filename made from the alias and the finish time. `pin` keeps a
+copy that stays until you `unpin` it.
+
+The same text can be an alias and a filename. See
+[7a. Session storage](07a-session-storage.md) for the full model.
 
 ## Session picker (`:Vimfy list`)
 
-Opens a centered float with two panes — **Active** (in-memory workspace
-sessions) and **Saved** (files under `stdpath("data")/vimficiency/saved`)
-— and a live-filter prompt at the bottom. `<Tab>` toggles between panes.
+Opens a centered float with two panes — **Active** (in-memory sessions) and
+**Pinned** (files under `stdpath("data")/vimficiency/pinned`) — and a
+live-filter prompt at the bottom. `<Tab>` toggles between panes.
 
 Ongoing sessions always sit in a pinned **Ongoing** section at the top,
 regardless of sort mode. Auto-generated recall ring entries (one per
@@ -90,7 +88,7 @@ recall Ns` instead.
 |------------|-------------------------------------------------------|
 | `/`        | Fuzzy-filter by alias (prompt at bottom, live)        |
 | `<CR>`     | Open (default action, see below)                      |
-| `<Tab>`    | Switch Active ↔ Saved pane                            |
+| `<Tab>`    | Switch Active ↔ Pinned pane                           |
 | `sn`/`sN`  | Sort by name (A→Z / Z→A)                              |
 | `sc`/`sC`  | Sort by category (A→Z / Z→A)                          |
 | `st`/`sT`  | Sort by time (newest / oldest)                        |
@@ -109,16 +107,15 @@ entry; `<Esc>` returns to the list.
 
 **Per-pane action semantics:**
 
-- `<CR>` — on the Active pane, opens a `:Vimfy play`-style view of a
-  finished session; on the Saved pane, fetches the file into the
-  workspace and switches focus to Active.
+- `<CR>` — on either pane, opens a `:Vimfy play`-style view: of a
+  finished session on Active, of the pin on Pinned.
 - `d` — on Active, discards the session (equivalent to `:Vimfy close`);
-  on Saved, deletes the file on disk.
-- `r` / `y` — on Saved, renames/duplicates the file. On Active, renames
+  on Pinned, unpins (equivalent to `:Vimfy unpin`).
+- `r` / `y` — on Pinned, renames/duplicates the file. On Active, renames
   the named alias / registers a duplicate finished record under a new
   alias. Only entries with a stable name alias are renameable this
-  way; for recall and auto-suggest results, save to disk first (`:Vimfy
-  save <alias> <filename>`) and then rename from the Saved pane.
+  way; for recall and auto-suggest results, pin first (`:Vimfy pin
+  <alias> <filename>`) and then rename from the Pinned pane.
 
 **Blocked on in-progress sessions:** `<CR>`, `r`, `y` all refuse to run
 on a still-accumulating session. Finish it with `:Vimfy finish` (or let
@@ -184,12 +181,19 @@ journal run: when, your effort, the best found, the saving, the extra
 characters you typed in insert mode and the search time. Its title holds the row it came from, the sort and the page. It takes
 two fifths of the screen and the preview under it the rest.
 
-The preview follows the current run. It shows your keys and the best sequence,
-spaced by command and cut to two lines each. Under them is the run's text
-before and after, side by side, with the changed lines marked and the cursor's
-place shaded in each.
+The preview follows the current run. Its first line is the run's id: a
+session's saved filename, which `play` and `pin` take, or a journal run's file
+and position.
 
-A session keeps no text, so its preview is the keys alone. Runs from closed journals that have been idle for
+Under the id are your keys and the best sequence, spaced by command and cut to
+two lines each. Then the run's text before and after, side by side, with the
+changed lines marked and the cursor's place shaded in each.
+
+A session's text comes from its saved result. A session finished before
+results were saved, or with `sessions.save` off, shows its keys and why the
+text is not available.
+
+Runs from closed journals that have been idle for
 `journal.keep_days` and fully scored count toward totals after rollup. Only
 individual runs still on disk appear in the list.
 
@@ -200,7 +204,8 @@ Every cell of the list is an item, as in the stats:
 | `j` / `k`     | The run below / above, in the same column.                    |
 | `h` / `l`     | The column to the left / right. The arrow keys move the same way. |
 | `s`           | Sort by the current column: largest first, then smallest first, then off. Unsorted, the worst runs come first (your effort minus the best). |
-| `<CR>`        | On a journal run: replay it as `:Vimfy play` does, your keys beside the best sequence, highlighted as the file was. `q` there returns to the list. |
+| `<CR>`        | Replay the run as `:Vimfy play` does, your keys beside what was found, highlighted as the file was. A session shows every sequence found, a journal run the best one. `q` there returns to the list. |
+| `p`           | Pin the current session. Asks for the filename, which defaults to its saved one. |
 | `]` / `[`     | Next / previous page of runs.                                 |
 | `<Esc>` / `q` | Back to the stats.                                            |
 
@@ -284,8 +289,9 @@ shows the overall efficiency, run count and run length. A run that ends
 where it started counts as all waste. Below the chart:
 
 - **Movement only / With edits** — one bar, split by whether the text
-  changed, each side as wide as its share of the scored runs and titled with
-  its efficiency. Their colors are `VimficiencyStatsMovement` and
+  changed. Each caption shows efficiency, then the run count. The decimal in
+  parentheses is the group's share of all scored runs of the selected length.
+  Their colors are `VimficiencyStatsMovement` and
   `VimficiencyStatsEdit`.
 - **Size** — the label to the left of the ranges under the second bar,
   which uses the same size groups as the search-time charts. For movement and
@@ -318,8 +324,10 @@ something, or you paused for more than 30 seconds.
 The first background scoring check runs 30 seconds after startup or on an
 earlier idle event. After that, Neovim checks for new journal data when idle
 and starts another low-priority run at most once every five minutes.
-The Journal section shows `Scoring journal…` in place of the average while
-the worker runs and refreshes the average when it finishes.
+While the worker runs, the Journal section shows the percentage of recorded
+journal bytes scored under the current settings, for example `Scoring journal… 42%`.
+The open Stats view checks progress once a second. The efficiency average
+returns when scoring finishes.
 
 After a settings change, the journal is rescored under the new settings. Until
 that finishes, runs scored under the old settings are left out, never mixed in.
@@ -334,6 +342,11 @@ Every finished session (mark, watch, recall, suggest) is appended to
 `stdpath("data")/vimficiency/sessions.vfs`, with your keys, its cost and the
 single best sequence found.
 
+Its full result, with the text it changed and every sequence found, is saved
+beside the log in `sessions/` (see
+[7a. Session storage](07a-session-storage.md)). The log record names that
+file, which is how a run list finds a session's text.
+
 Each session is stamped with the scoring version and every setting its score
 depends on: keyboard, effort weights and optimizer overrides. The stats count
 every stamp's sessions; `v` in the stats tab keeps only the current stamp's.
@@ -345,13 +358,13 @@ moved to `legacy/sessions.v1.jsonl` and no longer read.
 
 Works on:
 
-- Subcommands (`:Vimfy s<Tab>` → `save`, `start`, `stats`, `store`, `suggest`).
+- Subcommands (`:Vimfy s<Tab>` → `start`, `stats`, `suggest`).
 - Named aliases for `start`, `watch`, and `finish`.
 - `3s`/`5s`/`10s`/`30s` hints for `recall`.
 - Live aliases plus time hints for `close`.
-- Every alias (including `@` and `$`) for `save` and `store`.
-- Every alias plus saved filenames for `play`, `view`, and `explore`.
-- Saved filenames for `rm` and `fetch`.
+- Every alias (including `@` and `$`) plus pins for `play`, `view`, `explore`
+  and `pin`. Saved sessions are left out: there is one per finished session.
+- Pins for `unpin`, saved filenames for `rm`.
 - `on` / `off` / `toggle` for `suggest`.
 - `refresh` for `stats`.
 

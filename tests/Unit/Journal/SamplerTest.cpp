@@ -130,7 +130,7 @@ protected:
 
 }  // namespace
 
-TEST_F(JournalSamplerTest, WritesParamsThenSamplesThenTheJournalSize) {
+TEST_F(JournalSamplerTest, CoverageAdvancesBetweenSamples) {
   const string journal = journalOf(5);
   writeFile(dir / "a.vfj", journal);
 
@@ -140,7 +140,7 @@ TEST_F(JournalSamplerTest, WritesParamsThenSamplesThenTheJournalSize) {
   EXPECT_EQ(result.evaluated, 2);
 
   const vector<vf::journal::SampleRecord> written = records();
-  ASSERT_EQ(written.size(), 4u);
+  ASSERT_EQ(written.size(), 5u);
   ASSERT_TRUE(written[0].has_params());
   EXPECT_EQ(written[0].params().stamp().scoring_version(), SCORING_VERSION);
   EXPECT_EQ(written[0].params().samples_format(), SAMPLES_FORMAT);
@@ -161,8 +161,9 @@ TEST_F(JournalSamplerTest, WritesParamsThenSamplesThenTheJournalSize) {
   EXPECT_EQ(first.commands(1).keys(), "l");
   EXPECT_EQ(first.commands(1).kind(), "motion");
 
-  EXPECT_EQ(written[2].sample().first_atom(), 2);
-  EXPECT_EQ(written[3].journal_size(), ssize(journal));
+  EXPECT_EQ(written[2].journal_size(), ssize(journalOf(3)));
+  EXPECT_EQ(written[3].sample().first_atom(), 2);
+  EXPECT_EQ(written[4].journal_size(), ssize(journal));
   EXPECT_FALSE(fs::exists(dir / "a.inprogress"));
 }
 
@@ -213,9 +214,11 @@ TEST_F(JournalSamplerTest, OtherParamsStartTheSamplesOver) {
   EXPECT_EQ(run().evaluated, 2);
 
   const vector<vf::journal::SampleRecord> written = records();
-  ASSERT_EQ(written.size(), 4u);
+  ASSERT_FALSE(written.empty());
   EXPECT_EQ(written[0].params().window_sizes(0), 4);
-  EXPECT_EQ(written[1].sample().window_size(), 4);
+  const auto all = samples();
+  ASSERT_EQ(all.size(), 2u);
+  EXPECT_EQ(all[0].window_size(), 4);
 }
 
 TEST_F(JournalSamplerTest, AWindowARunDiedOnIsRecordedAndSkipped) {
@@ -247,7 +250,7 @@ TEST_F(JournalSamplerTest, ACommittedWindowWithACrashMarkerIsCountedOnce) {
 
   vf::journal::SampleFile file;
   ASSERT_TRUE(file.ParseFromString(readFile(dir / "a.samples")));
-  file.mutable_records()->DeleteSubrange(2, 2);
+  file.mutable_records()->DeleteSubrange(2, file.records_size() - 2);
   writeFile(dir / "a.samples", file.SerializeAsString());
   auto& marker = *file.mutable_records(1)->mutable_sample();
   marker.set_outcome(vf::journal::Sample::crashed);
@@ -270,11 +273,11 @@ TEST_F(JournalSamplerTest, ATruncatedSamplesRecordIsRedone) {
 
   EXPECT_EQ(run().evaluated, 1);
 
-  const vector<vf::journal::SampleRecord> written = records();
-  ASSERT_EQ(written.size(), 4u);
-  EXPECT_EQ(written[1].sample().first_atom(), 0);
-  EXPECT_EQ(written[2].sample().first_atom(), 2);
-  EXPECT_TRUE(written[3].has_journal_size());
+  const auto all = samples();
+  ASSERT_EQ(all.size(), 2u);
+  EXPECT_EQ(all[0].first_atom(), 0);
+  EXPECT_EQ(all[1].first_atom(), 2);
+  EXPECT_EQ(records().back().journal_size(), ssize(journalOf(5)));
 }
 
 TEST_F(JournalSamplerTest, EachJournalGetsItsOwnSamples) {

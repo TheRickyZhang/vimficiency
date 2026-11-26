@@ -2,7 +2,6 @@ return function(ctx)
   local helpers = ctx.helpers
   local sim = ctx.sim
   local playback = require("vimficiency.session.playback")
-  local session_store = ctx.session_store
   local with_replay = ctx.with_replay
   local assert_eq = ctx.assert_eq
   local assert_true = ctx.assert_true
@@ -73,19 +72,17 @@ return function(ctx)
       })
 
       helpers.new_buf({ "session simulate source" })
-      local id = session_store.register_fetched_result("simreplay", result)
       local play = require("vimficiency.simulate.settings")
       play.set_setting("include_user_sequence", true)
       play.set_setting("window_count", 3)
       local warned = false
       helpers.with_patch({ { vim, "notify", function(message, level)
         if level == vim.log.levels.WARN and message:find("older save format (v1)", 1, true) then warned = true end
-      end } }, function() playback.simulate("simreplay", 3) end)
+      end } }, function() playback.play(result, "simreplay", 3) end)
 
       local tries = 0
       local function finish(ok, err)
         sim.cleanup_compare()
-        session_store.remove(id)
         next(ok, err)
       end
 
@@ -140,14 +137,12 @@ return function(ctx)
       })
 
       helpers.new_buf({ "session simulate source" })
-      local id = session_store.register_fetched_result("simcap", result)
       require("vimficiency.simulate.settings").set_setting("include_user_sequence", true)
-      playback.simulate("simcap", 4)
+      playback.play(result, "simcap", 4)
 
       local tries = 0
       local function finish(ok, err)
         sim.cleanup_compare()
-        session_store.remove(id)
         next(ok, err)
       end
 

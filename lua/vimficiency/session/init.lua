@@ -140,7 +140,7 @@ end
 ---@param alias string
 local function finish_active(active, alias)
   local result = compute.compute_result_for_active(active, compute.capture_end_state(active))
-  session_store.convert_to_finished(active.id, result, alias)
+  session_store.convert_to_finished(active.id, result)
 
   local message = result_view.format_message("vimfy finished [" .. alias .. "]", result)
   if result.analyze_ms then

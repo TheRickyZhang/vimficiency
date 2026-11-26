@@ -78,7 +78,8 @@ Run sessionRun(const vf::stats::Session& session, int index) {
           .bestCost = session.best_cost(),
           .analyzeMs = session.analyze_ms(),
           .userKeys = session.user_seq(),
-          .bestSeq = session.best_seq()};
+          .bestSeq = session.best_seq(),
+          .savedFilename = session.saved_filename()};
   switch (session.outcome()) {
     case vf::stats::Session::no_result:
       run.outcome = Sample::no_result;

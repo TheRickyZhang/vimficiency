@@ -207,16 +207,18 @@ test("stats view: narrows to the movement-only journal runs", function()
     assert_eq(refresh(), nil)
     stats_view.open()
     open_movement_runs()
-    local chart_win = stats_pane("chart")
+    local chart_win, lines = stats_pane("chart")
+    assert_true(line_with(lines, "% efficiency · 3 runs (1.000)") ~= nil)
     local chart_title = vim.api.nvim_win_get_config(chart_win).title[1][1]
-    assert_true(chart_title:match("^ Stats › Journal · [%d.]+%% efficiency · 3 runs of 2 commands · Movement only: [%d.]+%% · 3 runs $")
+    assert_true(chart_title:match("^ Stats › Journal · [%d.]+%% efficiency · 3 runs of 2 commands · Movement only: [%d.]+%% efficiency · 3 runs $")
       ~= nil, chart_title)
     local runs_win, runs = stats_pane("runs")
     local title = vim.api.nvim_win_get_config(runs_win).title[1][1]
     assert_true(title:find("Stats › Movement only", 1, true) ~= nil, title)
     assert_eq(runs[#runs], "runs 1–3 of 3")
     local _, preview = stats_pane("preview")
-    assert_eq(preview[1], " you:   l l")
+    assert_match(preview[1], ".vfj · 2 commands to atom ")
+    assert_eq(preview[2], " you:   l l")
     assert_true(line_with(preview, " before ") ~= nil, "the text before")
     assert_true(line_with(preview, " │ after ") ~= nil, "the text after")
     h.feed("<Esc>")
@@ -281,14 +283,13 @@ test("stats view: <CR> on a journal run replays it, and q comes back to the same
     local header = stats_header()
     local row = rows[2]
     assert_true(row.best_seq ~= "", "the run has a best sequence")
-    local detail = assert(stats_query.run(row.id))
+    local detail = assert(stats_query.run(row))
 
     vim.api.nvim_win_set_cursor(runs_win, { 3, 0 })
     h.silence_notify(function() h.feed("<CR>") end)
     assert_true(vim.wait(5000, function() return #simulate._debug_get_windows() == 2 end), "replay opened")
     assert_true(vim.api.nvim_get_current_tabpage() ~= stats_tab, "a replay tab")
     local pool = simulate._debug_get_pool()
-    assert_eq(#detail.commands, row.window_size)
     assert_eq(#assert(pool.user).tokens, #detail.recording.steps)
     assert_eq(pool.user.tokens[1].kind, "recorded")
     assert_eq(token_text(assert(pool.user).tokens), row.user_keys)
@@ -315,12 +316,12 @@ end)
 test("journal and session Play show the same recorded edits regardless of their keys", function()
   local simulate = require("vimficiency.simulate")
   in_nav_runs(function(runs_win, rows)
-    local detail = assert(stats_query.run(rows[2].id))
-    detail.commands = {
+    local detail = assert(stats_query.run(rows[2]))
+    local commands = {
       { keys = "l", kind = "motion" }, { keys = "==", kind = "operator" },
       { keys = "iconst<Esc>", kind = "insert" },
     }
-    detail.keys = "l==iconst<Esc>"
+    detail.user_seq = "l==iconst<Esc>"
     detail.goal_lines = { "const" }
     detail.end_row, detail.end_col = 0, 4
     detail.recording.steps = {
@@ -345,16 +346,13 @@ test("journal and session Play show the same recorded edits regardless of their 
       journal_states = user_states()
       simulate.cleanup_compare()
     end)
-    local store = require("vimficiency.session.store")
-    local id = store.register_fetched_result("replaygap", h.fake_result({
+    require("vimficiency.session.playback").play(h.fake_result({
       lines = detail.lines, goal_lines = detail.goal_lines,
       start_row = detail.start_row, start_col = detail.start_col, end_row = 0, end_col = 4,
-      commands = detail.commands, user_seq = detail.keys, key_count = #detail.commands, recording = detail.recording,
-    }))
-    require("vimficiency.session.playback").simulate("replaygap")
+      commands = commands, user_seq = detail.user_seq, key_count = #commands, recording = detail.recording,
+    }), "replaygap")
     assert_eq(user_states(), journal_states)
     simulate.cleanup_compare()
-    store.remove(id)
   end)
 end)
 
@@ -477,7 +475,7 @@ test("sampling background: scores new journal content, then waits out the interv
   end)
   assert_true(sampling.running(), "a run started")
   _, overview = stats_pane("overview")
-  assert_true(line_with(overview, "Scoring journal…") ~= nil)
+  assert_true(assert(line_with(overview, "Scoring journal…")):match("Scoring journal… %d+%%") ~= nil)
   assert_eq(line_with(overview, "average |"), nil)
   local done = false
   assert_true(sampling.when_done(function() done = true end))
@@ -494,6 +492,42 @@ test("sampling background: scores new journal content, then waits out the interv
   sampling._for_test.maybe_run()
   assert_true(not sampling.running(), "no second run within the interval")
   sampling.stop_background()
+end)
+
+test("stats view: shows new journal coverage before the scorer finishes", function()
+  h.use_temp_data_home()
+  journal_moves(16)
+  assert_eq(refresh(), nil)
+  local path = assert(vim.fn.globpath(journal.dir(), "*.samples", false, true)[1])
+  local file = assert(io.open(path, "rb"))
+  local records = ffi_core.decode_message("vf.journal.SampleFile", file:read("*a")).records
+  file:close()
+  local total = journal_summary().journal_bytes
+  local checkpoint
+  local prefix = {}
+  for _, record in ipairs(records) do
+    prefix[#prefix + 1] = record
+    if record.body == "journal_size" and record.journal_size < total then
+      checkpoint = record.journal_size
+      break
+    end
+  end
+  assert_true(checkpoint ~= nil and checkpoint > 0)
+  local bytes = ffi_core.encode("vf.journal.SampleFile", { records = prefix })
+  assert(vim.uv.fs_unlink(path))
+  h.with_patch({ { sampling, "running", function() return true end },
+    { sampling, "when_done", function() return true end } }, function()
+    stats_view.open()
+    assert_true(line_with(select(2, stats_pane("overview")), "Scoring journal… 0%") ~= nil)
+    file = assert(io.open(path, "wb"))
+    assert(file:write(bytes))
+    file:close()
+    local status = string.format("Scoring journal… %d%%", math.floor(100 * checkpoint / total))
+    assert_true(vim.wait(3000, function()
+      return line_with(select(2, stats_pane("overview")), status) ~= nil
+    end), status)
+    h.feed("q")
+  end)
 end)
 
 test("sampling background: retries unchanged bytes after a failed run", function()

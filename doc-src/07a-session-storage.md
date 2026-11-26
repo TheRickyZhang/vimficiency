@@ -4,22 +4,80 @@ title: "Session storage"
 
 # Session storage
 
-A finished session has two places it can live:
+A finished session's result has three lifetimes:
 
-- **Session memory** (the "workspace") — indexed by its alias. This is
-  where a session lands the moment `:Vimfy finish`, `:Vimfy recall`, or an
-  auto trigger finishes it. Cheap, immediate, ephemeral.
-- **Disk** (the "archive") — a file under
-  `stdpath('data')/vimficiency/saved/<filename>.json`. Durable across
-  restarts, but not across file-format versions: a file saved by an older
-  format is refused on load. Indexed by filename.
+| Lifetime | Where | Named by | Ends when |
+|----------|-------|----------|-----------|
+| **Active** | memory, in this Neovim | its alias: `a`, `@`, `$`, `5`, `3s` | it is closed or rotates out, or Neovim exits |
+| **Saved** | `sessions/<filename>.json`, written as it finishes | a filename made for it | `:Vimfy rm <filename>` |
+| **Pinned** | `pinned/<filename>.json`, a copy | the saved filename, or one you give | `:Vimfy unpin <filename>` |
 
-The two are separate namespaces. The same text can name both an alias
-and a saved file.
+Both directories are under `stdpath('data')/vimficiency/`.
 
-## Memory rotates; disk is durable
+## Every finished session is saved
 
-Session memory is small and churns on its own:
+When `:Vimfy finish`, `:Vimfy recall` or an auto trigger finishes a session,
+its result is written to `sessions/` under a filename of its own:
+
+```
+<alias>-<YYYYmmdd>-<HHMMSS>        a-20261126-031401
+```
+
+- A Mark or Watch session uses its alias. A Recall or Suggest session uses
+  `recall` or `suggest`, because its alias (`5`, `3s`) is a position that
+  moves.
+- The time is when the session finished, in local time. Two sessions that
+  would share a filename get `-2`, `-3`, and so on.
+- Nothing is removed on its own. There is one file per finished session,
+  including auto-suggest runs that never showed a hint.
+
+A saved result holds the lines the session ran over, so `sessions/` contains
+text from the files you edited. Turn saving off with:
+
+```lua
+require('vimficiency').setup({ sessions = { save = false } })
+```
+
+## Pins
+
+A pin is a copy you keep on purpose.
+
+```vim
+:Vimfy pin   <alias>|<filename> [<filename>]
+:Vimfy unpin <filename>
+:Vimfy rm    <filename>
+```
+
+| Command | Effect |
+|---------|--------|
+| `pin a` | copies the result to `pinned/a-20261126-031401.json` |
+| `pin a important` | copies it to `pinned/important.json` |
+| `pin a-20261126-031401` | pins a saved session from an earlier Neovim |
+| `unpin important` | deletes `pinned/important.json` only |
+| `rm a-20261126-031401` | deletes `sessions/a-20261126-031401.json` only |
+
+- Pinning onto an existing pin replaces it, with a warning.
+- A session that is still capturing cannot be pinned. Finish it first.
+- With saving off, a session has no filename of its own, so `pin` needs one:
+  `:Vimfy pin a <filename>`.
+- `rm` leaves any pin of that session in place. Its row in `:Vimfy stats`
+  keeps its numbers and says the text was removed.
+
+## What an alias or filename resolves to
+
+`play`, `view`, `explore` and `pin` take an alias or a filename, and look it
+up in this order:
+
+1. an alias in this Neovim's memory
+2. a pin
+3. a saved session
+
+The same text can be an alias and a pin. The alias wins while it is live; the
+pin stays reachable from `:Vimfy list`.
+
+## Memory rotates
+
+Aliases are short-lived:
 
 - **Mark** and **Watch** sessions drop on their own when their window closes,
   the cursor drifts away, or they idle too long. Reusing a name replaces the
@@ -28,97 +86,37 @@ Session memory is small and churns on its own:
 - **Recall** / **Suggest** entries age out of the rolling ring by the
   union of `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS` — drop
   only when both say drop.
+- `@` and `$` are unset after a restart.
 
-Anything on disk is durable: it stays until you `:Vimfy rm` it.
-
-## Four verbs
-
-```vim
-:Vimfy save  <alias>    [<filename>]
-:Vimfy store <alias>    [<filename>]
-:Vimfy fetch <filename> [<alias>]
-:Vimfy rm    <filename>
-```
-
-| Verb    | Moves             | Workspace after        | Disk after          |
-|---------|-------------------|------------------------|---------------------|
-| `save`  | workspace → disk  | unchanged              | written (overwrite) |
-| `store` | workspace → disk  | alias removed          | written (overwrite) |
-| `fetch` | disk → workspace  | alias added            | unchanged           |
-| `rm`    | deletes disk file | unchanged              | removed             |
-
-`save` is a **copy**; `store` is a **move**. Pick whichever matches
-your intent — `store` when you're done with the alias in-session,
-`save` when you want to keep working with it.
-
-## The no-`as` rule
-
-Omitting the second argument means "repeat the first":
-
-- `:Vimfy save foo`    ≡ `:Vimfy save foo as foo`
-- `:Vimfy store foo`   ≡ `:Vimfy store foo as foo`
-- `:Vimfy fetch foo`   ≡ `:Vimfy fetch foo as foo`
-
-Every name and recall alias (`a`, `3s`, `5`) is also a legal filename, so the
-first argument is reusable. The reverse does not hold: `fetch` needs an explicit
-alias when the filename is not letters-only (`:Vimfy fetch demo-1 demo`). `@` and `$` are not filenames; for them the default
-is the alias the session was finished under:
-
-```vim
-:Vimfy recall 3s
-:Vimfy save @                " saves as 3s.json
-:Vimfy save @ my-refactor    " or pick the filename yourself
-```
-
-A suggest result was not finished under an alias you typed, so `:Vimfy save $`
-defaults to `suggest-<timestamp>` rather than overwriting the same `3s.json`
-on every fire.
-
-## Collision rules
-
-- **`save` / `store` onto an existing disk file** → overwrites, emits a
-  WARN. No refusal; filesystem-style "save over" semantics.
-- **`fetch` into an occupied workspace alias** → refuses. Close the
-  alias first (`:Vimfy close <alias>`) or fetch under a different alias.
-
-## Replay: `play` covers both
-
-`:Vimfy play <alias>|<filename>` looks the argument up in this order:
-
-- **Workspace only** → replays.
-- **Disk only** → implicitly `fetch <filename> as <filename>` into the
-  workspace, then replays. After the command, the session is in your
-  current workspace; the disk copy is untouched. This keeps the mental
-  model "what I just replayed is in my current session."
-- **Both** → WARN that the disk copy is being shadowed; replays the
-  workspace copy. To force a refetch, `:Vimfy close <alias>` first, then
-  `:Vimfy play <alias>`.
-
-The implicit fetch only works when the filename is also a valid named
-alias (letters only). For filenames with digits/dots/hyphens, use an
-explicit `:Vimfy fetch <filename> <alias>` first.
+Once an alias is gone, the session is still reachable by its saved filename.
 
 ## Worked example
 
 ```vim
-:Vimfy start a               " mark a session start
+:Vimfy start a
 " ... edit ...
-:Vimfy finish a              " finishes session; workspace has alias `a`
+:Vimfy finish a              " saved as sessions/a-20261126-031401.json
 
-:Vimfy save a                " disk now has saved/a.json; workspace still has `a`
-:Vimfy store a fix           " workspace drops `a`; disk updated to saved/fix.json
+:Vimfy pin a                 " pinned/a-20261126-031401.json
+:Vimfy pin a important       " pinned/important.json
 
 " ... later, even after a restart ...
-:Vimfy fetch fix a           " workspace has alias `a` again, populated from saved/fix.json
-:Vimfy play a                 " replay as usual
+:Vimfy play important
+:Vimfy play a-20261126-031401
 ```
 
-## Listing
+## Finding a session
 
-```vim
-:Vimfy list
-```
+- `:Vimfy list` shows the active sessions and the pins.
+- The run lists in `:Vimfy stats` show every logged session with its saved
+  filename. `<CR>` replays the current one and `p` pins it.
+- Tab completion offers aliases and pins for `play` / `view` / `explore` /
+  `pin`, pins for `unpin`, and saved filenames for `rm`.
 
-Shows both sides: active sessions in memory and saved files on disk.
-Tab completion for `sim` / `view` / `rm` / `fetch` uses whichever side
-is relevant for that command.
+## Coming from `save`, `store` and `fetch`
+
+Those three commands are gone: every session is saved, and `play` reads disk
+directly. `rm` used to delete a named save; that is `unpin` now.
+
+Files in the old `saved/` directory become pins. The directory is renamed to
+`pinned/` the first time pins are used, and every old filename still plays.

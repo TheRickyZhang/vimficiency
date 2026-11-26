@@ -25,15 +25,16 @@ struct JournalRuns {
   // Valid until the next read.
   std::vector<SampledRuns> sampled;
   std::vector<RunTable> rolledUp;
-  // Rolled up under other params and left out by `currentOnly`.
+  // Rolled up under other params and left out of the current scoring.
   int hiddenRollupRuns = 0;
 };
+
+enum class RollupScope { All, Current, None };
 
 // `params` is a serialized, stamped `vf.journal.SampleParams`. Samples files
 // are parsed once per process; each read parses only what was appended since.
 // Only samples made under `params` are read: the sampler rescores the rest.
-// Rollups are kept under any params unless `currentOnly`, since their
-// journals are gone and can never be rescored.
-JournalRuns readJournalRuns(const std::string& dir, std::string_view params, bool currentOnly);
+// Rollups can be included under any params since their journals are gone.
+JournalRuns readJournalRuns(const std::string& dir, std::string_view params, RollupScope rollups);
 
 }  // namespace Stats

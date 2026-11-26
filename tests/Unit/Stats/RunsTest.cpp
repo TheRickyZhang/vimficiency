@@ -218,6 +218,18 @@ TEST_F(StatsRunsTest, RowsCarryTheirKeysAsTheListShowsThem) {
   EXPECT_EQ(list.runs(0).best_display(), "cw⟨2⟩<Esc>j");
 }
 
+TEST_F(StatsRunsTest, ASessionRowCarriesItsSavedFilename) {
+  auto saved = session(8, 4);
+  saved.set_saved_filename("a-20261126-031401");
+  append(stamp, saved);
+  append(stamp, session(6, 3));
+  const auto list = runs({});
+  ASSERT_EQ(list.runs_size(), 2);
+  for (const auto& row : list.runs()) {
+    EXPECT_EQ(row.saved_filename(), row.user_cost() == 8 ? "a-20261126-031401" : "");
+  }
+}
+
 TEST_F(StatsRunsTest, NavOrEditLeavesSessionsOut) {
   populate();
   Filter nav;

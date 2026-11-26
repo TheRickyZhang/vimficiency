@@ -139,11 +139,11 @@ return {
     prompt_map("<leader>vw", "watch", "Start watch")
     prompt_map("<leader>vr", "recall", "Finish recall (N or Ns)")
 
-    prompt_map("<leader>vs", "save", "Vimfy save")
+    prompt_map("<leader>vs", "pin", "Vimfy pin")
     prompt_map("<leader>vp", "play", "Vimfy play")
     prompt_map("<leader>ve", "explore", "Explore mark")
 
-    cmd_map("<leader>vS", "save $", "Save recent suggestion")
+    cmd_map("<leader>vS", "pin $", "Pin recent suggestion")
     cmd_map("<leader>vP", "play $", "Play recent suggestion")
     cmd_map("<leader>vE", "explore $", "Explore recent suggestion")
     cmd_map("<leader>vV", "view $", "View recent suggestion")

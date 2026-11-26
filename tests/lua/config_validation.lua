@@ -281,6 +281,15 @@ test("validate journal.sampling: sizes are positive integers, deadline may be ze
   assert_eq(ok.sampling.idle_gap_ms, 30000)
 end)
 
+test("validate sessions: saved by default, save is a boolean", function()
+  assert_eq(config._defaults.sessions.save, true)
+  assert_eq(validate.normalize_sessions({ save = false }).save, false)
+  assert_error(function() validate.normalize_sessions({ save = "no" }) end,
+    "sessions.save", "non-boolean must error")
+  assert_error(function() validate.normalize_sessions({ save = true, keep_days = 3 }) end,
+    "unknown key", "unknown sub-key must error")
+end)
+
 test("validate stats: weight is effort by default, or uniform", function()
   assert_eq(config._defaults.stats.weight, "effort")
   assert_eq(validate.normalize_stats({ weight = "uniform" }).weight, "uniform")

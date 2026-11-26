@@ -186,6 +186,11 @@ message Unscored {
   Filter drill = 3;
 }
 
+message JournalCoverage {
+  int64 scored_bytes = 1;
+  int64 journal_bytes = 2;
+}
+
 // The samples made under the current params, and the rollups in scope.
 message JournalSummary {
   // A journal directory exists.
@@ -322,6 +327,8 @@ message RunRow {
   // Characters typed in insert mode, as the command tables total them.
   int64 user_typed_chars = 13;
   int64 best_typed_chars = 14;
+  // A session's `Session.saved_filename`; a journal run's is empty.
+  string saved_filename = 15;
 }
 
 message RunList {

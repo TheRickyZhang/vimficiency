@@ -53,14 +53,14 @@ local function harness(spec, fn)
   h.with_patch(patches, fn)
 end
 
---- Helper for kind-capture tests: the 4th convert_to_finished arg is the promotion.
+--- Helper for kind-capture tests: the 3rd convert_to_finished arg is the promotion.
 local function capture_kind(cfg, compute_stub, trigger)
   local captured
   harness({
     cfg = cfg,
     compute = compute_stub,
     finish = function(...)
-      captured = select(4, ...)
+      captured = select(3, ...)
       return true
     end,
   }, trigger)
@@ -104,7 +104,7 @@ test("fire_idle: promotes the recall record to suggest_idle on takeover", functi
     -- atomically with the status transition. A failing finish leaves kind
     -- untouched.
     finish = function(...)
-      local kind = select(4, ...)
+      local kind = select(3, ...)
       if kind then captured.kind = kind end
       return true
     end,

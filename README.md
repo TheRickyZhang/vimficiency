@@ -134,7 +134,7 @@ Recall is always on, so the lowest-friction entry point is:
 :Vimfy play 6       " animate the suggested sequence
 ```
 
-For the full set of commands, save/store/fetch flow, configuration, and the effort model, see the user guide.
+For the full set of commands, saved sessions and pins, configuration, and the effort model, see the user guide.
 
 ## Documentation
 

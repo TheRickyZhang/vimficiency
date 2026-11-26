@@ -127,6 +127,28 @@ test("stats.log: a row's drill filter lists its sessions through ffi.stats.runs"
   assert_eq(list.runs[2].wall_epoch, now - 60)
 end)
 
+test("stats.log: a session's row names its saved result, and the run lookup reads it", function()
+  h.use_temp_data_home()
+  local session_store = require("vimficiency.session.store")
+  local now = os.time()
+  finish("unsaved", now - 60)
+  h.new_buf()
+  h.seed_named("logrow", "test-log-row")
+  session_store.convert_to_finished("test-log-row", h.finished_result("dw", { finished_wall_epoch = now }))
+  local filename = assert(session_store.get_saved_filename("logrow"))
+
+  local scope = { current_only = false, weight = "effort", filter = {}, charted_size = 0 }
+  scope.filter = stats_query.summary(scope).sessions.days[1].drill
+  local rows = stats_query.runs(scope, "newest", false, 0, 10).runs
+  assert_eq({ rows[1].saved_filename, rows[2].saved_filename }, { filename, "" })
+  assert_eq(assert(stats_query.run(rows[1])).user_seq, "dw")
+  assert_eq({ stats_query.run(rows[2]) }, { nil, "this session was not saved" })
+
+  h.silence_notify(function() require("vimficiency.session.archive").rm(filename) end)
+  assert_eq({ stats_query.run(rows[1]) }, { nil, "its saved result was removed" })
+  session_store.remove("test-log-row")
+end)
+
 ---@param user_typed_insert string|nil
 ---@return VF.Stats.CommandSummary
 local function commands_after_ten_inserts(user_typed_insert)

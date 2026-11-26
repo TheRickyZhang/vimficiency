@@ -80,7 +80,7 @@ Typo in a `setup{}` key. The warning names them. Cross-check against
 
 - `:Vimfy close <alias>` throws away any active session.
 - Restarting Neovim clears all in-memory state (including the recall
-  ring); saved-to-disk results survive.
+  ring); saved sessions and pins survive.
 
 ## Still stuck?
 

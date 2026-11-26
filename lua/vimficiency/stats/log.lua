@@ -7,8 +7,8 @@
 ---@class (exact) VF.StatsLog
 ---@field path   fun(): string
 ---@field stamp  fun(): table
----@field append fun(kind: VF.Session.Kind, result: VF.Session.Result)
----@field _for_test { session_of: fun(kind: VF.Session.Kind, result: VF.Session.Result): VF.Stats.Session }
+---@field append fun(kind: VF.Session.Kind, result: VF.Session.Result, saved_filename: string|nil)
+---@field _for_test { session_of: fun(kind: VF.Session.Kind, result: VF.Session.Result, saved_filename: string|nil): VF.Stats.Session }
 local M = {}
 
 local config = require("vimficiency.config")
@@ -60,11 +60,13 @@ end
 
 ---@param kind VF.Session.Kind
 ---@param result VF.Session.Result
+---@param saved_filename string|nil
 ---@return VF.Stats.Session
-local function session_of(kind, result)
+local function session_of(kind, result, saved_filename)
   local best = best_opt(result.optimal_results)
   return {
     finished_wall_epoch = result.finished_wall_epoch,
+    saved_filename = saved_filename,
     kind = kind,
     outcome = result.unbeaten and "unbeaten" or best and "scored" or "no_result",
     user_cost = result.user_cost,
@@ -81,10 +83,11 @@ end
 --- Warns instead of raising: a session must finish even when its log write fails.
 ---@param kind VF.Session.Kind
 ---@param result VF.Session.Result
-function M.append(kind, result)
+---@param saved_filename string|nil  # its file on the `sessions` shelf
+function M.append(kind, result, saved_filename)
   vim.fn.mkdir(dir(), "p")
   retire_v1()
-  local err = ffi_stats.append_session(M.path(), M.stamp(), session_of(kind, result))
+  local err = ffi_stats.append_session(M.path(), M.stamp(), session_of(kind, result, saved_filename))
   if err then
     vim.schedule(function()
       vim.notify("vimfy stats: could not append to the session log: " .. err, vim.log.levels.WARN)

@@ -1,207 +1,248 @@
--- tests/lua/workspace_storage.lua
--- Covers the workspace/storage split: save / store / fetch and the
--- implicit-fetch fallback in simulate(). These exercise the plumbing in
--- session/archive.lua + session/store.lua that routes finished results between
--- in-memory aliases and on-disk files.
+-- tests/lua/session/workspace_storage.lua
+-- The three places a finished result lives: the workspace (by alias), the saved
+-- sessions (written at finish, under a generated filename) and the pins (copies
+-- under a filename the user chose). Covers session/store.lua's save at finish,
+-- session/disk.lua's two shelves and session/archive.lua's pin / unpin / rm
+-- and its alias-or-filename resolution.
 
 local h = require("_helpers")
 local archive = require("vimficiency.session.archive")
+local config = require("vimficiency.config")
 local disk = require("vimficiency.session.disk")
 local session_store = require("vimficiency.session.store")
 
-local function remove_alias(alias)
-  session_store.remove(assert(session_store.get_id(alias)))
+local EPOCH = os.time({ year = 2026, month = 11, day = 26, hour = 3, min = 14, sec = 1 })
+local STAMP = "20261126-031401"
+
+local seeded = 0
+
+--- Finishes a mark session under `alias` at EPOCH.
+---@param alias string
+---@param user_seq string|nil
+---@param overrides table|nil
+---@return string id
+local function finish(alias, user_seq, overrides)
+  seeded = seeded + 1
+  local id = "test-storage-" .. seeded
+  h.seed_named(alias, id)
+  session_store.convert_to_finished(id, h.finished_result(user_seq,
+    vim.tbl_extend("force", { finished_wall_epoch = EPOCH }, overrides or {})))
+  return id
 end
 
-local function fake_result(user_seq)
-  return h.finished_result(user_seq)
+---@param fn fun(data_home: string)
+local function in_temp_home(fn)
+  local data_home = h.use_temp_data_home()
+  h.silence_notify(function() fn(data_home) end)
 end
 
-test("workspace/storage: save copies to disk without touching memory", function()
-  h.use_temp_data_home()
-  h.silence_notify(function()
-    session_store.register_fetched_result("aaa", fake_result("user-seq"))
-
-    archive.save("aaa", "aaa")
-
-    -- Memory still has it (save is a copy, not a move).
-    assert_true(session_store.has_result("aaa"),
-      "save must not remove the in-memory alias")
-
-    -- Disk has it.
-    assert_true(h.list_contains(disk.list(), "aaa"),
-      "disk copy missing after save")
-
-    remove_alias("aaa")
+test("storage: a finished session is saved under its alias and finish time", function()
+  in_temp_home(function()
+    local id = finish("stora", "dw")
+    local filename = "stora-" .. STAMP
+    assert_eq(session_store.get_saved_filename("stora"), filename)
+    assert_eq(disk.list("sessions"), { filename })
+    assert_eq(assert(disk.load("sessions", filename)).user_seq, "dw")
+    assert_eq(disk.list("pinned"), {}, "saving pins nothing")
+    session_store.remove(id)
   end)
 end)
 
-test("workspace/storage: store moves from memory to disk", function()
-  h.use_temp_data_home()
-  h.silence_notify(function()
-    local id = session_store.register_fetched_result("bbb", fake_result("user-seq"))
-    assert_true(id, "seed failed")
-
-    archive.store("bbb", "bbb")
-
-    -- Memory no longer has it.
-    assert_true(not session_store.has_result("bbb"),
-      "store must remove the in-memory alias")
-
-    -- Disk has it.
-    assert_true(h.list_contains(disk.list(), "bbb"),
-      "disk copy missing after store")
+test("storage: sessions finished in the same second take the next free filename", function()
+  in_temp_home(function()
+    finish("storb", "first")
+    finish("storb", "second")
+    local id = finish("storb", "third")
+    assert_eq(session_store.get_saved_filename("storb"), "storb-" .. STAMP .. "-3")
+    assert_eq(assert(disk.load("sessions", "storb-" .. STAMP)).user_seq, "first")
+    assert_eq(assert(disk.load("sessions", "storb-" .. STAMP .. "-2")).user_seq, "second")
+    session_store.remove(id)
   end)
 end)
 
-test("workspace/storage: fetch copies from disk to memory, disk preserved", function()
-  h.use_temp_data_home()
-  h.silence_notify(function()
-    -- Seed a session, save it, close the in-memory copy, then fetch back.
-    local id = session_store.register_fetched_result("ccc", fake_result("yank"))
-    assert_true(id, "seed failed")
-    archive.save("ccc", "ccc")
-    remove_alias("ccc")
-    assert_true(not session_store.has_result("ccc"), "precondition: memory cleared")
+test("storage: recall and suggest sessions are named by their type", function()
+  in_temp_home(function()
+    local _, _, recalled = h.seed_recall({ backdate_s = 20 })
+    session_store.convert_to_finished(recalled, h.finished_result("x", { finished_wall_epoch = EPOCH }))
+    assert_eq(session_store.get_saved_filename("@"), "recall-" .. STAMP)
 
-    archive.fetch("ccc", "ccc")
-
-    -- Memory populated from disk.
-    assert_true(session_store.has_result("ccc"),
-      "fetch must register an in-memory alias")
-    local result = session_store.get_result("ccc")
-    result = assert(result)
-    assert_eq(result.user_seq, "yank", "fetched result round-tripped")
-
-    -- Disk copy untouched.
-    assert_true(h.list_contains(disk.list(), "ccc"),
-      "fetch must not delete the disk copy")
-
-    remove_alias("ccc")
+    local _, _, suggested = h.seed_recall({ backdate_s = 10 })
+    session_store.convert_to_finished(suggested,
+      h.finished_result("x", { finished_wall_epoch = EPOCH }), "suggest_idle")
+    assert_eq(session_store.get_saved_filename("@"), "suggest-" .. STAMP)
+    session_store.remove(recalled)
+    session_store.remove(suggested)
   end)
 end)
 
-test("workspace/storage: fetch without an alias needs a letters-only filename", function()
-  h.use_temp_data_home()
-  h.silence_notify(function()
-    local id = session_store.register_fetched_result("fff", fake_result("seq"))
-    assert_true(id, "seed failed")
-    archive.save("fff", "fff")
-    archive.save("fff", "demo-1")
-    remove_alias("fff")
-
-    archive.fetch("fff")
-    assert_true(session_store.has_result("fff"), "letters-only filename doubles as the alias")
-
-    local ok, err = pcall(archive.fetch, "demo-1")
-    assert_true(not ok, "non-named filename without an alias must refuse")
-    assert_true(tostring(err):find("fetch demo-1 <alias>", 1, true) ~= nil,
-      "error names the explicit form; got " .. tostring(err))
-
-    archive.fetch("demo-1", "demo")
-    assert_true(session_store.has_result("demo"), "explicit alias works for any filename")
-
-    remove_alias("fff")
-    remove_alias("demo")
+test("storage: with sessions.save off nothing is saved and pin needs a filename", function()
+  in_temp_home(function()
+    h.with_patch({ { config.sessions, "save", false } }, function()
+      local id = finish("storoff", "dw")
+      assert_eq(session_store.get_saved_filename("storoff"), nil)
+      assert_eq(disk.list("sessions"), {})
+      assert_error(function() archive.pin("storoff") end, "pin storoff <filename>")
+      archive.pin("storoff", "kept")
+      assert_eq(assert(disk.load("pinned", "kept")).user_seq, "dw")
+      session_store.remove(id)
+    end)
   end)
 end)
 
-test("workspace/storage: diffs survive a disk round-trip", function()
-  h.use_temp_data_home()
-  h.silence_notify(function()
-    local result = fake_result("seq")
-    result.prefix = ""
-    result.suffix = ""
-    result.diffs = {
-      { init = { begin_row = 0, begin_col = 1, end_row = 0, end_col = 4 },
-        goal = { begin_row = 0, begin_col = 1, end_row = 0, end_col = 5 } },
-    }
-    local id = session_store.register_fetched_result("diffroundtrip", result)
-    assert_true(id, "seed failed")
-    archive.save("diffroundtrip", "diffroundtrip")
-    remove_alias("diffroundtrip")
-
-    archive.fetch("diffroundtrip", "diffroundtrip")
-    local loaded = assert(session_store.get_result("diffroundtrip"))
-    assert_eq(#loaded.diffs, 1, "diffs array survived JSON round-trip")
-    assert_eq(loaded.diffs[1].init.end_col, 4, "init span preserved")
-    assert_eq(loaded.diffs[1].goal.end_col, 5, "goal span preserved")
-    assert_eq(loaded.prefix, "", "prefix preserved")
-
-    remove_alias("diffroundtrip")
+test("storage: a session that cannot be saved still finishes", function()
+  in_temp_home(function()
+    local id
+    h.with_patch({ { vim.uv, "fs_open", function() return nil, "EACCES: permission denied", "EACCES" end } },
+      function() id = finish("storfail", "dw") end)
+    assert_true(session_store.has_result("storfail"))
+    assert_eq(session_store.get_saved_filename("storfail"), nil)
+    assert_eq(disk.list("sessions"), {})
+    vim.wait(20)
+    session_store.remove(id)
   end)
 end)
 
-test("workspace/storage: fetch refuses to overwrite an in-memory alias", function()
-  h.use_temp_data_home()
-  h.silence_notify(function()
-    -- Seed both memory and disk under the same name.
-    local id = session_store.register_fetched_result("ddd", fake_result("mem"))
-    assert_true(id, "seed failed")
-    archive.save("ddd", "ddd")
-
-    -- Fetching into the occupied alias must refuse, leaving memory untouched.
-    assert_error(function() archive.fetch("ddd", "ddd") end)
-
-    local result = session_store.get_result("ddd")
-    result = assert(result)
-    assert_eq(result.user_seq, "mem",
-      "fetch-into-occupied-alias must not overwrite memory")
-
-    remove_alias("ddd")
+test("storage: pin copies a finished session under its saved filename, or the one given", function()
+  in_temp_home(function()
+    local id = finish("storp", "dw")
+    archive.pin("storp")
+    archive.pin("storp", "important")
+    local pins = disk.list("pinned")
+    table.sort(pins)
+    assert_eq(pins, { "important", "storp-" .. STAMP })
+    assert_eq(assert(disk.load("pinned", "important")).user_seq, "dw")
+    assert_true(session_store.has_result("storp"), "the workspace copy stays")
+    assert_eq(disk.list("sessions"), { "storp-" .. STAMP }, "the saved session stays")
+    session_store.remove(id)
   end)
 end)
 
-test("workspace/storage: save overwrite-warns but does not refuse", function()
-  h.use_temp_data_home()
-  h.silence_notify(function()
-    -- First save.
-    local id1 = session_store.register_fetched_result("eee", fake_result("v1"))
-    assert_true(id1, "seed failed")
-    archive.save("eee", "eee")
-
-    -- Second save under same name with different content.
-    local result = session_store.get_result("eee")
-    result = assert(result)
-    result.user_seq = "v2"  -- mutate in-place
-    archive.save("eee", "eee")
-
-    -- Disk has the second version.
-    remove_alias("eee")
-    archive.fetch("eee", "eee")
-    local fetched = session_store.get_result("eee")
-    fetched = assert(fetched)
-    assert_eq(fetched.user_seq, "v2",
-      "overwrite should have replaced the disk copy")
-
-    remove_alias("eee")
+test("storage: pin replaces a pin of the same filename", function()
+  in_temp_home(function()
+    local first = finish("storx", "v1")
+    local second = finish("story", "v2")
+    archive.pin("storx", "shared")
+    archive.pin("story", "shared")
+    assert_eq(assert(disk.load("pinned", "shared")).user_seq, "v2")
+    archive.pin("story")
+    archive.pin("story")
+    assert_eq(#disk.list("pinned"), 2, "pinning twice keeps one pin")
+    session_store.remove(first)
+    session_store.remove(second)
   end)
 end)
 
-test("workspace/storage: save preserves the command list", function()
-  local tmp = h.use_temp_data_home()
-  h.silence_notify(function()
-    local seeded = fake_result("dwj")
-    seeded.commands = {
+test("storage: pin refuses a session that is still active, even over a pin of that name", function()
+  in_temp_home(function()
+    disk.write_pin("storact", h.finished_result("old"))
+    local rec = h.seed_named("storact", "test-storage-active")
+    assert_error(function() archive.pin("storact", "copy") end, "still active")
+    assert_eq(disk.list("pinned"), { "storact" })
+    session_store.remove(rec.id)
+  end)
+end)
+
+test("storage: pin by filename reads the saved session once its alias is gone", function()
+  in_temp_home(function()
+    local id = finish("storq", "dw")
+    local filename = assert(session_store.get_saved_filename("storq"))
+    session_store.remove(id)
+
+    archive.pin(filename, "later")
+    archive.pin(filename)
+    archive.pin("later", "again")
+    local pins = disk.list("pinned")
+    table.sort(pins)
+    assert_eq(pins, { "again", "later", filename })
+    assert_eq(assert(disk.load("pinned", "again")).user_seq, "dw")
+  end)
+end)
+
+test("storage: a handle is the live alias, then a pin, then a saved session", function()
+  in_temp_home(function()
+    local id = finish("storr", "memory")
+    local filename = assert(session_store.get_saved_filename("storr"))
+    disk.write_pin("storr", h.finished_result("pin"))
+    assert_eq(archive.resolve_result("storr").user_seq, "memory")
+    session_store.remove(id)
+    assert_eq(archive.resolve_result("storr").user_seq, "pin")
+
+    assert_eq(archive.resolve_result(filename).user_seq, "memory")
+    disk.write_pin(filename, h.finished_result("pinned over"))
+    assert_eq(archive.resolve_result(filename).user_seq, "pinned over")
+
+    assert_error(function() archive.resolve_result("stornowhere") end,
+      "No finished session, pin or saved session")
+  end)
+end)
+
+test("storage: unpin and rm each delete from their own shelf", function()
+  in_temp_home(function()
+    local id = finish("stors", "dw")
+    local filename = assert(session_store.get_saved_filename("stors"))
+    archive.pin("stors")
+    archive.pin("stors", "important")
+
+    archive.unpin(filename)
+    assert_eq(disk.list("pinned"), { "important" })
+    assert_eq(disk.list("sessions"), { filename }, "unpin leaves the saved session")
+
+    assert_error(function() archive.rm("important") end, "No saved session")
+    archive.rm(filename)
+    assert_eq(disk.list("sessions"), {})
+    assert_eq(disk.list("pinned"), { "important" }, "rm leaves the pin")
+    session_store.remove(id)
+  end)
+end)
+
+test("storage: named saves from before pins become the pins", function()
+  in_temp_home(function(data_home)
+    local root = data_home .. "/nvim/vimficiency"
+    vim.fn.mkdir(root .. "/saved", "p")
+    local old = vim.tbl_extend("error", h.finished_result("legacy"), { version = 1 })
+    vim.fn.writefile({ vim.json.encode(old) }, root .. "/saved/old.json")
+
+    local id = finish("storm", "dw")
+    assert_eq(vim.fn.isdirectory(root .. "/saved"), 1, "saving a session leaves the named saves alone")
+
+    assert_eq(disk.list("pinned"), { "old" })
+    assert_eq(vim.fn.isdirectory(root .. "/saved"), 0)
+    assert_eq(archive.resolve_result("old").user_seq, "legacy")
+    session_store.remove(id)
+  end)
+end)
+
+test("storage: diffs and the command list survive the disk round-trip", function()
+  in_temp_home(function()
+    local commands = {
       { keys = "dw", kind = "operator" },
       { keys = "j", kind = "motion" },
     }
-    local id = session_store.register_fetched_result("dbg", seeded)
-    assert_true(id, "seed failed")
-
-    archive.save("dbg", "dbg")
-
-    local path = tmp .. "/nvim/vimficiency/saved/dbg.json"
-    local decoded = vim.json.decode(table.concat(vim.fn.readfile(path), "\n"))
-    assert_eq(decoded.commands, seeded.commands)
-
-    remove_alias("dbg")
+    local diffs = {
+      { init = { begin_row = 0, begin_col = 1, end_row = 0, end_col = 4 },
+        goal = { begin_row = 0, begin_col = 1, end_row = 0, end_col = 5 } },
+    }
+    local id = finish("stord", "dwj", { commands = commands, diffs = diffs })
+    local loaded = assert(disk.load("sessions", assert(session_store.get_saved_filename("stord"))))
+    assert_eq(loaded.commands, commands)
+    assert_eq(loaded.diffs, diffs)
+    assert_eq(loaded.prefix, "")
+    session_store.remove(id)
   end)
 end)
 
-test("workspace/storage: register_fetched_result rejects a non-named alias", function()
-  h.silence_notify(function()
-    assert_error(function() session_store.register_fetched_result("3s", fake_result("abc")) end,
-      "not a named alias")
+test("storage: a duplicated alias pins the same saved session", function()
+  in_temp_home(function()
+    local id = finish("storu", "dw")
+    archive.duplicate_active("storu", "storucopy")
+    assert_eq(session_store.get_saved_filename("storucopy"), "storu-" .. STAMP)
+    assert_eq(disk.list("sessions"), { "storu-" .. STAMP }, "a duplicate is not saved again")
+    session_store.remove(id)
+    session_store.remove(assert(session_store.get_id("storucopy")))
   end)
+end)
+
+test("storage: add_finished rejects a non-named alias", function()
+  assert_error(function() session_store.add_finished("3s", h.finished_result("abc")) end,
+    "not a named alias")
 end)

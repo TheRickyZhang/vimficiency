@@ -51,6 +51,8 @@ message Session {
   // The insert text pressed (`vf.journal.Atom.typed_insert`).
   // Unset in sessions logged before it existed.
   optional bytes typed_insert = 11;
+  // Its result's file among the saved sessions; empty when it was not saved.
+  string saved_filename = 12;
 }
 
 // The first record of a log; a log without one is format 1.

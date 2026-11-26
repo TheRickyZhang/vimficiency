@@ -89,18 +89,17 @@ Press `:h g?` in a replay buffer to open this section directly.
 :Vimfy list
 ```
 
-Shows currently active sessions and saved-to-disk results.
+Shows the active sessions and the pins.
 
-## Saving, storing, fetching
+## Saved sessions and pins
 
-Every finished session starts in **session memory** (workspace) and
-stays there until it rotates out. Copy it to disk with
-`:Vimfy save`, move it with `:Vimfy store`, bring it back later with
-`:Vimfy fetch`. `:Vimfy play <alias>|<filename>` works against both — it replays
-from memory first, falling back to disk.
+Every finished session is active in memory until it rotates out, and is saved
+to disk as it finishes. `:Vimfy pin` keeps a copy under a filename you choose.
 
-See [7a. Session storage](07a-session-storage.md) for the full model,
-collision rules, and worked examples.
+`:Vimfy play <alias>|<filename>` works against all three: it replays from
+memory first, then a pin, then a saved session. See
+[7a. Session storage](07a-session-storage.md) for the full model and a worked
+example.
 
 ## Viewing a saved result
 
@@ -108,8 +107,8 @@ collision rules, and worked examples.
 :Vimfy view my-refactor
 ```
 
-Reads back a saved result textually (without replaying). Tab-complete
-on `:Vimfy view` lists what's available on disk.
+Reads back a result textually (without replaying): a pin here, or any alias
+or saved session. Tab-complete on `:Vimfy view` lists the aliases and pins.
 
 ## Saved result buffer keys
 

@@ -43,6 +43,7 @@ VFByteSlice vf_manual_evict_reason(const char* request, size_t request_len);    
 // vf.stats (StatsExports.cpp)
 VFByteSlice vf_append_session(const char* request, size_t request_len);  // AppendSessionRequest -> vf.Empty
 VFByteSlice vf_stats_summary(const char* request, size_t request_len);   // SummaryRequest -> Summary
+VFByteSlice vf_stats_journal_coverage(const char* request, size_t request_len); // vf.journal.SampleRequest -> JournalCoverage
 VFByteSlice vf_stats_runs(const char* request, size_t request_len);      // RunsRequest -> RunList
 VFByteSlice vf_stats_run(const char* request, size_t request_len);       // RunRequest -> RunDetail
 

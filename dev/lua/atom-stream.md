@@ -299,8 +299,10 @@ completed by `stampSampleParams` (`src/Storage/Samples.cppm`): the stamp of
 that when sample contents change meaning, so older files are redone. The sampler
 recomputes a file that is not current. `:Vimfy stats` reads samples through
 `vf_stats_summary` and `vf_stats_runs` (`src/Stats/`), which skip such files
-until then, so two scorings never mix. It also reports the journal bytes the current samples cover,
-shown as progress.
+until then, so two scorings never mix. The sampler appends intermediate
+`journal_size` records after scoring all windows from a replay event. While
+scoring, the visible Stats tab reads coverage once a second and refreshes the
+full summary on completion.
 
 The library keeps every samples file it has read in memory, as `Stats::Run`s
 (`src/Stats/JournalRuns.cppm`), and parses only what was appended since; a file

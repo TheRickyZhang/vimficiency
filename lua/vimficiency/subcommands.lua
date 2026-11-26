@@ -32,8 +32,12 @@ end
 local function aliases()
   return vim.list_extend(closeable(), alias_mod.SPECIAL)
 end
-local function aliases_and_filenames()
-  return vim.list_extend(aliases(), disk.list())
+local function pins()
+  return disk.list("pinned")
+end
+--- Saved sessions are left out: there is one per finished session.
+local function aliases_and_pins()
+  return vim.list_extend(aliases(), pins())
 end
 
 ---@type table<string, VF.Subcommand>
@@ -86,7 +90,7 @@ return {
     desc = "Play your sequence side-by-side with the optimizer's suggestions",
     usage = "play <alias>|<filename> [windows]",
     min_args = 1,
-    complete = { aliases_and_filenames },
+    complete = { aliases_and_pins },
     run = function(args) playback.simulate(args[1], tonumber(args[2])) end,
   },
 
@@ -112,7 +116,7 @@ return {
   view = {
     desc = "View a finished result full-screen",
     usage = "view [<alias>|<filename>]",
-    complete = { aliases_and_filenames },
+    complete = { aliases_and_pins },
     run = function(args) archive.view(args[1]) end,
   },
 
@@ -120,7 +124,7 @@ return {
     desc = "Open the interactive explore scratch view for a finished result",
     usage = "explore <alias>|<filename>",
     min_args = 1,
-    complete = { aliases_and_filenames },
+    complete = { aliases_and_pins },
     run = function(args)
       local alias_or_filename = args[1]
       explore.open(alias_or_filename, archive.resolve_result(alias_or_filename))
@@ -128,36 +132,28 @@ return {
   },
 
 
-  -- Persist and browse results.
-  save = {
-    desc = "Copy a finished session result to disk (keeps the session copy)",
-    usage = "save <alias> [<filename>]",
+  -- Keep and browse results.
+  pin = {
+    desc = "Keep a copy of a finished result under a filename (default: the one it was saved under)",
+    usage = "pin <alias>|<filename> [<filename>]",
     min_args = 1,
-    complete = { aliases },
-    run = function(args) archive.save(args[1], args[2]) end,
+    complete = { aliases_and_pins },
+    run = function(args) archive.pin(args[1], args[2]) end,
   },
 
-  store = {
-    desc = "Move a finished session from memory to disk (removes the session copy)",
-    usage = "store <alias> [<filename>]",
+  unpin = {
+    desc = "Delete a pin",
+    usage = "unpin <filename>",
     min_args = 1,
-    complete = { aliases },
-    run = function(args) archive.store(args[1], args[2]) end,
-  },
-
-  fetch = {
-    desc = "Copy a saved result from disk into the current session",
-    usage = "fetch <filename> [<alias>]",
-    min_args = 1,
-    complete = { disk.list },
-    run = function(args) archive.fetch(args[1], args[2]) end,
+    complete = { pins },
+    run = function(args) archive.unpin(args[1]) end,
   },
 
   rm = {
-    desc = "Delete a saved result from disk",
+    desc = "Delete a saved session's result (its stats row stays)",
     usage = "rm <filename>",
     min_args = 1,
-    complete = { disk.list },
+    complete = { function() return disk.list("sessions") end },
     run = function(args) archive.rm(args[1]) end,
   },
 

@@ -90,8 +90,8 @@ expected<Scope, string> openScope(const vf::stats::SummaryRequest& request) {
                   : requested != 0 ? requested
                                    : scope.sizes[(scope.sizes.size() - 1) / 2];
   stampSampleParams(params);
-  scope.journal =
-      readJournalRuns(request.journal_dir(), params.SerializeAsString(), request.current_only());
+  scope.journal = readJournalRuns(request.journal_dir(), params.SerializeAsString(),
+                                  request.current_only() ? RollupScope::Current : RollupScope::All);
   scope.selection = selectionOf(request.filter());
   return scope;
 }
@@ -529,6 +529,20 @@ expected<string, string> summarize(string_view requestBytes, int64_t now) {
   return out.SerializeAsString();
 }
 
+expected<string, string> journalCoverage(string_view requestBytes) {
+  vf::journal::SampleRequest request;
+  if (!request.ParseFromArray(requestBytes.data(), requestBytes.size())) {
+    return unexpected("malformed vf.journal.SampleRequest");
+  }
+  stampSampleParams(*request.mutable_params());
+  const auto journal = readJournalRuns(request.journal_dir(), request.params().SerializeAsString(),
+                                       RollupScope::None);
+  vf::stats::JournalCoverage coverage;
+  coverage.set_scored_bytes(journal.scoredBytes);
+  coverage.set_journal_bytes(journal.journalBytes);
+  return coverage.SerializeAsString();
+}
+
 expected<string, string> listRuns(string_view requestBytes) {
   vf::stats::RunsRequest request;
   if (!request.ParseFromArray(requestBytes.data(), requestBytes.size())) {
@@ -558,6 +572,7 @@ expected<string, string> listRuns(string_view requestBytes) {
       id.set_last_atom(run.index);
     }
     row.set_wall_epoch(run.wallEpoch);
+    row.set_saved_filename(run.savedFilename);
     row.set_user_keys(run.userKeys);
     row.set_best_seq(run.bestSeq);
     row.set_user_cost(run.userCost);

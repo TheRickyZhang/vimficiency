@@ -99,17 +99,17 @@ local function fire_with_window(recall_alias, gate, kind)
 
     -- Cost gate: consume the record but suppress the notification.
     if gate and not gate(result) then
-      session_store.convert_to_finished(id, result, recall_alias, kind)
+      session_store.convert_to_finished(id, result, kind)
       return
     end
 
     local fp = fingerprint_result(result)
     if fp == last_fingerprint then
-      session_store.convert_to_finished(id, result, recall_alias, kind)
+      session_store.convert_to_finished(id, result, kind)
       return
     end
 
-    if not session_store.convert_to_finished(id, result, recall_alias, kind) then
+    if not session_store.convert_to_finished(id, result, kind) then
       return
     end
 

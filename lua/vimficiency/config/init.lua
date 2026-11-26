@@ -34,6 +34,11 @@ local fields = {
   -- notice. Play uses the observed state.
   lossy_mappings = "warn",
 
+  sessions = {
+    -- Keeps every finished session's result, with the text it changed, on disk.
+    save = true,
+  },
+
   -- Off by default: the journal writes the text of every edited buffer to disk.
   journal = {
     enabled = false,
@@ -150,6 +155,7 @@ function fields.apply(user_config)
   merged.watch = validate.normalize_watch(user_config.watch)
   merged.auto_suggest = validate.normalize_auto_suggest(user_config.auto_suggest, fields._defaults.auto_suggest)
   merged.lossy_mappings = validate.normalize_lossy_mappings(merged.lossy_mappings)
+  merged.sessions = validate.normalize_sessions(merged.sessions)
   merged.journal = validate.normalize_journal(merged.journal)
   merged.stats = validate.normalize_stats(merged.stats)
   merged.ui = validate.normalize_ui(merged.ui)

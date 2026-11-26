@@ -9,6 +9,8 @@ export namespace Stats {
 // (proto/summary.proto); `now` places the current chart bucket.
 std::expected<std::string, std::string> summarize(std::string_view request, int64_t now);
 
+std::expected<std::string, std::string> journalCoverage(std::string_view request);
+
 // One page of the runs a summary reduces. `request` is a serialized
 // `vf.stats.RunsRequest` and the result a serialized `vf.stats.RunList`.
 std::expected<std::string, std::string> listRuns(std::string_view request);

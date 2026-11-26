@@ -71,18 +71,18 @@ If `recall Ns` asks for a window older than the queue retains, the
 alias fails to resolve and you get "No recall session found within
 'Ns'…" — raise either cap.
 
-Recall records are discarded when Neovim exits; promote with `:Vimfy save`
-if you want them on disk.
+The recall ring is discarded when Neovim exits. A window you finished with
+`:Vimfy recall` is saved to disk like any other session.
 
-## Recall results are transient
+## Recall aliases move
 
-Recall windows rotate out of the queue as you type, so save promptly.
-`@` refers to the most recently ended session — handy when the alias
-(`3s`) is moving out from under you:
+Recall windows rotate out of the queue as you type, so an alias like `3s`
+soon names something else. `@` refers to the most recently ended session,
+which makes it the handle to pin one by:
 
 ```vim
 :Vimfy recall 3s
-:Vimfy save @ nested-refactor
+:Vimfy pin @ nested-refactor
 ```
 
 

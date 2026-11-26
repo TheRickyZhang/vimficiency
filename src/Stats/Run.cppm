@@ -29,6 +29,8 @@ struct Run {
   int querySize = 0;
   std::string userKeys;
   std::string bestSeq;
+  // A session's `saved_filename`; empty for a journal run.
+  std::string savedFilename;
   RunCommands user;
   RunCommands optimizer;
 

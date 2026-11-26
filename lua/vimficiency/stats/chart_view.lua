@@ -39,6 +39,7 @@ local SCALES = {
 ---@field win integer
 ---@field buf integer
 ---@field refresh fun()   # as after a scoring run
+---@field update_coverage fun(coverage: VF.Stats.JournalCoverage)
 ---@field close fun()
 
 ---@param name VF.Stats.ChartName
@@ -125,6 +126,12 @@ function M.open(name, summary, summary_of, list_runs)
     win = win,
     buf = buf,
     refresh = refresh,
+    update_coverage = function(coverage)
+      if name ~= "journal" then return end
+      summary.journal.scored_bytes = coverage.scored_bytes
+      summary.journal.journal_bytes = coverage.journal_bytes
+      redraw()
+    end,
     close = function()
       if v.nvim_win_is_valid(win) then v.nvim_win_close(win, true) end
       -- Neovim returns to the previous window, which a run list opened from

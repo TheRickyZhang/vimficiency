@@ -19,7 +19,7 @@ Bind the LHS to the `:Vimfy` command directly:
 ```lua
 vim.keymap.set('n', '<leader>vs', '<Cmd>Vimfy start a<CR>',   { silent = true })
 vim.keymap.set('n', '<leader>vf', '<Cmd>Vimfy finish a<CR>',  { silent = true })
-vim.keymap.set('n', '<leader>vq', '<Cmd>Vimfy save @ quick<CR>', { silent = true })
+vim.keymap.set('n', '<leader>vq', '<Cmd>Vimfy pin @ quick<CR>', { silent = true })
 ```
 
 Everything after `Vimfy` is the subcommand and its arguments, exactly as

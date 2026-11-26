@@ -96,7 +96,7 @@ test("watch: finish (manual :Vimfy finish) disarms the trigger", function()
 
       local fake_result = h.fake_result({ user_seq = "" })
       assert_eq(
-        session_store.convert_to_finished(rec.id, fake_result, "wfinish"),
+        session_store.convert_to_finished(rec.id, fake_result),
         true)
 
       assert_eq(atom_stream._has_listener(name), false,

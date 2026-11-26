@@ -62,15 +62,15 @@ Recall is built for this:
 
 ## "I want to revisit this later / share it"
 
-Save to disk after ending — `@` resolves to the session you just finished:
+Pin it after finishing — `@` resolves to the session you just finished:
 
 ```vim
 :Vimfy finish a
-:Vimfy save @ nested-dict-refactor
+:Vimfy pin @ nested-dict-refactor
 " ... days later ...
 :Vimfy view nested-dict-refactor
 ```
 
-Saved results are durable across Neovim restarts and survive in
-`stdpath('data')/vimficiency/saved/` — you can share the file directly if
+Pins are durable across Neovim restarts and live in
+`stdpath('data')/vimficiency/pinned/` — you can share the file directly if
 you want to show a colleague.
