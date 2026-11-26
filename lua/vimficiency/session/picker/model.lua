@@ -11,13 +11,9 @@ local DEFAULT_DIRECTIONS = {
   created = "desc",
 }
 
-local STATUS_SYMBOLS = { ongoing = "●", saved = "✓", blank = " " }
+local STATUS_SYMBOLS = { ongoing = "●", pinned = "✓", blank = " " }
 
 M.DEFAULT_DIRECTIONS = DEFAULT_DIRECTIONS
-
-function M.save_dir()
-  return vim.fn.stdpath("data") .. "/vimficiency/saved"
-end
 
 function M.format_age_ns(t_ns)
   if not t_ns or t_ns == 0 then return "?" end
@@ -98,18 +94,19 @@ function M.build_active_items()
   return items
 end
 
-function M.build_saved_items()
-  local names = disk.list()
+function M.build_pinned_items()
+  local names = disk.list("pinned")
+  local dir = disk.dir("pinned")
   local items = {}
   for _, name in ipairs(names) do
-    local path = M.save_dir() .. "/" .. name .. ".json"
+    local path = dir .. "/" .. name .. ".json"
     local stat = uv.fs_stat(path)
     local mtime_sec = stat and stat.mtime.sec or 0
     table.insert(items, {
-      pane = "saved",
+      pane = "pinned",
       key = name,
       name = name,
-      category = "saved",
+      category = "pinned",
       status = "finished",
       wall_epoch = mtime_sec,
       path = path,
@@ -123,7 +120,7 @@ function M.sort_items(items, mode, direction)
     if mode == "alpha" then
       return a.name < b.name
     elseif mode == "created" then
-      -- Ongoing items only have the monotonic clock; finished and saved items
+      -- Ongoing items only have the monotonic clock; finished and pinned items
       -- compare on wall time. `group_into_sections` sorts the two groups
       -- separately, so the clocks never meet.
       local at = a.wall_epoch or a.started_mono_ns
@@ -186,8 +183,8 @@ function M.row_for_item(item, marked)
   local sym
   if item.pane == "active" and item.status == "active" then
     sym = STATUS_SYMBOLS.ongoing
-  elseif item.pane == "saved" then
-    sym = STATUS_SYMBOLS.saved
+  elseif item.pane == "pinned" then
+    sym = STATUS_SYMBOLS.pinned
   else
     sym = STATUS_SYMBOLS.blank
   end

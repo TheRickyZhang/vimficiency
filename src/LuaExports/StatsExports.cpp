@@ -32,6 +32,15 @@ VFByteSlice vf_stats_summary(const char* request, size_t request_len) {
   });
 }
 
+VFByteSlice vf_stats_journal_coverage(const char* request, size_t request_len) {
+  static string storage;
+  return guarded(storage, [&]() -> ProtoResult {
+    auto coverage = Stats::journalCoverage(string_view(request, request_len));
+    if (!coverage) return unexpectedError(coverage.error());
+    return Proto{std::move(*coverage)};
+  });
+}
+
 VFByteSlice vf_stats_runs(const char* request, size_t request_len) {
   static string storage;
   return guarded(storage, [&]() -> ProtoResult {

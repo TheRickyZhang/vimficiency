@@ -1,7 +1,7 @@
 -- Interactive session picker: Telescope-flavored float + preview.
 --
 -- Two panes: Active (in-memory sessions from `session_store.summarize_all`)
--- and Saved (files under stdpath("data")/vimficiency/saved). `<Tab>` toggles.
+-- and Pinned (`disk.list("pinned")`). `<Tab>` toggles.
 -- Ongoing entries are always pinned to a top section; sort applies within
 -- each section.
 
@@ -33,7 +33,7 @@ local M = {}
 ---@field prev_win integer       # Preview (vsplit) window id
 ---@field prev_buf integer       # Preview buffer id
 ---@field prompt_win integer     # Floating prompt window id (search input)
----@field pane      "active"|"saved"
+---@field pane      "active"|"pinned"
 ---@field sort_mode string        # One of SORT_MODES
 ---@field direction "asc"|"desc"
 ---@field query     string
@@ -52,7 +52,7 @@ local function render()
   if not state then return end
   local pane_items = (state.pane == "active")
       and model.build_active_items()
-      or model.build_saved_items()
+      or model.build_pinned_items()
 
   -- Apply fuzzy filter.
   local filtered = {}
@@ -69,23 +69,23 @@ local function render()
   -- are computed alongside the line so the selected pane label stands out.
   local arrow = state.direction == "asc" and "↑" or "↓"
   local pane_active_label = "Active"
-  local pane_saved_label = "Saved"
+  local pane_pinned_label = "Pinned"
   local header_prefix = " pane: "
   local header_sep = "  "
   local sort_label = string.format("  sort: %s %s", arrow, state.sort_mode)
   local header_line = header_prefix
       .. pane_active_label
       .. header_sep
-      .. pane_saved_label
+      .. pane_pinned_label
       .. sort_label
 
   -- Byte offsets of each stylable span on the header line. Lua 1-indexed
   -- string ops; nvim_buf_set_extmark wants 0-indexed byte offsets.
   local active_start = #header_prefix
   local active_end = active_start + #pane_active_label
-  local saved_start = active_end + #header_sep
-  local saved_end = saved_start + #pane_saved_label
-  local sort_start = saved_end
+  local pinned_start = active_end + #header_sep
+  local pinned_end = pinned_start + #pane_pinned_label
+  local sort_start = pinned_end
   local sort_end = #header_line
 
   local header_lines = {
@@ -107,9 +107,9 @@ local function render()
       state.pane == "active"
         and highlights.PICKER_PANE_ACTIVE
         or  highlights.PICKER_PANE_INACTIVE },
-    { 0, active_end, saved_start, highlights.PICKER_HEADER_DIM },
-    { 0, saved_start, saved_end,
-      state.pane == "saved"
+    { 0, active_end, pinned_start, highlights.PICKER_HEADER_DIM },
+    { 0, pinned_start, pinned_end,
+      state.pane == "pinned"
         and highlights.PICKER_PANE_ACTIVE
         or  highlights.PICKER_PANE_INACTIVE },
     { 0, sort_start, sort_end, highlights.PICKER_HEADER_DIM },
@@ -214,7 +214,7 @@ local function close()
 end
 
 local function act_toggle_pane()
-  state.pane = (state.pane == "active") and "saved" or "active"
+  state.pane = (state.pane == "active") and "pinned" or "active"
   state.cursor = 1
   render()
 end
@@ -294,43 +294,23 @@ local function act_open()
       vim.log.levels.INFO)
     return
   end
-  if it.pane == "saved" then
-    -- Load into workspace under a named alias (default: the filename when it is one).
-    local function fetch_under(alias)
-      if not alias_mod.is_named(alias) then
-        vim.notify("Need a named alias, letters only (got '" .. alias .. "')", vim.log.levels.ERROR)
-        return
-      end
-      archive.fetch(it.name, alias)
-      close()
-      -- Reopen on Active pane so the user sees the newly fetched entry.
-      vim.schedule(util.entry(function()
-        M.open()
-        state.pane = "active"
-        render()
-      end))
-    end
-    if alias_mod.is_named(it.name) then
-      fetch_under(it.name)
-    else
-      vim.ui.input({ prompt = "Fetch [" .. it.name .. "] as alias: " }, util.entry(function(input)
-        if not input or input == "" then return end
-        fetch_under(input)
-      end))
-    end
-    return
-  end
-  -- Active pane.
-  if it.status == "active" then
+  if it.pane == "active" and it.status == "active" then
     vim.notify("Session [" .. it.name .. "] is still running. Finish it with ':Vimfy finish " ..
       it.name .. "' first.", vim.log.levels.INFO)
     return
   end
-  -- Finished active: run simulate. `playback.simulate` opens its own window,
-  -- so close the picker first.
-  local alias = it.name
+  -- View opens its own window, so close the picker first.
   close()
-  vim.schedule(util.entry(function() playback.simulate(alias) end))
+  vim.schedule(util.entry(function()
+    if it.pane == "active" then
+      playback.simulate(it.name)
+      return
+    end
+    -- By shelf, not by handle: a live alias of the same name would win.
+    local result, err = disk.load("pinned", it.name)
+    if not result then error(err, 0) end
+    playback.view(result, it.name)
+  end))
 end
 
 local function act_delete()
@@ -345,14 +325,14 @@ local function act_delete()
   if it.pane == "active" then
     prompt = "Close session [" .. it.name .. "]? (y/N): "
   else
-    prompt = "Delete saved [" .. it.name .. "]? (y/N): "
+    prompt = "Unpin [" .. it.name .. "]? (y/N): "
   end
   vim.ui.input({ prompt = prompt }, util.entry(function(input)
     if not input or input:lower() ~= "y" then return end
     if it.pane == "active" then
       session_store.remove(it.key)
     else
-      archive.rm(it.name)
+      archive.unpin(it.name)
     end
     s.marked[model.mark_key(it)] = nil
     render()
@@ -369,13 +349,13 @@ local function act_delete_marked()
   end
   vim.ui.input({ prompt = "Delete " .. #keys .. " marked? (y/N): " }, util.entry(function(input)
     if not input or input:lower() ~= "y" then return end
-    -- Split keys into active vs saved via the pane prefix.
+    -- Split keys into active vs pinned via the pane prefix.
     for _, mk in ipairs(keys) do
       local pane, rest = mk:match("^(%a+):(.+)$")
       if pane == "active" then
         session_store.remove(rest)
-      elseif pane == "saved" then
-        archive.rm(rest)
+      elseif pane == "pinned" then
+        archive.unpin(rest)
       end
     end
     state.marked = {}
@@ -392,15 +372,15 @@ end
 
 --- Finished active-pane entries are renameable/duplicable only when they carry
 --- a stable name alias. Recall/suggest entries drift (their display alias is
---- a ring index), so the picker points the user at save-to-disk instead.
+--- a ring index), so the picker points the user at pinning instead.
 local function has_stable_alias(it)
-  return it.pane == "saved" or alias_mod.is_named(it.name)
+  return it.pane == "pinned" or alias_mod.is_named(it.name)
 end
 
-local function notify_needs_save_first(it, verb)
+local function notify_needs_pin_first(it, verb)
   vim.notify(string.format(
-    "Session '%s' has no stable alias to %s. Save it first " ..
-    "(`:Vimfy save %s <name>`), then %s from the Saved pane.",
+    "Session '%s' has no stable alias to %s. Pin it first " ..
+    "(`:Vimfy pin %s <filename>`), then %s from the Pinned pane.",
     it.name, verb, it.name, verb), vim.log.levels.INFO)
 end
 
@@ -413,12 +393,12 @@ local function act_rename()
     return
   end
   if not has_stable_alias(it) then
-    notify_needs_save_first(it, "rename")
+    notify_needs_pin_first(it,"rename")
     return
   end
   vim.ui.input({ prompt = "Rename " .. it.name .. " -> ", default = it.name }, util.entry(function(input)
     if not input or input == "" or input == it.name then return end
-    local rename = it.pane == "saved" and disk.rename or archive.rename_active
+    local rename = it.pane == "pinned" and disk.rename or archive.rename_active
     rename(it.name, input)
     vim.notify("renamed " .. it.name .. " -> " .. input, vim.log.levels.INFO)
     render()
@@ -434,14 +414,14 @@ local function act_duplicate()
     return
   end
   if not has_stable_alias(it) then
-    notify_needs_save_first(it, "duplicate")
+    notify_needs_pin_first(it,"duplicate")
     return
   end
-  local default = it.pane == "saved" and (it.name .. "_copy") or ""
+  local default = it.pane == "pinned" and (it.name .. "_copy") or ""
   vim.ui.input({ prompt = "Duplicate " .. it.name .. " -> ", default = default },
     util.entry(function(input)
       if not input or input == "" then return end
-      local duplicate = it.pane == "saved" and disk.duplicate or archive.duplicate_active
+      local duplicate = it.pane == "pinned" and disk.duplicate or archive.duplicate_active
       duplicate(it.name, input)
       vim.notify("duplicated " .. it.name .. " -> " .. input, vim.log.levels.INFO)
       render()

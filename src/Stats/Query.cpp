@@ -47,6 +47,11 @@ double orderKey(const Run& run, RunOrder order) {
                                                         : none;
     case RunOrder::Typed:
       return isScoring(run.outcome) ? run.user.typedChars - run.optimizer.typedChars : none;
+    case RunOrder::LastAtom:
+      return run.source == Source::Journal ? run.index : none;
+    case RunOrder::Tag: return none;
+    case RunOrder::WindowSize:
+      return run.source == Source::Journal ? run.windowSize : none;
   }
   return 0;
 }
@@ -55,6 +60,7 @@ double orderKey(const Run& run, RunOrder order) {
 
 bool matches(const Selection& selection, const RunKey& key) {
   if (!selection.journal || !matchesDayAndOutcome(selection, key.day, key.outcome)) return false;
+  if (selection.scoring && !isScoring(key.outcome)) return false;
   if (selection.windowSize != 0 && key.windowSize != selection.windowSize) return false;
   return selection.change == Change::Any || key.navOnly == (selection.change == Change::Nav);
 }
@@ -67,6 +73,8 @@ bool matches(const Selection& selection, const Run& run) {
                               run.querySize > selection.querySize->second)) return false;
   if (run.source == Source::Session) {
     if (!selection.sessions || !matchesDayAndOutcome(selection, run.day, run.outcome)) return false;
+    if (selection.change != Change::Any && run.navOnly != (selection.change == Change::Nav)) return false;
+    if (selection.scoring && !isScoring(run)) return false;
   } else if (!matches(selection, keyOf(run))) {
     return false;
   }
@@ -131,10 +139,15 @@ RunPage pageRuns(const Scope& scope, RunOrder order, bool ascending, int offset,
   auto before = [order, ascending](const ListedRun& a, const ListedRun& b) {
     const Run& x = *a.run;
     const Run& y = *b.run;
-    const double kx = orderKey(x, order);
-    const double ky = orderKey(y, order);
-    if (isnan(kx) != isnan(ky)) return isnan(ky);
-    if (kx < ky || ky < kx) return ascending ? kx < ky : kx > ky;
+    if (order == RunOrder::Tag) {
+      if (x.tag.empty() != y.tag.empty()) return y.tag.empty();
+      if (x.tag != y.tag) return ascending ? x.tag < y.tag : x.tag > y.tag;
+    } else {
+      const double kx = orderKey(x, order);
+      const double ky = orderKey(y, order);
+      if (isnan(kx) != isnan(ky)) return isnan(ky);
+      if (kx < ky || ky < kx) return ascending ? kx < ky : kx > ky;
+    }
     if (x.wallEpoch != y.wallEpoch) return x.wallEpoch > y.wallEpoch;
     return tie(x.source, a.journal, x.windowSize, x.index) <
            tie(y.source, b.journal, y.windowSize, y.index);

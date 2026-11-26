@@ -4,7 +4,7 @@
 ---@field configure_side_pane        fun(win: integer, overrides?: table<string, any>)
 ---@field hide_cursor_while_active   fun(win: integer, buf: integer): fun()
 ---@field centered_popup_geometry    fun(content_width: integer, content_height: integer, opts?: { min_width?: integer, min_height?: integer }): integer, integer, integer, integer
----@field show_output                fun(title: string, text?: string, opts?: { ui_keys?: VF.StandardUiKeyOpts, help_tag?: string, help_title?: string }): integer, integer
+---@field show_output                fun(title: string, text?: string, opts?: VF.Ui.OutputOpts): integer, integer
 ---@field DEFAULT_HELP_TAG           string
 ---@field open_help                  fun(tag: string)
 ---@field set_buffer_keymaps         fun(buf: integer, keymaps: VF.Keymap[])
@@ -135,6 +135,7 @@ end
 ---@field lhs string
 ---@field handler string|function
 ---@field desc string
+---@field summary_hidden? boolean
 ---@field summary_group string?
 ---@field summary_desc string?
 ---@field mode string|string[]?
@@ -213,6 +214,7 @@ end
 ---@param title string
 ---@param keymaps VF.Keymap[]
 function M.show_keymap_help(title, keymaps)
+  keymaps = vim.tbl_filter(function(map) return not map.summary_hidden end, keymaps)
   local lines = {}
   local width = vim.fn.strdisplaywidth(title)
   local rows = {}
@@ -330,25 +332,36 @@ function M.with_standard_ui_keymaps(keymaps, opts)
   return merged
 end
 
+local OUTPUT_MAX_WIDTH = 72
+
+---@class VF.Ui.OutputOpts
+---@field ui_keys? VF.StandardUiKeyOpts
+---@field help_tag? string
+---@field help_title? string
+---@field window? table<string, any>
+---@field margin? integer  # Fill the editor, leaving this many cells outside the border.
+
+---@param margin integer
+---@return vim.api.keyset.win_config
+local function inset_geometry(margin)
+  local inset = 2 * (margin + 1)
+  return {
+    relative = "editor", row = margin, col = margin,
+    width = math.max(1, vim.o.columns - inset),
+    height = math.max(1, vim.o.lines - inset),
+  }
+end
+
 ---@param title string
 ---@param text? string
----@param opts? { ui_keys?: VF.StandardUiKeyOpts, help_tag?: string, help_title?: string }
+---@param opts? VF.Ui.OutputOpts
 ---@return integer buf
 ---@return integer win
 function M.show_output(title, text, opts)
   opts = opts or {}
-  local lines = { title }
-  if text and text ~= "" then
-    lines[#lines + 1] = ""
-    vim.list_extend(lines, vim.split(text, "\n", { plain = true }))
-  end
-
-  vim.cmd("botright new") -- create split + window
-  local win = v.nvim_get_current_win()
+  local lines = vim.split(text or "", "\n", { plain = true })
 
   local buf = v.nvim_create_buf(false, true)
-  v.nvim_win_set_buf(win, buf)
-
   v.nvim_buf_set_name(buf, ("vimficiency://%s"):format(title:gsub("%s+", "_")))
   v.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
@@ -358,10 +371,55 @@ function M.show_output(title, text, opts)
   vim.bo[buf].modifiable = false
   vim.bo[buf].filetype = "vimficiency"
 
-  M.configure_scratch_window(win)
+  local margin = opts.margin
+  local geometry
+  if margin then
+    geometry = inset_geometry(margin)
+  else
+    local width = vim.fn.strdisplaywidth(title)
+    for _, line in ipairs(lines) do
+      width = math.max(width, vim.fn.strdisplaywidth(line))
+    end
+    geometry = { relative = "editor", row = 0, col = 0, height = 1,
+      width = M.centered_popup_geometry(math.min(width + 2, OUTPUT_MAX_WIDTH), 1) }
+  end
+  local win = v.nvim_open_win(buf, true, vim.tbl_extend("force", geometry, {
+    style = "minimal",
+    border = "rounded",
+    title = " " .. title .. " ",
+    title_pos = "center",
+    noautocmd = true,
+  }))
+  M.configure_scratch_window(win, vim.tbl_extend("force",
+    { wrap = true, linebreak = true, breakindent = true }, opts.window or {}))
+
+  if margin then
+    v.nvim_create_autocmd("VimResized", {
+      buffer = buf,
+      callback = function() v.nvim_win_set_config(win, inset_geometry(margin)) end,
+    })
+  else
+    -- The height depends on how the lines wrap at this width.
+    local _, height, row, col =
+      M.centered_popup_geometry(geometry.width, v.nvim_win_text_height(win, {}).all)
+    v.nvim_win_set_config(win, { relative = "editor", row = row, col = col, height = height })
+  end
+
+  -- `g?` opens help in a split under the float, which would stay on top of it.
+  v.nvim_create_autocmd("WinLeave", {
+    buffer = buf,
+    once = true,
+    callback = function()
+      vim.schedule(function()
+        if v.nvim_win_is_valid(win) then v.nvim_win_close(win, true) end
+      end)
+    end,
+    desc = "vimfy: close output float",
+  })
 
   local keymaps = {
-    { lhs = "q", handler = "<cmd>close<cr>", desc = "Close vimfy view", nowait = true },
+    { lhs = "q", handler = "<cmd>close<cr>", desc = "Close", nowait = true, summary_group = "close" },
+    { lhs = "<Esc>", handler = "<cmd>close<cr>", desc = "Close", nowait = true, summary_group = "close" },
   }
   local ui_keys = opts.ui_keys
   if not ui_keys and opts.help_tag then

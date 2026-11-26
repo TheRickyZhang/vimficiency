@@ -2,7 +2,6 @@ return function(ctx)
   local helpers = ctx.helpers
   local sim = ctx.sim
   local playback = require("vimficiency.session.playback")
-  local session_store = ctx.session_store
   local with_replay = ctx.with_replay
   local assert_eq = ctx.assert_eq
   local assert_true = ctx.assert_true
@@ -73,19 +72,17 @@ return function(ctx)
       })
 
       helpers.new_buf({ "session simulate source" })
-      local id = session_store.register_fetched_result("simreplay", result)
-      local play = require("vimficiency.simulate.settings")
-      play.set_setting("include_user_sequence", true)
-      play.set_setting("window_count", 3)
+      local view = require("vimficiency.simulate.settings")
+      view.set_setting("include_user_sequence", true)
+      view.set_setting("window_count", 3)
       local warned = false
       helpers.with_patch({ { vim, "notify", function(message, level)
         if level == vim.log.levels.WARN and message:find("older save format (v1)", 1, true) then warned = true end
-      end } }, function() playback.simulate("simreplay", 3) end)
+      end } }, function() playback.view(result, "simreplay", 3) end)
 
       local tries = 0
       local function finish(ok, err)
         sim.cleanup_compare()
-        session_store.remove(id)
         next(ok, err)
       end
 
@@ -96,7 +93,7 @@ return function(ctx)
         if #windows == 3 and #states == 3 then
           local ok, err = pcall(function()
             local user = assert(sim._debug_get_pool().user, "missing user replay pool entry")
-            assert_true(warned, "Play warns that this is a v1 save")
+            assert_true(warned, "View warns that this is a v1 save")
             assert_eq(#user.tokens, 1, "older sessions show their recorded endpoints")
             assert_eq(user.states[2].lines, result.goal_lines, "v1 finish text")
             assert_eq(user.states[2].cursor, { result.end_row + 1, result.end_col }, "v1 finish cursor")
@@ -140,14 +137,12 @@ return function(ctx)
       })
 
       helpers.new_buf({ "session simulate source" })
-      local id = session_store.register_fetched_result("simcap", result)
       require("vimficiency.simulate.settings").set_setting("include_user_sequence", true)
-      playback.simulate("simcap", 4)
+      playback.view(result, "simcap", 4)
 
       local tries = 0
       local function finish(ok, err)
         sim.cleanup_compare()
-        session_store.remove(id)
         next(ok, err)
       end
 
@@ -158,9 +153,9 @@ return function(ctx)
           local ok, err = pcall(function()
             assert_true(sim._debug_statusline():find("panes 3/4 · only 2 results", 1, true) ~= nil,
               "status line should report the capped pane count: " .. sim._debug_statusline())
-            assert_true(ctx.header_lines(windows[2].buf)[2]:find("[1 · yours] Simulated", 1, true) ~= nil,
+            assert_true(ctx.header_lines(windows[2])[2]:find("[1 · yours] Simulated", 1, true) ~= nil,
               "top pane should be tagged as the user's sequence")
-            assert_true(ctx.header_lines(windows[3].buf)[2]:find("[2] ", 1, true) ~= nil,
+            assert_true(ctx.header_lines(windows[3])[2]:find("[2] ", 1, true) ~= nil,
               "second pane keeps its plain rank label")
           end)
           finish(ok, err)
@@ -172,6 +167,37 @@ return function(ctx)
       end
 
       wait_ready()
+    end,
+  },
+  {
+    name = "View commands follow the current replay pane across tabs",
+    run = function(next)
+      require("vimficiency").setup()
+      local origin = vim.api.nvim_get_current_win()
+      local function check_commands(in_view)
+        local names = vim.fn.getcompletion("Vimfy ", "cmdline")
+        assert_true(vim.tbl_contains(names, "view"), "global view command available")
+        for _, name in ipairs({ "focus", "escape" }) do
+          assert_eq(vim.tbl_contains(names, name), in_view, name .. " completion")
+        end
+        vim.cmd("Vimficiency")
+        local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+        vim.api.nvim_win_close(0, true)
+        assert_eq(vim.tbl_contains(lines, "View controls"), in_view, "command list heading")
+      end
+      with_replay({ "w", "$" }, { "alpha beta" }, function()
+        check_commands(true)
+        vim.cmd("Vimfy focus 2")
+        assert_eq(sim._debug_get_focus_state().focused_idx, 2, "typed focus expands pane 2")
+        local pane = vim.api.nvim_get_current_win()
+        vim.api.nvim_set_current_win(origin)
+        check_commands(false)
+        vim.cmd("Vimfy escape")
+        assert_eq(sim._debug_get_focus_state().focused_idx, 2, "another tab cannot restore the split")
+        vim.api.nvim_set_current_win(pane)
+        vim.cmd("Vimficiency escape")
+        assert_eq(#sim._debug_get_windows(), 2, "typed escape restores the split from View")
+      end, next)
     end,
   },
   {

@@ -166,10 +166,14 @@ expected<string, string> detailOf(const Window& window, const EvaluateParams& pa
   recording.set_col(window.start.col);
   recording.set_mode("n");
   size_t command = 0;
+  size_t typedBegin = 0;
   SharedLines previous = window.start.lines;
   for (const Window::Step& step : window.steps) {
     auto& frame = *recording.add_steps();
     while (command < step.commandEnd) *frame.mutable_keys() += window.commands[command++].keys;
+    const auto typed = string_view(window.typed).substr(typedBegin, step.typedEnd - typedBegin);
+    if (!typed.empty() && typed != frame.keys()) frame.set_typed(typed);
+    typedBegin = step.typedEnd;
     frame.set_row(step.state.row - above);
     frame.set_col(step.state.col);
     frame.set_mode("n");
@@ -238,9 +242,11 @@ int sampleJournal(const fs::path& journal, const vf::journal::SampleParams& para
   Event event;
   vector<Window> windows;
   int evaluated = 0;
+  const int64_t checkpointInterval = ssize(bytes) / 100 + 1;
   while (replay.next(event)) {
     windows.clear();
     cutter.push(event, windows);
+    if (windows.empty()) continue;
     for (const Window& window : windows) {
       // The cut is deterministic, so the first windows are the ones on file.
       int& done = existing.done[window.size];
@@ -287,6 +293,12 @@ int sampleJournal(const fs::path& journal, const vf::journal::SampleParams& para
       fs::remove(progressPath);
       g_evaluating = 0;
       evaluated++;
+    }
+    const int64_t covered = bytes.size() - replay.remainingBytes();
+    if (covered - existing.journalSize >= checkpointInterval && covered < ssize(bytes)) {
+      record.set_journal_size(covered);
+      append(out, record);
+      existing.journalSize = covered;
     }
   }
 

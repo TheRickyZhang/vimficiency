@@ -120,7 +120,7 @@ to deeper docs when needed.
 
 ## Scroll commands: search `<C-d>`/`<C-u>` (oracle-exact), exclude `<C-f>`/`<C-b>` (viewport-dependent)
 - The NavOptimizer search emits only `<C-d>`/`<C-u>` (`MovementToSpec.cpp` `SCROLL_MOTIONS`). Their cursor lands at `min/max(cursor ± 'scroll', buffer-edge)` — a fixed offset independent of the window's topline — so they match Vim exactly. `Verify_ScrollMotions.cpp` oracle-fuzzes them (small buffers, counts, varying scroll) and passes.
-- Full-page scroll places the cursor relative to the window's **topline**, which the search model omits. The interpreter approximates `<C-f>`/`<C-b>` by a clamped jump of about one window height. Search excludes both commands. Play shows the observed cursor for captured scrolls.
+- Full-page scroll places the cursor relative to the window's **topline**, which the search model omits. The interpreter approximates `<C-f>`/`<C-b>` by a clamped jump of about one window height. Search excludes both commands. View shows the observed cursor for captured scrolls.
 - Why not model topline to make all four exact: `line('w0')` is already captured in Lua (`util.lua`) but intentionally not plumbed to `NavContext` (its `topRow`/`bottomRow` fields stay commented out). A nowrap topline port (`onepage`/`halfpage`/`update_topline`) is tractable, but Neovim's default `'wrap'` makes scroll operate on *screen* lines, requiring window width + `plines_win` (tabs, double-width, number/sign/fold columns) — effectively Vim's display engine, which contradicts the minimal-state design. Scroll suggestions are also low-value (any vertical jump has a view-independent alternative like `NG`/`Nj`), so the cost/benefit didn't justify it.
 - Oracle harness: `NeovimOracle::simulateScroll` sets window-local `'scroll'` (clamped to height in the lua) for one call; `windowHeight()` queries the real height. Headless nvim **can't resize its sole window** (`nvim_win_set_height` is a no-op there), so the property test uses the fixed headless height and mirrors it into `NavContext` rather than varying it. Trip wire: `Verify_ScrollMotions.ScrollMotionsMatchOracle`.
 - Migration note: this replaced the hand-written `CountedMiscMotions`/`ScrollMotions` unit tests (removed). `EXPLORABLE_MOTIONS` was found to be vestigial for search (only feeds `ALL_MOTIONS` parsing); doc corrected in `dev/core/keyboard.md`.
@@ -163,12 +163,12 @@ to deeper docs when needed.
 - Fixed on the way: the Guide sidebar was empty because `autogenerate: { directory: '.' }` never matched the glob loader's root-relative file paths. See `dev/web/how-it-works-site.md`.
 
 ## The user is costed by the keys pressed, the search runs on the keys that ran (2026-11-20)
-- Every atom carries `keys` (resolved, after mappings) and `typed` (pressed). Scoring costs `typed` and uses `keys` for the search bound. Play labels observed states with the resolved keys. The optimizer can compare the observed endpoints even when a plugin's key sequence underdescribes its edits.
+- Every atom carries `keys` (resolved, after mappings) and `typed` (pressed). Scoring costs `typed` and uses `keys` for the search bound. View labels each delivery with its captured presses when available. The optimizer can compare the observed endpoints even when a plugin's key sequence underdescribes its edits.
 - Before this, `keys` did both jobs, so a two-key mapping was charged as its whole expansion and `j`→`gj` needed a costing special case.
 - A mapping that beats the optimizer's best is real, not an artifact; the normalized score is capped at 100.
 - `typed` comes from `vim.on_key` plus wrappers around `vim.fn.getchar`/`getcharstr` and the feedkeys functions (`logic::typedKeys` cancels keys plugins fed as typed). Neovim has no complete source: `on_key` skips `getchar()` input and CmdAtom `lhs` is a rebuilt label. An `lhs`-based merge was tried first and replaced: it guessed alignments and double counted which-key's re-fed keys. `dev/lua/atom-stream.md` has the measurements.
 - Wrapping global functions is deliberate: flash, mini.ai, mini.surround and which-key all look up `vim.fn.getcharstr` at call time.
-- Sequences shown to the user are still `keys`. The optimizer suggesting a user's own mappings stays open (`dev/architecture/todo.md` item 7).
+- View and the stats run preview fall back to resolved keys when pressed keys are unavailable. The optimizer suggesting a user's own mappings stays open (`dev/architecture/todo.md` item 7).
 
 ## Insert text is counted by the keys pressed in Insert mode (2026-11-22)
 - The command tables read commands from `keys`: it is the only stream with command structure, and it shares the optimizer's vocabulary. Inside an insert session `keys` also holds what mappings typed (autopairs runs `()<C-g>U<Left>` for `(`), which showed up as commands the user never pressed.
@@ -193,7 +193,7 @@ to deeper docs when needed.
 - Sessions and the journal each have their own score, command tables and optimizer times, one band of the stats page each. Sessions are the cases the user chose to look at, with real goal boundaries; the journal is everything typed, cut into fixed windows.
 - One command table over both was dropped. Shares are raw counts, so it was the journal's table in all but name, and the journal already holds the keys typed during a session, which it counted twice.
 - A page-level source selector was considered; both bands on one page, Sessions over Journal, was chosen instead.
-- The session log records no `query_size`, so only the journal's search times are bucketed by it.
+- Both sources group scores and search times by text change and unpadded query size.
 
 ## FFI boundary: protobuf both ways (2026-11-15)
 - Every request and result is a message from `src/LuaExports/proto/`; `Api.def` keeps one struct (`VFByteSlice`) and plain ints for ids. See `dev/lua/ffi-payloads.md`.

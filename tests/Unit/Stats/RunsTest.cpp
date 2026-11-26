@@ -17,6 +17,7 @@ protected:
     for (int i = 0; i < 12; i++) {
       auto s = session(8, i % 4 ? 4 : 2);
       s.set_finished_wall_epoch(NOW - 60 - i % 2 * DAY);
+      s.mutable_query()->set_nav_only(i % 2 == 0);
       addCommand(s, i % 2 ? "cebar<Esc>" : "w");
       if (i % 2) s.set_typed_insert("bar");
       s.set_best_seq(i % 3 ? "e" : "cwbar<Esc>");
@@ -180,16 +181,16 @@ TEST_F(StatsRunsTest, DrillsMadeBeforeASwitchFollowTheChartedSize) {
   const auto after = summarize();
   const auto& was = before.journal();
   const auto& now = after.journal();
-  ASSERT_NE(was.nav().spans(), now.nav().spans());
+  ASSERT_NE(was.breakdown().nav().score().spans(), now.breakdown().nav().score().spans());
 
   auto expectFollows = [&](const Filter& drill, const vf::stats::Score& score) {
     const auto list = runs(drill);
     EXPECT_EQ(list.total(), score.spans());
     for (const auto& row : list.runs()) EXPECT_EQ(row.window_size(), 2);
   };
-  EXPECT_EQ(was.nav_drill().SerializeAsString(), now.nav_drill().SerializeAsString());
-  expectFollows(was.nav_drill(), now.nav());
-  expectFollows(was.edit_drill(), now.edit());
+  EXPECT_EQ(was.breakdown().nav().drill().SerializeAsString(), now.breakdown().nav().drill().SerializeAsString());
+  expectFollows(was.breakdown().nav().drill(), now.breakdown().nav().score());
+  expectFollows(was.breakdown().edit().drill(), now.breakdown().edit().score());
   ASSERT_EQ(was.days_size(), now.days_size());
   for (int i = 0; i < was.days_size(); i++) {
     EXPECT_EQ(was.days(i).drill().SerializeAsString(), now.days(i).drill().SerializeAsString());
@@ -218,20 +219,31 @@ TEST_F(StatsRunsTest, RowsCarryTheirKeysAsTheListShowsThem) {
   EXPECT_EQ(list.runs(0).best_display(), "cw⟨2⟩<Esc>j");
 }
 
-TEST_F(StatsRunsTest, NavOrEditLeavesSessionsOut) {
+TEST_F(StatsRunsTest, ASessionRowCarriesItsSavedFilename) {
+  auto saved = session(8, 4);
+  saved.set_saved_filename("a-20261126-031401");
+  append(stamp, saved);
+  append(stamp, session(6, 3));
+  const auto list = runs({});
+  ASSERT_EQ(list.runs_size(), 2);
+  for (const auto& row : list.runs()) {
+    EXPECT_EQ(row.saved_filename(), row.user_cost() == 8 ? "a-20261126-031401" : "");
+  }
+}
+
+TEST_F(StatsRunsTest, NavAndEditPartitionBothSources) {
   populate();
   Filter nav;
   nav.set_kind(Filter::nav);
-  const auto list = runs(nav);
-  EXPECT_GT(list.total(), 0);
-  for (const auto& row : list.runs()) {
-    EXPECT_FALSE(row.id().has_session());
-    EXPECT_TRUE(row.nav_only());
-  }
   Filter edit;
   edit.set_kind(Filter::edit);
-  EXPECT_EQ(runs(nav).total() + runs(edit).total(), 22);
-  EXPECT_EQ(summarize(edit).sessions().sessions(), 0);
+  const auto movements = runs(nav);
+  const auto edits = runs(edit);
+  for (const auto& row : movements.runs()) EXPECT_TRUE(row.nav_only());
+  for (const auto& row : edits.runs()) EXPECT_FALSE(row.nav_only());
+  EXPECT_EQ(movements.total() + edits.total(), runs({}).total());
+  EXPECT_EQ(summarize(nav).sessions().sessions(), 6);
+  EXPECT_EQ(summarize(edit).sessions().sessions(), 8);
 }
 
 TEST_F(StatsRunsTest, OutcomesAreASet) {
@@ -334,17 +346,21 @@ TEST_F(StatsRunsTest, EveryDrillFilterListsWhatItsRowCounted) {
     EXPECT_EQ(runs(sessions.unbeaten_drill()).total(), sessions.unbeaten());
     EXPECT_EQ(runs(journal.unbeaten_drill()).total(), journal.unbeaten());
     ASSERT_GT(journal.unscored_size(), 0);
+    int unscored = 0;
     for (const auto& entry : journal.unscored()) {
+      unscored += entry.runs();
       EXPECT_EQ(runs(entry.drill()).total(), entry.runs()) << entry.outcome();
     }
+
+    EXPECT_EQ(runs(journal.unscored_drill()).total(), unscored);
 
     auto expectScore = [&](const Filter& drill, const vf::stats::Score& score) {
       const auto list = runs(drill);
       EXPECT_EQ(list.total(), score.spans());
       if (score.spans() > 0) EXPECT_NEAR(scoreOf(list), score.score(), 1e-9);
     };
-    expectScore(journal.nav_drill(), journal.nav());
-    expectScore(journal.edit_drill(), journal.edit());
+    expectScore(journal.breakdown().nav().drill(), journal.breakdown().nav().score());
+    expectScore(journal.breakdown().edit().drill(), journal.breakdown().edit().score());
     for (const auto& size : journal.sizes()) {
       charted = size.size();
       Filter scoring = base;
@@ -410,6 +426,8 @@ TEST_F(StatsRunsTest, UnbeatenTagsCountTheRunsHoldingTheirCommands) {
   const auto other = runs(tags[2].drill());
   ASSERT_EQ(other.runs_size(), 1);
   EXPECT_EQ(other.runs(0).id().journal().last_atom(), 2);
+  EXPECT_TRUE(other.runs(0).tag().empty());
+  EXPECT_EQ(runs(tags[1].drill()).runs(0).tag(), "paste, undo or redo");
 
   Filter scoredOnly;
   scoredOnly.add_outcomes(Sample::scored);
@@ -419,6 +437,63 @@ TEST_F(StatsRunsTest, UnbeatenTagsCountTheRunsHoldingTheirCommands) {
   ASSERT_EQ(sessionTags.size(), 1);
   EXPECT_EQ(sessionTags[0].name(), "undo or redo");
   EXPECT_EQ(runs(sessionTags[0].drill()).total(), 1);
+}
+
+TEST_F(StatsRunsTest, UserBetterTagsIncludeScreenLineMotionsAcrossBufferLines) {
+  auto wrapped = sample(4, 3, 6);
+  addCommand(wrapped, "2gk");
+  wrapped.add_within_line(0);
+  addCommand(wrapped, "p");
+  auto crossed = sample(4, 3, 6);
+  crossed.set_last_atom(4);
+  addCommand(crossed, "gj");
+  crossed.set_best_seq("p");
+  auto tied = wrapped;
+  tied.set_last_atom(8);
+  tied.set_best_cost(tied.user_cost());
+  auto ordinary = sample(4, 3, 6);
+  ordinary.set_last_atom(12);
+  addCommand(ordinary, "j");
+  ordinary.set_best_seq("gk");
+  journal("a", 16, params, {wrapped, crossed, tied, ordinary});
+  auto undone = session(2, 4);
+  addCommand(undone, "u");
+  append(stamp, undone);
+
+  const auto summary = summarize();
+  EXPECT_EQ(summary.journal().beats(), 3);
+  const auto& tags = summary.journal().beats_tags();
+  ASSERT_EQ(tags.size(), 3);
+  EXPECT_EQ(tags[0].name(), "screen-line movement (gj/gk)");
+  EXPECT_EQ(tags[0].runs(), 2);
+  EXPECT_EQ(tags[1].name(), "paste");
+  EXPECT_EQ(tags[1].runs(), 1);
+  EXPECT_EQ(tags[2].name(), "other");
+  EXPECT_EQ(tags[2].runs(), 1);
+  for (const auto& tag : tags) {
+    const auto list = runs(tag.drill());
+    ASSERT_EQ(list.runs_size(), tag.runs());
+    for (const auto& row : list.runs()) {
+      if (tag.name() == "other") {
+        EXPECT_EQ(row.id().journal().last_atom(), 12);
+      } else {
+        EXPECT_TRUE(row.tag().contains(tag.name()));
+      }
+    }
+  }
+  for (bool ascending : {false, true}) {
+    const auto list = runs({}, RunsRequest::tag, 0, 5, false, ascending);
+    ASSERT_EQ(list.runs_size(), 5);
+    EXPECT_EQ(list.runs(ascending ? 0 : 2).tag(), "screen-line movement (gj/gk)");
+    EXPECT_EQ(list.runs(1).tag(), "screen-line movement (gj/gk), paste");
+    EXPECT_EQ(list.runs(ascending ? 2 : 0).tag(), "undo or redo");
+    EXPECT_TRUE(list.runs(3).tag().empty());
+    EXPECT_TRUE(list.runs(4).tag().empty());
+  }
+  const auto& sessions = summary.sessions().beats_tags();
+  ASSERT_EQ(sessions.size(), 1);
+  EXPECT_EQ(sessions[0].name(), "undo or redo");
+  EXPECT_EQ(runs(sessions[0].drill()).total(), 1);
 }
 
 TEST_F(StatsRunsTest, AMergedRowDrillsIntoEitherVariant) {
@@ -460,7 +535,11 @@ TEST_F(StatsRunsTest, RollupsCountButAreNotListedAndCommandsLeaveThemOut) {
   EXPECT_EQ(byW.rolled_up(), 0);
   EXPECT_EQ(byW.rollup_runs_without_commands(), 11);
   EXPECT_EQ(byW.total(), byW.runs_size());
-  EXPECT_EQ(summarize(w).journal().rollup_runs_without_commands(), 11);
+  EXPECT_EQ(summarize(w).journal().rollup_runs_without_commands(), 0);
+  auto wide = request();
+  *wide.mutable_filter() = w;
+  wide.set_chart_unit(vf::stats::weeks);
+  EXPECT_EQ(summarize(wide).journal().rollup_runs_without_commands(), 11);
   EXPECT_EQ(summarize().journal().rollup_runs_without_commands(), 0);
 
   Filter recentW = w;
@@ -526,6 +605,28 @@ TEST_F(StatsRunsTest, PagesAreSlicesOfTheWholeOrder) {
   *negative.mutable_scope() = request();
   negative.set_offset(-1);
   EXPECT_FALSE(Stats::listRuns(negative.SerializeAsString()));
+}
+
+TEST_F(StatsRunsTest, JournalColumnsSortNumericallyBeforePagingWithSessionsLast) {
+  auto first = sample(4, 8, 4);
+  first.set_last_atom(2);
+  auto second = first;
+  second.set_last_atom(10);
+  journal("m", 10, params, {first, second});
+  append(stamp, session(8, 4));
+
+  for (bool ascending : {false, true}) {
+    const auto page = runs({}, RunsRequest::last_atom, 1, 1, false, ascending);
+    ASSERT_EQ(page.runs_size(), 1);
+    EXPECT_EQ(page.runs(0).id().journal().last_atom(), ascending ? 10 : 2);
+    for (auto order : {RunsRequest::last_atom, RunsRequest::window_size}) {
+      const auto list = runs({}, order, 0, 3, false, ascending);
+      ASSERT_EQ(list.runs_size(), 3);
+      EXPECT_EQ(list.runs(0).window_size(), 4);
+      EXPECT_EQ(list.runs(1).window_size(), 4);
+      EXPECT_TRUE(list.runs(2).id().has_session());
+    }
+  }
 }
 
 TEST_F(StatsRunsTest, SessionsComeFromEveryStampUnlessCurrentOnlyAndRunsFromTheCurrentParams) {

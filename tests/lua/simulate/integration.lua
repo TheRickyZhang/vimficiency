@@ -10,7 +10,6 @@ package.path = tests_root .. "?.lua;" .. package.path
 local helpers = require("_helpers")
 local sim = require("vimficiency.simulate")
 local highlights = require("vimficiency.ui.highlights")
-local session_store = require("vimficiency.session.store")
 
 -- Quiet the environment — mirrors `runner.lua`'s treatment so this test
 -- fits the same output shape as the main batch. See the runner for
@@ -80,53 +79,37 @@ local function get_snapshot(idx, step)
   return snap
 end
 
----@param buf integer
----@return string[]
-local function header_lines(buf)
-  local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
-  for _, mark in ipairs(marks) do
-    local details = mark[4]
-    ---@cast details -nil
-    if details.virt_lines then
-      ---@type string[]
-      local lines = {}
-      for _, row in ipairs(details.virt_lines) do
-        local parts = {}
-        for _, chunk in ipairs(row) do
-          parts[#parts + 1] = chunk[1]
-        end
-        lines[#lines + 1] = table.concat(parts)
-      end
-      return lines
-    end
-  end
-  error("missing virtual header")
-end
-
----@param buf integer
+---@param entry VF.Replay.Window
 ---@return table[][]
-local function header_virt_lines(buf)
-  local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
-  for _, mark in ipairs(marks) do
-    local details = mark[4]
-    ---@cast details -nil
-    if details.virt_lines then
-      return details.virt_lines
-    end
+local function header_chunks(entry)
+  local buf = vim.api.nvim_win_get_buf(assert(entry.header_win))
+  local rows = {}
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })) do
+    rows[mark[2] + 1] = assert(mark[4]).virt_text
   end
-  error("missing virtual header")
+  return rows
 end
 
----@param buf integer
+---@param entry VF.Replay.Window
+---@return string[]
+local function header_lines(entry)
+  local lines = {}
+  for row, chunks in pairs(header_chunks(entry)) do
+    local parts = {}
+    for _, chunk in ipairs(chunks) do parts[#parts + 1] = chunk[1] end
+    lines[row] = table.concat(parts)
+  end
+  return lines
+end
+
+---@param entry VF.Replay.Window
 ---@param text string
 ---@param hl string
 ---@return boolean
-local function header_has_chunk(buf, text, hl)
-  for _, row in ipairs(header_virt_lines(buf)) do
+local function header_has_chunk(entry, text, hl)
+  for _, row in pairs(header_chunks(entry)) do
     for _, chunk in ipairs(row) do
-      if chunk[1] == text and chunk[2] == hl then
-        return true
-      end
+      if chunk[1] == text and chunk[2] == hl then return true end
     end
   end
   return false
@@ -157,12 +140,12 @@ local function with_replay(sequences, lines, fn, next, opts)
   for _, seq in ipairs(sequences) do
     suggestions[#suggestions + 1] = { seq = seq }
   end
-  -- Seed play settings so every pane in the test set is visible. Without
+  -- Seed view settings so every pane in the test set is visible. Without
   -- this the tests would be clamped to the default window_count (2).
-  local play = require("vimficiency.simulate.settings")
+  local view = require("vimficiency.simulate.settings")
   local expected_windows = #suggestions + (recording and 1 or 0)
-  play.set_setting("window_count", math.min(4, math.max(1, expected_windows)))
-  play.set_setting("include_user_sequence", recording ~= nil)
+  view.set_setting("window_count", math.min(4, math.max(1, expected_windows)))
+  view.set_setting("include_user_sequence", recording ~= nil)
   sim.simulate_compare(lines, start_row, start_col,
     {
       user = recording and { recording = recording } or nil,
@@ -209,7 +192,6 @@ local case_context = {
   helpers = helpers,
   sim = sim,
   highlights = highlights,
-  session_store = session_store,
   with_replay = with_replay,
   get_window = get_window,
   get_snapshot = get_snapshot,

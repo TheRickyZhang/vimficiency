@@ -29,6 +29,9 @@ struct Run {
   int querySize = 0;
   std::string userKeys;
   std::string bestSeq;
+  // A session's `saved_filename`; empty for a journal run.
+  std::string savedFilename;
+  std::string tag;
   RunCommands user;
   RunCommands optimizer;
 
@@ -54,6 +57,8 @@ void tallyCommands(Run& run, const Recorded& recorded, std::span<const int> with
   if (insertText) countInsertKeys(user, recorded.typed_insert());
   CommandCounts optimizer;
   countKeys(optimizer, run.bestSeq, insertText);
+  const bool beats = recorded.outcome() == Recorded::scored && run.userCost < run.bestCost;
+  if (beats || recorded.outcome() == Recorded::unbeaten) run.tag = tagLabel(user, beats);
   run.user = intern(user);
   run.optimizer = intern(optimizer);
 }

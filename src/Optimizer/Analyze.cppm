@@ -90,6 +90,8 @@ struct SearchRegion {
   int paddingAbove;
   int paddingBelow;
 
+  int querySize(const Lines& initial, const Lines& goal) const;
+
   inline int paddedHeight() const {
     return std::max(initialEnd, goalEnd) - begin + paddingAbove + paddingBelow;
   }

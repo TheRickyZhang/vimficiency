@@ -51,7 +51,7 @@ end
 
 local KIND_DESC = {
   named         = "a named alias (letters only, e.g. 'a')",
-  recall_key    = "a recall window (N commands ago, e.g. '5')",
+  recall_key    = "a recall window (N recorded command atoms ago, e.g. '5')",
   recall_time   = "a recall window (Ns seconds ago, e.g. '3s')",
   last_finished = "'@' (the last finished session)",
   last_suggest  = "'$' (the last suggest regression)",
@@ -93,9 +93,9 @@ function M.is_recall(s)
   return kind == "recall_key" or kind == "recall_time"
 end
 
---- True iff `s` is a safe saved-result filename (without the `.json` suffix).
---- Grammar: `^[%w_][%w._-]*$`. Every named and recall alias is also a valid
---- filename, which is what lets `save <alias>` default the filename to the alias.
+--- True iff `s` is a safe result filename (without the `.json` suffix).
+--- Grammar: `^[%w_][%w._-]*$`. Every named alias is also a valid filename,
+--- which is what lets a saved session's filename start with its alias.
 ---@param s any
 ---@return boolean
 function M.is_valid_filename(s)

@@ -7,11 +7,11 @@ export {
 // Bump when a journal record changes meaning, so readers stop at older files.
 inline constexpr int JOURNAL_FORMAT = 3;
 // Bump when what a `.samples` file holds changes, so older files are rescored.
-inline constexpr int SAMPLES_FORMAT = 7;
+inline constexpr int SAMPLES_FORMAT = 8;
 // Bump when rollup totals change meaning.
 inline constexpr int ROLLUP_FORMAT = 1;
 // Bump when a session log record changes meaning; a newer log is an error.
-inline constexpr int SESSION_LOG_FORMAT = 1;
+inline constexpr int SESSION_LOG_FORMAT = 2;
 // Bump when an optimizer or effort-model change moves costs.
 inline constexpr int SCORING_VERSION = 9;
 
@@ -19,7 +19,7 @@ inline constexpr int SCORING_VERSION = 9;
 inline constexpr std::string_view JOURNAL_SCHEMA = "1ffa0ade60695e56";
 inline constexpr std::string_view SAMPLES_SCHEMA = "68cf6cc22e7a71e5";
 inline constexpr std::string_view ROLLUP_SCHEMA = "16fea25bce12ad21";
-inline constexpr std::string_view SESSION_LOG_SCHEMA = "4291f96a7f325b98";
+inline constexpr std::string_view SESSION_LOG_SCHEMA = "9a62c75231e02705";
 inline constexpr std::string_view SCORING_SIGNATURE = "00ff95de3a22fc8c";
 
 }  // export

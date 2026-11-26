@@ -55,7 +55,7 @@ test("has_room_for_named: finished records do not consume capacity slots", funct
     local rec = session_store.get_active(alias)
     assert_true(rec ~= nil, "start failed for " .. alias)
     rec = assert(rec)
-    session_store.convert_to_finished(rec.id, h.fake_result({ user_seq = "" }), alias)
+    session_store.convert_to_finished(rec.id, h.fake_result({ user_seq = "" }))
   end
   assert_eq(session_store.has_room_for_named("capf"), true,
     "a new alias must be allowed when all existing records are finished")

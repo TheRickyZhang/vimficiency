@@ -176,6 +176,7 @@ local function build_result(input, analyze, analyze_ms)
   local request = input.request
   local result = {
     recording = input.recording,
+    query = request.query,
     lines = request.initial_lines,
     goal_lines = request.goal_lines,
     start_row = request.start_row,
@@ -194,6 +195,7 @@ local function build_result(input, analyze, analyze_ms)
     window_height = request.window_height,
     scroll_amount = request.scroll_amount,
     indent = request.indent,
+    filetype = active.start_state.filetype,
     user_seq = request.user_seq,
     user_typed = request.user_typed,
     user_typed_insert = input.user_typed_insert,

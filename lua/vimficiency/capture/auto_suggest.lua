@@ -61,7 +61,7 @@ local function render_suggestion(result, started_mono_ns)
 
   local timing = result.analyze_ms and string.format(" · %.0fms", result.analyze_ms) or ""
   local body = string.format(
-    "vimfy regression · %s · %.0f → %.0f%s\n:Vimfy view $  ·  play $  ·  explore $",
+    "vimfy regression · %s · %.0f → %.0f%s\n:Vimfy view $  ·  explore $",
     ago, result.user_cost, optimal.cost, timing)
 
   vim.notify(body, vim.log.levels.INFO, { title = "vimfy suggest", id = "vimfy_suggest" })
@@ -99,17 +99,17 @@ local function fire_with_window(recall_alias, gate, kind)
 
     -- Cost gate: consume the record but suppress the notification.
     if gate and not gate(result) then
-      session_store.convert_to_finished(id, result, recall_alias, kind)
+      session_store.convert_to_finished(id, result, kind)
       return
     end
 
     local fp = fingerprint_result(result)
     if fp == last_fingerprint then
-      session_store.convert_to_finished(id, result, recall_alias, kind)
+      session_store.convert_to_finished(id, result, kind)
       return
     end
 
-    if not session_store.convert_to_finished(id, result, recall_alias, kind) then
+    if not session_store.convert_to_finished(id, result, kind) then
       return
     end
 

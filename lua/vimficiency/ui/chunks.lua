@@ -1,7 +1,4 @@
--- Chunk-list utilities shared between the explore header (virt_lines on
--- the scratch buffer) and the play panes (virt_lines on each replay
--- buffer). A "chunk list" is the `{ {text, hl}, ... }` shape Neovim's
--- virt_lines API consumes: each line of virtual text is one such list.
+-- Highlighted text chunks shared by the Explore and replay headers.
 local M = {}
 
 ---@param chunks table[]

@@ -31,7 +31,7 @@ function M.build(pool_arg, initial_lines)
         end
       end
       states[i + 1] = { lines = lines, cursor = { step.row + 1, step.col }, mode = step.mode }
-      tokens[i] = { text = step.keys, kind = "recorded" }
+      tokens[i] = { text = step.typed or step.keys, kind = "recorded" }
       keys[i] = step.keys
     end
     local top = pool_arg.suggestions[1]

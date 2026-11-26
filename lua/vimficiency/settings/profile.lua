@@ -29,7 +29,7 @@ end
 ---Load the saved envelope for `feature`. Returns `{ version = nil, data = {} }`
 ---when the sidecar is missing or malformed. The caller inspects
 ---`version` to decide between accept-as-is and migration.
----@param feature string  e.g. "explore", "play"
+---@param feature string  e.g. "explore", "view"
 ---@return VF.SettingsProfile.Envelope
 function M.load(feature)
   local empty = { version = nil, data = {} }

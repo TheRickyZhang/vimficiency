@@ -65,7 +65,26 @@ the lifetime of in-progress sessions.
 | `KEY_SESSION_CAPACITY` | `200` | Number of recent commands always kept once captured. |
 | `MAX_RETENTION_SECONDS` | `120` | Age in seconds before a Recall entry can be evicted. An older entry is evicted only when the ring also exceeds `KEY_SESSION_CAPACITY`. |
 | `MANUAL_IDLE_TIMEOUT_SECONDS` | `300` | A manual (`start`/`finish`) session left idle this long is auto-ended with a warning. |
-| `lossy_mappings` | `"warn"` | For a Lua mapping that moves the cursor or edits text, `"drop"` ends the session and names the mapping. `"warn"` records its typed keys with a once-per-session notice. `"allow"` records silently. Play shows the observed cursor and edit under those keys. |
+| `lossy_mappings` | `"warn"` | For a Lua mapping that moves the cursor or edits text, `"drop"` ends the session and names the mapping. `"warn"` records its typed keys with a once-per-session notice. `"allow"` records silently. View shows the observed cursor and edit under those keys. |
+
+## Saved sessions
+
+Every finished session's result is written to
+`stdpath('data')/vimficiency/sessions/`, so [`:Vimfy stats`](11-commands.md)
+can show and replay it later. See
+[7a. Session storage](07a-session-storage.md).
+
+A result holds the lines its session ran over, unencrypted. That is the part
+of the buffer the session touched plus a few lines of context, which for a
+small file is all of it.
+
+```lua
+require('vimficiency').setup({ sessions = { save = false } })
+```
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `sessions.save` | `true` | Save every finished session's result. Nothing is removed on its own; `:Vimfy rm` deletes one. When off, a result lives only in memory unless you `:Vimfy pin <alias> <filename>` it. |
 
 ## Journal
 

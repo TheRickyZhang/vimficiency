@@ -33,7 +33,7 @@ local ns = v.nvim_create_namespace("vimfy_stats")
 ---@field runs? VF.Stats.RunListView   # the last run list opened
 ---@field saved_tab integer
 ---@field saved_win integer
----@field waiting boolean   # a redraw is queued on the scoring run in flight
+---@field progress_timer? integer
 
 ---@param buf integer
 ---@param lines string[]
@@ -69,22 +69,55 @@ local function refresh(view)
   if view.chart and v.nvim_win_is_valid(view.chart.win) then view.chart.refresh() end
 end
 
---- Redraws once the scoring run in flight finishes, if the view is still open.
+---@param view VF.Stats.View
+local function stop_progress(view)
+  if view.progress_timer then vim.fn.timer_stop(view.progress_timer) end
+  view.progress_timer = nil
+end
+
 ---@param view VF.Stats.View
 function watch_scoring(view)
-  if view.waiting then return end
-  view.waiting = sampling.when_done(util.entry(function()
-    view.waiting = false
-    if not v.nvim_tabpage_is_valid(view.tab) then return end
+  if view.progress_timer or not sampling.running() then return end
+  view.progress_timer = vim.fn.timer_start(1000, util.entry(function()
+    if view.tab ~= v.nvim_get_current_tabpage() then return end
+    local coverage = stats_query.journal_coverage()
+    local journal = view.summary.journal
+    if render.journal_percent(journal) == render.journal_percent(coverage) then return end
+    journal.scored_bytes = coverage.scored_bytes
+    journal.journal_bytes = coverage.journal_bytes
+    draw(view)
+    if view.chart and v.nvim_win_is_valid(view.chart.win) then view.chart.update_coverage(coverage) end
+  end), { ["repeat"] = -1 })
+  sampling.when_done(util.entry(function()
+    stop_progress(view)
+    if not v.nvim_win_is_valid(view.win) then return end
     refresh(view)
     if view.runs and v.nvim_win_is_valid(view.runs.list_win) then view.runs.refresh() end
   end))
+end
+
+---@param view VF.Stats.View
+---@return boolean
+local function focus_child(view)
+  local win = v.nvim_get_current_win()
+  local chart = view.chart and view.chart.win
+  if win ~= view.win and win ~= chart then return false end
+  local runs = view.runs and view.runs.list_win
+  if runs and v.nvim_win_is_valid(runs) then
+    v.nvim_set_current_win(runs)
+  elseif win == view.win and chart and v.nvim_win_is_valid(chart) then
+    v.nvim_set_current_win(chart)
+  else
+    return false
+  end
+  return true
 end
 
 --- Every drill, on the stats or a chart's page, opens its runs here.
 ---@param view VF.Stats.View
 ---@param item VF.Stats.Item
 local function list_runs(view, item)
+  if focus_child(view) then return end
   view.runs = run_list.open(vim.tbl_extend("force", view.query, { filter = item.drill }), item.label, item.order)
 end
 
@@ -100,7 +133,8 @@ local function enter(view, item)
   elseif item.drill then
     list_runs(view, item)
   elseif item.kind == "chart" then
-    view.chart = chart_view.open(item.chart, view.summary,
+    if focus_child(view) then return end
+    view.chart = chart_view.open(item.source, item.chart, view.summary,
       function(scale)
         if not scale or (scale.overview and scale.unit == view.summary.chart_unit) then return view.summary end
         return stats_query.summary(view.query, scale)
@@ -158,15 +192,21 @@ end
 ---@param view VF.Stats.View
 local function watch_view(view)
   local group = v.nvim_create_augroup("vimfy_stats_" .. view.tab, {})
+  v.nvim_create_autocmd("WinEnter", {
+    group = group,
+    nested = true,
+    callback = function() focus_child(view) end,
+  })
   v.nvim_create_autocmd("User", {
     group = group,
     pattern = "VimficiencyJournalScoringStarted",
-    callback = util.entry(function() draw(view) end),
+    callback = util.entry(function() refresh(view) end),
   })
   v.nvim_create_autocmd("WinClosed", {
     group = group,
     pattern = tostring(view.win),
     callback = function()
+      stop_progress(view)
       v.nvim_del_augroup_by_id(group)
       -- `q` closes the tab itself; by the time this runs, it is gone.
       vim.schedule(function()
@@ -231,7 +271,6 @@ function M.open()
     tab = tab, win = win, buf = buf,
     saved_tab = saved_tab,
     saved_win = saved_win,
-    waiting = false,
   }
   set_keymaps(view)
   watch_view(view)

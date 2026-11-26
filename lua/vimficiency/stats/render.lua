@@ -1,11 +1,12 @@
 ---@class (exact) VF.Stats.Render
 ---@field SPLIT_MIN_WIDTH integer
 ---@field build_page fun(summary: VF.Stats.Summary, query: VF.Stats.Scope, background: VF.Stats.Background, width?: integer, expanded_commands?: VF.Stats.ExpandedCommands): VF.Stats.Page
----@field chart_page fun(summary: VF.Stats.Summary, name: VF.Stats.ChartName, width: integer, height: integer, shown: VF.Stats.ChartLines, scale?: VF.Stats.ChartScale): VF.Stats.Page
----@field journal_efficiency fun(summary: VF.Stats.JournalSummary): string
----@field run_lines fun(list: VF.Stats.RunList, offset: integer, sort?: VF.Stats.RunSort): string[]
----@field run_items fun(lines: string[], count: integer): VF.Stats.RunCell[]
----@field run_preview fun(row: VF.Stats.RunRow, detail: VF.Stats.RunDetail|nil, err: string|nil, width: integer): VF.Stats.RunPreview
+---@field chart_page fun(summary: VF.Stats.Summary, source: VF.Stats.Source, name: VF.Stats.ChartName, width: integer, height: integer, shown: VF.Stats.ChartLines, scale?: VF.Stats.ChartScale): VF.Stats.Page
+---@field efficiency fun(summary: VF.Stats.Summary, source: VF.Stats.Source): string
+---@field journal_percent fun(coverage: VF.Stats.JournalCoverage): integer
+---@field run_table fun(list: VF.Stats.RunList, offset: integer, width: integer, sort?: VF.Stats.RunSort): string[], VF.Stats.RunCell[]
+---@field run_name fun(row: VF.Stats.RunRow): string
+---@field run_preview fun(row: VF.Stats.RunRow, detail: VF.Session.Viewable|nil, err: string|nil, width: integer): VF.Stats.RunPreview
 local M = {}
 
 local log = require("vimficiency.stats.log")
@@ -27,7 +28,7 @@ local sequence_display = require("vimficiency.ui.sequence_display")
 ---@field scoring boolean   # a run is in flight
 ---@field err? string       # why the last background run failed
 
----@alias VF.Stats.ChartName "sessions"|"journal"|"nav_timing"|"edit_timing"
+---@alias VF.Stats.ChartName "history"|"nav"|"edit"
 
 ---@class VF.Stats.ChartScale
 ---@field unit string
@@ -578,27 +579,28 @@ local function push_average(out, score, width)
 end
 
 ---@param out VF.Stats.Page
+---@param source VF.Stats.Source
 ---@param name VF.Stats.ChartName
 ---@param first integer
-local function chart_item(out, name, first)
+local function chart_item(out, source, name, first)
   out.items[#out.items + 1] = {
     row = first, last_row = #out.lines - 1, cursor = { first, #PROSE_INDENT },
-    id = "chart:" .. name, kind = "chart", chart = name,
+    id = "chart:" .. source .. (name == "history" and "" or ":" .. name), kind = "chart", chart = name,
   }
 end
 
 --- The chart under its title, as one item, with as many whole columns per day as fit.
 ---@param out VF.Stats.Page
----@param name VF.Stats.ChartName
+---@param source VF.Stats.Source
 ---@param days VF.Stats.DayScore[]
 ---@param width? integer
-local function push_daily_chart(out, name, days, width, unit)
+local function push_daily_chart(out, source, days, width, unit)
   local first = #out.lines
   local titles = { days = "Daily", weeks = "Weekly", hours = "Hourly", minutes = "Minute" }
   push(out, "    " .. titles[unit] .. " percent efficiency")
   push_chart(out, days, PROSE_INDENT,
     math.max(CHART_BUCKETS, (width or 0) - #PROSE_INDENT - CHART_AXIS_WIDTH - 1), OVERVIEW_CHART_ROWS + 2, unit)
-  chart_item(out, name, first)
+  chart_item(out, source, "history", first)
 end
 
 local function format_ratio(r)
@@ -654,55 +656,47 @@ local function timing_plot(bins)
 end
 
 ---@param out VF.Stats.Page
----@param name "nav_timing"|"edit_timing"
+---@param source VF.Stats.Source
+---@param name "nav"|"edit"
 ---@param title string
 ---@param bins VF.Stats.TimingBucket[]
 ---@param width? integer
-local function push_timing_chart(out, name, title, bins, width)
+local function push_timing_chart(out, source, name, title, bins, width)
   local count = 0
   for _, bucket in ipairs(bins) do count = count + bucket.timing.n end
   if count == 0 then return end
   local row = #out.lines
   push_prose(out, string.format("%s · %s", title, plural(count, "sample")), width)
-  chart_item(out, name, row)
+  chart_item(out, source, name, row)
   mark_text(out, highlights.STATS_DRILL)
 end
 
---- In the stats: the score, its chart and the optimizer's response time. The
---- rest is the chart's own page.
 ---@param out VF.Stats.Page
----@param summary VF.Stats.Summary
+---@param t VF.Stats.Timing|nil
 ---@param width? integer
-local function push_sessions(out, summary, width)
-  local sessions = summary.sessions
-  if summary.lifetime.sessions == 0 then
-    push_prose(out, "No sessions yet: :Vimfy start, watch or recall to add some.", width)
-    return
-  end
-  push_average(out, sessions.chart_score, width)
-  push_daily_chart(out, "sessions", sessions.days, width, summary.chart_unit)
-  local t = sessions.timing
+local function push_session_timing(out, t, width)
   if t then
     local row = #out.lines
-    push_prose(out, string.format("Optimizer response, last 30 days · %s ms median · %s",
+    push_prose(out, string.format("Optimizer response · %s ms median · %s",
       millis(t.p50), plural(t.n, "session")), width)
     drillable(out, t.drill, "Session response times", "session_timing")
     local item = out.items[#out.items]
     item.row, item.order = row, "slowest"
   else
-    push_prose(out, "No response times in the last 30 days.", width)
+    push_prose(out, "No response times in this period.", width)
   end
 end
 
---- A heading, then a row per category of its runs. Only the categories list runs.
+--- A heading, then a row per category of its runs.
 ---@param out VF.Stats.Page
 ---@param heading string
 ---@param title string   # the heading's runs, in a run list's title
 ---@param hl string
----@param categories { runs: integer, name: string, drill: VF.Stats.Filter }[]
-local function push_categories(out, heading, title, hl, categories)
+---@param categories VF.Stats.RunTag[]
+---@param drill VF.Stats.Filter
+local function push_categories(out, heading, title, hl, categories, drill)
   push(out, PROSE_INDENT .. heading)
-  mark_text(out, hl)
+  drillable(out, drill, title, nil, hl)
   local width = 0
   for _, category in ipairs(categories) do width = math.max(width, #tostring(category.runs)) end
   for _, category in ipairs(categories) do
@@ -714,29 +708,30 @@ end
 ---@param out VF.Stats.Page
 ---@param section VF.Stats.SessionSummary|VF.Stats.JournalSummary
 ---@param noun string
-local function push_unbeaten(out, section, noun)
-  if section.unbeaten == 0 then return end
-  push_categories(out, "Unbeaten (100% efficient): " .. plural(section.unbeaten, noun),
-    "unbeaten " .. noun .. "s", highlights.STATS_UNBEATEN, section.unbeaten_tags)
+local function push_search_outcomes(out, section, noun)
+  if section.unbeaten > 0 then
+    push_categories(out, "No results: " .. plural(section.unbeaten, noun),
+      "No results", highlights.STATS_UNBEATEN, section.unbeaten_tags, section.unbeaten_drill)
+  end
+  if section.beats > 0 then
+    push_categories(out, "User better: " .. plural(section.beats, noun), "User better",
+      highlights.STATS_DRILL, section.beats_tags, section.beats_drill)
+  end
 end
 
 ---@param out VF.Stats.Page
 ---@param summary VF.Stats.Summary
 local function push_sessions_details(out, summary)
-  local lifetime, sessions = summary.lifetime, summary.sessions
+  local sessions = summary.sessions
   push(out, string.format("    %s  (mark %d · watch %d · recall %d · suggest %d) · %s",
-    plural(lifetime.sessions, "session"), lifetime.mark, lifetime.watch, lifetime.recall, lifetime.suggest,
-    plural(lifetime.commands, "command")))
-  push_unbeaten(out, sessions, "session")
-  if sessions.beats > 0 then
-    push(out, string.format("    You beat the optimizer: %s", plural(sessions.beats, "session")))
-    drillable(out, sessions.beats_drill, "sessions that beat the optimizer")
-  end
+    plural(sessions.sessions, "session"), sessions.mark, sessions.watch, sessions.recall, sessions.suggest,
+    plural(sessions.command_count, "command")))
   if sessions.no_result > 0 then
     push_categories(out, "Not scored: " .. plural(sessions.no_result, "session"), "sessions not scored",
       highlights.STATS_NOT_SCORED,
-      { { runs = sessions.no_result, name = "no result", drill = sessions.no_result_drill } })
+      { { runs = sessions.no_result, name = "no result", drill = sessions.no_result_drill } }, sessions.no_result_drill)
   end
+  push_search_outcomes(out, sessions, "session")
 end
 
 local function push_options(out, title, kind, values, selected)
@@ -761,52 +756,25 @@ local function push_options(out, title, kind, values, selected)
   }
 end
 
----@param summary VF.Stats.JournalSummary
----@return number   # percent of the journal scored under the current settings
-local function journal_scored(summary)
-  return summary.journal_bytes > 0 and 100 * summary.scored_bytes / summary.journal_bytes or 100
+---@param coverage VF.Stats.JournalCoverage
+---@return integer   # percent of the journal scored under the current settings
+function M.journal_percent(coverage)
+  return coverage.journal_bytes > 0 and math.floor(100 * coverage.scored_bytes / coverage.journal_bytes) or 100
 end
 
---- In the stats: the chart, the run lengths and the search times, and the
---- scoring only while it needs attention. The rest is the chart's own page.
 ---@param out VF.Stats.Page
 ---@param summary VF.Stats.JournalSummary
 ---@param background VF.Stats.Background
 ---@param width? integer
-local function push_journal(out, summary, background, width, unit)
-  if not summary.present then
-    push_prose(out, "No journal recorded. Set journal = { enabled = true } to start one.", width)
-    return
-  end
+local function push_scoring_status(out, summary, background, width)
   if background.err then
     push_prose(out, "Last background scoring failed: " .. background.err, width)
   end
   if background.scoring then
-    push(out, centered("Scoring journal…", width))
-  else
-    if not config.journal.sampling.auto and journal_scored(summary) < 100 then
-      push_prose(out, "Background scoring is off; :Vimfy stats refresh scores the rest.", width)
-    end
-    push_average(out, summary.chart_score, width)
+    push(out, centered(string.format("Scoring journal… %d%%", M.journal_percent(summary)), width))
+  elseif not config.journal.sampling.auto and M.journal_percent(summary) < 100 then
+    push_prose(out, "Background scoring is off; :Vimfy stats refresh scores the rest.", width)
   end
-
-  if summary.score.spans > 0 then
-    push_daily_chart(out, "journal", summary.days, width, unit)
-  elseif #summary.unscored > 0 or not background.scoring then
-    local row = #out.lines
-    push(out, string.format("    No scored runs of %d commands yet.", summary.charted_size))
-    if #summary.unscored > 0 then
-      chart_item(out, "journal", row)
-      mark_text(out, highlights.STATS_DRILL)
-    end
-  end
-  local sizes = {}
-  for _, entry in ipairs(summary.sizes) do sizes[#sizes + 1] = entry.size end
-  push_options(out, "Run length", "run_length", sizes, summary.charted_size)
-  local before = #out.items
-  push_timing_chart(out, "nav_timing", "Movement search", summary.nav_timing, width)
-  push_timing_chart(out, "edit_timing", "Composition search", summary.edit_timing, width)
-  if #out.items == before then push_prose(out, "No search times for this run length.", width) end
 end
 
 --- `cells` shared out in proportion to `counts`, each getting at least one.
@@ -860,14 +828,14 @@ end
 --- The scored runs as a bar split into movement and edits, over the same runs
 --- split again by query size. Every segment whose runs can be listed is an item.
 ---@param out VF.Stats.Page
----@param summary VF.Stats.JournalSummary
+---@param breakdown VF.Stats.RunBreakdown
 ---@param width integer
-local function push_kind_bars(out, summary, width)
+local function push_kind_bars(out, breakdown, width)
   local kinds = {
-    { id = "nav", title = "Movement only", score = summary.nav, drill = summary.nav_drill,
-      buckets = summary.nav_timing, hl = highlights.STATS_MOVEMENT },
-    { id = "edit", title = "With edits", score = summary.edit, drill = summary.edit_drill,
-      buckets = summary.edit_timing, hl = highlights.STATS_EDIT },
+    { id = "nav", title = "Movement only", score = breakdown.nav.score, drill = breakdown.nav.drill,
+      buckets = breakdown.nav.sizes, hl = highlights.STATS_MOVEMENT },
+    { id = "edit", title = "With edits", score = breakdown.edit.score, drill = breakdown.edit.drill,
+      buckets = breakdown.edit.sizes, hl = highlights.STATS_EDIT },
   }
   -- Per kind, its size buckets with runs, then the runs that kept no size.
   local parts, counts = {}, {}
@@ -882,7 +850,7 @@ local function push_kind_bars(out, summary, width)
         local label = string.format("%s · %s positions", kind.title, range)
         parts[#parts + 1] = {
           kind = kind, text = range, glyph = "▄", id = kind.id .. ":" .. bucket.first, drill = bucket.drill,
-          label = label, detail = string.format("%s: %s · %s", label, format_score(score), plural(score.spans, "run")),
+          label = label, detail = string.format("%s: %s efficiency · %s", label, format_score(score), plural(score.spans, "run")),
         }
         counts[#counts + 1] = score.spans
       end
@@ -905,25 +873,38 @@ local function push_kind_bars(out, summary, width)
   end
 
   local shown, bars = {}, {}
+  local spans = breakdown.nav.score.spans + breakdown.edit.score.spans
+  local movement_share = math.floor(1000 * breakdown.nav.score.spans / spans + 0.5) / 1000
   for _, kind in ipairs(kinds) do
     if kind.last >= kind.first then
       kind.left, kind.right = parts[kind.first].left, parts[kind.last].right
-      kind.detail = string.format("%s: %s · %s", kind.title, format_score(kind.score), plural(kind.score.spans, "run"))
+      local stats = string.format("%s efficiency · %s", format_score(kind.score), plural(kind.score.spans, "run"))
+      local share = kind.id == "nav" and movement_share or 1 - movement_share
+      kind.detail = kind.title .. ": " .. stats
+      kind.caption = string.format("%s  %s (%.3f)", kind.title, stats, share)
       shown[#shown + 1] = kind
       bars[#bars + 1] = { text = string.rep("▄", kind.right - kind.left), hl = kind.hl }
     end
   end
-  -- A title starts over its segment, moved only as far as it takes to fit:
-  -- after the one before it, and the last one inside the bar.
-  local title_row, titles, title_spans = #out.lines, "", {}
+  local titles, title_spans = "", {}
   for i, kind in ipairs(shown) do
-    local text = string.format("%s  %s · %s", kind.title, format_score(kind.score), plural(kind.score.spans, "run"))
+    local text = kind.caption
+    local text_width = vim.fn.strdisplaywidth(text)
     local at = kind.left
-    if i == #shown then at = math.min(at, kind.right - vim.fn.strdisplaywidth(text)) end
-    titles = pad(titles, math.max(at, i > 1 and vim.fn.strdisplaywidth(titles) + 2 or #gutter))
-    if i > 1 then title_spans[i - 1][3] = #titles end
-    title_spans[i] = { title_row, #titles, #titles + #text }
-    out.marks[#out.marks + 1] = { row = title_row, col = #titles, end_col = #titles + #text, hl = kind.hl }
+    if i == #shown then at = math.min(at, kind.right - text_width) end
+    if i > 1 then
+      local next_col = vim.fn.strdisplaywidth(titles) + 2
+      if next_col + text_width > width then
+        push(out, titles)
+        titles = ""
+      else
+        at = math.max(at, next_col)
+      end
+    end
+    titles = pad(titles, math.max(0, math.min(at, width - text_width)))
+    if i > 1 and title_spans[i - 1][1] == #out.lines then title_spans[i - 1][3] = #titles end
+    title_spans[i] = { #out.lines, #titles, #titles + #text }
+    out.marks[#out.marks + 1] = { row = #out.lines, col = #titles, end_col = #titles + #text, hl = kind.hl }
     titles = titles .. text
   end
   titles = pad(titles, math.max(vim.fn.strdisplaywidth(titles), shown[#shown].right))
@@ -961,10 +942,7 @@ end
 
 ---@param out VF.Stats.Page
 ---@param summary VF.Stats.JournalSummary
----@param width integer
-local function push_journal_details(out, summary, width)
-  push_kind_bars(out, summary, width)
-
+local function push_journal_details(out, summary)
   local unscored, total = {}, 0
   for i, entry in ipairs(summary.unscored) do
     unscored[i] = { runs = entry.runs, name = (entry.outcome:gsub("_", " ")), drill = entry.drill }
@@ -972,17 +950,19 @@ local function push_journal_details(out, summary, width)
   end
   if total > 0 then
     push_categories(out, "Not scored: " .. plural(total, "run"), "runs not scored",
-      highlights.STATS_NOT_SCORED, unscored)
+      highlights.STATS_NOT_SCORED, unscored, summary.unscored_drill)
   end
-  push_unbeaten(out, summary, "run")
+  push_search_outcomes(out, summary, "run")
   if summary.deadline_hit > 0 then
     push(out, string.format("    Search cut short by the deadline: %s", plural(summary.deadline_hit, "run")))
   end
 end
 
-function M.journal_efficiency(summary)
-  return string.format("%s efficiency · %s of %d commands",
-    format_score(summary.score), plural(summary.score.spans, "run"), summary.charted_size)
+function M.efficiency(summary, source)
+  local score = summary[source].score
+  local count = plural(score.spans, source == "sessions" and "session" or "run")
+  if source == "journal" then count = count .. " of " .. summary.journal.charted_size .. " commands" end
+  return format_score(score) .. " efficiency · " .. count
 end
 
 ---@param share number
@@ -1165,10 +1145,36 @@ end
 local function source_page(source, summary, background, width)
   local out = new_page()
   push_title(out, centered(SOURCE_TITLES[source], width))
-  if source == "sessions" then
-    push_sessions(out, summary, width)
+  local journal = summary.journal
+  local section = summary[source]
+  if source == "sessions" and summary.recorded_sessions == 0 then
+    push_prose(out, "No sessions yet: :Vimfy start, watch or recall to add some.", width)
+  elseif source == "journal" and not journal.present then
+    push_prose(out, "No journal recorded. Set journal = { enabled = true } to start one.", width)
   else
-    push_journal(out, summary.journal, background, width, summary.chart_unit)
+    if source == "journal" then push_scoring_status(out, journal, background, width) end
+    if source == "sessions" or not background.scoring then push_average(out, section.score, width) end
+    if source == "sessions" or section.score.spans > 0 then
+      push_daily_chart(out, source, section.days, width, summary.chart_unit)
+    elseif #journal.unscored > 0 or not background.scoring then
+      local row = #out.lines
+      push(out, string.format("    No scored runs of %d commands in this period.", journal.charted_size))
+      chart_item(out, source, "history", row)
+      mark_text(out, highlights.STATS_DRILL)
+    end
+    if source == "journal" then
+      local sizes = {}
+      for _, entry in ipairs(journal.sizes) do sizes[#sizes + 1] = entry.size end
+      push_options(out, "Run length", "run_length", sizes, journal.charted_size)
+    else
+      push_session_timing(out, summary.sessions.timing, width)
+    end
+    local before = #out.items
+    push_timing_chart(out, source, "nav", "Movement search", section.breakdown.nav.sizes, width)
+    push_timing_chart(out, source, "edit", "Composition search", section.breakdown.edit.sizes, width)
+    if source == "journal" and #out.items == before then
+      push_prose(out, "No search times for this run length in this period.", width)
+    end
   end
   push(out, "")
   return out
@@ -1233,30 +1239,33 @@ end
 --- One chart in a `width` by `height` viewport: every bucket with data
 --- an item, over what the stats leave out of its section.
 ---@param summary VF.Stats.Summary
+---@param source VF.Stats.Source
 ---@param name VF.Stats.ChartName
 ---@param width integer
 ---@param height integer
 ---@param shown VF.Stats.ChartLines
 ---@param scale? VF.Stats.ChartScale
 ---@return VF.Stats.Page
-function M.chart_page(summary, name, width, height, shown, scale)
+function M.chart_page(summary, source, name, width, height, shown, scale)
   local out = new_page()
   local details = new_page()
   push(details, "")
   local plot
-  if name == "journal" then
-    plot = history_plot(summary.journal.days, scale or overview_scale(summary.chart_unit))
-    local scored = journal_scored(summary.journal)
-    if scored < 100 then
-      push_prose(out, string.format("Scored under the current settings: %d%% of the journal", math.floor(scored)), width)
+  local section = summary[source]
+  if name == "history" then
+    plot = history_plot(section.days, scale or overview_scale(summary.chart_unit))
+    push_kind_bars(details, section.breakdown, width)
+    if source == "sessions" then
+      push_sessions_details(details, summary)
+    else
+      local scored = M.journal_percent(summary.journal)
+      if scored < 100 then
+        push_prose(out, string.format("Scored under the current settings: %d%% of the journal", scored), width)
+      end
+      push_journal_details(details, summary.journal)
     end
-    push_journal_details(details, summary.journal, width)
-  elseif name == "sessions" then
-    plot = history_plot(summary.sessions.days, scale or overview_scale(summary.chart_unit))
-    push_sessions_details(details, summary)
   else
-    local bins = name == "nav_timing" and summary.journal.nav_timing or summary.journal.edit_timing
-    plot = timing_plot(bins)
+    plot = timing_plot(section.breakdown[name].sizes)
     push(details, centered("Buffer positions in the larger unpadded region", width))
   end
 
@@ -1286,7 +1295,7 @@ function M.build_page(summary, query, background, width, expanded_commands)
       math.min(math.floor(columns * OVERVIEW_SHARE), columns - COMMANDS_MIN_WIDTH))
     left_width, right_width = room, columns - room
   end
-  local recorded = { sessions = summary.lifetime.sessions > 0, journal = summary.journal.present }
+  local recorded = { sessions = summary.recorded_sessions > 0, journal = summary.journal.present }
   ---@type table<VF.Stats.Source, VF.Stats.Page>
   local commands = {}
   -- One width for both bands' tables, so their rows highlight alike.
@@ -1303,8 +1312,8 @@ function M.build_page(summary, query, background, width, expanded_commands)
     return room and beside(left, right, room, commands_width) or stacked(left, right)
   end
   local page = new_page()
-  push(page, string.format(" Stats    %s · weight: %s · runs of %d",
-    query.current_only and summary.scoring_label or "all scorings", query.weight, summary.journal.charted_size))
+  push(page, string.format(" Stats    %s · weight: %s",
+    query.current_only and summary.scoring_label or "all scorings", query.weight))
   push(page, " Log      " .. vim.fn.fnamemodify(log.path(), ":~"))
   stacked(page, band(top_page(summary), new_page()))
   for i, source in ipairs(SOURCES) do
@@ -1322,7 +1331,7 @@ end
 ---@param row VF.Stats.RunRow
 ---@return string
 local function saved(row)
-  if row.outcome == "unbeaten" then return "unbeaten" end
+  if row.outcome == "unbeaten" then return "no results (effort cap)" end
   if row.outcome ~= "scored" then return (row.outcome:gsub("_", " ")) end
   if row.user_cost == 0 then return "—" end
   local percent = math.floor((row.best_cost - row.user_cost) / row.user_cost * 100 + 0.5)
@@ -1330,93 +1339,102 @@ local function saved(row)
   return (percent > 0 and "+" or "") .. percent .. "%"
 end
 
+--- What a run is filed under: a session's saved filename, which `:Vimfy view`
+--- and `pin` take, or a journal run's file and where in it the run ends.
+---@param row VF.Stats.RunRow
+---@return string
+function M.run_name(row)
+  local journal = row.id.journal
+  if journal then
+    return string.format("%s · %d commands to atom %d", journal.file, journal.window_size, journal.last_atom)
+  end
+  return row.saved_filename == "" and "—" or row.saved_filename
+end
+
 ---@class VF.Stats.RunColumn
 ---@field title string
 ---@field order VF.Stats.Order   # what sorting by it asks for
----@field width integer          # display columns
 ---@field cell fun(row: VF.Stats.RunRow): string
 
 ---@type VF.Stats.RunColumn[]
 local RUN_COLUMNS = {
-  { title = "when", order = "newest", width = 12,
+  { title = "when", order = "newest",
     cell = function(row) return os.date("%b %d %H:%M", row.wall_epoch) --[[@as string]] end },
-  { title = "you", order = "user_cost", width = 8,
+  { title = "you", order = "user_cost",
     cell = function(row) return string.format("%.1f", row.user_cost) end },
-  { title = "found", order = "best_cost", width = 8,
+  { title = "found", order = "best_cost",
     cell = function(row)
-      local has_best = row.outcome == "scored" or row.outcome == "unbeaten"
-      return has_best and string.format("%.1f", row.best_cost) or "—"
+      return row.outcome == "scored" and string.format("%.1f", row.best_cost) or "—"
     end },
-  { title = "saved", order = "saved", width = 10, cell = saved },
-  { title = "extra typed", order = "typed", width = 13,
+  { title = "saved", order = "saved", cell = saved },
+  { title = "extra typed", order = "typed",
     cell = function(row)
-      local has_best = row.outcome == "scored" or row.outcome == "unbeaten"
-      if not has_best then return "—" end
+      if row.outcome ~= "scored" then return "—" end
       local extra = row.user_typed_chars - row.best_typed_chars
       if extra < 0 then return "−" .. -extra end
       return (extra > 0 and "+" or "") .. extra
     end },
-  { title = "time ms", order = "slowest", width = 11,
+  { title = "time ms", order = "slowest",
     cell = function(row) return string.format("%.1f", row.analyze_ms) end },
+  { title = "last_atom", order = "last_atom",
+    cell = function(row) return row.id.journal and tostring(row.id.journal.last_atom) or "—" end },
+  { title = "window_size", order = "window_size",
+    cell = function(row) return row.id.journal and tostring(row.window_size) or "—" end },
+  { title = "tag", order = "tag", cell = function(row) return row.tag end },
 }
-local RUN_COLUMN_GAP = 2
-
----@param cells string[]   # one per RUN_COLUMNS
----@return string
-local function run_line(cells)
-  local out = {}
-  for i, column in ipairs(RUN_COLUMNS) do
-    local cell = cells[i]
-    -- The first column reads as a label; the rest are figures.
-    local space = string.rep(" ", column.width - vim.fn.strdisplaywidth(cell))
-    out[i] = i == 1 and cell .. space or space .. cell
-  end
-  return " " .. table.concat(out, string.rep(" ", RUN_COLUMN_GAP))
-end
 
 --- A run's cell in one column of the run list.
 ---@class VF.Stats.RunCell : VF.Ui.NavItem
 ---@field index integer          # into the listed runs
 ---@field order VF.Stats.Order   # what sorting by its column asks for
 
---- An item per cell of the `count` runs in `lines` (M.run_lines).
----@param lines string[]
----@param count integer
----@return VF.Stats.RunCell[]
-function M.run_items(lines, count)
-  local items = {}
-  for index = 1, count do
-    local line, left = lines[index + 1], 1
-    for _, column in ipairs(RUN_COLUMNS) do
-      local right = left + column.width
-      -- Every character of a run's line is one column wide.
-      local col, end_col = vim.fn.byteidx(line, left), vim.fn.byteidx(line, right)
-      items[#items + 1] = {
-        id = index .. ":" .. column.order, row = index, last_row = index, left = left, right = right,
-        cursor = { index, col }, spans = { { index, col, end_col } }, index = index, order = column.order,
-      }
-      left = right + RUN_COLUMN_GAP
-    end
-  end
-  return items
-end
-
---- The run list: a header, a line per run, then a footer.
+--- The run list and its navigable cells.
 ---@param list VF.Stats.RunList
 ---@param offset integer
----@param sort? VF.Stats.RunSort   # marked in the header
----@return string[]
-function M.run_lines(list, offset, sort)
-  local titles = {}
+---@param width integer
+---@param sort? VF.Stats.RunSort
+---@return string[] lines
+---@return VF.Stats.RunCell[] items
+function M.run_table(list, offset, width, sort)
+  local titles, widths = {}, {}
   for i, column in ipairs(RUN_COLUMNS) do
     local mark = sort and sort.order == column.order and (sort.ascending and " ▲" or " ▼") or ""
     titles[i] = column.title .. mark
+    widths[i] = vim.fn.strdisplaywidth(titles[i])
   end
-  local lines = { run_line(titles) }
+  local rows = { titles }
   for _, row in ipairs(list.runs) do
     local cells = {}
-    for i, column in ipairs(RUN_COLUMNS) do cells[i] = column.cell(row) end
-    lines[#lines + 1] = run_line(cells)
+    for i, column in ipairs(RUN_COLUMNS) do
+      cells[i] = column.cell(row)
+      widths[i] = math.max(widths[i], vim.fn.strdisplaywidth(cells[i]))
+    end
+    rows[#rows + 1] = cells
+  end
+  local table_width = 1 + 2 * (#RUN_COLUMNS - 1)
+  for _, w in ipairs(widths) do table_width = table_width + w end
+  local gap = table_width <= width and "  " or " "
+
+  local lines, items = {}, {}
+  for n, cells in ipairs(rows) do
+    local index = n - 1
+    local line, left = " ", 1
+    for i, cell in ipairs(cells) do
+      local w = widths[i]
+      local space = string.rep(" ", w - vim.fn.strdisplaywidth(cell))
+      local col = #line
+      line = line .. ((i == 1 or RUN_COLUMNS[i].order == "tag") and cell .. space or space .. cell)
+      if index > 0 then
+        local order = RUN_COLUMNS[i].order
+        items[#items + 1] = {
+          id = index .. ":" .. order, row = index, last_row = index, left = left, right = left + w,
+          cursor = { index, col }, spans = { { index, col, #line } }, index = index, order = order,
+        }
+      end
+      if i < #cells then line = line .. gap end
+      left = left + w + #gap
+    end
+    lines[n] = line
   end
   lines[#lines + 1] = ""
   local footer = {
@@ -1430,7 +1448,7 @@ function M.run_lines(list, offset, sort)
     footer[#footer + 1] = string.format("%d rolled up without commands, left out", list.rollup_runs_without_commands)
   end
   lines[#lines + 1] = table.concat(footer, " · ")
-  return lines
+  return lines, items
 end
 
 ---@param lines string[]
@@ -1440,15 +1458,15 @@ local function joined(lines)
 end
 
 local KEY_LABEL_WIDTH = #" found: "
-local KEY_LINES = 2
 
---- `label`, then `text` wrapped at its token breaks into at most KEY_LINES
+--- `label`, then `text` wrapped at its token breaks into at most `limit`
 --- lines of `width` columns, the later ones indented under the first.
 ---@param lines string[]
 ---@param label string
 ---@param text string
 ---@param width integer
-local function push_keys(lines, label, text, width)
+---@param limit? integer
+local function push_keys(lines, label, text, width, limit)
   local room = math.max(1, width - KEY_LABEL_WIDTH - 1)
   local wrapped, line = {}, ""
   local words = vim.split(text, " ", { plain = true })
@@ -1469,8 +1487,8 @@ local function push_keys(lines, label, text, width)
     end
   end
   if line ~= "" then wrapped[#wrapped + 1] = line end
-  if #wrapped > KEY_LINES then wrapped[KEY_LINES] = fit(wrapped[KEY_LINES] .. " …", room) end
-  for n = 1, math.min(#wrapped, KEY_LINES) do
+  if limit and #wrapped > limit then wrapped[limit] = fit(wrapped[limit] .. " …", room) end
+  for n = 1, math.min(#wrapped, limit or #wrapped) do
     lines[#lines + 1] = pad(n == 1 and label or "", KEY_LABEL_WIDTH) .. wrapped[n]
   end
 end
@@ -1488,24 +1506,27 @@ local function cursor_cell(text, col, tab)
   return vim.fn.strdisplaywidth(before), #before, (char == "" or char == "\t") and 1 or #char
 end
 
---- A run's keys, spaced by token, then its text before and after side by side
+--- A run's name and keys, then its initial and goal buffers side by side
 --- with the changed lines marked and the cursor's cell shaded in each.
---- `detail` is nil for a session, which keeps no text, and for a run whose
---- journal is gone (`err` says why).
+--- `detail` is nil for a run whose text is gone (`err` says why).
 ---@param row VF.Stats.RunRow
----@param detail VF.Stats.RunDetail|nil
+---@param detail VF.Session.Viewable|nil
 ---@param err string|nil
 ---@param width integer
 ---@return VF.Stats.RunPreview
 function M.run_preview(row, detail, err, width)
   local lines = {}
-  -- A journal run's resolved keys parse where its typed ones may not.
-  push_keys(lines, " you:", sequence_display.inline(detail and detail.keys or row.user_keys), width)
-  push_keys(lines, " found:", row.best_seq == "" and "—" or sequence_display.inline(row.best_seq), width)
+  push_keys(lines, " id:", M.run_name(row), width)
+  local resolved = detail and detail.user_seq or row.user_keys
+  local typed = detail and detail.user_typed
+  local user = typed and typed ~= "" and typed ~= resolved and sequence_display.typed_text_inline(typed)
+    or sequence_display.inline(resolved)
+  push_keys(lines, " you:", user, width, 2)
+  push_keys(lines, " found:", row.best_seq == "" and "—" or sequence_display.inline(row.best_seq), width, 2)
   lines[#lines + 1] = ""
   local marks = {}
   if not detail then
-    lines[#lines + 1] = " " .. (err and "Text not available: " .. err or "A session keeps no text.")
+    lines[#lines + 1] = " Text not available: " .. err
     return { lines = lines, marks = marks }
   end
 
@@ -1520,7 +1541,8 @@ function M.run_preview(row, detail, err, width)
     lines[#lines + 1] = " " .. cell .. " │ " .. pad(fit((right:gsub("\t", tab)), half), half)
     return #lines - 1, 1 + #cell
   end
-  push_pair("before", "after")
+  push_pair(centered("Initial buffer", half), centered("Goal buffer", half))
+  push_pair("", "")
 
   local changed_before, changed_after = {}, {}
   local hunks = vim.text.diff(joined(detail.lines), joined(detail.goal_lines), { result_type = "indices" })

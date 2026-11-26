@@ -408,8 +408,8 @@ local function run_cases()
     eq(user.states[4].lines[local_row], "line 30", "undo restores the deleted line")
     eq(user.states[7].lines, result.goal_lines, "recorded final slice")
     result.kind = "mark"
-    disk.save("observed", result)
-    eq(assert(disk.load("observed")).recording, recording, "archive preserves the steps")
+    disk.write_pin("observed", result)
+    eq(assert(disk.load("pinned", "observed")).recording, recording, "a pin preserves the steps")
     session.close("observed")
   end)
 

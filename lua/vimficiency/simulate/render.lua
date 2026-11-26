@@ -58,8 +58,9 @@ end
 
 ---@param ctx table
 ---@param entry VF.Replay.Window
+---@param height integer
 ---@return table[]?
-local function build_virt_lines(ctx, entry)
+local function header_rows(ctx, entry, height)
   local snap = M.current_snap(ctx, entry)
   if not snap then return nil end
 
@@ -93,21 +94,21 @@ local function build_virt_lines(ctx, entry)
     }
   end
 
-  local virt_lines = {
-    { { "", "Normal" } },
+  local rows = {
     info_row,
     {
       { "Mode ", "Comment" },
       { mode_label(snap.mode), "Normal" },
     },
   }
+  if height >= 6 then table.insert(rows, 1, { { "", "Normal" } }) end
   local last = tokens[#tokens]
   if last and last.error then
     local label = "Replay unavailable · " .. last.error
-    vim.list_extend(virt_lines, wrap_chunks({ { label, "WarningMsg" } }, width))
+    vim.list_extend(rows, wrap_chunks({ { label, "WarningMsg" } }, width))
   end
   if pool_entry.cost then
-    virt_lines[#virt_lines + 1] = {
+    rows[#rows + 1] = {
       { "Cost ", "Comment" },
       { pool_entry.cost, "Normal" },
     }
@@ -115,48 +116,46 @@ local function build_virt_lines(ctx, entry)
 
   local seq_label = "Sequence "
   local seq_indent = string.rep(" ", #seq_label)
-  local emitted_first = false
+  local sequence = {}
+  local active = 1
   for _, line_chunks in ipairs(display_lines) do
     local wrapped = wrap_chunks(line_chunks, max(1, width - #seq_label))
     for _, chunks in ipairs(wrapped) do
-      local prefix = emitted_first
-        and { seq_indent, "Normal" }
-        or { seq_label, "Comment" }
-      virt_lines[#virt_lines + 1] = vim.list_extend({ prefix }, chunks)
-      emitted_first = true
+      sequence[#sequence + 1] = chunks
+      for _, chunk in ipairs(chunks) do
+        if chunk[2] == highlights.REPLAY_CURRENT then active = #sequence end
+      end
     end
   end
-  virt_lines[#virt_lines + 1] = { { "", "Normal" } }
-
-  return virt_lines
+  local visible = max(1, height - #rows - 2)
+  local first = max(1, active - visible + 1)
+  for i = first, min(#sequence, first + visible - 1) do
+    local prefix = i == first and { seq_label, "Comment" } or { seq_indent, "Normal" }
+    rows[#rows + 1] = vim.list_extend({ prefix }, sequence[i])
+  end
+  rows[#rows + 1] = { { "", "Normal" } }
+  return rows
 end
 
 ---@param entry VF.Replay.Window
----@param virt_lines table[]?
+---@param rows table[]
 ---@param target_height integer
-local function apply_virt_lines(entry, virt_lines, target_height)
-  if not virt_lines then return end
-
-  while #virt_lines < target_height - 1 do
-    virt_lines[#virt_lines + 1] = { { "", "Normal" } }
+local function draw_header(entry, rows, target_height)
+  local win = assert(entry.header_win)
+  if v.nvim_win_get_height(win) ~= target_height then v.nvim_win_resize(win, -1, target_height) end
+  local buf = v.nvim_win_get_buf(win)
+  local lines = {}
+  for i = 1, target_height do lines[i] = "" end
+  v.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  v.nvim_buf_clear_namespace(buf, cursor_ns, 0, -1)
+  if target_height >= 4 then
+    rows[target_height] = { { string.rep("─", v.nvim_win_get_width(win)), "Comment" } }
   end
-
-  local width = max(8, v.nvim_win_get_width(entry.win))
-  virt_lines[#virt_lines + 1] = { { string.rep("─", width), "Comment" } }
-
-  v.nvim_buf_set_extmark(entry.buf, cursor_ns, 0, 0, {
-    virt_lines = virt_lines,
-    virt_lines_above = true,
-    virt_lines_leftcol = true,
-    priority = 2000,
-  })
-
-  v.nvim_win_call(entry.win, function()
-    local view = vim.fn.winsaveview()
-    view.topline = 1
-    view.topfill = #virt_lines
-    vim.fn.winrestview(view)
-  end)
+  for i = 1, target_height do
+    if rows[i] then
+      v.nvim_buf_set_extmark(buf, cursor_ns, i - 1, 0, { virt_text = rows[i], virt_text_win_col = 0 })
+    end
+  end
 end
 
 ---@param ctx table
@@ -164,11 +163,12 @@ function M.update_cursor_highlights(ctx)
   local cached = {}
   local max_content = 0
   for i, entry in ipairs(ctx.state.windows) do
-    if v.nvim_win_is_valid(entry.win) and v.nvim_buf_is_valid(entry.buf) then
-      cached[i] = build_virt_lines(ctx, entry)
-      if cached[i] then
-        max_content = max(max_content, #cached[i])
-      end
+    if entry.header_win and v.nvim_win_is_valid(entry.header_win) and v.nvim_win_is_valid(entry.win) then
+      local height = v.nvim_win_get_height(entry.header_win) + v.nvim_win_get_height(entry.win)
+      local limit = max(1, height - max(3, math.floor(height / 3)))
+      local rows = header_rows(ctx, entry, limit) or {}
+      cached[i] = { rows = rows, limit = limit }
+      max_content = max(max_content, #rows)
     end
   end
   local target_height = max_content + 1
@@ -176,7 +176,7 @@ function M.update_cursor_highlights(ctx)
   for i, entry in ipairs(ctx.state.windows) do
     if v.nvim_win_is_valid(entry.win) and v.nvim_buf_is_valid(entry.buf) then
       v.nvim_buf_clear_namespace(entry.buf, cursor_ns, 0, -1)
-      apply_virt_lines(entry, cached[i], target_height)
+      if cached[i] then draw_header(entry, cached[i].rows, min(target_height, cached[i].limit)) end
 
       local snap = M.current_snap(ctx, entry)
       local hl = snap and mode_hl(snap.mode) or highlights.REPLAY_CURSOR

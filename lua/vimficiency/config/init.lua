@@ -31,8 +31,13 @@ local fields = {
   -- A Lua-callback mapping that moves the cursor or changes text is lossy: Neovim
   -- cannot report replayable keys for it. "drop" ends the session; "warn" and
   -- "allow" record the typed keys (`lhs`) instead, "warn" with a once-per-session
-  -- notice. Play uses the observed state.
+  -- notice. View uses the observed state.
   lossy_mappings = "warn",
+
+  sessions = {
+    -- Keeps every finished session's result, with the text it changed, on disk.
+    save = true,
+  },
 
   -- Off by default: the journal writes the text of every edited buffer to disk.
   journal = {
@@ -101,8 +106,8 @@ local fields = {
   -- sidecar (`settings/profile.lua`), layered over these overrides.
   explore = {},
 
-  play = {
-    include_user_sequence = true,                  -- show the user's typed sequence as the leftmost pane
+  view = {
+    include_user_sequence = true,                 -- show the user's typed sequence as the leftmost pane
     window_count = 2,                              -- total panes shown side-by-side; 1..4 (user pane consumes one slot if included)
   },
 
@@ -150,6 +155,7 @@ function fields.apply(user_config)
   merged.watch = validate.normalize_watch(user_config.watch)
   merged.auto_suggest = validate.normalize_auto_suggest(user_config.auto_suggest, fields._defaults.auto_suggest)
   merged.lossy_mappings = validate.normalize_lossy_mappings(merged.lossy_mappings)
+  merged.sessions = validate.normalize_sessions(merged.sessions)
   merged.journal = validate.normalize_journal(merged.journal)
   merged.stats = validate.normalize_stats(merged.stats)
   merged.ui = validate.normalize_ui(merged.ui)

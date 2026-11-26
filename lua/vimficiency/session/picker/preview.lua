@@ -15,7 +15,7 @@ local function lines_for_active(item)
       "",
       "The ring is populated on every keystroke; entries are not directly",
       "actionable from this picker. Resolve a specific window via:",
-      "  :Vimfy recall N    — N commands ago",
+      "  :Vimfy recall N    — N recorded command atoms ago",
       "  :Vimfy recall Ns   — N seconds ago",
     }
   end
@@ -53,11 +53,11 @@ local function lines_for_active(item)
   return lines
 end
 
-local function lines_for_saved(item)
+local function lines_for_pinned(item)
   local lines = {
-    string.format("Name:  %s", item.name),
-    string.format("Path:  %s", vim.fn.fnamemodify(item.path, ":~")),
-    string.format("Saved: %s", model.format_epoch(item.wall_epoch)),
+    string.format("Name:   %s", item.name),
+    string.format("Path:   %s", vim.fn.fnamemodify(item.path, ":~")),
+    string.format("Pinned: %s", model.format_epoch(item.wall_epoch)),
     "",
   }
   local raw = vim.fn.readfile(item.path)
@@ -90,7 +90,7 @@ function M.lines_for_item(item)
   if item.pane == "active" then
     return lines_for_active(item)
   end
-  return lines_for_saved(item)
+  return lines_for_pinned(item)
 end
 
 return M

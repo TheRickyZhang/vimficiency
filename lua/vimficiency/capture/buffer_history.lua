@@ -1,5 +1,5 @@
 -- One shadow per buffer. Each delta keeps the old lines for Recall and the
--- replacement lines for Play.
+-- replacement lines for View.
 --
 -- `on_lines` reports ranges only, never the replaced text; the shadow is where
 -- that text is read from. Between marks `on_lines` only widens one pending

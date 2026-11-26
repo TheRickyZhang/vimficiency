@@ -52,7 +52,7 @@ local request = ffi_optimizer.build_search_request({
 - Capture supplies the smallest untouched prefix and suffix across observed cursor positions and changed line ranges. Within a burst, Neovim reports command starting rows even when only the final text is observable. If the buffer height changed during the burst, the smallest observed height gives a conservative bound on the suffix below those rows. `computeSearchRegion` trims matching rows within those margins, then adds up to `SLICE_PADDING` matching rows on either side. The initial and goal slices share a start row and can have different lengths.
 - A region taller than `MAX_SEARCH_LINES` is rejected before any search runs
 - `sliceSearch` converts positions to slice-relative coordinates and sets the boundary flags (`has_lines_above`, `has_lines_below`)
-- The journal sampler (`src/Journal/Evaluate.cpp`) shares the live session slice and uses the larger unpadded position count as the query size
+- The journal sampler and live session capture use the same `SearchRegion::querySize`, the larger unpadded position count across the two buffers.
 
 ### 2. NavOptimizer
 

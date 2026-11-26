@@ -34,6 +34,7 @@ inline vf::stats::Session session(double userCost, double bestCost,
   s.set_best_cost(bestCost);
   s.set_key_count(2);
   s.set_analyze_ms(10);
+  s.mutable_query()->set_query_size(1);
   s.set_typed_insert("");
   return s;
 }

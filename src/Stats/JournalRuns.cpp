@@ -44,7 +44,7 @@ void catchUp(ParsedSamples& parsed, const fs::path& path) {
   string head(parsed.head.size(), '\0');
   ifstream(path, ios::binary).read(head.data(), head.size());
   if (ec || size < parsed.bytes || head != parsed.head) parsed = {};
-  if (ec) return;
+  if (ec || size == parsed.bytes) return;
 
   const string bytes = readFrom(path, parsed.bytes);
   string_view rest = bytes;
@@ -72,20 +72,22 @@ void catchUp(ParsedSamples& parsed, const fs::path& path) {
 
 }  // namespace
 
-JournalRuns readJournalRuns(const string& dir, string_view params, bool currentOnly) {
+JournalRuns readJournalRuns(const string& dir, string_view params, RollupScope rollups) {
   JournalRuns out;
   out.present = fs::is_directory(dir);
   if (!out.present) return out;
 
   // A rolled-up journal still on disk is one whose deletion was cut short.
   unordered_set<string> rolledUp;
-  for (RolledJournal& rolled : readRollups(fs::path(dir) / ROLLUP_FILE)) {
-    rolledUp.insert(rolled.journal);
-    if (!currentOnly || rolled.params == params) {
-      out.rolledUp.push_back(std::move(rolled.runs));
-      continue;
+  if (rollups != RollupScope::None) {
+    for (RolledJournal& rolled : readRollups(fs::path(dir) / ROLLUP_FILE)) {
+      rolledUp.insert(rolled.journal);
+      if (rollups == RollupScope::All || rolled.params == params) {
+        out.rolledUp.push_back(std::move(rolled.runs));
+        continue;
+      }
+      for (const auto& [key, totals] : rolled.runs) out.hiddenRollupRuns += totals.runs;
     }
-    for (const auto& [key, totals] : rolled.runs) out.hiddenRollupRuns += totals.runs;
   }
 
   unordered_map<string, ParsedSamples>& cached = sampleCache()[dir];
@@ -93,7 +95,11 @@ JournalRuns readJournalRuns(const string& dir, string_view params, bool currentO
   for (const fs::directory_entry& entry : fs::directory_iterator(dir)) {
     const string name = entry.path().filename().string();
     if (entry.path().extension() != ".vfj" || rolledUp.contains(name)) continue;
-    out.journalBytes += entry.file_size();
+    error_code ec;
+    const auto size = entry.file_size(ec);
+    if (ec == errc::no_such_file_or_directory) continue;
+    if (ec) throw fs::filesystem_error("journal size", entry.path(), ec);
+    out.journalBytes += size;
 
     fs::path samplesPath = entry.path();
     samplesPath.replace_extension(".samples");
@@ -106,7 +112,7 @@ JournalRuns readJournalRuns(const string& dir, string_view params, bool currentO
       out.sampled.push_back({.journal = journal, .runs = segment.runs, .totals = &segment.totals});
       scored = segment.journalSize;
     }
-    out.scoredBytes += scored;
+    out.scoredBytes += min<int64_t>(scored, size);
   }
   erase_if(cached, [&](const auto& entry) { return !seen.contains(entry.first); });
   return out;

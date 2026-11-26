@@ -5,10 +5,15 @@
 ---@field data ffi.cdata*
 ---@field len ffi.cdata*
 
+---@class VF.QueryShape
+---@field nav_only boolean
+---@field query_size integer
+
 --- One search problem for analyze or explore-start: `vf.search.SearchRequest`
 --- (src/LuaExports/proto/search.proto). Rows/cols are 0-indexed and relative to
 --- the slice.
 ---@class VF.SearchRequest
+---@field query? VF.QueryShape
 ---@field initial_lines string[]
 ---@field goal_lines string[]
 ---@field start_row integer

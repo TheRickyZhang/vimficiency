@@ -81,6 +81,7 @@ public:
 
   // False at the end of the journal.
   bool next(Event& out);
+  inline size_t remainingBytes() const { return rest.size(); }
 
 private:
   std::string_view rest;

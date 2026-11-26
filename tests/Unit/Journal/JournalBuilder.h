@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -11,8 +12,7 @@ struct JournalAtomOptions {
   int buf = 1;
   int win = 1000;
   bool lossy = false;
-  // Empty: the keys were typed as they ran.
-  std::string typed;
+  std::optional<std::string> typed;
   std::string kind = "motion";
   std::string typedInsert;
   // False: an atom journaled before `typed_insert` existed.
@@ -76,7 +76,7 @@ public:
     atom->set_win(options.win);
     atom->set_keys(keys);
     atom->set_kind(options.kind);
-    atom->set_typed(options.typed.empty() ? keys : options.typed);
+    atom->set_typed(options.typed.value_or(keys));
     if (options.insertTagged) atom->set_typed_insert(options.typedInsert);
     atom->set_decision(options.decision);
     atom->set_lossy(options.lossy);

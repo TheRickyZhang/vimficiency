@@ -5,20 +5,19 @@ import vf.Stats.Run;
 
 export namespace Stats {
 
-// The counts are of every stamp's sessions.
+struct LoggedSession : Run {
+  std::string kind;
+  int keyCount;
+};
+
 struct SessionHistory {
   // In log order.
-  std::vector<Run> runs;
+  std::vector<LoggedSession> runs;
   // The current stamp's, `scoring <N>·<id>`.
   std::string label;
   // Left out by `currentOnly`.
   int hidden = 0;
   int sessions = 0;
-  int mark = 0;
-  int watch = 0;
-  int recall = 0;
-  int suggest = 0;
-  int64_t commands = 0;
 };
 
 std::expected<SessionHistory, std::string> readSessionLog(const std::string& path,

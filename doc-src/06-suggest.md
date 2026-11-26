@@ -26,14 +26,17 @@ is already saved as a session, reachable with the `$` alias (the most
 recent suggestion):
 
 ```vim
-:Vimfy play $           " side-by-side: before/after buffer + your vs suggested sequences
+:Vimfy view $           " side-by-side: before/after buffer + your vs suggested sequences
 :Vimfy explore $        " step through interactively
-:Vimfy save $           " persist to disk as suggest-<timestamp>.json
+:Vimfy pin $            " keep a copy as pinned/suggest-<date>-<time>.json
 ```
 
 `$` is a slot, not a history: the next suggestion replaces it. Older
 suggestions stay listed in `:Vimfy list` until the recall ring rotates them
-out, so save the ones you want to keep.
+out.
+
+Every suggestion is also saved to disk as it finishes and listed in
+`:Vimfy stats`. Pin the ones you want to find by name.
 
 To tune this gate, set `auto_suggest = { default_cost = { ... } }` (any subset
 merges over the defaults) — this alone does not auto-enable at startup. To

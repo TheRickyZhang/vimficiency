@@ -94,9 +94,9 @@ return {
       -- },
 
       ----------------------------------------------------------------
-      -- View preferences
+      -- Explore and View preferences
       ----------------------------------------------------------------
-      -- Both views also toggle these live with `gs`; toggles persist to sidecar
+      -- Explore and View also toggle these live with `gs`; toggles persist to sidecar
       -- JSON under stdpath("data")/vimficiency and win over the values here,
       -- which set the cold-start baseline.
 
@@ -109,7 +109,7 @@ return {
       --   compute_deadline_ms = 2000,    -- off-thread search budget at open; 0 = natural caps
       -- },
 
-      -- play = {
+      -- view = {
       --   include_user_sequence = true,  -- your typed sequence as the leftmost pane
       --   window_count = 2,              -- panes side-by-side; 1..4 (user pane takes one slot)
       -- },
@@ -132,21 +132,20 @@ return {
     cmd_map("<leader>vl", "list", "Vimfy list")
     cmd_map("<leader>vd", "stats", "Vimfy stats")
     cmd_map("<leader>vz", "suggest toggle", "Toggle auto-suggest")
-    cmd_map("<leader>vu", "play @", "Play last finished session")
+    cmd_map("<leader>vu", "view @", "View last finished session")
 
     prompt_map("<leader>vb", "start", "Start mark")
     prompt_map("<leader>vf", "finish", "Finish mark")
     prompt_map("<leader>vw", "watch", "Start watch")
     prompt_map("<leader>vr", "recall", "Finish recall (N or Ns)")
 
-    prompt_map("<leader>vs", "save", "Vimfy save")
-    prompt_map("<leader>vp", "play", "Vimfy play")
+    prompt_map("<leader>vp", "pin", "Vimfy pin")
+    prompt_map("<leader>vv", "view", "Vimfy view")
     prompt_map("<leader>ve", "explore", "Explore mark")
 
-    cmd_map("<leader>vS", "save $", "Save recent suggestion")
-    cmd_map("<leader>vP", "play $", "Play recent suggestion")
-    cmd_map("<leader>vE", "explore $", "Explore recent suggestion")
+    cmd_map("<leader>vP", "pin $", "Pin recent suggestion")
     cmd_map("<leader>vV", "view $", "View recent suggestion")
+    cmd_map("<leader>vE", "explore $", "Explore recent suggestion")
 
     cmd_map("<leader>vc", "reload", "Vimfy reload")
 

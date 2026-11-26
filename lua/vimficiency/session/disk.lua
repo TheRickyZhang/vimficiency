@@ -1,5 +1,27 @@
 local alias_mod = require("vimficiency.session.alias")
 
+--- Where a result file lives: `sessions` holds every finished session under
+--- the filename `save_new` gave it, `pinned` the copies the user named.
+---@alias VF.Session.Shelf "sessions"|"pinned"
+
+---@class (exact) VF.SessionDisk
+--- Layout
+---@field FORMAT_VERSION integer
+---@field dir         fun(shelf: VF.Session.Shelf): string
+---@field empty_array fun(): table
+--- Schema
+---@field validate    fun(data: any): string|nil
+---@field decode      fun(json_str: string): VF.Session.Result|nil, string|nil
+--- Either shelf
+---@field load        fun(shelf: VF.Session.Shelf, filename: string): VF.Session.Result|nil, string|nil, boolean
+---@field list        fun(shelf: VF.Session.Shelf): string[]
+---@field remove      fun(shelf: VF.Session.Shelf, filename: string): string
+--- Sessions
+---@field save_new    fun(base: string, result: VF.Session.Result): string|nil, string|nil
+--- Pins
+---@field write_pin   fun(filename: string, result: VF.Session.Result): string
+---@field rename      fun(old_filename: string, new_filename: string)
+---@field duplicate   fun(src_filename: string, dst_filename: string)
 local M = {}
 
 local EMPTY_ARRAY_MT = { __jsontype = "array" }
@@ -8,8 +30,26 @@ function M.empty_array()
   return setmetatable({}, EMPTY_ARRAY_MT)
 end
 
-function M.save_dir()
-  return vim.fn.stdpath("data") .. "/vimficiency/saved"
+local NOUN = { sessions = "saved session", pinned = "pin" }
+
+--- Nothing writes `saved/` any more, so one that exists holds the named saves
+--- from before pins and becomes the pinned shelf.
+---@param shelf VF.Session.Shelf
+---@return string
+function M.dir(shelf)
+  local root = vim.fn.stdpath("data") .. "/vimficiency/"
+  local dir = root .. shelf
+  if shelf == "pinned" and vim.fn.isdirectory(dir) == 0 then
+    vim.uv.fs_rename(root .. "saved", dir)
+  end
+  return dir
+end
+
+---@param shelf VF.Session.Shelf
+---@param filename string
+---@return string
+local function path_of(shelf, filename)
+  return M.dir(shelf) .. "/" .. filename .. ".json"
 end
 
 ---@param value any
@@ -50,17 +90,59 @@ end
 
 M.FORMAT_VERSION = 2
 
+--- `flags` "wx" fails with `EEXIST` instead of replacing. A file that could not
+--- be written whole is removed.
+---@param path string
+---@param result VF.Session.Result
+---@param flags "w"|"wx"
+---@return string|nil err
+---@return string|nil code
+local function write(path, result, flags)
+  local fd, open_err, code = vim.uv.fs_open(path, flags, tonumber("644", 8))
+  if not fd then return open_err, code end
+  local versioned = vim.tbl_extend("error", result, { version = result.recording and M.FORMAT_VERSION or 1 })
+  versioned.query = nil
+  local data = encode_pretty(versioned) .. "\n"
+  local written, write_err = vim.uv.fs_write(fd, data)
+  vim.uv.fs_close(fd)
+  if written ~= #data then
+    vim.uv.fs_unlink(path)
+    return write_err or ("short write to " .. path)
+  end
+end
+
+--- Saves `result` under a filename no other session has: `<base>-<date>-<time>`,
+--- then `-2`, `-3`, ... while that is taken. `nil, err` because a session
+--- finishes whether or not it could be saved.
+---@param base string
+---@param result VF.Session.Result
+---@return string|nil filename
+---@return string|nil err
+function M.save_new(base, result)
+  vim.fn.mkdir(M.dir("sessions"), "p")
+  local stem = base .. "-" .. os.date("%Y%m%d-%H%M%S", result.finished_wall_epoch)
+  local filename, taken = stem, 1
+  while true do
+    local err, code = write(path_of("sessions", filename), result, "wx")
+    if not err then return filename, nil end
+    if code ~= "EEXIST" then return nil, err end
+    taken = taken + 1
+    filename = stem .. "-" .. taken
+  end
+end
+
 ---@param filename string
 ---@param result VF.Session.Result
 ---@return string path
-function M.save(filename, result)
-  local save_dir = M.save_dir()
-  vim.fn.mkdir(save_dir, "p")
-  local path = save_dir .. "/" .. filename .. ".json"
-  local versioned = vim.tbl_extend("error", result, { version = result.recording and M.FORMAT_VERSION or 1 })
-  local lines = vim.split(encode_pretty(versioned), "\n")
-  local ok, err = pcall(vim.fn.writefile, lines, path)
-  if not ok then error(tostring(err), 0) end
+function M.write_pin(filename, result)
+  vim.fn.mkdir(M.dir("pinned"), "p")
+  local path = path_of("pinned", filename)
+  local existed = vim.fn.filereadable(path) == 1
+  local err = write(path, result, "w")
+  if err then error(err, 0) end
+  if existed then
+    vim.notify("vimfy: replaced the pin [" .. filename .. "]", vim.log.levels.WARN)
+  end
   return path
 end
 
@@ -88,6 +170,7 @@ local REQUIRED_FIELDS = {
 
 local OPTIONAL_FIELDS = {
   { key = "indent", kind = "table" },
+  { key = "filetype",      kind = "string" },
   { key = "commands",      kind = "table" },
   { key = "user_typed",    kind = "string" },
   { key = "user_typed_insert", kind = "string" },
@@ -118,6 +201,7 @@ local function valid_recording(recording, height)
   if not valid_position(recording, height) then return false end
   for _, step in ipairs(recording.steps) do
     if type(step) ~= "table" or type(step.keys) ~= "string"
+        or (step.typed ~= nil and type(step.typed) ~= "string")
         or type(step.deltas) ~= "table" or not vim.islist(step.deltas) then return false end
     for _, delta in ipairs(step.deltas) do
       if type(delta) ~= "table" or not index(delta.first) or not index(delta.old_count)
@@ -200,40 +284,24 @@ function M.decode(json_str)
   return data, nil
 end
 
+---@param shelf VF.Session.Shelf
 ---@param filename string
 ---@return VF.Session.Result|nil data
 ---@return string|nil error
 ---@return boolean is_missing
-function M.load(filename)
-  local path = M.save_dir() .. "/" .. filename .. ".json"
+function M.load(shelf, filename)
+  local path = path_of(shelf, filename)
   if vim.fn.filereadable(path) == 0 then
-    return nil, "File not found: " .. path, true
+    return nil, "No " .. NOUN[shelf] .. " '" .. filename .. "' at " .. path, true
   end
   local data, err = M.decode(table.concat(vim.fn.readfile(path), "\n"))
   return data, err, false
 end
 
----@param filename string
----@param result VF.Session.Result
----@return string path
-function M.write_with_overwrite_warn(filename, result)
-  local dest_path = M.save_dir() .. "/" .. filename .. ".json"
-  local existed = vim.fn.filereadable(dest_path) == 1
-  local path = M.save(filename, result)
-  if existed then
-    vim.notify("vimfy: overwrote existing saved result [" .. filename .. "]",
-      vim.log.levels.WARN)
-  end
-  return path
-end
-
+---@param shelf VF.Session.Shelf
 ---@return string[]
-function M.list()
-  local save_dir = M.save_dir()
-  if vim.fn.isdirectory(save_dir) == 0 then
-    return {}
-  end
-  local files = vim.fn.glob(save_dir .. "/*.json", false, true)
+function M.list(shelf)
+  local files = vim.fn.glob(M.dir(shelf) .. "/*.json", false, true)
   local filenames = {}
   for _, path in ipairs(files) do
     table.insert(filenames, vim.fn.fnamemodify(path, ":t:r"))
@@ -241,15 +309,16 @@ function M.list()
   return filenames
 end
 
+---@param shelf VF.Session.Shelf
 ---@param filename string
 ---@return string path
-function M.remove(filename)
-  local path = M.save_dir() .. "/" .. filename .. ".json"
+function M.remove(shelf, filename)
+  local path = path_of(shelf, filename)
   if vim.fn.filereadable(path) == 0 then
-    error("No saved result '" .. filename .. "' at " .. path, 0)
+    error("No " .. NOUN[shelf] .. " '" .. filename .. "' at " .. path, 0)
   end
   if vim.fn.delete(path) ~= 0 then
-    error("vimfy rm failed for " .. path, 0)
+    error("could not delete " .. path, 0)
   end
   return path
 end
@@ -266,10 +335,10 @@ function M.rename(old_filename, new_filename)
   if old_filename == new_filename then
     error("Source and target filenames are identical.", 0)
   end
-  local src = M.save_dir() .. "/" .. old_filename .. ".json"
-  local dst = M.save_dir() .. "/" .. new_filename .. ".json"
+  local src = path_of("pinned", old_filename)
+  local dst = path_of("pinned", new_filename)
   if vim.fn.filereadable(src) == 0 then
-    error("No saved result '" .. old_filename .. "' at " .. src, 0)
+    error("No pin '" .. old_filename .. "' at " .. src, 0)
   end
   if vim.fn.filereadable(dst) == 1 then
     error("Target '" .. new_filename .. "' already exists.", 0)
@@ -293,10 +362,10 @@ function M.duplicate(src_filename, dst_filename)
   if src_filename == dst_filename then
     error("Source and target filenames are identical.", 0)
   end
-  local src = M.save_dir() .. "/" .. src_filename .. ".json"
-  local dst = M.save_dir() .. "/" .. dst_filename .. ".json"
+  local src = path_of("pinned", src_filename)
+  local dst = path_of("pinned", dst_filename)
   if vim.fn.filereadable(src) == 0 then
-    error("No saved result '" .. src_filename .. "' at " .. src, 0)
+    error("No pin '" .. src_filename .. "' at " .. src, 0)
   end
   if vim.fn.filereadable(dst) == 1 then
     error("Target '" .. dst_filename .. "' already exists.", 0)

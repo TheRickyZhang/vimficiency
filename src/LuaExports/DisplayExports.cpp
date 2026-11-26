@@ -91,22 +91,6 @@ VFByteSlice vf_sequence_display_typed_chunks(const char* request, size_t request
       });
 }
 
-VFByteSlice vf_format_result_position(const char* request, size_t request_len) {
-  static string storage;
-  return guardedRequest<vf::display::SessionResult>(
-      storage, request, request_len, [](const vf::display::SessionResult& req) {
-        return textMessage(VF::SessionView::formatPosition(sessionResult(req)));
-      });
-}
-
-VFByteSlice vf_format_result_kind_suffix(const char* request, size_t request_len) {
-  static string storage;
-  return guardedRequest<vf::display::SessionResult>(
-      storage, request, request_len, [](const vf::display::SessionResult& req) {
-        return textMessage(VF::SessionView::formatKindSuffix(sessionResult(req)));
-      });
-}
-
 VFByteSlice vf_format_result_message(const char* request, size_t request_len) {
   static string storage;
   return guardedRequest<vf::display::ResultMessageRequest>(

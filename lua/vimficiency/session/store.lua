@@ -18,8 +18,8 @@
 ---@field abort_recall            fun(buf: integer, win: integer, tick: integer?)
 ---
 --- Lifecycle
----@field convert_to_finished           fun(id: string, result: VF.Session.Result, finish_alias: string|nil, kind?: VF.Session.Kind): boolean
----@field register_fetched_result fun(alias: string, result: VF.Session.Result): string
+---@field convert_to_finished     fun(id: string, result: VF.Session.Result, kind?: VF.Session.Kind): boolean
+---@field add_finished            fun(alias: string, result: VF.Session.Result, saved_filename: string|nil): string
 ---@field remove                  fun(id: string)
 ---@field rename_alias            fun(old_alias: string, new_alias: string)
 ---
@@ -28,8 +28,7 @@
 ---@field get_active              fun(alias: string): VF.Session.Active|nil
 ---@field get_result              fun(alias: string): VF.Session.Result|nil
 ---@field has_result              fun(alias: string): boolean
----@field get_result_by_id        fun(id: string): VF.Session.Result
----@field get_finish_alias        fun(alias: string): string|nil
+---@field get_saved_filename      fun(alias: string): string|nil
 ---@field list_aliases            fun(): string[]
 ---
 --- `@` / `$` selectors
@@ -61,6 +60,7 @@ local buffer_history = require("vimficiency.capture.buffer_history")
 local capture_state = require("vimficiency.capture.state")
 local util = require("vimficiency.util")
 local config = require("vimficiency.config")
+local disk = require("vimficiency.session.disk")
 local stats_log = require("vimficiency.stats.log")
 
 --------------------------------------------------------------------------------
@@ -97,7 +97,7 @@ end
 ---@class VF.Session.Core
 ---@field id           string
 ---@field kind            VF.Session.Kind
----@field started_mono_ns integer        # vim.uv.hrtime() when the record entered the store (fetch time for disk-loaded records). Monotonic, process-local: the clock for recall ordering, eviction, and "N ago" display
+---@field started_mono_ns integer        # vim.uv.hrtime() when the record entered the store. Monotonic, process-local: the clock for recall ordering, eviction, and "N ago" display
 
 --- Capturing. Owns its atom listener and, for watch, the idle trigger.
 ---@class VF.Session.Active : VF.Session.Core
@@ -112,19 +112,20 @@ end
 ---@field lossy_warned boolean|nil       # Mark/watch only: the once-per-session lossy_mappings = "warn" notice has been shown
 ---@field watch_disarm fun()|nil         # Watch only: disarm for the idle end-trigger armed at :Vimfy watch. Called on finish/destroy so the timer and listener are released.
 
---- Finished or disk-loaded. `result` carries key_count, kind, and the only
---- persisted clock, `finished_wall_epoch`.
+--- `result` carries key_count, kind, and the only persisted clock,
+--- `finished_wall_epoch`.
 ---@class VF.Session.Finished : VF.Session.Core
----@field finished_mono_ns integer       # vim.uv.hrtime() at finish (fetch time for disk-loaded records)
----@field finish_alias     string        # Literal alias passed to finish (`a`, `3s`, ...); the default filename for `:Vimfy save`
+---@field finished_mono_ns integer       # vim.uv.hrtime() at finish
+---@field saved_filename   string|nil    # Its file on the `sessions` shelf (`disk.save_new`); nil when it was not saved
 ---@field result           VF.Session.Result
 
 ---@class VF.Session.Command
 ---@field keys string  # The atom's replayable keys
 ---@field kind string  # CmdAtom `type` (`VF.Atom.kind`)
 
---- VF.Session.Result: data for a completed session, ready for simulate().
----@class VF.Session.Result
+--- What the stats preview and view read of a run. A session's result has it
+--- all; a journal run is mapped onto it (`stats/query.lua`).
+---@class VF.Session.Viewable
 ---@field recording? VF.Replay.Recording
 ---@field lines string[]               # Trimmed buffer lines used for optimization
 ---@field goal_lines string[]          # Goal buffer slice for recomputing explore recommendations
@@ -132,21 +133,26 @@ end
 ---@field start_col integer            # 0-indexed
 ---@field end_row integer              # 0-indexed, relative to lines
 ---@field end_col integer              # 0-indexed
+---@field indent? VF.IndentOptions
+---@field filetype? string             # As the session started. Absent on files saved before it existed
+---@field user_seq string              # What ran: the user's keys after mappings (keytrans string). Bounds the search
+---@field user_typed? string           # Pressed keys behind user_cost, when captured
+---@field user_cost number             # Effort of the keys the user pressed
+---@field optimal_results VF.Optimizer.Result[] # Top N results from optimizer (seq + cost)
+
+--- VF.Session.Result: data for a completed session, ready for simulate().
+---@class VF.Session.Result : VF.Session.Viewable
+---@field query? VF.QueryShape          # Stats log only
 ---@field has_lines_above boolean      # Whether the optimization slice omitted lines above
 ---@field has_lines_below boolean      # Whether the optimization slice omitted lines below
 ---@field prefix string                # Reserved boundary prefix; empty at the whole-buffer level (see compute.lua)
 ---@field suffix string                # Reserved boundary suffix; empty at the whole-buffer level
 ---@field diffs VF.Diff.Region[]       # Optimizer character-level diff regions for column highlighting
 ---@field window_height integer        # Captured window height for page/scroll semantics
----@field indent? VF.IndentOptions
 ---@field scroll_amount integer        # Captured 'scroll' option for Ctrl-D/U semantics
----@field user_seq string              # What ran: the user's keys after mappings (keytrans string). Bounds the search
----@field user_typed string|nil        # What the user pressed (keytrans string), mouse events stripped. Behind user_cost. Absent on files saved before it existed
 ---@field user_typed_insert string|nil # Of user_typed, the insert text (`VF.Atom.typed_insert`). The command tables count insert text by these. Absent on files saved before it existed
 ---@field optimizer_overrides string|nil # Encoded overrides the analyze ran with; with results_calculated, completes the replayable request. Absent on files saved before 0.3.0
 ---@field results_calculated integer|nil # Result count the analyze was asked for
----@field user_cost number             # Effort of the keys the user pressed
----@field optimal_results VF.Optimizer.Result[] # Top N results from optimizer (seq + cost)
 ---@field unbeaten boolean|nil          # No results because no modeled sequence came close to the user's keys. Absent on files saved before it existed
 ---@field commands VF.Session.Command[]|nil # The atoms user_seq concatenates, one per Neovim command. Absent on files saved before it existed
 ---@field key_count integer            # Captured key events at finish (authoritative; user_seq is bytes, not keys)
@@ -223,7 +229,7 @@ end
 -- Concurrent active named-alias sessions. Eviction (window closed, cursor drift,
 -- idle) is what bounds them in practice; this is a runaway guard against
 -- something starting named sessions in a loop. Finished records keep their
--- alias slot (for `save @` / `view <alias>`) but do not count against it.
+-- alias slot (for `pin @` / `view <alias>`) but do not count against it.
 local NAMED_CAPACITY = 100
 
 --------------------------------------------------------------------------------
@@ -258,6 +264,15 @@ local last_suggest_id = nil
 ---@return VF.Session.Core|nil
 local function any_session(id)
   return active_sessions[id] or finished_sessions[id]
+end
+
+---@param id string
+---@return string|nil alias
+local function find_name(id)
+  for a, nid in pairs(named_to_id) do
+    if nid == id then return a end
+  end
+  return nil
 end
 
 --------------------------------------------------------------------------------
@@ -429,16 +444,6 @@ function M.get_result(alias)
   return rec and rec.result or nil
 end
 
---- Id-keyed variant of `get_result`.
---- Use this after pinning a time-varying alias to a stable id.
----@param id string
----@return VF.Session.Result
-function M.get_result_by_id(id)
-  local rec = finished_sessions[id]
-  if not rec then error("no finished result for id " .. id, 0) end
-  return rec.result
-end
-
 ---@param alias string
 ---@return boolean
 function M.has_result(alias)
@@ -451,10 +456,7 @@ function M.remove(id)
   if not any_session(id) then return end
 
   -- Un-index from whichever side holds this id.
-  local name = nil
-  for a, nid in pairs(named_to_id) do
-    if nid == id then name = a; break end
-  end
+  local name = find_name(id)
   if name then
     named_to_id[name] = nil
   else
@@ -464,13 +466,13 @@ function M.remove(id)
   destroy_record(id)
 end
 
---- Move an active session to `finished_sessions` without touching its indexes.
+--- Move an active session to `finished_sessions` without touching its indexes,
+--- then save and log it.
 ---@param id string
 ---@param result VF.Session.Result
----@param finish_alias string|nil   Literal alias the caller used for this finish (`a`, `3s`, etc.); the default filename for `:Vimfy save @`
 ---@param kind? VF.Session.Kind     Promotion: a recall record finished by auto_suggest takes the suggest_* that fired. Applied atomically with the status transition so a failed compute/finish path never leaves a mislabeled record. Omit to keep the record's own kind.
 ---@return boolean success
-function M.convert_to_finished(id, result, finish_alias, kind)
+function M.convert_to_finished(id, result, kind)
   local active = active_sessions[id]
   if not active then return false end
 
@@ -488,7 +490,6 @@ function M.convert_to_finished(id, result, finish_alias, kind)
     kind             = kind or active.kind,
     started_mono_ns  = active.started_mono_ns,
     finished_mono_ns = vim.uv.hrtime(),
-    finish_alias     = finish_alias,
     result           = result,
   }
   result.kind = finished.kind
@@ -496,7 +497,17 @@ function M.convert_to_finished(id, result, finish_alias, kind)
   finished_sessions[id] = finished
   last_finished_id = id
 
-  stats_log.append(finished.kind, result)
+  if config.sessions.save then
+    -- A recall alias is a position, not a name.
+    local saved_filename, err = disk.save_new(find_name(id) or M.session_type(finished.kind), result)
+    finished.saved_filename = saved_filename
+    if err then
+      vim.schedule(function()
+        vim.notify("vimfy: could not save the session: " .. err, vim.log.levels.WARN)
+      end)
+    end
+  end
+  stats_log.append(finished.kind, result, finished.saved_filename)
 
   return true
 end
@@ -515,20 +526,21 @@ function M.set_last_suggest_id(id)
   last_suggest_id = id
 end
 
---- The alias a record was finished under (the default `:Vimfy save` filename).
+--- The file a finished session was saved under; nil when it was not saved.
 ---@param alias string
 ---@return string|nil
-function M.get_finish_alias(alias)
+function M.get_saved_filename(alias)
   local id = convert_alias_to_id(alias)
   local rec = id and finished_sessions[id]
-  return rec and rec.finish_alias or nil
+  return rec and rec.saved_filename or nil
 end
 
---- Insert a disk-loaded result as a finished session under `alias`.
+--- Insert an already finished result under `alias`, without saving or logging it again.
 ---@param alias string  Must satisfy `alias.is_named`.
 ---@param result VF.Session.Result
+---@param saved_filename string|nil
 ---@return string id
-function M.register_fetched_result(alias, result)
+function M.add_finished(alias, result, saved_filename)
   if not alias_mod.is_named(alias) then
     error("alias '" .. tostring(alias) .. "' is not a named alias (letters only)", 0)
   end
@@ -545,7 +557,7 @@ function M.register_fetched_result(alias, result)
     kind             = result.kind,
     started_mono_ns  = now_mono_ns,
     finished_mono_ns = now_mono_ns,
-    finish_alias     = alias,
+    saved_filename   = saved_filename,
     result           = result,
   }
   named_to_id[alias] = id
@@ -554,8 +566,7 @@ function M.register_fetched_result(alias, result)
 end
 
 --- Move a named alias to a new named alias in-place. Refuses if the source is missing
---- or the target is already taken. Only the `named_to_id` index and a finished
---- record's default save filename are touched.
+--- or the target is already taken. Only the `named_to_id` index is touched.
 ---@param old_alias string
 ---@param new_alias string
 function M.rename_alias(old_alias, new_alias)
@@ -575,8 +586,6 @@ function M.rename_alias(old_alias, new_alias)
   end
   named_to_id[old_alias] = nil
   named_to_id[new_alias] = id
-  local finished = finished_sessions[id]
-  if finished then finished.finish_alias = new_alias end
 end
 
 --- All named and recall-key aliases that currently resolve, for tab completion.
@@ -604,15 +613,6 @@ end
 local function find_recall_index(id)
   for i = 1, #recall_id_order do
     if recall_id_order[i] == id then return i end
-  end
-  return nil
-end
-
----@param id string
----@return string|nil alias
-local function find_name(id)
-  for a, nid in pairs(named_to_id) do
-    if nid == id then return a end
   end
   return nil
 end

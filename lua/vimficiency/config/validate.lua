@@ -154,6 +154,18 @@ end
 
 --- `merged` is the user block already laid over the defaults.
 ---@param merged any
+---@return { save: boolean }
+function M.normalize_sessions(merged)
+  expect_table("sessions", merged)
+  expect_exact_keys("sessions", merged, { save = true })
+  if type(merged.save) ~= "boolean" then
+    error("sessions.save must be a boolean", 0)
+  end
+  return merged
+end
+
+--- `merged` is the user block already laid over the defaults.
+---@param merged any
 ---@return { enabled: boolean, snapshot_every: integer, keep_days: integer, sampling: { auto: boolean, window_sizes: integer[], deadline_ms: integer, idle_gap_ms: integer } }
 function M.normalize_journal(merged)
   expect_table("journal", merged)

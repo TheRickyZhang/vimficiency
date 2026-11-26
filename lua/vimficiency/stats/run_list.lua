@@ -8,10 +8,11 @@
 local M = {}
 
 local v = vim.api
+local archive = require("vimficiency.session.archive")
 local buf_window = require("vimficiency.ui.buf_window")
 local item_nav = require("vimficiency.ui.item_nav")
+local playback = require("vimficiency.session.playback")
 local render = require("vimficiency.stats.render")
-local simulate = require("vimficiency.simulate")
 local stats_query = require("vimficiency.stats.query")
 local ui_windows = require("vimficiency.ui.windows")
 local util = require("vimficiency.util")
@@ -33,7 +34,7 @@ local ns = v.nvim_create_namespace("vimfy_stats_runs")
 ---@field preview_win integer
 ---@field preview_row? VF.Stats.RunRow
 ---@field preview_width? integer
----@field details table<string, { detail?: VF.Stats.RunDetail, err?: string }>   # by run, as looked up
+---@field details table<VF.Stats.RunRow, { detail?: VF.Session.Viewable, err?: string }>   # the listed runs looked up so far
 ---@field refresh fun()   # re-queries, as after a scoring run
 ---@field close fun()
 
@@ -72,20 +73,17 @@ local function current_row(view)
   return cell and view.list.runs[cell.index]
 end
 
---- A journal run's text, looked up once.
+--- A listed run's text, looked up once.
 ---@param view VF.Stats.RunListView
 ---@param row VF.Stats.RunRow
----@return VF.Stats.RunDetail|nil detail
+---@return VF.Session.Viewable|nil detail
 ---@return string|nil err
 local function detail_of(view, row)
-  local id = row.id.journal
-  if not id then return nil, nil end
-  local key = string.format("%s/%d/%d", id.file, id.window_size, id.last_atom)
-  if not view.details[key] then
-    local detail, err = stats_query.run(row.id)
-    view.details[key] = { detail = detail, err = err }
+  if not view.details[row] then
+    local detail, err = stats_query.run(row)
+    view.details[row] = { detail = detail, err = err }
   end
-  return view.details[key].detail, view.details[key].err
+  return view.details[row].detail, view.details[row].err
 end
 
 ---@param view VF.Stats.RunListView
@@ -111,9 +109,9 @@ end
 
 ---@param view VF.Stats.RunListView
 local function draw(view)
-  local lines = render.run_lines(view.list, view.offset, view.sort)
+  local lines, items = render.run_table(view.list, view.offset, v.nvim_win_get_width(view.list_win), view.sort)
   set_lines(view.list_buf, lines)
-  view.items = render.run_items(lines, #view.list.runs)
+  view.items = items
   v.nvim_win_set_config(view.list_win, { title = title(view) })
   -- The current cell draws the preview; with no runs there is none.
   view.nav.sync()
@@ -125,6 +123,7 @@ local function refresh(view)
   local sort = view.sort
   view.list = stats_query.runs(view.scope, sort and sort.order or "worst", sort ~= nil and sort.ascending,
     view.offset, M.PAGE_SIZE)
+  view.details = {}
   draw(view)
 end
 
@@ -156,41 +155,50 @@ local function show_page(view, offset)
   view.nav.focus("1:" .. cell.order)
 end
 
----@param cost number
----@return string
-local function format_cost(cost)
-  return string.format("%.2f", cost)
-end
-
---- Replays the current journal run against the best sequence. A session keeps
---- no text to replay.
+--- Replays the current run beside what was found for it.
 ---@param view VF.Stats.RunListView
 local function open_run(view)
   local row = current_row(view)
-  if not row or row.id.run == "session" then return end
+  if not row then return end
   local detail, err = detail_of(view, row)
   if not detail then
     vim.notify("run not available: " .. err, vim.log.levels.WARN)
     return
   end
-  simulate.simulate_compare(detail.lines, detail.start_row, detail.start_col, {
-    user = { recording = detail.recording, cost = format_cost(row.user_cost) },
-    suggestions = row.best_seq == "" and {} or { { seq = row.best_seq, cost = format_cost(row.best_cost) } },
-  }, {
-    label = string.format("%s · %d commands", os.date("%b %d %H:%M", row.wall_epoch), row.window_size),
-    end_row = detail.end_row,
-    end_col = detail.end_col,
-    filetype = detail.filetype,
-    indent = detail.indent,
-  })
+  playback.view(detail, render.run_name(row))
+end
+
+--- Pins the current run's saved session under a filename asked for.
+---@param view VF.Stats.RunListView
+local function pin_run(view)
+  local row = current_row(view)
+  if not row then return end
+  if row.saved_filename == "" then
+    vim.notify("only a saved session can be pinned", vim.log.levels.WARN)
+    return
+  end
+  vim.ui.input({ prompt = "Pin as: ", default = row.saved_filename }, util.entry(function(input)
+    if not input or input == "" then return end
+    archive.pin(row.saved_filename, input)
+  end))
 end
 
 ---@param view VF.Stats.RunListView
 local function set_keymaps(view)
+  local function return_to_list()
+    v.nvim_set_current_win(view.list_win)
+  end
+  ui_windows.set_buffer_keymaps(view.preview_buf, {
+    { lhs = "<C-s>", desc = "Return to the selected run", handler = return_to_list },
+    { lhs = "q", desc = "Return to the selected run", handler = return_to_list },
+    { lhs = "<Esc>", desc = "Return to the selected run", handler = return_to_list },
+  })
   ---@type VF.Keymap[]
   local keys = {
+    { lhs = "<C-s>", desc = "Focus the run preview", handler = function() v.nvim_set_current_win(view.preview_win) end },
     { lhs = "s", desc = "Sort by the current column: descending, ascending, off",
       handler = function() cycle_sort(view) end },
+    { lhs = "p", desc = "Pin the current session", handler = function() pin_run(view) end },
     { lhs = "]", desc = "Next page of runs", summary_group = "page", summary_desc = "Next/previous page of runs",
       handler = function()
         local following = view.offset + M.PAGE_SIZE
@@ -234,7 +242,7 @@ local function open_windows(view)
   ---@return integer
   local function float(buf, enter, row, height, window_options)
     local win = v.nvim_open_win(buf, enter, {
-      relative = "editor", row = row, col = 0, width = width, height = height,
+      relative = "editor", row = row, col = 0, width = width, height = height, zindex = 49,
       border = "rounded", style = "minimal", title = "", title_pos = "left",
     })
     ui_windows.configure_scratch_window(win, window_options)
@@ -251,6 +259,7 @@ end
 ---@param order? VF.Stats.Order
 ---@return VF.Stats.RunListView
 function M.open(scope, label, order)
+  local origin = v.nvim_get_current_win()
   ---@type VF.Stats.RunListView
   ---@diagnostic disable-next-line: missing-fields
   local view = { scope = scope, label = label, sort = order and { order = order, ascending = false },
@@ -258,6 +267,7 @@ function M.open(scope, label, order)
   view.refresh = function() refresh(view) end
   view.close = function()
     if v.nvim_win_is_valid(view.list_win) then v.nvim_win_close(view.list_win, true) end
+    if v.nvim_win_is_valid(origin) then v.nvim_set_current_win(origin) end
   end
   open_windows(view)
   view.nav = item_nav.attach(view.list_buf, {
@@ -267,17 +277,23 @@ function M.open(scope, label, order)
     focused = function() draw_preview(view) end,
   })
   set_keymaps(view)
-  local resize = v.nvim_create_autocmd("WinResized", {
+  local group = v.nvim_create_augroup("vimfy_stats_runs_" .. view.list_win, {})
+  v.nvim_create_autocmd("WinResized", {
+    group = group,
     callback = util.entry(function()
+      if vim.list_contains(vim.v.event.windows, view.list_win) then draw(view) end
       if vim.list_contains(vim.v.event.windows, view.preview_win) then draw_preview(view) end
     end),
   })
   v.nvim_create_autocmd("WinClosed", {
-    pattern = tostring(view.list_win),
-    once = true,
-    callback = util.entry(function()
-      v.nvim_del_autocmd(resize)
-      if v.nvim_win_is_valid(view.preview_win) then v.nvim_win_close(view.preview_win, true) end
+    group = group,
+    pattern = { tostring(view.list_win), tostring(view.preview_win), tostring(origin) },
+    callback = util.entry(function(event)
+      v.nvim_del_augroup_by_id(group)
+      local closing = tonumber(event.match)
+      for _, win in ipairs({ view.preview_win, view.list_win }) do
+        if win ~= closing and v.nvim_win_is_valid(win) then v.nvim_win_close(win, true) end
+      end
     end),
   })
   refresh(view)

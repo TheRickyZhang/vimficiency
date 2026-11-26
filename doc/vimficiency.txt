@@ -1,4 +1,4 @@
-*vimficiency.txt*  *vimficiency*       For Neovim >= 0.11       Last change: 2026 November 25
+*vimficiency.txt*  *vimficiency*       For Neovim >= 0.11       Last change: 2026 November 26
 
 ==============================================================================
 Table of Contents                              *vimficiency-table-of-contents*
@@ -104,12 +104,13 @@ See the per-type pages for details:
 
 WHERE A SESSION LIVES
 
-Once finished, a session lives in **session memory** (the workspace), keyed by
-its alias. Mark and Watch share a cap of 100 active named sessions. Recall
-entries age out of the rolling ring. For anything durable, **save** a session
-to disk — or **store** it (save + remove from workspace), **fetch** it back
-later, and **play** it whether it’s in memory or on disk. See 7a. Session
-storage for the full model.
+Once finished, a session is **active** in memory, keyed by its alias, and
+**saved** to disk under a filename of its own. Mark and Watch share a cap of
+100 active named sessions, and Recall entries age out of the rolling ring.
+
+**Pin** a session to keep a copy under a filename you choose, and **view** it
+whether it’s in memory or on disk. See 7a. Session storage for the full
+model.
 
 
 ==============================================================================
@@ -191,7 +192,7 @@ is foundational enough that there’s no toggle.
 
 >vim
     " ... edit normally ...
-    :Vimfy recall 6       " Analyze the last 6 commands
+    :Vimfy recall 6       " Look back 6 recorded command atoms
     :Vimfy recall 3s      " Analyze the last 3 seconds
 <
 
@@ -204,17 +205,15 @@ WINDOW ALIASES: TWO WAYS TO INDEX THE QUEUE
   -----------------------------------------------------------------------
   Syntax   Meaning                 Use when
   -------- ----------------------- --------------------------------------
-  N        Last N commands         You can estimate how many commands the
-                                   edit took
+  N        Last N recorded command You can count the actions you took
+           atoms
 
-  Ns       Last N seconds of       You can estimate time better than key
-           activity                count
+  Ns       Last N seconds of       You remember when you started
+           activity
   -----------------------------------------------------------------------
-Both forms are measured back from _now_, and name the **whole span** up to that
-point — not a fixed-size window floating in the past. `3s` analyzes
-everything typed in the last 3 seconds (the range from 3s-ago through the
-present), and `50` the last 50 commands. The number sets how far _back_ the
-range reaches; the range always ends at the current cursor.
+A command atom is one Vim action reported by Neovim. For example, `dw` counts
+as one atom. Recall counts only the atoms Vimfy records. Both forms look back
+from now and end at the current cursor.
 
 Mixing forms (`3m`, `3ms`, `2h`, etc.) is not supported. Seconds is the only
 time unit; if you want 90 seconds, use `90s`.
@@ -265,19 +264,19 @@ If `recall Ns` asks for a window older than the queue retains, the alias fails
 to resolve and you get "No recall session found within 'Ns'…" — raise
 either cap.
 
-Recall records are discarded when Neovim exits; promote with `:Vimfy save` if
-you want them on disk.
+The recall ring is discarded when Neovim exits. A window you finished with
+`:Vimfy recall` is saved to disk like any other session.
 
 
-RECALL RESULTS ARE TRANSIENT
+RECALL ALIASES MOVE
 
-Recall windows rotate out of the queue as you type, so save promptly. `@`
-refers to the most recently ended session — handy when the alias (`3s`) is
-moving out from under you:
+Recall windows rotate out of the queue as you type, so an alias like `3s` soon
+names something else. `@` refers to the most recently ended session, which
+makes it the handle to pin one by:
 
 >vim
     :Vimfy recall 3s
-    :Vimfy save @ nested-refactor
+    :Vimfy pin @ nested-refactor
 <
 
 
@@ -314,14 +313,17 @@ cost>)` — and the result is already saved as a session, reachable with the
 `$` alias (the most recent suggestion):
 
 >vim
-    :Vimfy play $           " side-by-side: before/after buffer + your vs suggested sequences
+    :Vimfy view $           " side-by-side: before/after buffer + your vs suggested sequences
     :Vimfy explore $        " step through interactively
-    :Vimfy save $           " persist to disk as suggest-<timestamp>.json
+    :Vimfy pin $            " keep a copy as pinned/suggest-<date>-<time>.json
 <
 
 `$` is a slot, not a history: the next suggestion replaces it. Older
 suggestions stay listed in `:Vimfy list` until the recall ring rotates them
-out, so save the ones you want to keep.
+out.
+
+Every suggestion is also saved to disk as it finishes and listed in `:Vimfy
+stats`. Pin the ones you want to find by name.
 
 To tune this gate, set `auto_suggest = { default_cost = { ... } }` (any subset
 merges over the defaults) — this alone does not auto-enable at startup. To
@@ -463,10 +465,10 @@ Cost is a keyboard-effort score (lower is better), not a keystroke count. See
 10. The effort model for how it’s computed and how to tune it to your layout.
 
 
-SIMULATING
+VIEWING A RESULT
 
-`:Vimfy play <alias> [count]` opens a new tab with side-by-side windows and
-shows your recording alongside simulated optimizer suggestions. `count` sets
+`:Vimfy view <session> [windows]` opens a new tab with side-by-side windows and
+shows your recording alongside simulated optimizer suggestions. `windows` sets
 the number of panes, up to four. The default layout pairs your recording with
 the best suggestion.
 
@@ -475,9 +477,11 @@ with `<Left>`. Close the replay with `q`.
 
 The `[you] Recorded` pane shows the text, cursor and mode Neovim reported. A
 Visual deletion such as `Vd` shows the line disappearing in one step. When
-several commands arrive together, one step shows their combined result. Plugin
-edits appear as they happened, even when a mapping’s reported keys omit some
-of the text it inserted.
+several commands arrive together, one step shows their combined result. Its
+label shows the captured keypresses, falling back to the resolved command when
+the recording lacks keypresses for that step. Plugin edits appear as they
+happened, even when a mapping’s reported keys omit some of the text it
+inserted.
 
 Each numbered `Simulated` pane runs a suggestion in a hidden Neovim buffer. You
 can compare the two even when you used the same keys as the top suggestion.
@@ -487,7 +491,8 @@ you later undid. A step advances each pane to its next available state.
 Opening an older v1 save shows a warning. Its user pane has one step between
 the two states that file contains. Suggestions still animate normally.
 
-Each replay window shows a virtual header above the buffer:
+Each replay pane keeps its header visible while you scroll the buffer or step
+through the sequence. The header shows:
 
 - progress through the global and local step counts, plus the current
     editor mode
@@ -503,8 +508,9 @@ visual segments are visible even in unfocused windows.
 move the cursor to the next/previous sim window (wrapping); in focus mode they
 swap the displayed buffer in place. `<CR>` toggles focus on the window under
 the cursor — it collapses the tab to just that window full-screen, and `<CR>`
-again from inside restores the side-by-side layout. The same toggles are also
-available as `:Vimfy focus <N>` / `:Vimfy escape` for typed invocation.
+again from inside restores the side-by-side layout. From any replay pane, you
+can also type `:Vimfy focus <N>` to expand pane N directly, or `:Vimfy escape`
+to restore the split.
 
 
 REPLAY BUFFER KEYS
@@ -527,38 +533,18 @@ LISTING WHAT’S AROUND
     :Vimfy list
 <
 
-Shows currently active sessions and saved-to-disk results.
+Shows the active sessions and the pins.
 
 
-SAVING, STORING, FETCHING
+SAVED SESSIONS AND PINS
 
-Every finished session starts in **session memory** (workspace) and stays there
-until it rotates out. Copy it to disk with `:Vimfy save`, move it with `:Vimfy
-store`, bring it back later with `:Vimfy fetch`. `:Vimfy play
-<alias>|<filename>` works against both — it replays from memory first,
-falling back to disk.
+Every finished session is active in memory until it rotates out, and is saved
+to disk as it finishes. `:Vimfy pin` keeps a copy under a filename you choose.
 
-See 7a. Session storage for the full model, collision rules, and worked
-examples.
+`:Vimfy view <session>` looks for an alias in memory first, then a pin, then a
+saved session. Tab completion on `:Vimfy view` lists the aliases and pins.
 
-
-VIEWING A SAVED RESULT
-
->vim
-    :Vimfy view my-refactor
-<
-
-Reads back a saved result textually (without replaying). Tab-complete on
-`:Vimfy view` lists what’s available on disk.
-
-
-SAVED RESULT BUFFER KEYS
-
-Press |g?| in a saved-result buffer to open this section directly.
-
-- `q` — close the current saved-result view
-- `?` — show the short keymap summary popup
-- `g?` — open the full help section for saved-result buffers
+See 7a. Session storage for the full model and a worked example.
 
 
 ==============================================================================
@@ -580,7 +566,7 @@ Bind the LHS to the `:Vimfy` command directly:
 >lua
     vim.keymap.set('n', '<leader>vs', '<Cmd>Vimfy start a<CR>',   { silent = true })
     vim.keymap.set('n', '<leader>vf', '<Cmd>Vimfy finish a<CR>',  { silent = true })
-    vim.keymap.set('n', '<leader>vq', '<Cmd>Vimfy save @ quick<CR>', { silent = true })
+    vim.keymap.set('n', '<leader>vq', '<Cmd>Vimfy pin @ quick<CR>', { silent = true })
 <
 
 Everything after `Vimfy` is the subcommand and its arguments, exactly as
@@ -756,10 +742,37 @@ in-progress sessions.
                                                           its typed keys with a
                                                           once-per-session notice.
                                                           "allow" records silently.
-                                                          Play shows the observed
+                                                          View shows the observed
                                                           cursor and edit under
                                                           those keys.
   ---------------------------------------------------------------------------------
+
+SAVED SESSIONS
+
+Every finished session’s result is written to
+`stdpath('data')/vimficiency/sessions/`, so `:Vimfy stats` can show and replay
+it later. See 7a. Session storage.
+
+A result holds the lines its session ran over, unencrypted. That is the part of
+the buffer the session touched plus a few lines of context, which for a small
+file is all of it.
+
+>lua
+    require('vimficiency').setup({ sessions = { save = false } })
+<
+
+  -----------------------------------------------------------------------------
+  Field               Default                   Meaning
+  ------------------- ------------------------- -------------------------------
+  sessions.save       true                      Save every finished session’s
+                                                result. Nothing is removed on
+                                                its own; :Vimfy rm deletes one.
+                                                When off, a result lives only
+                                                in memory unless you
+                                                :Vimfy pin <alias> <filename>
+                                                it.
+
+  -----------------------------------------------------------------------------
 
 JOURNAL
 
@@ -914,8 +927,8 @@ SHIFTWIDTH
 
 Each session captures the source buffer’s `autoindent`, `expandtab`,
 `copyindent`, `tabstop`, and `shiftwidth` for search and replay. A `shiftwidth`
-of zero follows that buffer’s `tabstop`. You can override `shiftwidth` for new
-captures.
+of zero follows that buffer’s `tabstop`. You can override `shiftwidth` for
+new captures.
 
 >lua
     require('vimficiency').setup({ shiftwidth = 4 })
@@ -996,79 +1009,78 @@ C++ source (`cpp/effort_model.*`) is the spec.
 ==============================================================================
 11. Commands reference                        *vimficiency-commands-reference*
 
-  ---------------------------------------------------------------------------------
-  Command                                   Purpose
-  ----------------------------------------- ---------------------------------------
-  :Vimfy start <alias>                      Mark a session start (a named alias:
-                                            letters only, e.g. a).
+  --------------------------------------------------------------------------
+  Command                            Purpose
+  ---------------------------------- ---------------------------------------
+  :Vimfy start <alias>               Mark a session start (a named alias:
+                                     letters only, e.g. a).
 
-  :Vimfy watch <alias>                      Start a Watch session (auto-end on
-                                            idle).
+  :Vimfy watch <alias>               Start a Watch session (auto-end on
+                                     idle).
 
-  :Vimfy finish <alias>                     Finish a Mark or Watch session and
-                                            optimize.
+  :Vimfy finish <alias>              Finish a Mark or Watch session and
+                                     optimize.
 
-  :Vimfy recall <N\|Ns>                     Finish a retrospective recall window.
+  :Vimfy recall <N\|Ns>              Finish a retrospective recall window.
 
-  :Vimfy close <alias>                      Discard a session without optimizing.
+  :Vimfy close <alias>               Discard a session without optimizing.
 
-  :Vimfy save <alias> [<filename>]          Copy a finished result to disk (keeps
-                                            the workspace copy). Filename defaults
-                                            to the alias.
+  :Vimfy pin <session> [filename]    Keep a copy of a finished result. The
+                                     filename defaults to the one it was
+                                     saved under.
 
-  :Vimfy store <alias> [<filename>]         Move a finished result to disk (removes
-                                            from workspace).
+  :Vimfy unpin <filename>            Delete a pin.
 
-  :Vimfy fetch <filename> [<alias>]         Copy a saved result from disk into the
-                                            current workspace.
+  :Vimfy view <session> [windows]    Replay your recording alongside the
+                                     optimizer’s suggestions.
 
-  :Vimfy play <alias>\|<filename> [count]   Animate results side-by-side (memory
-                                            first, disk fallback).
+  :Vimfy explore <session>           Explore a finished session
+                                     interactively.
 
-  :Vimfy focus <N>                          Focus the active replay on the Nth
-                                            buffer (full-screen).
+  :Vimfy rm <filename>               Delete a saved session’s result. Its
+                                     stats row stays.
 
-  :Vimfy escape                             Restore the side-by-side replay layout.
+  :Vimfy list                        Open the interactive session picker
+                                     (see below).
 
-  :Vimfy view [<alias>\|<filename>]         View a finished result full-screen (no
-                                            arg lists saved files).
+  :Vimfy stats                       Open the stats tab (see below).
 
-  :Vimfy rm <filename>                      Delete a saved result from disk.
+  :Vimfy stats refresh               Score the journal now, without opening
+                                     the stats.
 
-  :Vimfy list                               Open the interactive session picker
-                                            (see below).
+  :Vimfy suggest <on\|off\|toggle>   Runtime toggle for auto-suggest (works
+                                     with zero config).
 
-  :Vimfy stats                              Open the stats tab (see below).
+  :Vimfy config                      Show the current configuration.
 
-  :Vimfy stats refresh                      Score the journal now, without opening
-                                            the stats.
+  :Vimfy appearance                  Customize selection highlighting.
 
-  :Vimfy suggest <on\|off\|toggle>          Runtime toggle for auto-suggest (works
-                                            with zero config).
+  :Vimfy reload                      Rebuild and hot-reload Vimfy with live
+                                     build output.
 
-  :Vimfy config                             Show the current configuration.
+  :Vimfy version                     Show the plugin version.
 
-  :Vimfy appearance                         Customize selection highlighting.
+  :Vimfy                             Show the command list.
 
-  :Vimfy reload                             Rebuild and hot-reload Vimfy with live
-                                            build output.
+  :Vimfy help                        Open :help vimficiency.
+  --------------------------------------------------------------------------
+Two commands are available only in replay panes. `:Vimfy` lists them under
+**View controls**. `:Vimfy focus <N>` expands pane N and `:Vimfy escape`
+restores the split.
 
-  :Vimfy version                            Show the plugin version.
-
-  :Vimfy help                               Show the command list.
-  ---------------------------------------------------------------------------------
 
 ALIASES AND FILENAMES
 
-Every handle you type is either an **alias** (a session in memory) or a
-**filename** (a saved result on disk).
+`<session>` accepts an **alias** for a session in memory or the **filename** of
+a pinned or saved session.
 
   -----------------------------------------------------------------------
   Alias      Means
   ---------- ------------------------------------------------------------
   a, foo     Letters only → a named alias, like a named register.
 
-  6          Digits → recall N commands ago.
+  6          Look back 6 recorded command atoms. For example, dw counts
+             as one.
 
   3s         Digits + s → recall N seconds ago (see 5. Recall).
 
@@ -1085,41 +1097,41 @@ Which aliases a subcommand accepts:
 
   recall                    N or Ns.
 
-  close / save / store      Any alias.
+  close                     Any alias.
 
-  play / view / explore     Any alias or a filename (memory first, then
-                            disk).
+  view / explore / pin      Any alias or a filename (memory first, then
+                            pins, then saved sessions).
 
-  fetch / rm                A filename (fetch also takes the new named
-                            alias).
+  unpin                     A pin’s filename.
+
+  rm                        A saved session’s filename.
   -----------------------------------------------------------------------
 `@` is handy when the session you want to keep is a recall window whose alias
 (`3s`) is moving out from under you:
 
 >
     :Vimfy recall 3s
-    :Vimfy save @ nested-refactor
+    :Vimfy pin @ nested-refactor
 <
 
 `:Vimficiency` is accepted as a full-name alias for `:Vimfy`.
 
 
-WORKSPACE VS. STORAGE
+ACTIVE, SAVED, PINNED
 
-Finished sessions live in two places: **workspace** (in-memory, indexed by
-alias) and **storage** (on disk, indexed by filename). The namespaces are
-separate; the same text can name both. Move results between them with `save` /
-`store` / `fetch`; see 7a. Session storage for the full model and collision
-rules. Omitting the second argument on `save` / `store` / `fetch` repeats the
-first argument verbatim; `fetch` requires the alias when the filename is not
-letters-only.
+A finished session is **active** in memory under its alias, and **saved** to
+disk under a filename made from the alias and the finish time. `pin` keeps a
+copy that stays until you `unpin` it.
+
+The same text can be an alias and a filename. See 7a. Session storage for the
+full model.
 
 
 SESSION PICKER (:VIMFY LIST)
 
-Opens a centered float with two panes — **Active** (in-memory workspace
-sessions) and **Saved** (files under `stdpath("data")/vimficiency/saved`) —
-and a live-filter prompt at the bottom. `<Tab>` toggles between panes.
+Opens a centered float with two panes — **Active** (in-memory sessions) and
+**Pinned** (files under `stdpath("data")/vimficiency/pinned`) — and a
+live-filter prompt at the bottom. `<Tab>` toggles between panes.
 
 Ongoing sessions always sit in a pinned **Ongoing** section at the top,
 regardless of sort mode. Auto-generated recall ring entries (one per command)
@@ -1131,7 +1143,7 @@ resolve a specific window with `:Vimfy recall N` or `:Vimfy recall Ns` instead.
   ---------- ------------------------------------------------
   /          Fuzzy-filter by alias (prompt at bottom, live)
   <CR>       Open (default action, see below)
-  <Tab>      Switch Active ↔ Saved pane
+  <Tab>      Switch Active ↔ Pinned pane
   sn/sN      Sort by name (A→Z / Z→A)
   sc/sC      Sort by category (A→Z / Z→A)
   st/sT      Sort by time (newest / oldest)
@@ -1149,15 +1161,14 @@ list cursor without leaving insert mode; `<CR>` opens the current entry;
 
 **Per-pane action semantics:**
 
-- `<CR>` — on the Active pane, opens a `:Vimfy play`-style view of a
-    finished session; on the Saved pane, fetches the file into the
-    workspace and switches focus to Active.
+- `<CR>` — on either pane, opens it as `:Vimfy view` does: a finished
+    session on Active, the pin on Pinned.
 - `d` — on Active, discards the session (equivalent to `:Vimfy close`);
-    on Saved, deletes the file on disk.
-- `r` / `y` — on Saved, renames/duplicates the file. On Active, renames
+    on Pinned, unpins (equivalent to `:Vimfy unpin`).
+- `r` / `y` — on Pinned, renames/duplicates the file. On Active, renames
     the named alias / registers a duplicate finished record under a new
     alias. Only entries with a stable name alias are renameable this
-    way; for recall and auto-suggest results, save to disk first (`:Vimfy save <alias> <filename>`) and then rename from the Saved pane.
+    way; for recall and auto-suggest results, pin first (`:Vimfy pin <alias> <filename>`) and then rename from the Pinned pane.
 
 **Blocked on in-progress sessions:** `<CR>`, `r`, `y` all refuse to run on a
 still-accumulating session. Finish it with `:Vimfy finish` (or let Watch’s
@@ -1168,8 +1179,7 @@ SESSION STATS (:VIMFY STATS)
 
 Opens a tab with a header over one full-width pane:
 
-- **Header** — the scorings counted, the weight and the charted run length,
-    over the path of the session log the stats are read from.
+- **Header** — the scorings counted, the weight and the session log path.
 - **Stats** — a Sessions band over a Journal band, with a faint line between
     them (`VimficiencyStatsRule`). Each holds its efficiency chart, its
     optimizer times and its own Commands tables.
@@ -1182,19 +1192,15 @@ The stats are laid out as items: rows that list runs or expand command lists,
 charts, and selector rows. One item is always current. It is highlighted whole
 and the cursor itself is hidden.
 
-`h`, `j`, `k` and `l` move to the item on that side, and the other keys act on
-the current one. Any other motion takes the nearest item.
+Use `hjkl` or the arrow keys to move between items, with an optional count.
+Clicking or moving the cursor in Normal mode snaps it to the nearest item.
 
 Keys in the stats (`?` lists them):
 
   -----------------------------------------------------------------------
   Key             Action
   --------------- -------------------------------------------------------
-  j / k           The item below / above; a count moves that many.
-
-  h / l           Change the active option on a selector row, or move to
-                  the item to the left / right. The arrow keys work the
-                  same way.
+  h / l           Change the option on a selector row.
 
   <CR>            Open a row’s runs, open a full-screen chart, or expand
                   or collapse a command list.
@@ -1209,8 +1215,10 @@ Keys in the stats (`?` lists them):
 
   q               Close the tab.
   -----------------------------------------------------------------------
-`<Esc>` or `q` closes the float opened by `<CR>`. A chart fills its column in
-the stats and the whole screen in its float.
+`<Esc>` or `q` closes the current Stats layer and returns to the window that
+opened it. A run list opened from a chart keeps focus above that chart until
+you close the list. A chart fills its column in the stats and the whole screen
+in its float.
 
 The stats keep each band’s left side to its headline: the Sessions
 efficiency, the Journal’s run lengths, a chart each and the optimizer times.
@@ -1226,7 +1234,8 @@ breaks where there are no samples. Their colors are
 `VimficiencyStatsEfficiency` and `VimficiencyStatsVolume`. `e` and `s` hide and
 show the efficiency and the samples line. `+` shows more history and `-` shows
 less, from 15 minutes to 30 weeks. These keys change the history scale of the
-float. `?` lists the chart keys.
+float. Its totals, breakdowns and run lists cover the visible buckets. `?`
+lists the chart keys.
 
 In the chart’s float each bucket with runs is an item, named with its
 efficiency in the title. `h` and `l` move between buckets and `<CR>` lists the
@@ -1235,37 +1244,46 @@ way.
 
 The run list floats over the tab at its full width, one line per session or
 journal run: when, your effort, the best found, the saving, the extra
-characters you typed in insert mode and the search time. Its title holds the
-row it came from, the sort and the page. It takes two fifths of the screen and
-the preview under it the rest.
+characters you typed in insert mode, the search time, `last_atom` (the journal
+atom where the run ends), `window_size` (the number of commands in the run),
+and `tag`. The tag column lists every matching explanation and is empty for an
+untagged run. Sessions show a dash in both journal columns and sort last in
+either direction. Its title holds the row it came from, the sort and the page.
+It takes two fifths of the screen and the preview under it the rest.
 
-The preview follows the current run. It shows your keys and the best sequence,
-spaced by command and cut to two lines each. Under them is the run’s text
-before and after, side by side, with the changed lines marked and the
-cursor’s place shaded in each.
+The preview follows the current run. In Normal mode, `<C-s>` switches between
+the list and preview. In the preview, `q` or `<Esc>` also returns to the
+selected cell. The preview starts with the full id: a session’s saved
+filename, which `view` and `pin` take, or a journal run’s file and position.
 
-A session keeps no text, so its preview is the keys alone. Runs from closed
-journals that have been idle for `journal.keep_days` and fully scored count
-toward totals after rollup. Only individual runs still on disk appear in the
-list.
+Under the id are your keys and the best sequence, spaced by command and cut to
+two lines each. Then the initial and goal buffers appear side by side, with the
+changed lines marked and the cursor’s place shaded in each.
+
+A session’s text comes from its saved result. A session finished before
+results were saved, or with `sessions.save` off, shows its keys and why the
+text is not available.
+
+Runs from closed journals that have been idle for `journal.keep_days` and fully
+scored count toward totals after rollup. Only individual runs still on disk
+appear in the list.
 
 Every cell of the list is an item, as in the stats:
 
   -----------------------------------------------------------------------
   Key           Action
   ------------- ---------------------------------------------------------
-  j / k         The run below / above, in the same column.
+  s             Sort by the current column: descending, ascending, then
+                off. Unsorted, the worst runs come first (your effort
+                minus the best).
 
-  h / l         The column to the left / right. The arrow keys move the
-                same way.
+  <CR>          Replay the run as :Vimfy view does, your keys beside what
+                was found, highlighted as the file was. A session shows
+                every sequence found, a journal run the best one. q there
+                returns to the list.
 
-  s             Sort by the current column: largest first, then smallest
-                first, then off. Unsorted, the worst runs come first
-                (your effort minus the best).
-
-  <CR>          On a journal run: replay it as :Vimfy play does, your
-                keys beside the best sequence, highlighted as the file
-                was. q there returns to the list.
+  p             Pin the current session. Asks for the filename, which
+                defaults to its saved one.
 
   ] / [         Next / previous page of runs.
 
@@ -1275,21 +1293,24 @@ Sections:
 
 - **Sessions** — your percent efficiency: the best effort found over the effort
     you spent, `min(best / yours, 1)`, averaged over sessions. It never passes
-    100%. A session that beats the optimizer and any unbeaten session with
-    positive user effort each count as 100%. By default, sessions are
+    100%. Ties, sessions where your keys cost less, and searches that found
+    no sequence within the effort cap all score 100% with positive user effort. By default, sessions are
     weighted by the effort you spent. Set `stats.weight = "uniform"` to
     count each once (see
     configuration). The Look back selector sets both
-    overview efficiency charts and their Commands tables to the same period
+    overview charts, timings, outcome counts and Commands tables to the same period
     of 30 minutes, hours, days, or weeks. The average and sample count above
     each chart cover that period.
-    Its float adds the total finished sessions by type (mark / watch / recall /
+    Its float shows the same Movement only, With edits and Size bars as the
+    Journal. Each segment shows its share of scored sessions. Select it and
+    press `<CR>` to list those sessions.
+    The float also counts finished sessions in the visible period by type (mark / watch / recall /
     suggest) and the commands recorded in them. Its **Not scored** and
-    **Unbeaten** headings have selectable categories underneath, just as in
+    **No results** headings have selectable categories underneath, just as in
     the Journal float.
-    _You beat the optimizer_ counts the scored sessions where your keys cost
-    less than the best sequence found, and `<CR>` lists them. Each is a
-    sequence the search missed or one the cost model underprices.
+    **User better** counts sessions where your keys cost strictly less than
+    the best sequence found. Select the heading to list them all, or a category
+    underneath to inspect sessions that used a particular command.
 - **Journal** — the same efficiency over everything you typed, not only
     finished sessions. Needs the journal turned on.
     See below.
@@ -1297,7 +1318,7 @@ Sections:
     Sessions band counts your scored sessions, and the Journal band your scored
     journal runs of the selected length, over the same Look back period as the
     chart. The line over the tables counts comparisons that have a best
-    sequence. The efficiency chart also counts unbeaten runs.
+    sequence. The efficiency chart also counts runs under **No results**.
     For every command that appears at least ten times across those and the
     optimizer’s best sequences for them, the ratio
     `your_share / optimizer_share`, with the two shares beside it. Three
@@ -1315,14 +1336,12 @@ Sections:
     Under the lists, _Extra typed text_ is how much more you typed in insert
     mode than the best sequences did; `<CR>` lists the runs where you typed
     more.
-- **Optimizer times** — under each band’s chart. Sessions: _Optimizer response_, the median response time over the last 30 days; `<CR>` lists
-    those sessions, slowest first. Journal: _Movement search_ and _Composition search_, the search time for retained runs of the selected length; `<CR>`
-    opens the chart. These timing views use their own samples independently
-    of Look back. The Movement chart groups queries by lines from start to
-    goal. The Composition chart groups queries by buffer positions in the larger
-    before/after search slice. Each chart shows median milliseconds and
-    sample count for searches with a recorded duration and size, including
-    searches that finished without a solution. Select a bucket for its exact
+- **Optimizer times** — under each band’s chart. Sessions: _Optimizer response_, the median response time in the selected period; `<CR>` lists
+    those sessions, slowest first. Both sources offer _Movement search_ and
+    _Composition search_. Press `<CR>` to open either chart. Both group timed
+    searches by the larger of the before and after position counts, excluding
+    padding. Each bucket shows median milliseconds and sample count, including
+    searches that finished without a solution. These charts follow Look back. The Journal uses the selected run length. Select a bucket for its exact
     values and any deadline hits. `<CR>` lists its runs, slowest first. p95
     appears from 100 samples.
 
@@ -1346,12 +1365,13 @@ In the stats:
 
 If some of the journal still needs scoring under the current settings, its
 coverage percentage appears above the chart in the float. The float title shows
-the overall efficiency, run count and run length. A run that ends where it
-started counts as all waste. Below the chart:
+the efficiency and run count for the visible period, alongside the selected run
+length. A run that ends where it started counts as all waste. Below the chart:
 
 - **Movement only / With edits** — one bar, split by whether the text
-    changed, each side as wide as its share of the scored runs and titled with
-    its efficiency. Their colors are `VimficiencyStatsMovement` and
+    changed. Each caption shows efficiency, then the run count. The decimal in
+    parentheses is the group’s share of all scored runs of the selected length.
+    Their colors are `VimficiencyStatsMovement` and
     `VimficiencyStatsEdit`.
 - **Size** — the label to the left of the ranges under the second bar,
     which uses the same size groups as the search-time charts. For movement and
@@ -1364,14 +1384,24 @@ started counts as all waste. Below the chart:
 - **Not scored** — runs left out of the score, in `VimficiencyStatsNotScored`.
     The rows under it say why: the changed region was too large, the search
     found nothing, or the search failed.
-- **Unbeaten** — runs where no modeled sequence came close to your keys,
+- **No results** — searches that exhausted their queue and found no sequence within the effort cap,
     scored as 100%, in `VimficiencyStatsUnbeaten`. The rows under it count the
     runs with a bare paste (`p`, `P`, `gp`, `gP`) or undo or redo (`u`, `U`,
     `<C-r>`). A run with both counts under each. _Other_ counts runs with
     neither. Rolled-up runs contribute only to the heading total because
     their command details are gone.
+- **User better** — retained runs where your keys cost strictly less than
+    the best sequence found. Press `<CR>` on the heading for all wins, or on a
+    category for runs with a possible explanation. Categories cover screen-line
+    movement, paste, undo or redo, byte-offset jumps (`go`), screen positions
+    (`H`/`M`/`L`), and jump history (`<C-o>`/`<C-i>`). Any recorded `gj` or
+    `gk` in your commands counts as screen-line movement, including counted
+    motions and moves across buffer lines. A run can match several categories.
+    _Other_ contains the remaining wins. Rolled-up runs lack the individual
+    effort comparisons this count needs.
 
-`<CR>` on a row under either heading lists its runs.
+Press `<CR>` on an outcome heading to list all its runs in the visible period,
+or on a category to list the matching runs.
 
 Every segment of either bar is an item: `h` and `l` move along a bar, `j` and
 `k` between them, and the float’s title has the segment’s efficiency and
@@ -1383,9 +1413,11 @@ something, or you paused for more than 30 seconds.
 
 The first background scoring check runs 30 seconds after startup or on an
 earlier idle event. After that, Neovim checks for new journal data when idle
-and starts another low-priority run at most once every five minutes. The
-Journal section shows `Scoring journal…` in place of the average while the
-worker runs and refreshes the average when it finishes.
+and starts another low-priority run at most once every five minutes. While the
+worker runs, the Journal section shows the percentage of recorded journal bytes
+scored under the current settings, for example `Scoring journal… 42%`. The
+open Stats view checks progress once a second. The efficiency average returns
+when scoring finishes.
 
 After a settings change, the journal is rescored under the new settings. Until
 that finishes, runs scored under the old settings are left out, never mixed in.
@@ -1400,6 +1432,10 @@ Every finished session (mark, watch, recall, suggest) is appended to
 `stdpath("data")/vimficiency/sessions.vfs`, with your keys, its cost and the
 single best sequence found.
 
+Its full result, with the text it changed and every sequence found, is saved
+beside the log in `sessions/` (see 7a. Session storage). The log record names
+that file, which is how a run list finds a session’s text.
+
 Each session is stamped with the scoring version and every setting its score
 depends on: keyboard, effort weights and optimizer overrides. The stats count
 every stamp’s sessions; `v` in the stats tab keeps only the current
@@ -1413,24 +1449,24 @@ TAB COMPLETION
 
 Works on:
 
-- Subcommands (`:Vimfy s<Tab>` → `save`, `start`, `stats`, `store`, `suggest`).
+- Subcommands (`:Vimfy s<Tab>` → `start`, `stats`, `suggest`).
 - Named aliases for `start`, `watch`, and `finish`.
 - `3s`/`5s`/`10s`/`30s` hints for `recall`.
 - Live aliases plus time hints for `close`.
-- Every alias (including `@` and `$`) for `save` and `store`.
-- Every alias plus saved filenames for `play`, `view`, and `explore`.
-- Saved filenames for `rm` and `fetch`.
+- Every alias (including `@` and `$`) plus pins for `view`, `explore` and
+    `pin`. Saved sessions are left out: there is one per finished session.
+- Pins for `unpin`, saved filenames for `rm`.
 - `on` / `off` / `toggle` for `suggest`.
 - `refresh` for `stats`.
 
 
 SCRATCH OUTPUT BUFFER KEYS
 
-Press |g?| in a Vimfy scratch output buffer to open this section directly. This
-applies to buffers opened by `:Vimfy help` and other detail panes that show
-Vimfy text output in a split.
+Press |g?| in a Vimfy scratch output buffer to open this section directly. A
+bare `:Vimfy` (the command list) and `:Vimfy config` show their text in one, a
+floating window that also closes when you leave it.
 
-- `q` — close the current Vimfy output buffer
+- `q` / `<Esc>` — close the current Vimfy output buffer
 - `?` — show the short keymap summary popup
 - `g?` — open the full help section for scratch output buffers
 
@@ -1450,13 +1486,13 @@ Enable Suggest and the recall queue in your config:
 <
 
 Edit naturally. Every pause surfaces suggestions. When something catches your
-eye, `:Vimfy play 3s` (or whatever window the suggestion targeted) to see it
+eye, `:Vimfy view 3s` (or whatever window the suggestion targeted) to see it
 animated.
 
 Pair with 8. Keymaps:
 
 >vim
-    nnoremap <leader>vv <Cmd>Vimfy play a<CR>  " or ...bind to play b / play c / etc.
+    nnoremap <leader>vv <Cmd>Vimfy view a<CR>  " or ...bind to view b / view c / etc.
 <
 
 …so replaying a suggestion is a single keystroke.
@@ -1470,7 +1506,7 @@ Mark sessions give the cleanest boundaries:
     :Vimfy start a
     " ... the edit ...
     :Vimfy finish a
-    :Vimfy play a
+    :Vimfy view a
 <
 
 
@@ -1497,24 +1533,24 @@ Recall is built for this:
     " Recall is always recording — just query it.
     " ... clumsy edit, say 5 keys ...
     :Vimfy recall 5     " or `recall 3s` if time is the easier estimate
-    :Vimfy play 5
+    :Vimfy view 5
 <
 
 
 “I WANT TO REVISIT THIS LATER / SHARE IT”
 
-Save to disk after ending — `@` resolves to the session you just finished:
+Pin it after finishing — `@` resolves to the session you just finished:
 
 >vim
     :Vimfy finish a
-    :Vimfy save @ nested-dict-refactor
+    :Vimfy pin @ nested-dict-refactor
     " ... days later ...
     :Vimfy view nested-dict-refactor
 <
 
-Saved results are durable across Neovim restarts and survive in
-`stdpath('data')/vimficiency/saved/` — you can share the file directly if you
-want to show a colleague.
+Pins are durable across Neovim restarts and live in
+`stdpath('data')/vimficiency/pinned/` — you can share the file directly if
+you want to show a colleague.
 
 
 ==============================================================================
@@ -1536,7 +1572,7 @@ want to show a colleague.
 - **Mappings to Lua callbacks can’t be audited as motion.** A key mapped to a
     Lua function that edits the buffer or moves the cursor produces an unreplayable
     capture event. By default (`lossy_mappings = "warn"`) the keys you typed label
-    the action and a once-per-session notice appears. Play shows the observed
+    the action and a once-per-session notice appears. View shows the observed
     effect, including edits made through plugin APIs. `"allow"` records silently,
     and `"drop"` ends the session with a warning that names the mapping (see
     Configuration). Mappings whose RHS is a key sequence are fine — they are
@@ -1546,7 +1582,7 @@ want to show a colleague.
     motion audited.
 - **Some recorded keys are inaccurate** until Neovim reports them per command.
     Text a Lua Insert-mode mapping inserts (nvim-ts-autotag’s `>`) is missing
-    from the key label. Play still shows the inserted text at the next observation.
+    from the key label. View still shows the inserted text at the next observation.
     Your cost can be off by a key when commands arrive in one burst, or when a
     Vimscript plugin reads keys with `getchar()`.
 - **Recall only records actions in normal file buffers** (`&buftype == ""`).
@@ -1614,7 +1650,7 @@ A key you pressed is mapped to a Lua function (flash.nvim’s `f`/`t`/`;`, a
 `vim.keymap.set` callback) and Neovim cannot report replayable keys for it. The
 notice names the mapping. `lossy_mappings` decides what happens: `"warn"`
 (default) records the keys you typed with a once-per-session notice, `"allow"`
-records them silently, `"drop"` ends the session. Play shows the recorded
+records them silently, `"drop"` ends the session. View shows the recorded
 effect of an admitted mapping. The key label can omit work the plugin
 performed. See 13. Limitations.
 
@@ -1644,7 +1680,7 @@ I WANT TO START OVER CLEANLY
 
 - `:Vimfy close <alias>` throws away any active session.
 - Restarting Neovim clears all in-memory state (including the recall
-    ring); saved-to-disk results survive.
+    ring); saved sessions and pins survive.
 
 
 STILL STUCK?
@@ -1690,19 +1726,20 @@ See 14. Troubleshooting.
 
 CAN I EXPORT A RESULT AS SOMETHING OTHER THAN JSON?
 
-Not today. `:Vimfy save @ my-name` writes JSON under
-`stdpath('data')/vimficiency/saved/`; third-party tools can consume that
-directly.
+Not today. Every finished session is written as JSON under
+`stdpath('data')/vimficiency/sessions/`, and `:Vimfy pin @ my-name` copies one
+to `pinned/`. Third-party tools can consume either directly.
 
 
 HOW DO I REMOVE A SAVED RESULT?
 
 >vim
-    :Vimfy rm <filename>
+    :Vimfy rm <filename>       " a saved session
+    :Vimfy unpin <filename>    " a pin
 <
 
-Tab-completes over saved filenames. Or delete the file directly from
-`stdpath('data')/vimficiency/saved/`.
+Each tab-completes over its own filenames. Or delete the files directly from
+`sessions/` or `pinned/` under `stdpath('data')/vimficiency/`.
 
 
 PLANNED ADDITIONS TO THIS FAQ

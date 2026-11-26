@@ -35,18 +35,19 @@ See [14. Troubleshooting](14-troubleshooting.md).
 
 ## Can I export a result as something other than JSON?
 
-Not today. `:Vimfy save @ my-name` writes JSON under
-`stdpath('data')/vimficiency/saved/`; third-party tools can consume that
-directly.
+Not today. Every finished session is written as JSON under
+`stdpath('data')/vimficiency/sessions/`, and `:Vimfy pin @ my-name` copies
+one to `pinned/`. Third-party tools can consume either directly.
 
 ## How do I remove a saved result?
 
 ```vim
-:Vimfy rm <filename>
+:Vimfy rm <filename>       " a saved session
+:Vimfy unpin <filename>    " a pin
 ```
 
-Tab-completes over saved filenames. Or delete the file directly from
-`stdpath('data')/vimficiency/saved/`.
+Each tab-completes over its own filenames. Or delete the files directly from
+`sessions/` or `pinned/` under `stdpath('data')/vimficiency/`.
 
 ## Planned additions to this FAQ
 

@@ -96,6 +96,7 @@ test("compute_result_for_active: includes capture key debug", function()
   end)
 
   assert_eq(result.user_cost, 9.0, "the analyze stub must be the one compute calls")
+  assert_eq(result.query, { nav_only = false, query_size = #"cout << i+1 << endl;" })
   assert_eq(result.user_seq, "cwW2<Esc>dl")
   assert_eq(result.commands, {
     { keys = "cwW2<Esc>", kind = "operator" },

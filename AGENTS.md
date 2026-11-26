@@ -18,6 +18,12 @@ Vimficiency is a Vim bindings optimizer that analyzes a user's actions and recom
 - `src/lua_exports.cpp`, `src/LuaExports/`: C++ to Lua FFI interface
 - `tests/`: GoogleTest suite
 
+## Releases
+
+- Before merging a PR intended to ship, remind the maintainer to bump `project(vimficiency VERSION X.Y.Z ...)` in `CMakeLists.txt` in that same PR. Draft a short release summary for the maintainer to review from the changes since the previous release tag. Lead with what users can now do and include any upgrade steps.
+- Once the release matrix passes and the PR is merged, give the maintainer the commands to tag the exact commit on `main` and push the tag. Substitute the actual version and SHA in `git tag -a vX.Y.Z SHA -m "Vimficiency vX.Y.Z"` and `git push origin vX.Y.Z`.
+- The tag push triggers the [release workflow](.github/workflows/release.yml). It checks that the tag matches the CMake version, builds and smoke-tests all three platforms, then publishes the GitHub Release with binaries and generated notes. Place the reviewed summary above the generated changelog when editing the published release.
+
 ## Terminology (Brief)
 General:
 - **Key**: Physical key
@@ -55,8 +61,8 @@ C++ (Internal representation):
 
 Lua (User concepts):
 - **Session**: Captured editing instance and stored optimization result
-- **View**: Anything that lets you interactively engage with a finished session. Currently includes play and explore.
-- **Scoped Settings**: Settings that only apply for a certain view
+- **View**: The page that replays your sequence beside the optimizer's (`:Vimfy view`)
+- **Scoped Settings**: Settings that only apply to View or to Explore
 
 **Important:**
 - Never use `rm -rf build` unless something appears corrupted. The build directory contains downloaded libraries (googletest, etc.) that take time to re-fetch.

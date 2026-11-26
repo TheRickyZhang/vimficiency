@@ -122,6 +122,7 @@ end
 function M.fake_result(overrides)
   local r = {
     start_row = 0, start_col = 0, end_row = 0, end_col = 0,
+    query = { nav_only = true, query_size = 1 },
     lines = { "x" },
     goal_lines = { "x" },
     has_lines_above = false,

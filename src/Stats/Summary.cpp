@@ -25,13 +25,11 @@ using vf::journal::Sample;
 using vf::stats::Filter;
 
 constexpr int MAX_CHART_BUCKETS = 30;
-constexpr int64_t DAY_SECONDS = 86400;
 
 Selection selectionOf(const Filter& filter) {
   Selection selection{
       .journal = filter.source() != Filter::sessions,
-      .sessions = filter.source() != Filter::journal && filter.window_size() == 0 &&
-                  filter.kind() == Filter::any && !filter.has_query_size(),
+      .sessions = filter.source() != Filter::journal && filter.window_size() == 0,
       .windowSize = filter.window_size(),
       .change = filter.kind() == Filter::nav    ? Change::Nav
                 : filter.kind() == Filter::edit ? Change::Edit
@@ -47,6 +45,7 @@ Selection selectionOf(const Filter& filter) {
   selection.overTyped = filter.over_typed();
   selection.beats = filter.beats();
   selection.timed = filter.timed();
+  selection.scoring = filter.scoring();
   if (filter.has_query_size()) {
     selection.querySize.emplace(filter.query_size().first(), filter.query_size().last());
   }
@@ -90,8 +89,8 @@ expected<Scope, string> openScope(const vf::stats::SummaryRequest& request) {
                   : requested != 0 ? requested
                                    : scope.sizes[(scope.sizes.size() - 1) / 2];
   stampSampleParams(params);
-  scope.journal =
-      readJournalRuns(request.journal_dir(), params.SerializeAsString(), request.current_only());
+  scope.journal = readJournalRuns(request.journal_dir(), params.SerializeAsString(),
+                                  request.current_only() ? RollupScope::Current : RollupScope::All);
   scope.selection = selectionOf(request.filter());
   return scope;
 }
@@ -105,6 +104,17 @@ Filter drillOutcomes(const Filter& base, initializer_list<Sample::Outcome> outco
       out.add_outcomes(outcome);
     }
   }
+  return out;
+}
+
+Filter drillScore(Filter filter) {
+  filter.set_scoring(true);
+  return filter;
+}
+
+Filter drillBeats(const Filter& base) {
+  Filter out = drillOutcomes(base, {Sample::scored});
+  out.set_beats(true);
   return out;
 }
 
@@ -125,46 +135,38 @@ int listedRuns(const Scope& scope, const Filter& filter) {
   return runs;
 }
 
-struct UnmodeledCommands {
-  string_view name;
-  span<const string_view> commands;
-};
-
-constexpr array<string_view, 4> PUT_COMMANDS = {"p", "P", "gp", "gP"};
-constexpr array<string_view, 3> UNDO_COMMANDS = {"u", "U", "<C-r>"};
-// Only the bare commands: a count or register in front goes untagged.
-constexpr array<UnmodeledCommands, 2> UNBEATEN_TAGS = {{
-    {"paste", PUT_COMMANDS},
-    {"undo or redo", UNDO_COMMANDS},
-}};
-
-// Needs `out.unbeaten_drill()`.
-template <typename Section>
-void fillUnbeatenTags(Section& out, const Scope& scope) {
-  if (out.unbeaten() == 0) return;
+void fillRunTags(const Scope& scope, const Filter& base,
+                 google::protobuf::RepeatedPtrField<vf::stats::RunTag>& out) {
   auto add = [&](string_view name, const Filter& drill) {
     const int runs = listedRuns(scope, drill);
     if (runs == 0) return;
-    vf::stats::UnbeatenTag& entry = *out.add_unbeaten_tags();
+    vf::stats::RunTag& entry = *out.Add();
     entry.set_name(string(name));
     entry.set_runs(runs);
     *entry.mutable_drill() = drill;
   };
-  Filter untagged = out.unbeaten_drill();
+  Filter untagged = base;
   Filter::Commands& none = *untagged.add_commands();
   none.set_side(Filter::user);
   none.set_absent(true);
-  for (const UnmodeledCommands& tag : UNBEATEN_TAGS) {
-    Filter drill = out.unbeaten_drill();
+  for (const UnmodeledCommands& tag : commandTags(base.beats())) {
+    Filter drill = base;
     Filter::Commands& held = *drill.add_commands();
     held.set_side(Filter::user);
-    for (const string_view command : tag.commands) {
-      held.add_tokens(string(command));
-      none.add_tokens(string(command));
+    const auto variants = tag.variants(base.beats());
+    for (const string& command : variants) {
+      held.add_tokens(command);
+      none.add_tokens(command);
     }
-    add(tag.name, drill);
+    if (!variants.empty()) add(tag.name, drill);
   }
   add("other", untagged);
+}
+
+template <typename Section>
+void fillOutcomeTags(Section& out, const Scope& scope) {
+  if (out.unbeaten()) fillRunTags(scope, out.unbeaten_drill(), *out.mutable_unbeaten_tags());
+  if (out.beats()) fillRunTags(scope, out.beats_drill(), *out.mutable_beats_tags());
 }
 
 struct Chart {
@@ -194,22 +196,11 @@ struct Scores {
   explicit Scores(Chart chart)
       : current(chart.bucket(localDay(chart.now), chart.now)), bucketCount(chart.buckets) {}
 
-  ScoreTotals all;
   array<ScoreTotals, MAX_CHART_BUCKETS> buckets;
   int64_t current;
   int bucketCount;
 
-  int64_t oldest() const { return current - bucketCount + 1; }
-
-  ScoreTotals* at(int64_t bucket) {
-    const int64_t ago = current - bucket;
-    return ago >= 0 && ago < bucketCount ? &buckets[ago] : nullptr;
-  }
-
-  void add(int64_t bucket, double userCost, double bestCost, Weight weight) {
-    all.add(userCost, bestCost, weight);
-    if (auto* totals = at(bucket)) totals->add(userCost, bestCost, weight);
-  }
+  ScoreTotals& at(int64_t bucket) { return buckets[current - bucket]; }
 };
 
 void fillScore(vf::stats::Score& out, const ScoreTotals& totals) {
@@ -244,7 +235,7 @@ void fillChart(Section& out, const Scores& scores, Chart chart, const Filter& dr
     visible.merge(totals);
     *entry.mutable_drill() = drillBuckets(drill, chart, bucket, bucket);
   }
-  fillScore(*out.mutable_chart_score(), visible);
+  fillScore(*out.mutable_score(), visible);
 }
 
 // Nearest rank.
@@ -271,36 +262,63 @@ struct BucketTotals {
   int deadlineHit = 0;
 };
 
-void fillTimingBuckets(google::protobuf::RepeatedPtrField<vf::stats::TimingBucket>& out,
-                       span<BucketTotals> totals, span<const int> ends, const Filter& base,
-                       Filter::Kind kind) {
-  int first = 1;
-  for (size_t i = 0; i < ends.size(); i++) {
-    auto& bucket = *out.Add();
-    const int last = ends[i];
-    bucket.set_first(first);
-    if (i + 1 < ends.size()) bucket.set_last(last);
-    bucket.set_deadline_hit(totals[i].deadlineHit);
-    Filter sized = base;
-    sized.set_kind(kind);
-    auto& range = *sized.mutable_query_size();
-    range.set_first(base.has_query_size() ? max<int64_t>(first, base.query_size().first()) : first);
-    range.set_last(base.has_query_size() ? min<int64_t>(last, base.query_size().last()) : last);
-    fillScore(*bucket.mutable_score(), totals[i].score);
-    if (totals[i].score.spans != 0) {
-      *bucket.mutable_drill() = drillOutcomes(sized, {Sample::scored, Sample::unbeaten});
-    }
-    auto& timing = *bucket.mutable_timing();
-    fillTiming(timing, totals[i].times);
-    if (timing.n() != 0) {
-      *timing.mutable_drill() = sized;
-      timing.mutable_drill()->set_timed(true);
-    }
-    if (i + 1 < ends.size()) first = last + 1;
-  }
-}
+struct KindTotals {
+  ScoreTotals score;
+  array<BucketTotals, QUERY_SIZE_ENDS.size()> sizes;
 
-constexpr array<Sample::Outcome, 4> UNSCORED = {Sample::too_large, Sample::no_result,
+  void addSize(const Run& run, Weight weight, bool scoring) {
+    if (run.querySize <= 0) return;
+    const auto index = ranges::lower_bound(QUERY_SIZE_ENDS, run.querySize) - QUERY_SIZE_ENDS.begin();
+    auto& bucket = sizes[index];
+    if (scoring) bucket.score.add(run.userCost, run.bestCost, weight);
+    if (run.hasTiming()) {
+      bucket.times.push_back(run.analyzeMs);
+      bucket.deadlineHit += run.deadlineHit;
+    }
+  }
+
+  void fill(vf::stats::KindBreakdown& out, const Filter& base) {
+    fillScore(*out.mutable_score(), score);
+    *out.mutable_drill() = drillScore(base);
+    int first = 1;
+    for (size_t i = 0; i < sizes.size(); ++i) {
+      auto& bucket = *out.add_sizes();
+      const int last = QUERY_SIZE_ENDS[i];
+      bucket.set_first(first);
+      if (i + 1 < sizes.size()) bucket.set_last(last);
+      bucket.set_deadline_hit(sizes[i].deadlineHit);
+      Filter sized = base;
+      auto& range = *sized.mutable_query_size();
+      range.set_first(base.has_query_size() ? max<int64_t>(first, base.query_size().first()) : first);
+      range.set_last(base.has_query_size() ? min<int64_t>(last, base.query_size().last()) : last);
+      fillScore(*bucket.mutable_score(), sizes[i].score);
+      if (sizes[i].score.spans != 0) *bucket.mutable_drill() = drillScore(sized);
+      auto& timing = *bucket.mutable_timing();
+      fillTiming(timing, sizes[i].times);
+      if (timing.n() != 0) {
+        sized.set_timed(true);
+        *timing.mutable_drill() = std::move(sized);
+      }
+      if (i + 1 < sizes.size()) first = last + 1;
+    }
+  }
+};
+
+struct Breakdown {
+  KindTotals nav;
+  KindTotals edit;
+
+  KindTotals& kind(bool navOnly) { return navOnly ? nav : edit; }
+
+  void fill(vf::stats::RunBreakdown& out, Filter base) {
+    base.set_kind(Filter::nav);
+    nav.fill(*out.mutable_nav(), base);
+    base.set_kind(Filter::edit);
+    edit.fill(*out.mutable_edit(), base);
+  }
+};
+
+constexpr initializer_list<Sample::Outcome> UNSCORED = {Sample::too_large, Sample::no_result,
                                                 Sample::unsupported, Sample::crashed};
 
 struct CommandTally {
@@ -346,40 +364,44 @@ void summarizeSessions(vf::stats::SessionSummary& out, const Scope& scope, const
   const Filter sessions = drillSource(base, Filter::sessions);
   *out.mutable_no_result_drill() = drillOutcomes(sessions, {Sample::no_result});
   *out.mutable_unbeaten_drill() = drillOutcomes(sessions, {Sample::unbeaten});
-  *out.mutable_beats_drill() = drillOutcomes(sessions, {Sample::scored});
-  out.mutable_beats_drill()->set_beats(true);
+  *out.mutable_beats_drill() = drillBeats(sessions);
 
   Scores scores{chart};
   CommandTally commands;
+  Breakdown breakdown;
   vector<double> times;
-  const int64_t firstTimed = chart.now - 30 * DAY_SECONDS + 1;
-  for (const Run& session : scope.sessions.runs) {
+  for (const LoggedSession& session : scope.sessions.runs) {
     if (!matches(scope.selection, session)) continue;
     out.set_sessions(out.sessions() + 1);
+    out.set_command_count(out.command_count() + session.keyCount);
+    if (session.kind == "mark") out.set_mark(out.mark() + 1);
+    else if (session.kind == "watch") out.set_watch(out.watch() + 1);
+    else if (session.kind == "recall") out.set_recall(out.recall() + 1);
+    else if (session.kind.starts_with("suggest")) out.set_suggest(out.suggest() + 1);
     const double user = session.userCost;
     const int64_t bucket = chart.bucket(session.day, session.wallEpoch);
+    const bool scoring = isScoring(session);
+    if (scoring) scores.at(bucket).add(user, session.bestCost, weight);
+    auto& kind = breakdown.kind(session.navOnly);
+    if (scoring) kind.score.add(user, session.bestCost, weight);
+    kind.addSize(session, weight, scoring);
     switch (session.outcome) {
       case Sample::no_result:
         out.set_no_result(out.no_result() + 1);
         break;
       case Sample::unbeaten:
         out.set_unbeaten(out.unbeaten() + 1);
-        if (user > 0) scores.add(bucket, user, user, weight);
         break;
       default:
         if (user < session.bestCost) out.set_beats(out.beats() + 1);
-        if (user > 0) scores.add(bucket, user, session.bestCost, weight);
-        if (scores.at(bucket)) commands.add(session, 1);
+        commands.add(session, 1);
     }
-    if (session.wallEpoch >= firstTimed && session.wallEpoch <= chart.now && session.hasTiming()) {
-      times.push_back(session.analyzeMs);
-    }
+    if (session.hasTiming()) times.push_back(session.analyzeMs);
   }
-  fillScore(*out.mutable_score(), scores.all);
-  fillChart(out, scores, chart, drillOutcomes(sessions, {Sample::scored, Sample::unbeaten}));
-  fillCommands(*out.mutable_commands(), commands,
-               drillBuckets(drillOutcomes(sessions, {Sample::scored}), chart, scores.oldest(), scores.current));
-  fillUnbeatenTags(out, scope);
+  breakdown.fill(*out.mutable_breakdown(), sessions);
+  fillChart(out, scores, chart, drillScore(sessions));
+  fillCommands(*out.mutable_commands(), commands, drillOutcomes(sessions, {Sample::scored}));
+  fillOutcomeTags(out, scope);
 
   if (times.empty()) return;
   vf::stats::Timing& timing = *out.mutable_timing();
@@ -387,9 +409,6 @@ void summarizeSessions(vf::stats::SessionSummary& out, const Scope& scope, const
   auto& drill = *timing.mutable_drill();
   drill = sessions;
   drill.set_timed(true);
-  auto& range = *drill.mutable_epoch_seconds();
-  range.set_first(base.has_epoch_seconds() ? max(firstTimed, base.epoch_seconds().first()) : firstTimed);
-  range.set_last(base.has_epoch_seconds() ? min(chart.now, base.epoch_seconds().last()) : chart.now);
 }
 
 // The runs of the samples made under the request's params and of the rollups
@@ -403,8 +422,7 @@ void summarizeJournal(vf::stats::JournalSummary& out, const Scope& scope, const 
   map<int, ScoreTotals> bySize;
   Scores scores{chart};
   CommandTally commands;
-  ScoreTotals nav;
-  ScoreTotals edit;
+  Breakdown breakdown;
   map<int, int> unscored;
   visitJournal(scope, scope.selection, [&](const RunKey& key, const RunTotals& totals) {
     const bool isCharted = key.windowSize == charted;
@@ -416,39 +434,24 @@ void summarizeJournal(vf::stats::JournalSummary& out, const Scope& scope, const 
     bySize[key.windowSize].merge(score);
     if (!isCharted) return;
 
-    scores.all.merge(score);
-    (key.navOnly ? nav : edit).merge(score);
+    breakdown.kind(key.navOnly).score.merge(score);
     out.set_deadline_hit(out.deadline_hit() + totals.deadlineHit);
     const bool unbeaten = key.outcome == Sample::unbeaten;
     if (unbeaten) out.set_unbeaten(out.unbeaten() + totals.runs);
-    if (chart.subday()) return;
-    auto* bucket = scores.at(chart.bucket(key.day, 0));
-    if (!bucket) return;
-    bucket->merge(score);
     if (!unbeaten) commands.add(totals, totals.runs);
+    if (!chart.subday()) scores.at(chart.bucket(key.day, 0)).merge(score);
   });
 
-  array<BucketTotals, QUERY_SIZE_ENDS.size()> navTiming;
-  array<BucketTotals, QUERY_SIZE_ENDS.size()> editTiming;
   const Selection chartedRuns = chartedSelection(scope);
   for (const auto& sampled : scope.journal.sampled) {
     for (const Run& run : sampled.runs) {
       if (!matches(chartedRuns, run)) continue;
-      const bool scoring = isScoring(run.outcome) && isCounted(run);
+      if (run.outcome == Sample::scored && run.userCost < run.bestCost) out.set_beats(out.beats() + 1);
+      const bool scoring = isScoring(run);
       if (chart.subday() && scoring) {
-        if (auto* bucket = scores.at(chart.bucket(run.day, run.wallEpoch))) {
-          bucket->add(run.userCost, run.bestCost, weight);
-          if (run.outcome != Sample::unbeaten) commands.add(run, 1);
-        }
+        scores.at(chart.bucket(run.day, run.wallEpoch)).add(run.userCost, run.bestCost, weight);
       }
-      if (run.querySize <= 0) continue;
-      const size_t index =
-          ranges::lower_bound(QUERY_SIZE_ENDS, run.querySize) - QUERY_SIZE_ENDS.begin();
-      auto& bucket = run.navOnly ? navTiming[index] : editTiming[index];
-      if (scoring) bucket.score.add(run.userCost, run.bestCost, weight);
-      if (!run.hasTiming()) continue;
-      bucket.times.push_back(run.analyzeMs);
-      bucket.deadlineHit += run.deadlineHit;
+      breakdown.kind(run.navOnly).addSize(run, weight, scoring);
     }
   }
   const JournalRuns& journal = scope.journal;
@@ -459,28 +462,19 @@ void summarizeJournal(vf::stats::JournalSummary& out, const Scope& scope, const 
     out.set_rollup_runs_without_commands(rolledUpRuns(scope, chartedSelection(scope)));
   }
 
-  const Filter scoring = drillOutcomes(base, {Sample::scored, Sample::unbeaten});
   for (const int size : scope.sizes) {
     vf::stats::SizeScore& entry = *out.add_sizes();
     entry.set_size(size);
     fillScore(*entry.mutable_score(), bySize[size]);
   }
-  fillScore(*out.mutable_score(), scores.all);
-  fillScore(*out.mutable_nav(), nav);
-  fillScore(*out.mutable_edit(), edit);
-  *out.mutable_nav_drill() = scoring;
-  out.mutable_nav_drill()->set_kind(Filter::nav);
-  *out.mutable_edit_drill() = scoring;
-  out.mutable_edit_drill()->set_kind(Filter::edit);
-
   const Filter runs = drillSource(base, Filter::journal);
-  fillTimingBuckets(*out.mutable_nav_timing(), navTiming, QUERY_SIZE_ENDS, runs, Filter::nav);
-  fillTimingBuckets(*out.mutable_edit_timing(), editTiming, QUERY_SIZE_ENDS, runs, Filter::edit);
-  fillChart(out, scores, chart, drillOutcomes(runs, {Sample::scored, Sample::unbeaten}));
-  fillCommands(*out.mutable_commands(), commands,
-               drillBuckets(drillOutcomes(runs, {Sample::scored}), chart, scores.oldest(), scores.current));
+  *out.mutable_beats_drill() = drillBeats(runs);
+  breakdown.fill(*out.mutable_breakdown(), runs);
+  fillChart(out, scores, chart, drillScore(runs));
+  fillCommands(*out.mutable_commands(), commands, drillOutcomes(runs, {Sample::scored}));
   *out.mutable_unbeaten_drill() = drillOutcomes(runs, {Sample::unbeaten});
-  fillUnbeatenTags(out, scope);
+  fillOutcomeTags(out, scope);
+  *out.mutable_unscored_drill() = drillOutcomes(runs, UNSCORED);
   for (const Sample::Outcome outcome : UNSCORED) {
     const auto it = unscored.find(outcome);
     if (it == unscored.end()) continue;
@@ -507,18 +501,14 @@ expected<string, string> summarize(string_view requestBytes, int64_t now) {
       .bucketSize = max(1u, request.chart_bucket_size()),
       .buckets = request.chart_buckets() == 0 ? MAX_CHART_BUCKETS : int(request.chart_buckets()),
   };
+  const auto current = chart.bucket(localDay(now), now);
+  *request.mutable_filter() = drillBuckets(request.filter(), chart, current - chart.buckets + 1, current);
   const auto scope = openScope(request);
   if (!scope) return unexpected(scope.error());
   const SessionHistory& history = scope->sessions;
   vf::stats::Summary out;
   out.set_chart_unit(chart.unit);
-  vf::stats::Lifetime& lifetime = *out.mutable_lifetime();
-  lifetime.set_sessions(history.sessions);
-  lifetime.set_mark(history.mark);
-  lifetime.set_watch(history.watch);
-  lifetime.set_recall(history.recall);
-  lifetime.set_suggest(history.suggest);
-  lifetime.set_commands(history.commands);
+  out.set_recorded_sessions(history.sessions);
   out.set_scoring_label(history.label);
   out.set_hidden_runs(history.hidden + scope->journal.hiddenRollupRuns);
   const Weight weight =
@@ -527,6 +517,20 @@ expected<string, string> summarize(string_view requestBytes, int64_t now) {
   summarizeSessions(*out.mutable_sessions(), *scope, request.filter(), weight, chart);
   summarizeJournal(*out.mutable_journal(), *scope, request.filter(), weight, chart);
   return out.SerializeAsString();
+}
+
+expected<string, string> journalCoverage(string_view requestBytes) {
+  vf::journal::SampleRequest request;
+  if (!request.ParseFromArray(requestBytes.data(), requestBytes.size())) {
+    return unexpected("malformed vf.journal.SampleRequest");
+  }
+  stampSampleParams(*request.mutable_params());
+  const auto journal = readJournalRuns(request.journal_dir(), request.params().SerializeAsString(),
+                                       RollupScope::None);
+  vf::stats::JournalCoverage coverage;
+  coverage.set_scored_bytes(journal.scoredBytes);
+  coverage.set_journal_bytes(journal.journalBytes);
+  return coverage.SerializeAsString();
 }
 
 expected<string, string> listRuns(string_view requestBytes) {
@@ -558,6 +562,8 @@ expected<string, string> listRuns(string_view requestBytes) {
       id.set_last_atom(run.index);
     }
     row.set_wall_epoch(run.wallEpoch);
+    row.set_tag(run.tag);
+    row.set_saved_filename(run.savedFilename);
     row.set_user_keys(run.userKeys);
     row.set_best_seq(run.bestSeq);
     row.set_user_cost(run.userCost);

@@ -81,6 +81,15 @@ SearchRegion computeSearchRegion(
   return {begin, initialEnd, goalEnd, min(begin, padding), min(initialHeight - initialEnd, padding)};
 }
 
+int SearchRegion::querySize(const Lines& initial, const Lines& goal) const {
+  auto positions = [&](const Lines& lines, int end) {
+    int64_t count = 0;
+    for (int row = begin; row < end; ++row) count += lines[row].effectiveSize();
+    return count;
+  };
+  return min<int64_t>(numeric_limits<int>::max(), max(positions(initial, initialEnd), positions(goal, goalEnd)));
+}
+
 SearchSlice sliceSearch(
     const Lines& initialLines, const Lines& goalLines, const SessionEnds& ends,
     string_view userSeq, string_view userTyped, const SearchRegion& region) {

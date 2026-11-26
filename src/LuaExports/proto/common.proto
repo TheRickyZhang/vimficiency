@@ -24,6 +24,11 @@ message IndentOptions {
   int32 shiftwidth = 5;
 }
 
+message QueryShape {
+  bool nav_only = 1;
+  int32 query_size = 2;
+}
+
 message Position {
   int32 row = 1;
   int32 col = 2;

@@ -32,8 +32,9 @@ end
 
 test("stats.log: sessions round-trip under the current stamp", function()
   h.use_temp_data_home()
-  finish("dw", 10)
-  finish("de", 20)
+  local now = os.time()
+  finish("dw", now - 10)
+  finish("de", now)
 
   local summary = stats_query.summary({ current_only = true, weight = "effort", filter = {}, charted_size = 0 })
   assert_eq(summary.sessions.sessions, 2)
@@ -47,7 +48,7 @@ test("stats.log: sessions round-trip under the current stamp", function()
   assert_eq(first.outcome, "scored")
   assert_eq(first.kind, "mark")
   assert_eq(first.commands, { { keys = "dw", kind = "operator" } })
-  assert_eq(records()[4].session.finished_wall_epoch, 20)
+  assert_eq(records()[4].session.finished_wall_epoch, now)
 end)
 
 test("stats.log: the header comes first, then a stamp once, before its first session", function()
@@ -61,11 +62,11 @@ end)
 
 test("stats.log: another stamp's sessions count unless current only", function()
   h.use_temp_data_home()
-  finish("old", 1)
+  finish("old", os.time() - 1)
   local old_label = stats_query.summary({ current_only = true, weight = "effort", filter = {}, charted_size = 0 })
     .scoring_label
   h.with_patch({ { config, "RESULTS_CALCULATED", config.RESULTS_CALCULATED + 1 } }, function()
-    finish("new", 2)
+    finish("new", os.time())
     local all = stats_query.summary({ current_only = false, weight = "effort", filter = {}, charted_size = 0 })
     assert_eq(all.sessions.sessions, 2)
     assert_eq(all.hidden_runs, 0)
@@ -78,7 +79,7 @@ end)
 
 test("stats.log: a truncated last record is not read", function()
   h.use_temp_data_home()
-  finish("whole", 1)
+  finish("whole", os.time())
   local fh = assert(io.open(stats_log.path(), "ab"))
   fh:write("\10\100partial")
   fh:close()
@@ -92,7 +93,7 @@ test("stats.log: the unstamped v1 log moves to legacy and is not read", function
   vim.fn.writefile({ '{"v":1,"user_seq":"old"}' }, dir .. "/sessions.jsonl")
 
   finish("new", 1)
-  assert_eq(stats_query.summary({ current_only = false, weight = "effort", filter = {}, charted_size = 0 }).lifetime.sessions, 1)
+  assert_eq(stats_query.summary({ current_only = false, weight = "effort", filter = {}, charted_size = 0 }).recorded_sessions, 1)
   assert_true(vim.uv.fs_stat(dir .. "/sessions.jsonl") == nil, "v1 log moved away")
   assert_eq(vim.fn.readfile(dir .. "/legacy/sessions.v1.jsonl"), { '{"v":1,"user_seq":"old"}' })
 end)
@@ -125,6 +126,35 @@ test("stats.log: a row's drill filter lists its sessions through ffi.stats.runs"
   assert_eq(list.runs[1].user_keys, "de")
   assert_eq(list.runs[1].outcome, "scored")
   assert_eq(list.runs[2].wall_epoch, now - 60)
+end)
+
+test("stats.log: a session's row names its saved result, and the run lookup reads it", function()
+  h.use_temp_data_home()
+  local session_store = require("vimficiency.session.store")
+  local now = os.time()
+  finish("unsaved", now - 60)
+  h.new_buf()
+  h.seed_named("logrow", "test-log-row")
+  session_store.convert_to_finished("test-log-row", h.finished_result("dw", {
+    finished_wall_epoch = now, query = { nav_only = false, query_size = 70 },
+  }))
+  local filename = assert(session_store.get_saved_filename("logrow"))
+
+  local scope = { current_only = false, weight = "effort", filter = {}, charted_size = 0 }
+  scope.filter = stats_query.summary(scope).sessions.days[1].drill
+  local rows = stats_query.runs(scope, "newest", false, 0, 10).runs
+  assert_eq({ rows[1].saved_filename, rows[2].saved_filename }, { filename, "" })
+  local edits = stats_query.summary(scope).sessions.breakdown.edit
+  scope.filter = edits.sizes[2].drill
+  local selected = stats_query.runs(scope, "newest", false, 0, 10)
+  assert_eq(selected.total, 1)
+  assert_eq(selected.runs[1].saved_filename, filename)
+  assert_eq(assert(stats_query.run(selected.runs[1])).user_seq, "dw")
+  assert_eq({ stats_query.run(rows[2]) }, { nil, "this session was not saved" })
+
+  h.silence_notify(function() require("vimficiency.session.archive").rm(filename) end)
+  assert_eq({ stats_query.run(rows[1]) }, { nil, "its saved result was removed" })
+  session_store.remove("test-log-row")
 end)
 
 ---@param user_typed_insert string|nil

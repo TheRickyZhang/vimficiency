@@ -62,7 +62,7 @@ local function make_session_listener(alias, id)
         session.lossy_warned = true
         vim.schedule(function()
           vim.notify("Vimfy: session [" .. alias .. "] recorded Lua mapping `" .. atom.keys ..
-            "` by its typed keys; Play shows the recorded result " ..
+            "` by its typed keys; View shows the recorded result " ..
             "(lossy_mappings = \"allow\" silences this)", vim.log.levels.WARN)
         end)
       end
@@ -140,7 +140,7 @@ end
 ---@param alias string
 local function finish_active(active, alias)
   local result = compute.compute_result_for_active(active, compute.capture_end_state(active))
-  session_store.convert_to_finished(active.id, result, alias)
+  session_store.convert_to_finished(active.id, result)
 
   local message = result_view.format_message("vimfy finished [" .. alias .. "]", result)
   if result.analyze_ms then
@@ -167,7 +167,7 @@ function M.recall(alias)
   local active = session_store.get_active(alias)
   if not active then
     if kind == "recall_key" then
-      error("No recall session found for '" .. alias .. "' commands ago.", 0)
+      error("No recall session found for '" .. alias .. "' recorded command atoms ago.", 0)
     end
     error("No recall session found within '" .. alias .. "'. " ..
       "Try a larger window or indexing by key count (e.g. 'recall 20').", 0)

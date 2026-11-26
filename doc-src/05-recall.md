@@ -8,7 +8,7 @@ Recall lets you look backward without any previous marking setup by querying a c
 
 ```vim
 " ... edit normally ...
-:Vimfy recall 6       " Analyze the last 6 commands
+:Vimfy recall 6       " Look back 6 recorded command atoms
 :Vimfy recall 3s      " Analyze the last 3 seconds
 ```
 
@@ -19,14 +19,12 @@ retrospective windows go through `:Vimfy recall`.
 
 | Syntax   | Meaning                    | Use when                                     |
 |----------|----------------------------|----------------------------------------------|
-| `N`      | Last N commands            | You can estimate how many commands the edit took |
-| `Ns`     | Last N seconds of activity | You can estimate time better than key count  |
+| `N`      | Last N recorded command atoms | You can count the actions you took |
+| `Ns`     | Last N seconds of activity | You remember when you started |
 
-Both forms are measured back from *now*, and name the **whole span** up to
-that point — not a fixed-size window floating in the past. `3s` analyzes
-everything typed in the last 3 seconds (the range from 3s-ago through the
-present), and `50` the last 50 commands. The number sets how far *back* the
-range reaches; the range always ends at the current cursor.
+A command atom is one Vim action reported by Neovim. For example, `dw`
+counts as one atom. Recall counts only the atoms Vimfy records. Both forms
+look back from now and end at the current cursor.
 
 Mixing forms (`3m`, `3ms`, `2h`, etc.) is not supported. Seconds is the
 only time unit; if you want 90 seconds, use `90s`.
@@ -71,18 +69,18 @@ If `recall Ns` asks for a window older than the queue retains, the
 alias fails to resolve and you get "No recall session found within
 'Ns'…" — raise either cap.
 
-Recall records are discarded when Neovim exits; promote with `:Vimfy save`
-if you want them on disk.
+The recall ring is discarded when Neovim exits. A window you finished with
+`:Vimfy recall` is saved to disk like any other session.
 
-## Recall results are transient
+## Recall aliases move
 
-Recall windows rotate out of the queue as you type, so save promptly.
-`@` refers to the most recently ended session — handy when the alias
-(`3s`) is moving out from under you:
+Recall windows rotate out of the queue as you type, so an alias like `3s`
+soon names something else. `@` refers to the most recently ended session,
+which makes it the handle to pin one by:
 
 ```vim
 :Vimfy recall 3s
-:Vimfy save @ nested-refactor
+:Vimfy pin @ nested-refactor
 ```
 
 

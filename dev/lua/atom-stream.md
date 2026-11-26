@@ -74,7 +74,7 @@ A Lua Insert-mode mapping that inserts through the API (nvim-ts-autotag's `>`)
 leaves its text out of a non-nil `keys`, so the atom is recorded, not lossy,
 but capture still observes the edit. A nested `:normal!` in an Insert mapping can also
 truncate both `keys` and `lhs`. Capture keeps the event and the observed result.
-Play renders the observed text and cursor at each delivery boundary.
+View renders the observed text and cursor at each delivery boundary.
 
 `skip` is a measured no-effect fact, not a tolerance: it is what lets `:w`,
 `:noh`, and `:Vimfy` commands pass through a live session. An `abort` leaves
@@ -90,7 +90,7 @@ named-session listener surfaces it in the drop notice.
 
 `atom.typed` is what the user physically pressed for the atom, where
 `atom.keys` labels what ran. Scoring uses `typed` for the user's effort and
-`keys` for the search bound. Play uses the recorded states (`dev/decisions.md`).
+`keys` for the search bound. View uses the recorded states (`dev/decisions.md`).
 
 Neovim has no single source of them (measured on 0.13-dev-2069).
 `vim.on_key`'s `typed` is exact for every key the main loop reads, but skips
@@ -143,8 +143,10 @@ Known gaps, all Neovim's:
 - A burst is delivered after all its keys were read, so its first atom carries
   the whole burst and the rest carry `""`. With a key held down, a key can also
   be read while the previous atoms are still being delivered and land one atom
-  early. Totals are conserved, so sum `typed` over a run; never compare it atom
-  by atom.
+  early. A skipped atom can therefore carry a recorded command's presses. The
+  journal sampler recovers them when a skip with empty `keys` carries exactly
+  the next command's keys in the same tick and that command has empty `typed`.
+  Other ambiguous presses on skipped atoms remain outside the score.
 - An expr mapping that calls `getchar()` gets no `typed` from `on_key`, so its
   own keys are lost (mini.ai's `i` without which-key in front: `yiw` records
   `yw`). Neovim clears `on_key`'s buffer inside the nested `getchar()`.
@@ -173,7 +175,7 @@ record is finished, undoing at most one delta per atom in the ring.
 
 The ring trims that history to the buffer's oldest active session, including
 Mark and Watch. Each delta keeps the old lines for Recall and the new lines
-for Play. An atom that edits two distant places stores every
+for View. An atom that edits two distant places stores every
 line between them.
 
 A pending range that disagrees with the buffer's line count is replaced by the
@@ -299,8 +301,10 @@ completed by `stampSampleParams` (`src/Storage/Samples.cppm`): the stamp of
 that when sample contents change meaning, so older files are redone. The sampler
 recomputes a file that is not current. `:Vimfy stats` reads samples through
 `vf_stats_summary` and `vf_stats_runs` (`src/Stats/`), which skip such files
-until then, so two scorings never mix. It also reports the journal bytes the current samples cover,
-shown as progress.
+until then, so two scorings never mix. The sampler appends intermediate
+`journal_size` records after scoring all windows from a replay event. While
+scoring, the visible Stats tab reads coverage once a second and refreshes the
+full summary on completion.
 
 The library keeps every samples file it has read in memory, as `Stats::Run`s
 (`src/Stats/JournalRuns.cppm`), and parses only what was appended since; a file

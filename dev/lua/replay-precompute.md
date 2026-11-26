@@ -1,9 +1,9 @@
 # Replay precompute (`simulate/precompute.lua`, `simulate/tokenize.lua`)
 
-Play indexes precomputed `{ lines, cursor, mode }` states when scrubbing.
+View indexes precomputed `{ lines, cursor, mode }` states when scrubbing.
 The user pane expands the recorded line replacements from the search slice's
 initial text. Cursor-only steps share the preceding text. A delivery tick
-contributes one step, with its commands' resolved keys as the label. A change
+contributes one step, labeled with its captured presses when available and otherwise its resolved keys. A change
 observed at finish after the last command contributes a final unlabeled step.
 Journal runs expose the same steps when their window is opened.
 

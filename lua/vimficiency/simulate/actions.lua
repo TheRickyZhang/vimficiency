@@ -18,14 +18,15 @@ local M = {}
 function M.new(ctx)
   local actions = {}
 
-  local function current_window_is_replay_window()
+  ---@return integer?
+  function actions.current_pane()
     local cur_win = v.nvim_get_current_win()
-    for _, entry in ipairs(ctx.state.windows) do
-      if entry.win == cur_win then
-        return true
+    local cur_buf = v.nvim_get_current_buf()
+    for idx, entry in ipairs(ctx.state.windows) do
+      if entry.win == cur_win and entry.buf == cur_buf then
+        return idx
       end
     end
-    return false
   end
 
   function actions.step_right()
@@ -164,18 +165,14 @@ function M.new(ctx)
   end
 
   function actions.toggle_focus()
-    if ctx.get_focus_state() then
+    local idx = actions.current_pane()
+    if not idx then
+      vim.notify("vimfy: cursor is not in a replay window", vim.log.levels.WARN)
+    elseif ctx.get_focus_state() then
       ctx.escape()
-      return
+    else
+      ctx.focus(idx)
     end
-    local cur_win = v.nvim_get_current_win()
-    for idx, entry in ipairs(ctx.state.windows) do
-      if entry.win == cur_win then
-        ctx.focus(idx)
-        return
-      end
-    end
-    vim.notify("vimfy: cursor is not in a replay window", vim.log.levels.WARN)
   end
 
   ---@type VF.SettingsWidget.Handle?
@@ -186,8 +183,8 @@ function M.new(ctx)
       active_settings_handle.close()
       return
     end
-    if #ctx.state.windows == 0 or not current_window_is_replay_window() then
-      vim.notify("vimfy: play settings are only available from a replay window",
+    if not actions.current_pane() then
+      vim.notify("vimfy: view settings are only available from a replay window",
         vim.log.levels.WARN)
       return
     end
@@ -201,19 +198,19 @@ function M.new(ctx)
 
   ---@param step integer
   function actions.adjust_window_count(step)
-    local play = require("vimficiency.simulate.settings")
-    local settings = play.get_settings()
+    local view = require("vimficiency.simulate.settings")
+    local settings = view.get_settings()
     local current = settings.window_count
     local new_count = max(1, min(4, current + step))
     if new_count == current then return end
-    play.set_setting("window_count", new_count)
+    view.set_setting("window_count", new_count)
     ctx.relayout_grid()
   end
 
   function actions.toggle_include_user()
-    local play = require("vimficiency.simulate.settings")
-    local settings = play.get_settings()
-    play.set_setting("include_user_sequence", not settings.include_user_sequence)
+    local view = require("vimficiency.simulate.settings")
+    local settings = view.get_settings()
+    view.set_setting("include_user_sequence", not settings.include_user_sequence)
     ctx.relayout_grid()
   end
 
@@ -279,7 +276,7 @@ function M.new(ctx)
     settings = {
       lhs = "gs",
       handler = actions.open_settings,
-      desc = "Toggle play settings",
+      desc = "Toggle view settings",
     },
   })
 

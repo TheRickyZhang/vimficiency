@@ -31,11 +31,14 @@ word. An alias is anything `store.lua` resolves to a session id, in one place
 | `last_finished` | `@`    | `last_finished_id`                           |
 | `last_suggest`  | `$`    | `last_suggest_id` (set only on a toast)      |
 
-A filename names a saved result on disk (`alias.is_valid_filename`,
-`^[%w_][%w._-]*$`). Each command declares the alias kinds it accepts with
-`alias.expect(alias, kinds)`; `play`/`view`/`explore` take an alias or a
-filename and try the store first (`archive.resolve_result`). Parameters are
-named `alias`, `filename`, or `alias_or_filename` after the grammar they accept.
+A filename names a result on disk, a pin or a saved session
+(`alias.is_valid_filename`, `^[%w_][%w._-]*$`). Each command declares the alias
+kinds it accepts with `alias.expect(alias, kinds)`.
+
+`view`/`explore`/`pin` take an alias or a filename and try the store,
+then the pins, then the saved sessions (`archive.resolve_result`). Parameters
+are named `alias`, `filename`, or `alias_or_filename` after the grammar they
+accept.
 
 Named aliases are alphabetic (like named registers). Reusing one replaces the
 previous record; `NAMED_CAPACITY = 100` is only a runaway guard (eviction is the
@@ -65,11 +68,11 @@ An auto-suggest regression shows a terse, replaceable toast instead
 
 ```
 vimfy regression · 17 keys · 3s ago · 15 → 8
-:Vimfy view $  ·  play $  ·  explore $
+:Vimfy view $  ·  explore $
 ```
 
 Sequences are tokenized by the C++ `SequenceParser`. On failure the tokenizer
 export returns a protobuf error envelope, and the Lua wrapper returns an empty
 token list plus an error string. User cost is `getEffort(keyseq, config)`.
-Finished results then live in the workspace or the archive; see
-`session-storage.md`.
+A finished result is then active in memory, saved to disk and optionally
+pinned; see `session-storage.md`.

@@ -46,6 +46,7 @@ struct Window {
   std::vector<Command> commands;
   struct Step {
     size_t commandEnd;
+    size_t typedEnd;
     WindowState state;
   };
   std::vector<Step> steps;

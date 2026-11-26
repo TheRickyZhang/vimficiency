@@ -10,19 +10,19 @@ Plugin entry points and domain modules:
 |------|---------|
 | `init.lua` | Plugin entry point: `setup()`, the `:Vimfy` dispatcher and its tab completion, teardown and reload. |
 | `session/init.lua` | Live capture lifecycle: start, watch, finish, recall, close. Argument errors raise to the `:Vimfy` boundary. |
-| `session/archive.lua` | Finished results by handle: alias resolution through the store, filename resolution on disk, save/store/fetch/rm, view. |
+| `session/archive.lua` | Finished results by handle: alias resolution through the store, filename resolution on disk (a pin, then a saved session), pin/unpin/rm. |
 | `simulate/init.lua` | Side-by-side animation of motion sequences. Required as `vimficiency.simulate`. |
 | `explore/init.lua` | Interactive result exploration view. Required as `vimficiency.explore`. |
 | `explore/input/key_tracking.lua` | Reduces raw `vim.on_key()` events for interactive Explore's frontier replay. |
-| `simulate/settings.lua` | Play-screen settings and modal wiring. |
-| `stats/query.lua` | Builds requests for stats summaries, run lists, and run details. |
+| `simulate/settings.lua` | View-screen settings and modal wiring. |
+| `stats/query.lua` | Builds requests for stats summaries and run lists. `run` turns a listed row into a `VF.Session.Viewable`, the one place a session and a journal run are looked up differently. |
 | `stats/render.lua` | Formats summary pages, charts, drill targets, and run rows. |
 | `stats/view.lua` | The `:Vimfy stats` tab handles weight and scoring keys, Look back and run-length selectors, and `<CR>` to expand lists or open runs and charts. |
 | `ui/item_nav.lua` | Item navigation for a rendered buffer: `h`/`j`/`k`/`l` between a view's items (blocks of rows and columns), the current one highlighted whole with the cursor hidden, `<CR>`/`<Esc>` acting on it. Used by the stats tab; the model for new views. |
 | `stats/chart_view.lua` | One chart in a full-screen float over the rest of its section. `+`/`-` change the history chart's scale within the float, and `<CR>` opens a bucket, bar segment or row's run list. |
-| `stats/run_list.lua` | The floating run list (each cell an item) and its preview float: sort by the current column, page, and `<CR>` on a journal run replays it. |
+| `stats/run_list.lua` | The floating run list (each cell an item) and its preview float: sort by the current column, page, `<CR>` replays the run and `p` pins a session's saved result. |
 | `stats/sampling.lua` | Runs `vimfy_journal` over the journal in the background. See `dev/lua/atom-stream.md` § Sampling. |
-| `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, run) per `:Vimfy` verb. Depends on the domain modules; only `init.lua` depends on it. |
+| `subcommands.lua` | `available()` lists the `VF.Subcommand` records for the current window in display order. `find(name)` resolves a command in the same list. Only `init.lua` consumes the registry. |
 | `dev_reload.lua` | `:Vimfy reload`: stream the CMake build in a floating window, then hot-reload the `.so` and every Lua module. |
 | `config/init.lua` | Shared configuration constants (Lua-side only). |
 | `config/validate.lua` | Validators for the structured `watch` and `auto_suggest` blocks; the shape itself stays in `config/init.lua`. |
@@ -37,10 +37,9 @@ Subdirectories hold supporting modules for each domain:
 |------|---------|
 | `session/alias.lua` | The alias grammar (name, recall window, `@`, `$`) and the filename grammar; every handle is one or the other. |
 | `session/compute.lua` | Active-session capture normalization and optimizer invocation. |
-| `session/disk.lua` | Saved-result JSON encoding, validation, and disk operations. |
-| `session/playback.lua` | Converts stored results into replay sequence pools. |
-| `session/result_view.lua` | Lua adapter for C++ result report formatting shared by `finish` and auto-suggest. |
-| `session/result_window.lua` | Full-screen side-by-side viewer (`:Vimfy view`): initial/final panes, diff + cursor highlights. |
+| `session/disk.lua` | Result JSON encoding and validation, and the two shelves on disk: `sessions` (written at finish) and `pinned`. |
+| `session/playback.lua` | `:Vimfy view`: replays a `VF.Session.Viewable`, a finished result or a stats run, beside the sequences found for it. |
+| `session/result_view.lua` | Lua adapter for the C++ result report `finish` announces. |
 | `session/store.lua` | Canonical session records + manual/recall indexing. |
 
 ### `session/picker/` — session picker
@@ -48,8 +47,8 @@ Subdirectories hold supporting modules for each domain:
 | File | Purpose |
 |------|---------|
 | `session/picker/init.lua` | Picker controller. Required as `vimficiency.session.picker`. |
-| `session/picker/model.lua` | Active/saved item construction, filtering, sorting, and row formatting. |
-| `session/picker/preview.lua` | Preview-pane content for active and saved items. |
+| `session/picker/model.lua` | Active/pinned item construction, filtering, sorting, and row formatting. |
+| `session/picker/preview.lua` | Preview-pane content for active and pinned items. |
 | `session/picker/popups.lua` | Sort/help popup windows. |
 | `session/picker/keymaps.lua` | Picker and prompt keymap installation. |
 
@@ -108,7 +107,7 @@ field. Past the constructor nothing re-checks shape, type, or handle validity.
 | Ingress | Constructor |
 |---------|-------------|
 | User-typed `:Vimfy` arguments | `subcommands.lua` + `session/alias.lua expect` |
-| Saved JSON on disk | `session/disk.lua load` (`validate` is its schema) |
+| Result JSON on disk | `session/disk.lua load` (`validate` is its schema) |
 | FFI payloads | the `ffi/*.lua` decoders |
 | Neovim handles at event time | the autocmd / timer / keymap callback body |
 
@@ -121,10 +120,11 @@ field. Past the constructor nothing re-checks shape, type, or handle validity.
   `init.lua cmdline_entry` and `util.entry`, which wraps every autocmd, timer, and
   keymap callback at registration. `nil, err` survives only where the caller has a
   real alternative path: `compute.capture_end_state` and `build_analyze_input`
-  (finish drops the record, suggest stays silent), `archive.resolve_alias` and
-  `disk.load` (disk fallback keyed on `is_missing`), `ffi/sequence.tokenize_*`
-  (`simulate/tokenize.lua` falls back to a coarser tokenizer), `ffi/stats.run`
-  (the stats view warns that the run is not available).
+  (finish drops the record, suggest stays silent), `disk.load` (the next shelf,
+  keyed on `is_missing`), `disk.save_new` (a session finishes whether or not it
+  was saved), `ffi/sequence.tokenize_*` (`simulate/tokenize.lua` falls back to a
+  coarser tokenizer), `ffi/stats.run` and `stats/query.run` (the stats view says
+  why the run is not available).
 - **Handle validity is checked once, at event entry.** Helpers take handles as
   valid. The kept exceptions are cross-event: a user can close a window between
   the event that created it and the one that renders into it (`explore/render/
@@ -135,9 +135,11 @@ field. Past the constructor nothing re-checks shape, type, or handle validity.
   `validate.normalize_*`. A guard that exists only because a fixture skipped the
   constructor is a fixture bug.
 
-Saved files carry `disk.FORMAT_VERSION`. V1 remains readable for endpoint-only
-Play and produces a warning when opened there. Reject unknown versions and
-bump the current version on schema changes.
+Result files carry `disk.FORMAT_VERSION`. V1 remains readable for endpoint-only
+View and produces a warning when opened there. Reject unknown versions.
+
+Bump the current version when a required field is added or a field changes
+meaning. A new optional field (`disk.lua` `OPTIONAL_FIELDS`) needs no bump.
 
 ## Session Architecture
 
@@ -150,11 +152,13 @@ Every user-typed handle is one of two things (`session/alias.lua`):
   ago), `@` (last finished) or `$` (last suggest regression).
   `store.convert_alias_to_id` is the one resolver. Commands declare the kinds
   they accept with `alias.expect(alias, kinds)`.
-- **filename** — a saved result on disk (`alias.is_valid_filename`,
-  `^[%w_][%w._-]*$`), resolved by `session/disk.lua`.
+- **filename** — a result on disk (`alias.is_valid_filename`,
+  `^[%w_][%w._-]*$`), resolved by `session/disk.lua`: a pin, or a saved
+  session, whose filename `disk.save_new` made at finish.
 
-`play`/`view`/`explore` take an `alias_or_filename` and try the store first
-(`archive.resolve_result`). Parameters are named after the grammar they accept.
+`view`/`explore`/`pin` take an `alias_or_filename` and try the store,
+then the pins, then the saved sessions (`archive.resolve_result`). Parameters
+are named after the grammar they accept.
 
 ### Session kind (session/store.lua)
 
@@ -179,10 +183,12 @@ BOTH `KEY_SESSION_CAPACITY` and `MAX_RETENTION_SECONDS` say drop. See
 - **VF.Session.Active**: A capturing session: `win`/`buf`/`start_state`, the
   growing `atoms` list, and the capture it owns (`stream_sub` listener name,
   `watch_disarm`).
-- **VF.Session.Finished**: `result`, `finish_alias`, `finished_mono_ns`. Both
+- **VF.Session.Finished**: `result`, `saved_filename`, `finished_mono_ns`. Both
   shapes extend `VF.Session.Core` (`id`, `kind`, `started_mono_ns`).
 - **VF.Session.Result**: Optimizer output + position + `key_count` +
   `finished_wall_epoch`, built at finish; `convert_to_finished` stamps `kind`.
+  It extends `VF.Session.Viewable`, the part View and the stats preview read,
+  which a journal run fills too.
 
 Clocks: anything that stays in the process (`*_mono_ns`) is `vim.uv.hrtime()`,
 immune to system-time jumps and used for ring lookup, eviction, cooldowns and
@@ -196,7 +202,7 @@ Two tables keyed by id, `active_sessions` and `finished_sessions`;
 `named_to_id` and `recall_id_order` index across both. Finish moves the
 record from one table to the other — it does NOT unindex. This removes
 tombstones from `recall_id_order` entirely: a finished session stays reachable
-via its recall alias (for `:Vimfy play Ns`) until the ring slot rotates out.
+via its recall alias (for `:Vimfy view Ns`) until the ring slot rotates out.
 
 ## Atom stream (capture/atom_stream.lua)
 
@@ -264,13 +270,14 @@ Interactive Explore's larger state-machine units are **phases** (`Navigate`,
 - Expands recorded user steps from the initial slice and line deltas. For
   suggestions, precomputes snapshots asynchronously in a hidden Neovim probe, then opens a new tab
   with side-by-side windows
-- Replay opens paused; `<Left>`/`<Right>` step, `<CR>` toggles auto-play, `q`
-  closes the whole replay tab
+- `<Left>`/`<Right>` step through the replay, `<Tab>` cycles panes, `<CR>`
+  expands the current pane or restores the split, and `q` closes the replay tab
 - `opts.filetype` highlights the visible panes (treesitter when a parser
   exists, else 'syntax'), never the probe; 'filetype' itself stays unset so no
   ftplugin or LSP client runs
-- `:Vimfy focus <N>` / `:Vimfy escape` toggle the single-buffer view
-- Uses virtual header lines above each replay buffer for progress, mode, and a
+- Replay panes also accept `:Vimfy focus <N>` to expand pane N and
+  `:Vimfy escape` to restore the split
+- Uses a fixed header above each replay buffer for progress, mode, and a
   wrapped/highlighted sequence display
 - Uses the C++ tokenizer for suggestions and reports parse errors in their pane. Tokens
   keep feedable command units like `f;` / `rX` intact while leaving repeats
@@ -294,11 +301,11 @@ resolve; without it LuaLS treats `vim` as untyped and misses real mismatches.
 :Vimfy finish <alias>   -- Finish a manual session (Mark/Watch)
 :Vimfy recall <N|Ns>    -- Finish a retrospective recall window
 :Vimfy close <alias>    -- Discard session
-:Vimfy play <alias>     -- Animate results
-:Vimfy focus <N>        -- Focus replay on Nth buffer (full-screen)
-:Vimfy escape           -- Restore side-by-side replay layout
-:Vimfy view [name]      -- View saved results
-:Vimfy list             -- Show active/saved sessions
+:Vimfy view <session> [windows] -- Replay results side-by-side
+:Vimfy pin <session> [filename] -- Keep a copy of a finished result
+:Vimfy unpin <filename> -- Delete a pin
+:Vimfy rm <filename>    -- Delete a saved session's result
+:Vimfy list             -- Show active sessions and pins
 :Vimfy suggest <on|off|toggle> -- Toggle auto-suggest (needs `auto_suggest = {...}` in setup)
 :Vimfy config           -- Show C++ config state
 :Vimfy reload           -- Rebuild and hot-reload Vimfy with live build output

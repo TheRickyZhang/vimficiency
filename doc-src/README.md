@@ -22,8 +22,8 @@ internals and implementation notes, see `dev/`.
 4. [Watch](04-watch.md) — manual start, auto end (idle-fires `finish`)
 5. [Recall](05-recall.md) — auto start, manual end (`recall N` / `recall Ns`)
 6. [Suggest](06-suggest.md) — auto start, auto end (idle-surfaces result)
-7. [Inspecting results](07-results.md) — notifications, simulate, list, view
-   - [7a. Session storage](07a-session-storage.md) — workspace (memory) vs. archive (disk)
+7. [Inspecting results](07-results.md) — notifications, view, list
+   - [7a. Session storage](07a-session-storage.md) — active, saved and pinned results
 8. [Binding keys to Vimfy](08-keymaps.md) — `<Cmd>Vimfy ...<CR>` maps
 9. [Configuration](09-configuration.md) — setup knobs
 10. [The effort model](10-effort-model.md) — how "cost" is computed
@@ -49,7 +49,7 @@ For a full setup with configuration and keymaps, see
 " Recall is always on — just start editing.
 " ... edit something ...
 :Vimfy recall 6          " analyze the last 6 keys (or 'recall 3s' for time)
-:Vimfy play 6            " animate the suggestion
+:Vimfy view 6            " animate the suggestion
 ```
 
 For anything else, start at [1. Installation](01-installation.md).
