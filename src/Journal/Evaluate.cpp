@@ -21,14 +21,6 @@ bool supported(const Lines& lines) {
   });
 }
 
-int countPositions(const Lines& lines, int begin, int end) {
-  int count = 0;
-  for (int row = begin; row < end; ++row) {
-    count += lines[row].effectiveSize();
-  }
-  return count;
-}
-
 }  // namespace
 
 WindowSlice sliceWindow(const Window& window, const EvaluateParams& params) {
@@ -56,9 +48,8 @@ WindowSlice sliceWindow(const Window& window, const EvaluateParams& params) {
   if (!supported(slice.initialLines) || !supported(slice.goalLines)) {
     return {.outcome = Outcome::Unsupported};
   }
-  const int querySize = max(countPositions(initialLines, region.begin, region.initialEnd),
-                            countPositions(goalLines, region.begin, region.goalEnd));
-  return {.inputs = searchInputs(std::move(slice), params.overrides), .querySize = querySize};
+  return {.inputs = searchInputs(std::move(slice), params.overrides),
+          .querySize = region.querySize(initialLines, goalLines)};
 }
 
 Sample evaluate(const Window& window, const EvaluateParams& params, const Config& config) {

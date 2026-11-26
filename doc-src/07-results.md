@@ -27,9 +27,9 @@ how to tune it to your layout.
 
 ## Viewing a result
 
-`:Vimfy view <alias> [count]` opens a new tab with side-by-side windows and
+`:Vimfy view <session> [windows]` opens a new tab with side-by-side windows and
 shows your recording alongside simulated optimizer suggestions.
-`count` sets the number of panes, up to four. The default layout pairs
+`windows` sets the number of panes, up to four. The default layout pairs
 your recording with the best suggestion.
 
 Replay opens after a brief precompute phase. Step forward with
@@ -38,6 +38,8 @@ Replay opens after a brief precompute phase. Step forward with
 The `[you] Recorded` pane shows the text, cursor and mode Neovim reported.
 A Visual deletion such as `Vd` shows the line disappearing in one step.
 When several commands arrive together, one step shows their combined result.
+Its label shows the captured keypresses, falling back to the resolved command
+when the recording lacks keypresses for that step.
 Plugin edits appear as they happened, even when a mapping’s reported keys
 omit some of the text it inserted.
 
@@ -49,7 +51,8 @@ you later undid. A step advances each pane to its next available state.
 Opening an older v1 save shows a warning. Its user pane has one step between
 the two states that file contains. Suggestions still animate normally.
 
-Each replay window shows a virtual header above the buffer:
+Each replay pane keeps its header visible while you scroll the buffer or step
+through the sequence. The header shows:
 
 - progress through the global and local step counts, plus the current
   editor mode
@@ -67,8 +70,8 @@ layout they move the cursor to the next/previous sim window (wrapping);
 in focus mode they swap the displayed buffer in place. `<CR>` toggles focus on
 the window under the cursor — it collapses the tab to just that window
 full-screen, and `<CR>` again from inside restores the side-by-side
-layout. The same toggles are also available as `:Vimfy focus <N>` /
-`:Vimfy escape` for typed invocation.
+layout. From any replay pane, you can also type `:Vimfy focus <N>` to
+expand pane N directly, or `:Vimfy escape` to restore the split.
 
 ## Replay buffer keys
 
@@ -96,8 +99,8 @@ Shows the active sessions and the pins.
 Every finished session is active in memory until it rotates out, and is saved
 to disk as it finishes. `:Vimfy pin` keeps a copy under a filename you choose.
 
-`:Vimfy view <alias>|<filename>` works against all three: it replays from
-memory first, then a pin, then a saved session. Tab completion on `:Vimfy view`
+`:Vimfy view <session>` looks for an alias in memory first, then a pin,
+then a saved session. Tab completion on `:Vimfy view`
 lists the aliases and pins.
 
 See [7a. Session storage](07a-session-storage.md) for the full model and a

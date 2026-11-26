@@ -18,6 +18,98 @@ M.AUGROUP = "Vimficiency"
 
 -- Invocation roots: every `:Vimfy` and keymap invocation enters through one of these.
 
+local terms = {
+  { "<session>", "The start and end states captured for the optimizer. Vimfy looks up a finished session by alias first, then by filename on disk (pins before saved sessions)." },
+  { "<alias>", "A name you give a session in this Neovim, like a or work. @ is the last finished session and $ is the latest suggestion. 5 and 3s look back five command atoms or three seconds." },
+  { "<filename>", "The name of a saved or pinned result on disk. Omit .json." },
+  { "command atom", "One complete user action, defined by Neovim. w, dw, and itext<Esc> each count as one. Press Ctrl-] on |CmdAtom| for Neovim help." },
+}
+
+local function render_terms(buf, win, ns, first_row)
+  local win_width = vim.api.nvim_win_get_width(win)
+  local rows = {}
+  for _, term in ipairs(terms) do
+    local prefix = ("%-12s - "):format(term[1])
+    local line = ""
+    for word in term[2]:gmatch("%S+") do
+      if line ~= "" and #prefix + #line + 1 + #word > win_width then
+        rows[#rows + 1] = prefix .. line
+        prefix = string.rep(" ", #prefix)
+        line = ""
+      end
+      line = line == "" and word or line .. " " .. word
+    end
+    rows[#rows + 1] = prefix .. line
+  end
+  local block_width = 0
+  for _, row in ipairs(rows) do block_width = math.max(block_width, #row) end
+  local indent = string.rep(" ", math.max(0, math.floor((win_width - block_width) / 2)))
+  for i, row in ipairs(rows) do rows[i] = indent .. row end
+  local title_col = math.max(0, math.floor((win_width - #"Terms") / 2))
+  table.insert(rows, 1, string.rep(" ", title_col) .. "Terms")
+
+  vim.api.nvim_buf_clear_namespace(buf, ns, first_row, -1)
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, first_row, -1, false, rows)
+  vim.bo[buf].modifiable = false
+  vim.api.nvim_buf_set_extmark(buf, ns, first_row, title_col, { end_col = title_col + #"Terms", hl_group = "Title" })
+  for i, row in ipairs(rows) do
+    local first, last = row:find("|CmdAtom|", 1, true)
+    if first then
+      vim.api.nvim_buf_set_extmark(buf, ns, first_row + i - 1, first - 1, { end_col = last, hl_group = "Underlined" })
+    end
+  end
+end
+
+local function show_commands()
+  local commands = subcommands.available()
+  local widths = {}
+  for _, cmd in ipairs(commands) do
+    local width = widths[cmd.group] or { name = 0, args = 0 }
+    width.name = math.max(width.name, #cmd.name)
+    width.args = math.max(width.args, #cmd.args)
+    widths[cmd.group] = width
+  end
+
+  local lines = {}
+  local marks = {}
+  local group
+  for _, cmd in ipairs(commands) do
+    if cmd.group ~= group then
+      if group then lines[#lines + 1] = "" end
+      group = cmd.group
+      marks[#marks + 1] = { #lines, 0, #group, "Title" }
+      lines[#lines + 1] = group
+    end
+    local width = widths[cmd.group]
+    local usage = cmd.name .. string.rep(" ", width.name - #cmd.name)
+    if width.args > 0 then
+      usage = usage .. " " .. cmd.args .. string.rep(" ", width.args - #cmd.args)
+    end
+    marks[#marks + 1] = { #lines, 2, 2 + #cmd.name, "Identifier" }
+    lines[#lines + 1] = "  " .. usage .. "  " .. cmd.desc
+  end
+  lines[#lines + 1] = ""
+  local terms_row = #lines
+  local buf, win = ui_windows.show_output("Vimfy Commands", table.concat(lines, "\n"), {
+    margin = 2,
+    ui_keys = { title = "Vimfy Scratch Output Keys", docs = true },
+    window = { wrap = false },
+  })
+  local ns = vim.api.nvim_create_namespace("vimfy_commands")
+  vim.keymap.set("n", "<C-]>", function()
+    return vim.fn.expand("<cword>") == "CmdAtom" and "<Cmd>help CmdAtom<CR>" or "<C-]>"
+  end, { buffer = buf, expr = true })
+  for _, mark in ipairs(marks) do
+    vim.api.nvim_buf_set_extmark(buf, ns, mark[1], mark[2], { end_col = mark[3], hl_group = mark[4] })
+  end
+  local function center_terms()
+    render_terms(buf, win, ns, terms_row)
+  end
+  center_terms()
+  vim.api.nvim_create_autocmd("VimResized", { buffer = buf, callback = center_terms })
+end
+
 --- The only error boundary for `:Vimfy`. Everything below raises.
 local function cmdline_entry(opts)
   local args = vim.split(opts.args, "%s+", { trimempty = true })
@@ -25,29 +117,18 @@ local function cmdline_entry(opts)
 
   --- No subcommand called
   if not subcmd then
-    local cmd_lines = {}
-    for _, cmd in pairs(subcommands) do
-      table.insert(cmd_lines, string.format("  Vimfy %-20s %s", cmd.usage, cmd.desc))
-    end
-    table.sort(cmd_lines)
-    ui_windows.show_output("Vimfy Commands", table.concat(cmd_lines, "\n"), {
-      ui_keys = {
-        title = "Vimfy Scratch Output Keys",
-        docs = true,
-      },
-    })
+    show_commands()
     return
   end
 
   -- Otherwise, dispatch to subcommand handlers (cmd.run)
-  ---@type VF.Subcommand?
-  local cmd = subcommands[subcmd]
+  local cmd = subcommands.find(subcmd)
   if not cmd then
     vim.notify("Unknown subcommand '" .. subcmd .. "'. Run :Vimfy help for usage", vim.log.levels.ERROR)
     return
   end
   if #args < (cmd.min_args or 0) then
-    vim.notify("Usage: Vimfy " .. cmd.usage, vim.log.levels.ERROR)
+    vim.notify("Usage: Vimfy " .. cmd.name .. " " .. cmd.args, vim.log.levels.ERROR)
     return
   end
 
@@ -75,10 +156,10 @@ local function autocomplete_command(arg_lead, cmd_line, cursor_pos)
   table.remove(args, 1)
 
   if #args <= 1 then
-    return matching(vim.tbl_keys(subcommands))
+    return matching(vim.tbl_map(function(cmd) return cmd.name end, subcommands.available()))
   end
 
-  local cmd = subcommands[args[1]]
+  local cmd = subcommands.find(args[1])
   local candidates = cmd and cmd.complete and cmd.complete[#args - 1]
   if not candidates then return {} end
   if type(candidates) == "function" then candidates = candidates() end

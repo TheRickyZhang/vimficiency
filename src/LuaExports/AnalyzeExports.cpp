@@ -125,6 +125,8 @@ VFByteSlice vf_build_search_request(const char* request, size_t request_len) {
         if (req.has_indent()) *msg.mutable_indent() = req.indent();
         msg.set_user_seq(slice.userSeq);
         msg.set_user_typed(slice.userTyped);
+        msg.mutable_query()->set_nav_only(slice.initialLines == slice.goalLines);
+        msg.mutable_query()->set_query_size(region.querySize(*initialLines, *goalLines));
         return proto(msg);
       });
 }

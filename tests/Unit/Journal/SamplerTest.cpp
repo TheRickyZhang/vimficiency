@@ -47,7 +47,7 @@ string editedJournal() {
   JournalBuilder j;
   j.header(5000).snapshot(lines, JournalBuilder::BUF, "cpp").resync(10, 0);
   j.next().atom("l", 10, 1);
-  j.next().atom("gj", 11, 1);
+  j.next().atom("gj", 11, 1, {.typed = "j"});
   lines[11].erase(1, 1);
   j.next().delta(11, 1, {lines[11]}).atom("x", 11, 1, edit);
   j.next().snapshot(lines, JournalBuilder::BUF, "lua").atom("k", 10, 1);
@@ -368,7 +368,7 @@ TEST_F(JournalSamplerTest, EverySampledRunIsSlicedAgainAsItWasScored) {
     string typed;
     string scored;
     for (const vf::stats::Command& command : sample.commands()) {
-      typed += command.keys();
+      typed += command.keys() == "gj" ? "j" : command.keys();
       scored += command.keys() == "gj" ? "j" : command.keys();
     }
     EXPECT_EQ(got->keys(), scored);
@@ -396,6 +396,8 @@ TEST_F(JournalSamplerTest, EverySampledRunIsSlicedAgainAsItWasScored) {
     for (int i = 0; i < recording.steps_size(); i++) {
       const auto& step = recording.steps(i);
       EXPECT_EQ(step.keys(), sample.commands(i).keys());
+      if (step.keys() == "gj") EXPECT_EQ(step.typed(), "j");
+      else EXPECT_FALSE(step.has_typed());
       EXPECT_EQ(step.mode(), "n");
       for (const auto& delta : step.deltas()) {
         ASSERT_GE(delta.first(), 0);

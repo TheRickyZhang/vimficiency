@@ -55,7 +55,6 @@ message Filter {
   // Leaves sessions out. 0 is every size in the summary's `sizes` and the
   // charted size everywhere else.
   int32 window_size = 3;
-  // `nav` or `edit` leaves sessions out.
   Kind kind = 4;
   // Empty: every outcome. A session's outcome is the like-named one.
   repeated vf.journal.Sample.Outcome outcomes = 5;
@@ -70,6 +69,8 @@ message Filter {
   bool beats = 9;
   bool timed = 10;
   InclusiveRange query_size = 11;
+  // Scored or unbeaten with positive user effort.
+  bool scoring = 12;
 }
 
 message SummaryRequest {
@@ -87,7 +88,7 @@ message SummaryRequest {
   bytes journal_dir = 4;
   vf.journal.SampleParams sample_params = 5;
   Weight weight = 6;
-  // Narrows every count but `lifetime` and `hidden_runs`.
+  // Narrows every count but `recorded_sessions` and `hidden_runs`.
   Filter filter = 7;
   // One of `sample_params.window_sizes`; 0 for the middle one. The filter's
   // window size overrides it.
@@ -114,16 +115,6 @@ message DayScore {
   int32 spans = 4;
 }
 
-// Every stamp's sessions.
-message Lifetime {
-  int32 sessions = 1;
-  int32 mark = 2;
-  int32 watch = 3;
-  int32 recall = 4;
-  int32 suggest = 5;
-  int64 commands = 6;
-}
-
 message Timing {
   int32 n = 1;
   double p50 = 2;
@@ -145,14 +136,24 @@ message TimingBucket {
   Filter drill = 6;
 }
 
-// A guess at why nothing came near some unbeaten runs: they hold a command the
-// search does not model. A run counts under each tag it holds and under
+// A possible explanation based on recorded commands. A run counts under each tag it holds and under
 // `other` when it holds none; a rolled-up one, which keeps no commands, is in
 // no tag.
-message UnbeatenTag {
+message RunTag {
   string name = 1;
   int32 runs = 2;
   Filter drill = 3;
+}
+
+message KindBreakdown {
+  Score score = 1;
+  Filter drill = 2;
+  repeated TimingBucket sizes = 3;
+}
+
+message RunBreakdown {
+  KindBreakdown nav = 1;
+  KindBreakdown edit = 2;
 }
 
 message SessionSummary {
@@ -164,14 +165,20 @@ message SessionSummary {
   int32 unbeaten = 5;
   // Scored sessions whose keys cost less than the best sequence found.
   int32 beats = 6;
-  // Of the last 30 days' sessions.
   Timing timing = 7;
   Filter no_result_drill = 8;
   Filter unbeaten_drill = 9;
-  Score chart_score = 10;
+  reserved 10;
   Filter beats_drill = 11;
   CommandSummary commands = 12;
-  repeated UnbeatenTag unbeaten_tags = 13;
+  repeated RunTag unbeaten_tags = 13;
+  RunBreakdown breakdown = 14;
+  repeated RunTag beats_tags = 15;
+  int32 mark = 16;
+  int32 watch = 17;
+  int32 recall = 18;
+  int32 suggest = 19;
+  int64 command_count = 20;
 }
 
 message SizeScore {
@@ -193,6 +200,8 @@ message JournalCoverage {
 
 // The samples made under the current params, and the rollups in scope.
 message JournalSummary {
+  reserved 7, 8, 14, 15, 18, 19;
+  reserved "nav", "edit", "nav_drill", "edit_drill", "nav_timing", "edit_timing";
   // A journal directory exists.
   bool present = 1;
   // How much of the journal those samples cover.
@@ -203,8 +212,6 @@ message JournalSummary {
   // middle one; the fields below are about runs of it.
   int32 charted_size = 5;
   Score score = 6;
-  Score nav = 7;
-  Score edit = 8;
   repeated DayScore days = 9;
   repeated Unscored unscored = 10;
   int32 unbeaten = 11;
@@ -212,14 +219,15 @@ message JournalSummary {
   // Rolled-up runs of the charted size the filter selects but for its
   // commands, which rollups do not keep; left out of every count.
   int32 rollup_runs_without_commands = 13;
-  Filter nav_drill = 14;
-  Filter edit_drill = 15;
   Filter unbeaten_drill = 16;
-  Score chart_score = 17;
-  repeated TimingBucket nav_timing = 18;
-  repeated TimingBucket edit_timing = 19;
+  reserved 17;
   CommandSummary commands = 20;
-  repeated UnbeatenTag unbeaten_tags = 21;
+  repeated RunTag unbeaten_tags = 21;
+  RunBreakdown breakdown = 22;
+  int32 beats = 23;
+  Filter beats_drill = 24;
+  repeated RunTag beats_tags = 25;
+  Filter unscored_drill = 26;
 }
 
 message CommandRow {
@@ -257,7 +265,8 @@ message Summary {
   reserved 4;
   reserved "commands";
   ChartUnit chart_unit = 30;
-  Lifetime lifetime = 1;
+  reserved 1;
+  int32 recorded_sessions = 7;
   SessionSummary sessions = 2;
   JournalSummary journal = 3;
   // The current stamp's, `scoring <N>·<id>`.
@@ -280,6 +289,9 @@ message RunsRequest {
     saved = 5;
     // By user_typed_chars − best_typed_chars.
     typed = 6;
+    last_atom = 7;
+    window_size = 8;
+    tag = 9;
   }
 
   // Lists the sessions and charted-size journal runs this summary reduces;
@@ -329,6 +341,7 @@ message RunRow {
   int64 best_typed_chars = 14;
   // A session's `Session.saved_filename`; a journal run's is empty.
   string saved_filename = 15;
+  string tag = 16;
 }
 
 message RunList {
@@ -383,6 +396,7 @@ message Recording {
     int32 col = 3;
     string mode = 4;
     repeated Delta deltas = 5;
+    optional bytes typed = 6;
   }
   int32 row = 1;
   int32 col = 2;

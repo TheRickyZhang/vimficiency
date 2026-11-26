@@ -136,11 +136,13 @@ end
 ---@field indent? VF.IndentOptions
 ---@field filetype? string             # As the session started. Absent on files saved before it existed
 ---@field user_seq string              # What ran: the user's keys after mappings (keytrans string). Bounds the search
+---@field user_typed? string           # Pressed keys behind user_cost, when captured
 ---@field user_cost number             # Effort of the keys the user pressed
 ---@field optimal_results VF.Optimizer.Result[] # Top N results from optimizer (seq + cost)
 
 --- VF.Session.Result: data for a completed session, ready for simulate().
 ---@class VF.Session.Result : VF.Session.Viewable
+---@field query? VF.QueryShape          # Stats log only
 ---@field has_lines_above boolean      # Whether the optimization slice omitted lines above
 ---@field has_lines_below boolean      # Whether the optimization slice omitted lines below
 ---@field prefix string                # Reserved boundary prefix; empty at the whole-buffer level (see compute.lua)
@@ -148,7 +150,6 @@ end
 ---@field diffs VF.Diff.Region[]       # Optimizer character-level diff regions for column highlighting
 ---@field window_height integer        # Captured window height for page/scroll semantics
 ---@field scroll_amount integer        # Captured 'scroll' option for Ctrl-D/U semantics
----@field user_typed string|nil        # What the user pressed (keytrans string), mouse events stripped. Behind user_cost. Absent on files saved before it existed
 ---@field user_typed_insert string|nil # Of user_typed, the insert text (`VF.Atom.typed_insert`). The command tables count insert text by these. Absent on files saved before it existed
 ---@field optimizer_overrides string|nil # Encoded overrides the analyze ran with; with results_calculated, completes the replayable request. Absent on files saved before 0.3.0
 ---@field results_calculated integer|nil # Result count the analyze was asked for

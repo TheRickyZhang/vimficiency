@@ -176,6 +176,7 @@ local function build_result(input, analyze, analyze_ms)
   local request = input.request
   local result = {
     recording = input.recording,
+    query = request.query,
     lines = request.initial_lines,
     goal_lines = request.goal_lines,
     start_row = request.start_row,

@@ -15,6 +15,7 @@ local M = {}
 ---@class VF.Replay.Window
 ---@field win integer
 ---@field buf integer
+---@field header_win? integer
 ---@field is_user boolean
 ---@field seq_idx integer
 ---@field default_rank integer
@@ -331,6 +332,7 @@ function M.relayout_grid()
 end
 
 M.cleanup_compare = cleanup_multi_sim
+M.current_pane = actions.current_pane
 M.focus = function(idx) windows.focus(ctx, idx) end
 M.escape = function() windows.escape(ctx) end
 M.open_settings = actions.open_settings

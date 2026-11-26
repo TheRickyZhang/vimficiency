@@ -8,7 +8,7 @@ Recall lets you look backward without any previous marking setup by querying a c
 
 ```vim
 " ... edit normally ...
-:Vimfy recall 6       " Analyze the last 6 commands
+:Vimfy recall 6       " Look back 6 recorded command atoms
 :Vimfy recall 3s      " Analyze the last 3 seconds
 ```
 
@@ -19,14 +19,12 @@ retrospective windows go through `:Vimfy recall`.
 
 | Syntax   | Meaning                    | Use when                                     |
 |----------|----------------------------|----------------------------------------------|
-| `N`      | Last N commands            | You can estimate how many commands the edit took |
-| `Ns`     | Last N seconds of activity | You can estimate time better than key count  |
+| `N`      | Last N recorded command atoms | You can count the actions you took |
+| `Ns`     | Last N seconds of activity | You remember when you started |
 
-Both forms are measured back from *now*, and name the **whole span** up to
-that point — not a fixed-size window floating in the past. `3s` analyzes
-everything typed in the last 3 seconds (the range from 3s-ago through the
-present), and `50` the last 50 commands. The number sets how far *back* the
-range reaches; the range always ends at the current cursor.
+A command atom is one Vim action reported by Neovim. For example, `dw`
+counts as one atom. Recall counts only the atoms Vimfy records. Both forms
+look back from now and end at the current cursor.
 
 Mixing forms (`3m`, `3ms`, `2h`, etc.) is not supported. Seconds is the
 only time unit; if you want 90 seconds, use `90s`.

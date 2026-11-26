@@ -79,53 +79,37 @@ local function get_snapshot(idx, step)
   return snap
 end
 
----@param buf integer
----@return string[]
-local function header_lines(buf)
-  local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
-  for _, mark in ipairs(marks) do
-    local details = mark[4]
-    ---@cast details -nil
-    if details.virt_lines then
-      ---@type string[]
-      local lines = {}
-      for _, row in ipairs(details.virt_lines) do
-        local parts = {}
-        for _, chunk in ipairs(row) do
-          parts[#parts + 1] = chunk[1]
-        end
-        lines[#lines + 1] = table.concat(parts)
-      end
-      return lines
-    end
-  end
-  error("missing virtual header")
-end
-
----@param buf integer
+---@param entry VF.Replay.Window
 ---@return table[][]
-local function header_virt_lines(buf)
-  local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
-  for _, mark in ipairs(marks) do
-    local details = mark[4]
-    ---@cast details -nil
-    if details.virt_lines then
-      return details.virt_lines
-    end
+local function header_chunks(entry)
+  local buf = vim.api.nvim_win_get_buf(assert(entry.header_win))
+  local rows = {}
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })) do
+    rows[mark[2] + 1] = assert(mark[4]).virt_text
   end
-  error("missing virtual header")
+  return rows
 end
 
----@param buf integer
+---@param entry VF.Replay.Window
+---@return string[]
+local function header_lines(entry)
+  local lines = {}
+  for row, chunks in pairs(header_chunks(entry)) do
+    local parts = {}
+    for _, chunk in ipairs(chunks) do parts[#parts + 1] = chunk[1] end
+    lines[row] = table.concat(parts)
+  end
+  return lines
+end
+
+---@param entry VF.Replay.Window
 ---@param text string
 ---@param hl string
 ---@return boolean
-local function header_has_chunk(buf, text, hl)
-  for _, row in ipairs(header_virt_lines(buf)) do
+local function header_has_chunk(entry, text, hl)
+  for _, row in pairs(header_chunks(entry)) do
     for _, chunk in ipairs(row) do
-      if chunk[1] == text and chunk[2] == hl then
-        return true
-      end
+      if chunk[1] == text and chunk[2] == hl then return true end
     end
   end
   return false

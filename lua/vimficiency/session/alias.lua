@@ -51,7 +51,7 @@ end
 
 local KIND_DESC = {
   named         = "a named alias (letters only, e.g. 'a')",
-  recall_key    = "a recall window (N commands ago, e.g. '5')",
+  recall_key    = "a recall window (N recorded command atoms ago, e.g. '5')",
   recall_time   = "a recall window (Ns seconds ago, e.g. '3s')",
   last_finished = "'@' (the last finished session)",
   last_suggest  = "'$' (the last suggest regression)",

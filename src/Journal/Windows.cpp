@@ -92,8 +92,13 @@ void WindowCutter::closeGroup(vector<Window>& out) {
     // Only an atom alone in its tick has a state of its own to judge by.
     const bool withinLine = group.size() == 1 && last.row == anchor.row &&
                             last.col != anchor.col && isScreenLineMotion(last.keys);
-    for (const Event& event : group) {
+    for (size_t i = 0; i < group.size(); ++i) {
+      const Event& event = group[i];
       if (event.decision != Decision::Record) continue;
+      const bool typedOnSkip = i > 0 && event.typed.empty() &&
+          group[i - 1].decision == Decision::Skip && group[i - 1].keys.empty() &&
+          group[i - 1].typed == event.keys;
+      const Event& input = typedOnSkip ? group[i - 1] : event;
       for (Window& window : open) {
         if (window.atomCount == 0) {
           window.start = anchor;
@@ -103,15 +108,17 @@ void WindowCutter::closeGroup(vector<Window>& out) {
         window.atomCount++;
         window.commands.push_back({event.keys, event.atomKind, withinLine});
         window.keys += event.keys;
-        window.typed += event.typed;
-        window.typedInsert += event.typedInsert;
-        window.typedInsertKnown &= event.typedInsertKnown;
+        window.typed += input.typed;
+        window.typedInsert += input.typedInsert;
+        window.typedInsertKnown &= input.typedInsertKnown;
         window.lossy |= event.lossy;
       }
     }
     for (Window& window : open) {
       if (window.atomCount > 0) window.untouched.include(untouched.above, untouched.below);
-      if (keepSteps && recorded) window.steps.push_back({window.commands.size(), stateAfter(last)});
+      if (keepSteps && recorded) {
+        window.steps.push_back({window.commands.size(), window.typed.size(), stateAfter(last)});
+      }
       if (window.atomCount < window.size) continue;
       window.end = stateAfter(last);
       window.wallEpoch = wallEpoch + last.ms / 1000;

@@ -3,7 +3,7 @@
 -- item (ui/item_nav.lua).
 
 ---@class (exact) VF.Stats.ChartViewModule
----@field open fun(name: VF.Stats.ChartName, summary: VF.Stats.Summary, summary_of: (fun(scale?: VF.Stats.ChartScale): VF.Stats.Summary), list_runs: fun(item: VF.Stats.Item)): VF.Stats.ChartView
+---@field open fun(source: VF.Stats.Source, name: VF.Stats.ChartName, summary: VF.Stats.Summary, summary_of: (fun(scale?: VF.Stats.ChartScale): VF.Stats.Summary), list_runs: fun(item: VF.Stats.Item)): VF.Stats.ChartView
 local M = {}
 
 local v = vim.api
@@ -15,7 +15,7 @@ local ui_windows = require("vimficiency.ui.windows")
 local ns = v.nvim_create_namespace("vimfy_stats_chart")
 
 local titles = {
-  sessions = "Sessions", journal = "Journal", nav_timing = "Movement search", edit_timing = "Composition search",
+  sessions = "Sessions", journal = "Journal", nav = "Movement search", edit = "Composition search",
 }
 
 ---@type VF.Stats.ChartScale[]
@@ -42,13 +42,14 @@ local SCALES = {
 ---@field update_coverage fun(coverage: VF.Stats.JournalCoverage)
 ---@field close fun()
 
+---@param source VF.Stats.Source
 ---@param name VF.Stats.ChartName
 ---@param summary VF.Stats.Summary
 ---@param summary_of fun(scale?: VF.Stats.ChartScale): VF.Stats.Summary
 ---@param list_runs fun(item: VF.Stats.Item)
 ---@return VF.Stats.ChartView
-function M.open(name, summary, summary_of, list_runs)
-  local history = name == "sessions" or name == "journal"
+function M.open(source, name, summary, summary_of, list_runs)
+  local history = name == "history"
   local index
   if history then
     for i, scale in ipairs(SCALES) do
@@ -59,11 +60,12 @@ function M.open(name, summary, summary_of, list_runs)
     end
     assert(index)
   end
-  local label = titles[name]
+  local label = titles[source]
+  if not history then label = label .. " › " .. titles[name] end
   ---@param detail? string
   local function title(detail)
     local text = " Stats › " .. label
-    if name == "journal" then text = text .. " · " .. render.journal_efficiency(summary.journal) end
+    if history then text = text .. " · " .. render.efficiency(summary, source) end
     if detail then text = text .. " · " .. detail end
     return text .. " "
   end
@@ -72,7 +74,7 @@ function M.open(name, summary, summary_of, list_runs)
     string.format("vimficiency://stats/%d/chart", v.nvim_get_current_tabpage()), { filetype = "vimficiency_stats" })
   -- The border adds a row above and below; the tabline row stays clear.
   local win = v.nvim_open_win(buf, true, {
-    relative = "editor", row = 1, col = 0,
+    relative = "editor", row = 1, col = 0, zindex = 48,
     width = vim.o.columns - 2, height = math.max(3, vim.o.lines - vim.o.cmdheight - 4),
     border = "rounded", style = "minimal", title = title(), title_pos = "left",
   })
@@ -96,7 +98,7 @@ function M.open(name, summary, summary_of, list_runs)
   })
 
   local function redraw()
-    page = render.chart_page(summary, name, v.nvim_win_get_width(win), v.nvim_win_get_height(win), shown,
+    page = render.chart_page(summary, source, name, v.nvim_win_get_width(win), v.nvim_win_get_height(win), shown,
       index and SCALES[index])
     vim.bo[buf].modifiable = true
     v.nvim_buf_set_lines(buf, 0, -1, false, page.lines)
@@ -127,7 +129,7 @@ function M.open(name, summary, summary_of, list_runs)
     buf = buf,
     refresh = refresh,
     update_coverage = function(coverage)
-      if name ~= "journal" then return end
+      if source ~= "journal" or not history then return end
       summary.journal.scored_bytes = coverage.scored_bytes
       summary.journal.journal_bytes = coverage.journal_bytes
       redraw()

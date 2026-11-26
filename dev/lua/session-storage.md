@@ -64,7 +64,8 @@ name a different record by the time it is resolved.
 
 ## JSON schema
 
-The result table plus `version` (`disk.FORMAT_VERSION`), pretty-printed with
+The result table excluding the stats log's `query`, plus `version`
+(`disk.FORMAT_VERSION`), pretty-printed with
 sorted keys: `lines`, `goal_lines`, `start_row/col`, `end_row/col`,
 `has_lines_above/below`, `prefix`, `suffix`, `diffs`, `window_height`,
 `scroll_amount`, `user_seq`, `user_cost`, `optimal_results`, `key_count`, `finished_wall_epoch` (`os.time()` at finish;
@@ -72,12 +73,12 @@ the file's only clock), and
 `kind` ∈ `{mark, watch, recall, suggest_idle, suggest_keys, suggest_cost}`.
 
 `disk.decode` accepts v2 and legacy v1. V2 adds `recording`, a starting
-cursor/mode and a list of steps with resolved keys, post-step cursor/mode
+cursor/mode and a list of steps with resolved keys, optional differing pressed keys, post-step cursor/mode
 and changed line ranges. Coordinates refer to the same slice as `lines`.
 View warns when opening a v1 result and shows its two recorded endpoints.
 Pinning that result preserves v1. Unknown or missing versions are rejected. All fields
 are required except these:
-- `analyze_ms`, debug-only.
+- `analyze_ms`, the time taken to analyze the session.
 - `indent` and `filetype`, the buffer's as the session started. View replays
   with that indent and highlights its panes by the filetype.
 - `user_typed`, the pressed keys behind `user_cost` (`user_seq` is what ran).
@@ -106,8 +107,10 @@ with: `SCORING_VERSION` (`src/Versions.cppm`) plus every setting a score depends
 leaves scoring alone keeps the stamp, so its history stays comparable.
 
 - A new log opens with a `header` record holding `SESSION_LOG_FORMAT`
-  (`src/Versions.cppm`); a log without one is format 1. A newer format fails
-  both the summary and the append, rather than being misread.
+  (`src/Versions.cppm`). Format 2 requires a query kind and positive size.
+  Format 1 records (including headerless logs) remain usable if they contain
+  those measurements. Reads and appends report outdated or malformed records
+  with their byte offset. A newer format also fails both operations.
 - A record carries the stamp's id, an FNV-1a hash of the serialized stamp. The
   full stamp is written once, before the first session under it, so concurrent
   Neovims need no ordering. A duplicate stamp record from a race is harmless.
@@ -134,9 +137,9 @@ change either setting.
   `Σ min(best, user) / Σ user`) or 1 (`"uniform"`). `unbeaten` spans score
   `best = user`; `no_result` spans are counted, never scored.
 - Day buckets break at local midnight. Minute and hour buckets use epoch
-  timestamps. Session timing covers the last 30 days independently of
-  Look back. Journal timing groups retained runs of the selected length
-  with a positive finite duration and a recorded query size.
+  timestamps. The chart period scopes the summary and its drill filters.
+  Both sources group retained runs with a positive finite duration and a
+  recorded query size into timing buckets for the same period.
 - Command tables count each stored command (`Stats::countKeys`): a parser token
   with `f`/`t`/`r` targets collapsed to `_`, an unparsed command as itself, and
   an insert split into its entry command, editing keys such as `<BS>`, and a
@@ -145,7 +148,7 @@ change either setting.
   sessions, `JournalSummary.commands` the scored journal runs of the charted
   size. The two are never added together (`dev/decisions.md`).
 - The tables cover the overview chart's Look back buckets and use the
-  `scored` outcome. `chart_score` also includes `unbeaten` spans with positive
+  `scored` outcome. `score` also includes `unbeaten` spans with positive
   user effort. Journal day and week buckets include archived daily command
   tallies. Minute and hour buckets use individual timestamped runs.
 - `gj`/`gk` share a row with `j`/`k`, except a journal sample's `within_line`
@@ -184,9 +187,10 @@ rows, optionally a span of display columns, with the cells to highlight.
   counts, the scored share, and every row of the section that lists runs.
 - The overview uses 30 history buckets. `+`/`-` in a history float change
   its own range without changing the overview's Look back setting.
-  Timing floats group journal searches into fixed size buckets.
-- The Journal's float draws its scored runs as a bar by kind over a bar by
-  query size (`push_kind_bars`), every segment an item with its own `drill`.
+  Timing floats group searches into fixed size buckets.
+- Both history floats draw scored runs by kind and query size from the same
+  `RunBreakdown`. The session log keeps these measurements in `query`.
+  Each selectable segment opens its source's runs.
   A `TimingBucket`'s `score` and `drill` cover its scoring runs, timed or not,
   while its `timing` covers the timed ones of any outcome.
 - A kind's rolled-up runs kept no query size. They are drawn as the rest of

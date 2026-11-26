@@ -104,24 +104,27 @@ function M.attach(buf, opts)
     if opts.focused then opts.focused(item) end
   end
 
-  --- The item the cursor is in, else the one nearest its row.
+  --- The nearest row, then the nearest column on it.
+  ---@param cursor integer[]   # nvim_win_get_cursor
   ---@return VF.Ui.NavItem|nil
-  local function item_at_cursor()
-    local win = opts.win()
-    local row = v.nvim_win_get_cursor(win)[1] - 1
-    local col = v.nvim_win_call(win, function() return vim.fn.virtcol(".") end) - 1
-    local nearest, nearest_rows
+  local function item_at_cursor(cursor)
+    local row = cursor[1] - 1
+    local col = v.nvim_win_call(opts.win(), function() return vim.fn.virtcol(".") end) - 1
+    local nearest, nearest_rows, nearest_cols
     for _, item in ipairs(opts.items()) do
       local left, right = extent(item)
       local rows = math.max(0, item.row - row, row - item.last_row)
-      if rows == 0 and col >= left and col < right then return item end
-      if not nearest or rows < nearest_rows then nearest, nearest_rows = item, rows end
+      local cols = math.max(0, left - col, col - right + 1)
+      if rows == 0 and cols == 0 then return item end
+      if not nearest or rows < nearest_rows or (rows == nearest_rows and cols < nearest_cols) then
+        nearest, nearest_rows, nearest_cols = item, rows, cols
+      end
     end
     return nearest
   end
 
   local function sync()
-    local item = current() or item_at_cursor()
+    local item = current() or item_at_cursor(v.nvim_win_get_cursor(opts.win()))
     if item then
       set_current(item)
     else
@@ -133,8 +136,15 @@ function M.attach(buf, opts)
   --- The current item, once whatever moved the cursor since has been followed.
   ---@return VF.Ui.NavItem|nil
   local function follow_cursor()
-    local item = item_at_cursor()
-    if item and item.id ~= current_id then set_current(item) end
+    local win = opts.win()
+    local cursor = v.nvim_win_get_cursor(win)
+    local item = item_at_cursor(cursor)
+    if not item then return end
+    if item.id ~= current_id then
+      set_current(item)
+    elseif cursor[1] ~= item.cursor[1] + 1 or cursor[2] ~= item.cursor[2] then
+      v.nvim_win_set_cursor(win, { item.cursor[1] + 1, item.cursor[2] })
+    end
     return item
   end
 
@@ -175,19 +185,22 @@ function M.attach(buf, opts)
     end
   end
 
-  local left = opts.adjust and "Move left or select the previous option" or "The item to the left"
-  local right = opts.adjust and "Move right or select the next option" or "The item to the right"
   ---@type VF.Keymap[]
-  local keymaps = {
-    { lhs = "h", desc = left, handler = function() move("h") end },
-    { lhs = "j", desc = "The item below", handler = function() move("j") end },
-    { lhs = "k", desc = "The item above", handler = function() move("k") end },
-    { lhs = "l", desc = right, handler = function() move("l") end },
-    { lhs = "<Left>", desc = left, handler = function() move("h") end },
-    { lhs = "<Down>", desc = "The item below", handler = function() move("j") end },
-    { lhs = "<Up>", desc = "The item above", handler = function() move("k") end },
-    { lhs = "<Right>", desc = right, handler = function() move("l") end },
-  }
+  local keymaps = {}
+  ---@param key "h"|"j"|"k"|"l"
+  local function bind_move(key, arrow, desc)
+    local handler = function() move(key) end
+    local adjusts = opts.adjust and (key == "h" or key == "l")
+    keymaps[#keymaps + 1] = {
+      lhs = key, desc = desc, handler = handler, summary_hidden = not adjusts,
+      summary_group = "selector", summary_desc = "Change the option on a selector row",
+    }
+    keymaps[#keymaps + 1] = { lhs = arrow, desc = desc, handler = handler, summary_hidden = true }
+  end
+  bind_move("h", "<Left>", opts.adjust and "Move left or select the previous option" or "The item to the left")
+  bind_move("j", "<Down>", "The item below")
+  bind_move("k", "<Up>", "The item above")
+  bind_move("l", "<Right>", opts.adjust and "Move right or select the next option" or "The item to the right")
   if opts.enter then
     keymaps[#keymaps + 1] = { lhs = "<CR>", desc = "Open the current item", handler = on_current(opts.enter) }
   end
@@ -200,7 +213,9 @@ function M.attach(buf, opts)
   -- item it set, which ends the round.
   v.nvim_create_autocmd("CursorMoved", {
     buffer = buf,
-    callback = function() follow_cursor() end,
+    callback = function()
+      if v.nvim_get_mode().mode == "n" then follow_cursor() end
+    end,
     desc = "vimfy: the item under the cursor becomes current",
   })
   ui_windows.hide_cursor_while_active(opts.win(), buf)

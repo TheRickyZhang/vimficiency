@@ -6,6 +6,7 @@ syntax = "proto3";
 package vf.stats;
 
 import "config.proto";
+import "common.proto";
 
 option optimize_for = LITE_RUNTIME;
 
@@ -53,6 +54,7 @@ message Session {
   optional bytes typed_insert = 11;
   // Its result's file among the saved sessions; empty when it was not saved.
   string saved_filename = 12;
+  vf.QueryShape query = 13;
 }
 
 // The first record of a log; a log without one is format 1.

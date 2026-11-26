@@ -91,6 +91,7 @@ function M.run(row)
     indent = detail.indent,
     filetype = detail.filetype,
     user_seq = detail.keys,
+    user_typed = detail.typed,
     user_cost = row.user_cost,
     optimal_results = row.best_seq == "" and {} or { { seq = row.best_seq, cost = row.best_cost } },
   }, nil

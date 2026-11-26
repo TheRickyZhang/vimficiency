@@ -167,7 +167,7 @@ function M.recall(alias)
   local active = session_store.get_active(alias)
   if not active then
     if kind == "recall_key" then
-      error("No recall session found for '" .. alias .. "' commands ago.", 0)
+      error("No recall session found for '" .. alias .. "' recorded command atoms ago.", 0)
     end
     error("No recall session found within '" .. alias .. "'. " ..
       "Try a larger window or indexing by key count (e.g. 'recall 20').", 0)

@@ -265,8 +265,7 @@ end
 ---Reserve `count` filler rows above the topline so virt_lines render
 ---even when the buffer fills the window. Without this, virt_lines on
 ---row 0 with `virt_lines_above` are silently dropped whenever the
----buffer is tall enough to fill the window vertically — same trick the
----view panes use (see simulate/init.lua's apply_virt_lines).
+---buffer is tall enough to fill the window vertically.
 ---@param win integer
 ---@param count integer
 local function reserve_topfill(win, count)

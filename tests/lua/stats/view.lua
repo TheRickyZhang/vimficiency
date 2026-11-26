@@ -53,7 +53,7 @@ end
 ---@return VF.Stats.Summary
 local function with_sessions(n)
   local s = summary()
-  s.lifetime.sessions = n
+  s.recorded_sessions = n
   return s
 end
 
@@ -121,11 +121,13 @@ local function runs_title()
   return assert(title)[1][1]
 end
 
---- The 1-indexed byte column in the run list's header line that `name` starts at.
+--- The display column where the run list's header `name` starts.
 ---@param name string
 ---@return integer
 local function runs_column(name)
-  return assert(text("runs")[1]:find(name, 1, true))
+  local line = text("runs")[1]
+  local col = assert(line:find(name, 1, true))
+  return vim.fn.strdisplaywidth(line:sub(1, col - 1)) + 1
 end
 
 --- Presses `keys` in pane `name`; an error a keymap reports fails the test.
@@ -168,7 +170,7 @@ local function put_cursor_on(name, it)
   v.nvim_win_set_cursor(panes()[name].win, { it.cursor[1] + 1, it.cursor[2] })
 end
 
-local HEADER = " Stats    all scorings · weight: effort · runs of 8"
+local HEADER = " Stats    all scorings · weight: effort"
 
 ---@param fn fun()
 local function in_view(fn)
@@ -181,11 +183,11 @@ end
 test("journal chart: kind captions show efficiency, sample size and share of scored runs", function()
   h.use_temp_data_home()
   local s = summary()
-  s.journal.nav = { score = 41.2, spans = 755 }
-  s.journal.edit = { score = 69.6, spans = 512 }
+  s.journal.breakdown.nav.score = { score = 41.2, spans = 755 }
+  s.journal.breakdown.edit.score = { score = 69.6, spans = 512 }
   s.journal.score.spans = 1267
   for _, width in ipairs({ 140, 78 }) do
-    local page = render.chart_page(s, "journal", width, 40, { primary = true, samples = true })
+    local page = render.chart_page(s, "journal", "history", width, 40, { primary = true, samples = true })
     local nav, edit = item(page.items, "nav"), item(page.items, "edit")
     local nav_line, edit_line = page.lines[nav.row + 1], page.lines[edit.row + 1]
     assert_match(nav_line, "Movement only  41.2% efficiency · 755 runs (0.596)")
@@ -231,7 +233,7 @@ test("stats pages: command rows show the ratio and the shares, and a merged row'
   assert_no_line(lines, "scored run")
 end)
 
-test("stats run list: the preview puts the text before and after side by side and marks what changed", function()
+test("stats run list: the preview centers the initial and goal buffer headings and marks what changed", function()
   local row = {
     id = { run = "journal", journal = { file = "a.vfj", window_size = 2, last_atom = 7 } },
     user_keys = "gjdw", best_seq = "", outcome = "no_result",
@@ -252,7 +254,8 @@ test("stats run list: the preview puts the text before and after side by side an
     " you:   " .. sequence_display.inline("jdw"),
     " found: —",
     "",
-    " before" .. string.rep(" ", 14) .. " │ after" .. string.rep(" ", 15),
+    "    Initial buffer    │     Goal buffer" .. string.rep(" ", 5),
+    string.rep(" ", 22) .. "│" .. string.rep(" ", 21),
     " a" .. cell .. " │ a" .. cell,
     "   b" .. string.rep(" ", 17) .. " │   B" .. string.rep(" ", 17),
     " c" .. cell .. " │ c" .. cell,
@@ -261,12 +264,12 @@ test("stats run list: the preview puts the text before and after side by side an
   local divider = 1 + 20
   local after = divider + #" │ "
   assert_eq(preview.marks, {
-    { row = 6, col = 1, end_col = divider, hl = highlights.VIEW_DIFF_DELETE },
-    { row = 6, col = after, end_col = after + 20, hl = highlights.VIEW_DIFF_ADD },
+    { row = 7, col = 1, end_col = divider, hl = highlights.VIEW_DIFF_DELETE },
+    { row = 7, col = after, end_col = after + 20, hl = highlights.VIEW_DIFF_ADD },
     -- The cursor starts on the `b`, past its tab, and ends past the `d`.
-    { row = 6, col = 3, end_col = 4, hl = highlights.VIEW_CURSOR_START, priority = 200 },
-    { row = 8, col = after, end_col = after + 20, hl = highlights.VIEW_DIFF_ADD },
-    { row = 8, col = after + 1, end_col = after + 2, hl = highlights.VIEW_CURSOR_END, priority = 200 },
+    { row = 7, col = 3, end_col = 4, hl = highlights.VIEW_CURSOR_START, priority = 200 },
+    { row = 9, col = after, end_col = after + 20, hl = highlights.VIEW_DIFF_ADD },
+    { row = 9, col = after + 1, end_col = after + 2, hl = highlights.VIEW_CURSOR_END, priority = 200 },
   })
 
   ---@diagnostic disable-next-line: param-type-mismatch
@@ -342,8 +345,62 @@ test("stats view: a journal with only unsupported runs opens its details", funct
   end)
 end)
 
-test("stats view: outcome headings are skipped and categories open their own runs", function()
+test("stats view: the session size bar and timing chart open their own runs", function()
   h.use_temp_data_home()
+  stats_log.append("mark", h.finished_result("dw", {
+    query = { nav_only = false, query_size = 70 }, analyze_ms = 5, finished_wall_epoch = os.time(),
+  }), nil)
+  finish("x", "x", 1.0, os.time())
+  local s = summary()
+  in_view(function()
+    local overview = render.build_page(s, TOP, IDLE)
+    put_cursor_on("overview", item(overview.items, "chart:sessions"))
+    press("overview", "<CR>")
+    assert_line(text("chart"), "With edits")
+    assert_line(text("chart"), "65–128")
+    assert_line(text("chart"), "Movement only")
+    local win = panes().chart.win
+    local chart = render.chart_page(s, "sessions", "history", v.nvim_win_get_width(win), v.nvim_win_get_height(win),
+      { primary = true, samples = true })
+    put_cursor_on("chart", item(chart.items, "edit:65"))
+    press("chart", "<CR>")
+    assert_eq(footer(), "runs 1–1 of 1")
+    local p = panes()
+    v.nvim_set_current_win(p.chart.win)
+    assert_eq(v.nvim_get_current_win(), p.runs.win, "the run list owns focus above its chart")
+    v.nvim_set_current_win(p.overview.win)
+    assert_eq(v.nvim_get_current_win(), p.runs.win)
+    press("preview", "<Esc>")
+    h.feed("q")
+    assert_eq(v.nvim_get_current_win(), p.chart.win)
+    assert_eq(panes().preview, nil)
+    v.nvim_set_current_win(p.overview.win)
+    assert_eq(v.nvim_get_current_win(), p.chart.win)
+    h.feed("<CR>")
+    assert_eq(footer(), "runs 1–1 of 1")
+    v.nvim_set_current_win(panes().preview.win)
+    v.nvim_win_close(panes().preview.win, true)
+    assert_eq(panes().runs, nil)
+    assert_eq(v.nvim_get_current_win(), p.chart.win)
+    h.feed("q")
+    assert_eq(v.nvim_get_current_win(), p.overview.win)
+    put_cursor_on("overview", item(overview.items, "chart:sessions:edit"))
+    press("overview", "<CR>")
+    assert_line(text("chart"), "median ms (t)")
+    press("chart", "<CR>")
+    assert_eq(footer(), "runs 1–1 of 1")
+    v.nvim_win_close(panes().chart.win, true)
+    assert_eq(panes().runs, nil)
+    assert_eq(panes().preview, nil)
+    assert_eq(v.nvim_get_current_win(), p.overview.win)
+  end)
+end)
+
+test("stats view: outcome totals and their categories open matching runs", function()
+  h.use_temp_data_home()
+  finish("w", "w", 3, os.time())
+  finish("w", "ll", 4, os.time())
+  finish("go", "www", 6, two_days_ago_noon())
   for _, keys in ipairs({ "p", "w", "x" }) do
     stats_log.append("mark", h.fake_result({
       user_seq = keys,
@@ -357,9 +414,15 @@ test("stats view: outcome headings are skipped and categories open their own run
     put_cursor_on("overview", item(render.build_page(summary(), TOP, IDLE).items, "chart:sessions"))
     press("overview", "<CR>")
     local chart = panes().chart
+    assert_line(text("chart"), "User better: 2 sessions")
+    assert_line(text("chart"), "byte-offset jump (go)")
+    press("chart", "9-")
     local lines = text("chart")
-    assert_line(lines, "Unbeaten (100% efficient): 2 sessions")
+    assert_no_line(lines, "byte-offset jump (go)")
+    assert_line(lines, "5 sessions  (mark 5")
+    assert_line(lines, "No results: 2 sessions")
     assert_line(lines, "Not scored: 1 session")
+    assert_line(lines, "User better: 1 session")
     assert_true(#lines > v.nvim_win_get_height(chart.win), "details extend below the chart viewport")
     assert_eq(v.nvim_win_call(chart.win, function() return vim.fn.line("w0") end), 1)
     press("chart", "<C-d>")
@@ -368,25 +431,82 @@ test("stats view: outcome headings are skipped and categories open their own run
     assert_eq(v.nvim_win_call(chart.win, function() return vim.fn.line("w$") end), #lines)
 
     for row, line in ipairs(lines) do
-      if line:find("1 paste", 1, true) then v.nvim_win_set_cursor(chart.win, { row, 8 }) end
+      if line:find("Not scored: 1 session", 1, true) then v.nvim_win_set_cursor(chart.win, { row, 8 }) end
     end
-    press("chart", "j")
-    assert_match(lines[v.nvim_win_get_cursor(panes().chart.win)[1]], "1 other")
     press("chart", "<CR>")
-    assert_match(runs_title(), "unbeaten sessions · other")
+    assert_match(runs_title(), "sessions not scored")
     assert_eq(footer(), "runs 1–1 of 1")
     press("runs", "q")
-
     press("chart", "j")
-    assert_match(lines[v.nvim_win_get_cursor(panes().chart.win)[1]], "1 no result")
     press("chart", "<CR>")
     assert_match(runs_title(), "sessions not scored · no result")
     assert_eq(footer(), "runs 1–1 of 1")
     press("runs", "q")
 
-    press("chart", "3k")
+    press("chart", "j")
+    assert_match(lines[v.nvim_win_get_cursor(chart.win)[1]], "No results: 2 sessions")
+    press("chart", "<CR>")
+    assert_eq(footer(), "runs 1–2 of 2")
+    assert_line(text("runs"), "paste")
+    press("runs", "q")
+    press("chart", "j")
+    assert_match(lines[v.nvim_win_get_cursor(chart.win)[1]], "1 paste")
+    press("chart", "j")
+    assert_match(lines[v.nvim_win_get_cursor(panes().chart.win)[1]], "1 other")
+    press("chart", "<CR>")
+    assert_match(runs_title(), "No results · other")
+    assert_eq(footer(), "runs 1–1 of 1")
+    press("runs", "q")
+
+    press("chart", "j")
+    assert_match(lines[v.nvim_win_get_cursor(panes().chart.win)[1]], "User better")
+    press("chart", "<CR>")
+    assert_match(runs_title(), "User better")
+    assert_eq(footer(), "runs 1–1 of 1")
+    press("runs", "q")
+    press("chart", "j")
+    press("chart", "<CR>")
+    assert_match(runs_title(), "User better · other")
+    assert_eq(footer(), "runs 1–1 of 1")
+    press("runs", "q")
+
+    press("chart", #lines .. "k")
     assert_eq(v.nvim_win_call(chart.win, function() return vim.fn.line("w0") end), 1,
       "moving back to a bucket reveals the top of the plot")
+  end)
+end)
+
+test("stats view: clicks snap to the nearest run cell and preview shortcuts preserve the selection", function()
+  seed()
+  in_view(function()
+    open_runs("dw (you only)")
+    local p = panes()
+    press("runs", "3l")
+    local saved = v.nvim_win_get_cursor(p.runs.win)
+    v.nvim_win_set_cursor(p.runs.win, { 1, runs_column("saved") - 1 })
+    v.nvim_exec_autocmds("CursorMoved", { buffer = p.runs.buf })
+    assert_eq(v.nvim_win_get_cursor(p.runs.win), saved)
+
+    press("runs", "h")
+    local found = v.nvim_win_get_cursor(p.runs.win)
+    v.nvim_win_set_cursor(p.runs.win, { 1, runs_column("saved") - 1 })
+    v.nvim_exec_autocmds("CursorMoved", { buffer = p.runs.buf })
+    assert_eq(v.nvim_win_get_cursor(p.runs.win), saved)
+    press("preview", "<Esc>")
+    assert_eq(v.nvim_get_current_win(), p.runs.win)
+    assert_eq(v.nvim_win_get_cursor(p.runs.win), saved)
+    h.feed("h")
+    assert_eq(v.nvim_win_get_cursor(p.runs.win), found)
+    h.feed("2j")
+    local selected = v.nvim_win_get_cursor(p.runs.win)
+    assert_eq(selected, { found[1] + 2, found[2] })
+    for _, key in ipairs({ "<C-s>", "q", "<Esc>" }) do
+      h.feed("<C-s>")
+      assert_eq(v.nvim_get_current_win(), p.preview.win)
+      h.feed(key)
+      assert_eq(v.nvim_get_current_win(), p.runs.win)
+      assert_eq(v.nvim_win_get_cursor(p.runs.win), selected)
+    end
   end)
 end)
 
@@ -397,7 +517,8 @@ test("stats view: s sorts by the current column, down, up, then off", function()
     ---@param column string
     ---@param title string
     local function press_s_on(column, title)
-      v.nvim_win_set_cursor(panes().runs.win, { 3, runs_column(column) - 1 })
+      local win = panes().runs.win
+      v.nvim_win_set_cursor(win, { 3, vim.fn.virtcol2col(win, 3, runs_column(column)) - 1 })
       press("runs", "s")
       assert_match(runs_title(), title, column)
     end
@@ -407,6 +528,13 @@ test("stats view: s sorts by the current column, down, up, then off", function()
     assert_match(text("runs")[1], "saved ▲")
     press_s_on("saved", "sort: worst")
     assert_true(not text("runs")[1]:find("▲", 1, true), "no column is marked")
+    assert_true(text("runs")[2]:match("—%s+—%s*$") ~= nil)
+    for _, column in ipairs({ "last_atom", "window_size", "tag" }) do
+      press_s_on(column, "sort: " .. column .. " ▼")
+      assert_match(text("runs")[1], column .. " ▼")
+      press_s_on(column, "sort: " .. column .. " ▲")
+      press_s_on(column, "sort: worst")
+    end
     press_s_on("when", "sort: newest ▼")
     press_s_on("found", "sort: best_cost ▼")
     assert_eq(footer(), "runs 1–12 of 12")

@@ -22,7 +22,7 @@ Plugin entry points and domain modules:
 | `stats/chart_view.lua` | One chart in a full-screen float over the rest of its section. `+`/`-` change the history chart's scale within the float, and `<CR>` opens a bucket, bar segment or row's run list. |
 | `stats/run_list.lua` | The floating run list (each cell an item) and its preview float: sort by the current column, page, `<CR>` replays the run and `p` pins a session's saved result. |
 | `stats/sampling.lua` | Runs `vimfy_journal` over the journal in the background. See `dev/lua/atom-stream.md` § Sampling. |
-| `subcommands.lua` | The subcommand table: one `VF.Subcommand` record (desc, usage, min_args, complete, run) per `:Vimfy` verb. Depends on the domain modules; only `init.lua` depends on it. |
+| `subcommands.lua` | `available()` lists the `VF.Subcommand` records for the current window in display order. `find(name)` resolves a command in the same list. Only `init.lua` consumes the registry. |
 | `dev_reload.lua` | `:Vimfy reload`: stream the CMake build in a floating window, then hot-reload the `.so` and every Lua module. |
 | `config/init.lua` | Shared configuration constants (Lua-side only). |
 | `config/validate.lua` | Validators for the structured `watch` and `auto_suggest` blocks; the shape itself stays in `config/init.lua`. |
@@ -270,13 +270,14 @@ Interactive Explore's larger state-machine units are **phases** (`Navigate`,
 - Expands recorded user steps from the initial slice and line deltas. For
   suggestions, precomputes snapshots asynchronously in a hidden Neovim probe, then opens a new tab
   with side-by-side windows
-- Replay opens paused; `<Left>`/`<Right>` step, `<CR>` toggles auto-play, `q`
-  closes the whole replay tab
+- `<Left>`/`<Right>` step through the replay, `<Tab>` cycles panes, `<CR>`
+  expands the current pane or restores the split, and `q` closes the replay tab
 - `opts.filetype` highlights the visible panes (treesitter when a parser
   exists, else 'syntax'), never the probe; 'filetype' itself stays unset so no
   ftplugin or LSP client runs
-- `:Vimfy focus <N>` / `:Vimfy escape` toggle the single-buffer view
-- Uses virtual header lines above each replay buffer for progress, mode, and a
+- Replay panes also accept `:Vimfy focus <N>` to expand pane N and
+  `:Vimfy escape` to restore the split
+- Uses a fixed header above each replay buffer for progress, mode, and a
   wrapped/highlighted sequence display
 - Uses the C++ tokenizer for suggestions and reports parse errors in their pane. Tokens
   keep feedable command units like `f;` / `rX` intact while leaving repeats
@@ -300,10 +301,8 @@ resolve; without it LuaLS treats `vim` as untyped and misses real mismatches.
 :Vimfy finish <alias>   -- Finish a manual session (Mark/Watch)
 :Vimfy recall <N|Ns>    -- Finish a retrospective recall window
 :Vimfy close <alias>    -- Discard session
-:Vimfy view <alias|filename> -- Replay results side-by-side
-:Vimfy focus <N>        -- Focus replay on Nth buffer (full-screen)
-:Vimfy escape           -- Restore side-by-side replay layout
-:Vimfy pin <alias|filename> [filename] -- Keep a copy of a finished result
+:Vimfy view <session> [windows] -- Replay results side-by-side
+:Vimfy pin <session> [filename] -- Keep a copy of a finished result
 :Vimfy unpin <filename> -- Delete a pin
 :Vimfy rm <filename>    -- Delete a saved session's result
 :Vimfy list             -- Show active sessions and pins

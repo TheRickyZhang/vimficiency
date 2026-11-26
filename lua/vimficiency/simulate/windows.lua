@@ -75,6 +75,20 @@ function M.setup_window(win, buf, lines, row, col)
 end
 
 ---@param ctx table
+local function create_headers(ctx)
+  for _, entry in ipairs(ctx.state.windows) do
+    local buf = v.nvim_create_buf(false, true)
+    vim.bo[buf].bufhidden = "wipe"
+    local win = v.nvim_open_win(buf, false, {
+      win = entry.win, split = "above", height = 1, focusable = false, mouse = false,
+      noautocmd = true,
+    })
+    ui_windows.configure_scratch_window(win, { winfixheight = true, statusline = " ", fillchars = "eob: " })
+    entry.header_win = win
+  end
+end
+
+---@param ctx table
 ---@param lines string[]
 ---@param row integer
 ---@param col integer
@@ -118,6 +132,18 @@ function M.build_grid(ctx, lines, row, col, plan)
 
   local primary = v.nvim_get_current_win()
   ctx.create_status_bar()
+  create_headers(ctx)
+  local group = v.nvim_create_augroup("vimfy_replay_resize_" .. ctx.state.sim_tab, { clear = true })
+  v.nvim_create_autocmd("WinResized", {
+    group = group,
+    callback = util.entry(function()
+      if v.nvim_get_current_tabpage() == ctx.state.sim_tab then ctx.update_cursor_highlights() end
+    end),
+  })
+  v.nvim_create_autocmd("BufWipeout", {
+    buffer = ctx.state.windows[1].buf, once = true,
+    callback = function() v.nvim_del_augroup_by_id(group) end,
+  })
   if v.nvim_win_is_valid(primary) then
     v.nvim_set_current_win(primary)
   end
@@ -172,6 +198,7 @@ function M.focus(ctx, idx)
     default_rank = focused.default_rank,
   } }
   ctx.set_focus_state({ saved_entries = saved_entries, focused_idx = idx })
+  create_headers(ctx)
   ctx.refresh()
 end
 
@@ -185,7 +212,9 @@ function M.escape(ctx)
   local saved_entries = focus_state.saved_entries
   local focused_idx = focus_state.focused_idx
 
-  local current_win = v.nvim_get_current_win()
+  local current_win = ctx.state.windows[1].win
+  v.nvim_win_close(ctx.state.windows[1].header_win, true)
+  v.nvim_set_current_win(current_win)
   local first = saved_entries[1]
   v.nvim_win_set_buf(current_win, first.buf)
   M.decorate(current_win)
@@ -226,6 +255,7 @@ function M.escape(ctx)
   local primary = new_windows[focused_idx].win
   v.nvim_set_current_win(primary)
   ctx.create_status_bar()
+  create_headers(ctx)
   if v.nvim_win_is_valid(primary) then
     v.nvim_set_current_win(primary)
   end

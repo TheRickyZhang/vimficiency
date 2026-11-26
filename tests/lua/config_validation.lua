@@ -302,7 +302,7 @@ end)
 test("appearance settings: edit shared selection styles and restore setup defaults", function()
   h.use_temp_data_home()
   local appearance = require("vimficiency.ui.appearance")
-  local command = require("vimficiency.subcommands").appearance
+  local command = assert(require("vimficiency.subcommands").find("appearance"))
   local origin = vim.api.nvim_get_current_win()
   local tab = vim.api.nvim_get_current_tabpage()
   command.run({})

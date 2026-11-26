@@ -143,8 +143,10 @@ Known gaps, all Neovim's:
 - A burst is delivered after all its keys were read, so its first atom carries
   the whole burst and the rest carry `""`. With a key held down, a key can also
   be read while the previous atoms are still being delivered and land one atom
-  early. Totals are conserved, so sum `typed` over a run; never compare it atom
-  by atom.
+  early. A skipped atom can therefore carry a recorded command's presses. The
+  journal sampler recovers them when a skip with empty `keys` carries exactly
+  the next command's keys in the same tick and that command has empty `typed`.
+  Other ambiguous presses on skipped atoms remain outside the score.
 - An expr mapping that calls `getchar()` gets no `typed` from `on_key`, so its
   own keys are lost (mini.ai's `i` without which-key in front: `yiw` records
   `yw`). Neovim clears `on_key`'s buffer inside the nested `getchar()`.

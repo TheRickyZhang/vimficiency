@@ -11,11 +11,10 @@ title: "Commands reference"
 | `:Vimfy finish <alias>`                    | Finish a Mark or Watch session and optimize.         |
 | `:Vimfy recall <N\|Ns>`                    | Finish a retrospective recall window.                |
 | `:Vimfy close <alias>`                     | Discard a session without optimizing.                |
-| `:Vimfy pin <alias>\|<filename> [<filename>]` | Keep a copy of a finished result. The filename defaults to the one it was saved under. |
+| `:Vimfy pin <session> [filename]`           | Keep a copy of a finished result. The filename defaults to the one it was saved under. |
 | `:Vimfy unpin <filename>`                  | Delete a pin.                                        |
-| `:Vimfy view <alias>\|<filename> [count]`   | Replay results side-by-side (memory, then pins, then saved sessions). |
-| `:Vimfy focus <N>`                         | Focus the active replay on the Nth buffer (full-screen).|
-| `:Vimfy escape`                            | Restore the side-by-side replay layout.              |
+| `:Vimfy view <session> [windows]`           | Replay your recording alongside the optimizer's suggestions. |
+| `:Vimfy explore <session>`                  | Explore a finished session interactively.            |
 | `:Vimfy rm <filename>`                     | Delete a saved session's result. Its stats row stays. |
 | `:Vimfy list`                              | Open the interactive session picker (see below).     |
 | `:Vimfy stats`                             | Open the stats tab (see below).                      |
@@ -25,17 +24,22 @@ title: "Commands reference"
 | `:Vimfy appearance`                        | Customize selection highlighting.                    |
 | `:Vimfy reload`                            | Rebuild and hot-reload Vimfy with live build output. |
 | `:Vimfy version`                           | Show the plugin version.                             |
-| `:Vimfy help`                              | Show the command list.                               |
+| `:Vimfy`                                   | Show the command list.                               |
+| `:Vimfy help`                              | Open `:help vimficiency`.                            |
+
+Two commands are available only in replay panes. `:Vimfy` lists them under
+**View controls**. `:Vimfy focus <N>` expands pane N and `:Vimfy escape`
+restores the split.
 
 ## Aliases and filenames
 
-Every handle you type is either an **alias** (a session in memory) or a
-**filename** (a result on disk: a pin, or a saved session).
+`<session>` accepts an **alias** for a session in memory or the **filename**
+of a pinned or saved session.
 
 | Alias      | Means                                                                |
 |------------|----------------------------------------------------------------------|
 | `a`, `foo` | Letters only → a named alias, like a named register.                 |
-| `6`        | Digits → recall N commands ago.                                      |
+| `6`        | Look back 6 recorded command atoms. For example, `dw` counts as one. |
 | `3s`       | Digits + `s` → recall N seconds ago (see [5. Recall](05-recall.md)). |
 | `@`        | The most recently finished session.                                  |
 | `$`        | The most recent auto-suggest regression.                             |
@@ -124,8 +128,7 @@ Watch's idle trigger fire) and try again.
 
 Opens a tab with a header over one full-width pane:
 
-- **Header** — the scorings counted, the weight and the charted run length,
-  over the path of the session log the stats are read from.
+- **Header** — the scorings counted, the weight and the session log path.
 - **Stats** — a Sessions band over a Journal band, with a faint line between
   them (`VimficiencyStatsRule`). Each holds its efficiency chart, its
   optimizer times and its own Commands tables.
@@ -138,23 +141,24 @@ The stats are laid out as items: rows that list runs or expand command lists,
 charts, and selector rows. One item is always current. It is highlighted whole and
 the cursor itself is hidden.
 
-`h`, `j`, `k` and `l` move to the item on that side, and the other keys act on
-the current one. Any other motion takes the nearest item.
+Use `hjkl` or the arrow keys to move between items, with an optional count.
+Clicking or moving the cursor in Normal mode snaps it to the nearest item.
 
 Keys in the stats (`?` lists them):
 
 | Key             | Action                                                      |
 |-----------------|-------------------------------------------------------------|
-| `j` / `k`       | The item below / above; a count moves that many.            |
-| `h` / `l`       | Change the active option on a selector row, or move to the item to the left / right. The arrow keys work the same way. |
+| `h` / `l`       | Change the option on a selector row.                        |
 | `<CR>`          | Open a row's runs, open a full-screen chart, or expand or collapse a command list. |
 | `w`             | Switch the efficiency weight between effort and uniform for this view. |
 | `v`             | Count every scoring, or only the current one (see below).   |
 | `gs`            | Open `:Vimfy appearance`.                                   |
 | `q`             | Close the tab.                                              |
 
-`<Esc>` or `q` closes the float opened by `<CR>`. A
-chart fills its column in the stats and the whole screen in its float.
+`<Esc>` or `q` closes the current Stats layer and returns to the window
+that opened it. A run list opened from a chart keeps focus above that chart
+until you close the list. A chart fills its column in the stats and the whole
+screen in its float.
 
 The stats keep each band's left side to its headline: the Sessions efficiency,
 the Journal's run lengths, a chart each and the optimizer times. The rest is
@@ -169,7 +173,7 @@ the lines only join them; the float's title has the exact value. A line breaks w
 are `VimficiencyStatsEfficiency` and `VimficiencyStatsVolume`. `e` and `s`
 hide and show the efficiency and the samples line. `+` shows more history
 and `-` shows less, from 15 minutes to 30 weeks. These keys change the
-history scale of the float. `?` lists the chart keys.
+history scale of the float. Its totals, breakdowns and run lists cover the visible buckets. `?` lists the chart keys.
 
 In the chart's float each bucket with runs is an item, named with its efficiency in the
 title. `h` and `l` move between buckets and `<CR>` lists the selected bucket's runs. The
@@ -177,15 +181,21 @@ rows under the chart list their runs the same way.
 
 The run list floats over the tab at its full width, one line per session or
 journal run: when, your effort, the best found, the saving, the extra
-characters you typed in insert mode and the search time. Its title holds the row it came from, the sort and the page. It takes
+characters you typed in insert mode, the search time, `last_atom` (the journal
+atom where the run ends), `window_size` (the number of commands in the run),
+and `tag`. The tag column lists every matching explanation and is empty for an untagged run.
+Sessions show a dash in both journal columns and sort last in either direction.
+Its title holds the row it came from, the sort and the page. It takes
 two fifths of the screen and the preview under it the rest.
 
-The preview follows the current run. Its first line is the run's id: a
+The preview follows the current run. In Normal mode, `<C-s>` switches between
+the list and preview. In the preview, `q` or `<Esc>` also returns to the
+selected cell. The preview starts with the full id: a
 session's saved filename, which `view` and `pin` take, or a journal run's file
 and position.
 
 Under the id are your keys and the best sequence, spaced by command and cut to
-two lines each. Then the run's text before and after, side by side, with the
+two lines each. Then the initial and goal buffers appear side by side, with the
 changed lines marked and the cursor's place shaded in each.
 
 A session's text comes from its saved result. A session finished before
@@ -200,9 +210,7 @@ Every cell of the list is an item, as in the stats:
 
 | Key           | Action                                                        |
 |---------------|---------------------------------------------------------------|
-| `j` / `k`     | The run below / above, in the same column.                    |
-| `h` / `l`     | The column to the left / right. The arrow keys move the same way. |
-| `s`           | Sort by the current column: largest first, then smallest first, then off. Unsorted, the worst runs come first (your effort minus the best). |
+| `s`           | Sort by the current column: descending, ascending, then off. Unsorted, the worst runs come first (your effort minus the best). |
 | `<CR>`        | Replay the run as `:Vimfy view` does, your keys beside what was found, highlighted as the file was. A session shows every sequence found, a journal run the best one. `q` there returns to the list. |
 | `p`           | Pin the current session. Asks for the filename, which defaults to its saved one. |
 | `]` / `[`     | Next / previous page of runs.                                 |
@@ -212,21 +220,24 @@ Sections:
 
 - **Sessions** — your percent efficiency: the best effort found over the effort
   you spent, `min(best / yours, 1)`, averaged over sessions. It never passes
-  100%. A session that beats the optimizer and any unbeaten session with
-  positive user effort each count as 100%. By default, sessions are
+  100%. Ties, sessions where your keys cost less, and searches that found
+  no sequence within the effort cap all score 100% with positive user effort. By default, sessions are
   weighted by the effort you spent. Set `stats.weight = "uniform"` to
   count each once (see
   [configuration](09-configuration.md)). The Look back selector sets both
-  overview efficiency charts and their Commands tables to the same period
+  overview charts, timings, outcome counts and Commands tables to the same period
   of 30 minutes, hours, days, or weeks. The average and sample count above
   each chart cover that period.
-  Its float adds the total finished sessions by type (mark / watch / recall /
+  Its float shows the same Movement only, With edits and Size bars as the
+  Journal. Each segment shows its share of scored sessions. Select it and
+  press `<CR>` to list those sessions.
+  The float also counts finished sessions in the visible period by type (mark / watch / recall /
   suggest) and the commands recorded in them. Its **Not scored** and
-  **Unbeaten** headings have selectable categories underneath, just as in
+  **No results** headings have selectable categories underneath, just as in
   the Journal float.
-  *You beat the optimizer* counts the scored sessions where your keys cost
-  less than the best sequence found, and `<CR>` lists them. Each is a
-  sequence the search missed or one the cost model underprices.
+  **User better** counts sessions where your keys cost strictly less than
+  the best sequence found. Select the heading to list them all, or a category
+  underneath to inspect sessions that used a particular command.
 - **Journal** — the same efficiency over everything you typed, not only
   finished sessions. Needs the [journal](09-configuration.md) turned on.
   See below.
@@ -234,7 +245,7 @@ Sections:
   Sessions band counts your scored sessions, and the Journal band your scored
   journal runs of the selected length, over the same Look back period as the
   chart. The line over the tables counts comparisons that have a best
-  sequence. The efficiency chart also counts unbeaten runs.
+  sequence. The efficiency chart also counts runs under **No results**.
   For every command that appears at least ten times across those and the
   optimizer's best sequences for them, the ratio
   `your_share / optimizer_share`, with the two shares beside it. Three
@@ -253,15 +264,12 @@ Sections:
   mode than the best sequences did; `<CR>` lists the runs where you typed
   more.
 - **Optimizer times** — under each band's chart. Sessions: *Optimizer
-  response*, the median response time over the last 30 days; `<CR>` lists
-  those sessions, slowest first. Journal: *Movement search* and *Composition
-  search*, the search time for retained runs of the selected length; `<CR>`
-  opens the chart. These timing views use their own samples independently
-  of Look back. The Movement chart groups queries by lines from start to
-  goal. The Composition chart groups queries by buffer positions in the larger
-  before/after search slice. Each chart shows median milliseconds and
-  sample count for searches with a recorded duration and size, including
-  searches that finished without a solution. Select a bucket for its exact
+  response*, the median response time in the selected period; `<CR>` lists
+  those sessions, slowest first. Both sources offer *Movement search* and
+  *Composition search*. Press `<CR>` to open either chart. Both group timed
+  searches by the larger of the before and after position counts, excluding
+  padding. Each bucket shows median milliseconds and sample count, including
+  searches that finished without a solution. These charts follow Look back. The Journal uses the selected run length. Select a bucket for its exact
   values and any deadline hits. `<CR>` lists its runs, slowest first. p95
   appears from 100 samples.
 
@@ -284,7 +292,7 @@ In the stats:
 
 If some of the journal still needs scoring under the current settings, its
 coverage percentage appears above the chart in the float. The float title
-shows the overall efficiency, run count and run length. A run that ends
+shows the efficiency and run count for the visible period, alongside the selected run length. A run that ends
 where it started counts as all waste. Below the chart:
 
 - **Movement only / With edits** — one bar, split by whether the text
@@ -303,14 +311,23 @@ where it started counts as all waste. Below the chart:
 - **Not scored** — runs left out of the score, in `VimficiencyStatsNotScored`.
   The rows under it say why: the changed region was too large, the search
   found nothing, or the search failed.
-- **Unbeaten** — runs where no modeled sequence came close to your keys,
+- **No results** — searches that exhausted their queue and found no sequence within the effort cap,
   scored as 100%, in `VimficiencyStatsUnbeaten`. The rows under it count the
   runs with a bare paste (`p`, `P`, `gp`, `gP`) or undo or redo (`u`, `U`,
   `<C-r>`). A run with both counts under each. *Other* counts runs with
   neither. Rolled-up runs contribute only to the heading total because
   their command details are gone.
+- **User better** — retained runs where your keys cost strictly less than
+  the best sequence found. Press `<CR>` on the heading for all wins, or on a
+  category for runs with a possible explanation. Categories cover screen-line
+  movement, paste, undo or redo, byte-offset jumps (`go`), screen positions
+  (`H`/`M`/`L`), and jump history (`<C-o>`/`<C-i>`). Any recorded `gj` or
+  `gk` in your commands counts as screen-line movement, including counted
+  motions and moves across buffer lines. A run can match several categories.
+  *Other* contains the remaining wins. Rolled-up runs lack the individual
+  effort comparisons this count needs.
 
-`<CR>` on a row under either heading lists its runs.
+Press `<CR>` on an outcome heading to list all its runs in the visible period, or on a category to list the matching runs.
 
 Every segment of either bar is an item: `h` and `l` move along a bar, `j`
 and `k` between them, and the float's title has the segment's efficiency and
@@ -370,9 +387,9 @@ Works on:
 ## Scratch output buffer keys
 
 Press `:h g?` in a Vimfy scratch output buffer to open this section
-directly. This applies to buffers opened by `:Vimfy help` and other
-detail panes that show Vimfy text output in a split.
+directly. A bare `:Vimfy` (the command list) and `:Vimfy config` show their
+text in one, a floating window that also closes when you leave it.
 
-- `q` — close the current Vimfy output buffer
+- `q` / `<Esc>` — close the current Vimfy output buffer
 - `?` — show the short keymap summary popup
 - `g?` — open the full help section for scratch output buffers

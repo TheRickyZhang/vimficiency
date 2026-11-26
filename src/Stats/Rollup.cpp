@@ -41,6 +41,10 @@ bool isScoring(int outcome) {
   return outcome == vf::journal::Sample::scored || outcome == vf::journal::Sample::unbeaten;
 }
 
+bool isScoring(const Run& run) {
+  return isScoring(run.outcome) && run.userCost > 0;
+}
+
 RunKey keyOf(const Run& run) {
   return {run.day, run.windowSize, run.navOnly, run.outcome};
 }

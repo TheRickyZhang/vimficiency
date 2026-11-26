@@ -151,7 +151,7 @@ test("reload drops the buffer's recall records and reseeds on the next atom", fu
 
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "unsaved" })
   session_store.append_atom(named, {
-    kind = "operator", keys = "x", typed = "x", typed_insert = "", win = win, buf = buf, lossy = false,
+    kind = "operator", keys = "==", typed = "ccunsaved<Esc>", typed_insert = "unsaved", win = win, buf = buf, lossy = false,
   })
   vim.cmd("edit!")
   assert_eq(session_store.summarize(id), nil)
@@ -163,6 +163,7 @@ test("reload drops the buffer's recall records and reseeds on the next atom", fu
   assert_eq(buffer_history.lines_at(buf, rec.start_seq), { "on disk" })
   local recording = require("vimficiency.capture.recording").capture(named, { "on disk" }, capture.capture_state(buf, win))
   assert_eq(recording.steps[1].deltas[1].lines, { "unsaved" })
+  assert_eq(recording.steps[1].typed, "ccunsaved<Esc>")
   assert_eq(recording.steps[2].deltas[1].lines, { "on disk" })
   session_store.remove(named.id)
 

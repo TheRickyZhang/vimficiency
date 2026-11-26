@@ -166,10 +166,14 @@ expected<string, string> detailOf(const Window& window, const EvaluateParams& pa
   recording.set_col(window.start.col);
   recording.set_mode("n");
   size_t command = 0;
+  size_t typedBegin = 0;
   SharedLines previous = window.start.lines;
   for (const Window::Step& step : window.steps) {
     auto& frame = *recording.add_steps();
     while (command < step.commandEnd) *frame.mutable_keys() += window.commands[command++].keys;
+    const auto typed = string_view(window.typed).substr(typedBegin, step.typedEnd - typedBegin);
+    if (!typed.empty() && typed != frame.keys()) frame.set_typed(typed);
+    typedBegin = step.typedEnd;
     frame.set_row(step.state.row - above);
     frame.set_col(step.state.col);
     frame.set_mode("n");

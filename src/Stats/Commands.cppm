@@ -50,6 +50,17 @@ RunCommands intern(const CommandCounts& counts);
 // The id `command` is interned under; -1 when no run has used it.
 int internedId(std::string_view command);
 
+struct UnmodeledCommands {
+  std::string_view name;
+  std::span<const std::string_view> commands;
+
+  bool matches(std::string_view command, bool counted) const;
+  std::vector<std::string> variants(bool counted) const;
+};
+
+std::span<const UnmodeledCommands> commandTags(bool beats);
+std::string tagLabel(const CommandCounts& user, bool beats);
+
 struct CommandRow {
   std::string text;
   int user = 0;

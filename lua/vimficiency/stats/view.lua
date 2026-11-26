@@ -96,10 +96,28 @@ function watch_scoring(view)
   end))
 end
 
+---@param view VF.Stats.View
+---@return boolean
+local function focus_child(view)
+  local win = v.nvim_get_current_win()
+  local chart = view.chart and view.chart.win
+  if win ~= view.win and win ~= chart then return false end
+  local runs = view.runs and view.runs.list_win
+  if runs and v.nvim_win_is_valid(runs) then
+    v.nvim_set_current_win(runs)
+  elseif win == view.win and chart and v.nvim_win_is_valid(chart) then
+    v.nvim_set_current_win(chart)
+  else
+    return false
+  end
+  return true
+end
+
 --- Every drill, on the stats or a chart's page, opens its runs here.
 ---@param view VF.Stats.View
 ---@param item VF.Stats.Item
 local function list_runs(view, item)
+  if focus_child(view) then return end
   view.runs = run_list.open(vim.tbl_extend("force", view.query, { filter = item.drill }), item.label, item.order)
 end
 
@@ -115,7 +133,8 @@ local function enter(view, item)
   elseif item.drill then
     list_runs(view, item)
   elseif item.kind == "chart" then
-    view.chart = chart_view.open(item.chart, view.summary,
+    if focus_child(view) then return end
+    view.chart = chart_view.open(item.source, item.chart, view.summary,
       function(scale)
         if not scale or (scale.overview and scale.unit == view.summary.chart_unit) then return view.summary end
         return stats_query.summary(view.query, scale)
@@ -173,6 +192,11 @@ end
 ---@param view VF.Stats.View
 local function watch_view(view)
   local group = v.nvim_create_augroup("vimfy_stats_" .. view.tab, {})
+  v.nvim_create_autocmd("WinEnter", {
+    group = group,
+    nested = true,
+    callback = function() focus_child(view) end,
+  })
   v.nvim_create_autocmd("User", {
     group = group,
     pattern = "VimficiencyJournalScoringStarted",

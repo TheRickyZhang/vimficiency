@@ -153,9 +153,9 @@ return function(ctx)
           local ok, err = pcall(function()
             assert_true(sim._debug_statusline():find("panes 3/4 · only 2 results", 1, true) ~= nil,
               "status line should report the capped pane count: " .. sim._debug_statusline())
-            assert_true(ctx.header_lines(windows[2].buf)[2]:find("[1 · yours] Simulated", 1, true) ~= nil,
+            assert_true(ctx.header_lines(windows[2])[2]:find("[1 · yours] Simulated", 1, true) ~= nil,
               "top pane should be tagged as the user's sequence")
-            assert_true(ctx.header_lines(windows[3].buf)[2]:find("[2] ", 1, true) ~= nil,
+            assert_true(ctx.header_lines(windows[3])[2]:find("[2] ", 1, true) ~= nil,
               "second pane keeps its plain rank label")
           end)
           finish(ok, err)
@@ -167,6 +167,37 @@ return function(ctx)
       end
 
       wait_ready()
+    end,
+  },
+  {
+    name = "View commands follow the current replay pane across tabs",
+    run = function(next)
+      require("vimficiency").setup()
+      local origin = vim.api.nvim_get_current_win()
+      local function check_commands(in_view)
+        local names = vim.fn.getcompletion("Vimfy ", "cmdline")
+        assert_true(vim.tbl_contains(names, "view"), "global view command available")
+        for _, name in ipairs({ "focus", "escape" }) do
+          assert_eq(vim.tbl_contains(names, name), in_view, name .. " completion")
+        end
+        vim.cmd("Vimficiency")
+        local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+        vim.api.nvim_win_close(0, true)
+        assert_eq(vim.tbl_contains(lines, "View controls"), in_view, "command list heading")
+      end
+      with_replay({ "w", "$" }, { "alpha beta" }, function()
+        check_commands(true)
+        vim.cmd("Vimfy focus 2")
+        assert_eq(sim._debug_get_focus_state().focused_idx, 2, "typed focus expands pane 2")
+        local pane = vim.api.nvim_get_current_win()
+        vim.api.nvim_set_current_win(origin)
+        check_commands(false)
+        vim.cmd("Vimfy escape")
+        assert_eq(sim._debug_get_focus_state().focused_idx, 2, "another tab cannot restore the split")
+        vim.api.nvim_set_current_win(pane)
+        vim.cmd("Vimficiency escape")
+        assert_eq(#sim._debug_get_windows(), 2, "typed escape restores the split from View")
+      end, next)
     end,
   },
   {

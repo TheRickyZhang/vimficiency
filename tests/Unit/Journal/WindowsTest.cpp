@@ -349,6 +349,35 @@ TEST(JournalWindowsTest, CarriesTheKeysPressedBesideTheKeysThatRan) {
   EXPECT_EQ(windows[0].typed, "Ql");
 }
 
+TEST(JournalWindowsTest, RecoversMatchingPressesFromThePrecedingSkipInTheSameTick) {
+  JournalBuilder j = opened();
+  j.next().atom("", 0, 0, {.decision = vf::journal::Atom::skip, .typed = "go"})
+          .atom("go", 0, 0, {.typed = ""});
+  j.next().atom(":w<NL>", 0, 0, {.decision = vf::journal::Atom::skip, .typed = ":w<CR>"});
+  for (int i = 0; i < 7; ++i) j.next().atom("gj", 0, 0, {.typed = "j"});
+  j.tickEnd();
+
+  const vector<Window> windows = cut(j.bytes(), {8});
+  ASSERT_EQ(windows.size(), 1u);
+  EXPECT_EQ(windows[0].atomCount, 8);
+  EXPECT_EQ(windows[0].typed, "gojjjjjjj");
+  EXPECT_EQ(windows[0].keys, "gogjgjgjgjgjgjgj");
+}
+
+TEST(JournalWindowsTest, LeavesUnrelatedSkippedPressesOut) {
+  JournalBuilder j = opened();
+  j.next().atom("", 0, 0, {.decision = vf::journal::Atom::skip, .typed = "go"});
+  j.next().atom("go", 0, 0, {.typed = ""});
+  j.next().atom("", 0, 0, {.decision = vf::journal::Atom::skip, .typed = "x"})
+          .atom("go", 0, 0, {.typed = ""});
+  j.next().atom("", 0, 0, {.decision = vf::journal::Atom::skip, .typed = "gj"})
+          .atom("gj", 0, 0, {.typed = "j"}).tickEnd();
+
+  const vector<Window> windows = cut(j.bytes(), {3});
+  ASSERT_EQ(windows.size(), 1u);
+  EXPECT_EQ(windows[0].typed, "j");
+}
+
 TEST(JournalWindowsTest, CarriesTheKeysPressedInInsertMode) {
   JournalBuilder j = opened();
   j.next().atom("ia()<Left><Esc>", 0, 0, {.typed = "ia(<Esc>", .typedInsert = "a("});

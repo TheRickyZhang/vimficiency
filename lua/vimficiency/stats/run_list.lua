@@ -109,9 +109,9 @@ end
 
 ---@param view VF.Stats.RunListView
 local function draw(view)
-  local lines = render.run_lines(view.list, view.offset, view.sort)
+  local lines, items = render.run_table(view.list, view.offset, v.nvim_win_get_width(view.list_win), view.sort)
   set_lines(view.list_buf, lines)
-  view.items = render.run_items(lines, #view.list.runs)
+  view.items = items
   v.nvim_win_set_config(view.list_win, { title = title(view) })
   -- The current cell draws the preview; with no runs there is none.
   view.nav.sync()
@@ -185,8 +185,17 @@ end
 
 ---@param view VF.Stats.RunListView
 local function set_keymaps(view)
+  local function return_to_list()
+    v.nvim_set_current_win(view.list_win)
+  end
+  ui_windows.set_buffer_keymaps(view.preview_buf, {
+    { lhs = "<C-s>", desc = "Return to the selected run", handler = return_to_list },
+    { lhs = "q", desc = "Return to the selected run", handler = return_to_list },
+    { lhs = "<Esc>", desc = "Return to the selected run", handler = return_to_list },
+  })
   ---@type VF.Keymap[]
   local keys = {
+    { lhs = "<C-s>", desc = "Focus the run preview", handler = function() v.nvim_set_current_win(view.preview_win) end },
     { lhs = "s", desc = "Sort by the current column: descending, ascending, off",
       handler = function() cycle_sort(view) end },
     { lhs = "p", desc = "Pin the current session", handler = function() pin_run(view) end },
@@ -233,7 +242,7 @@ local function open_windows(view)
   ---@return integer
   local function float(buf, enter, row, height, window_options)
     local win = v.nvim_open_win(buf, enter, {
-      relative = "editor", row = row, col = 0, width = width, height = height,
+      relative = "editor", row = row, col = 0, width = width, height = height, zindex = 49,
       border = "rounded", style = "minimal", title = "", title_pos = "left",
     })
     ui_windows.configure_scratch_window(win, window_options)
@@ -250,6 +259,7 @@ end
 ---@param order? VF.Stats.Order
 ---@return VF.Stats.RunListView
 function M.open(scope, label, order)
+  local origin = v.nvim_get_current_win()
   ---@type VF.Stats.RunListView
   ---@diagnostic disable-next-line: missing-fields
   local view = { scope = scope, label = label, sort = order and { order = order, ascending = false },
@@ -257,6 +267,7 @@ function M.open(scope, label, order)
   view.refresh = function() refresh(view) end
   view.close = function()
     if v.nvim_win_is_valid(view.list_win) then v.nvim_win_close(view.list_win, true) end
+    if v.nvim_win_is_valid(origin) then v.nvim_set_current_win(origin) end
   end
   open_windows(view)
   view.nav = item_nav.attach(view.list_buf, {
@@ -266,17 +277,23 @@ function M.open(scope, label, order)
     focused = function() draw_preview(view) end,
   })
   set_keymaps(view)
-  local resize = v.nvim_create_autocmd("WinResized", {
+  local group = v.nvim_create_augroup("vimfy_stats_runs_" .. view.list_win, {})
+  v.nvim_create_autocmd("WinResized", {
+    group = group,
     callback = util.entry(function()
+      if vim.list_contains(vim.v.event.windows, view.list_win) then draw(view) end
       if vim.list_contains(vim.v.event.windows, view.preview_win) then draw_preview(view) end
     end),
   })
   v.nvim_create_autocmd("WinClosed", {
-    pattern = tostring(view.list_win),
-    once = true,
-    callback = util.entry(function()
-      v.nvim_del_autocmd(resize)
-      if v.nvim_win_is_valid(view.preview_win) then v.nvim_win_close(view.preview_win, true) end
+    group = group,
+    pattern = { tostring(view.list_win), tostring(view.preview_win), tostring(origin) },
+    callback = util.entry(function(event)
+      v.nvim_del_augroup_by_id(group)
+      local closing = tonumber(event.match)
+      for _, win in ipairs({ view.preview_win, view.list_win }) do
+        if win ~= closing and v.nvim_win_is_valid(win) then v.nvim_win_close(win, true) end
+      end
     end),
   })
   refresh(view)

@@ -101,6 +101,7 @@ local function write(path, result, flags)
   local fd, open_err, code = vim.uv.fs_open(path, flags, tonumber("644", 8))
   if not fd then return open_err, code end
   local versioned = vim.tbl_extend("error", result, { version = result.recording and M.FORMAT_VERSION or 1 })
+  versioned.query = nil
   local data = encode_pretty(versioned) .. "\n"
   local written, write_err = vim.uv.fs_write(fd, data)
   vim.uv.fs_close(fd)
@@ -200,6 +201,7 @@ local function valid_recording(recording, height)
   if not valid_position(recording, height) then return false end
   for _, step in ipairs(recording.steps) do
     if type(step) ~= "table" or type(step.keys) ~= "string"
+        or (step.typed ~= nil and type(step.typed) ~= "string")
         or type(step.deltas) ~= "table" or not vim.islist(step.deltas) then return false end
     for _, delta in ipairs(step.deltas) do
       if type(delta) ~= "table" or not index(delta.first) or not index(delta.old_count)

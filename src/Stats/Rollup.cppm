@@ -10,8 +10,9 @@ export namespace Stats {
 // In the journal directory; written by `vimfy_journal`, read by the summary.
 inline constexpr std::string_view ROLLUP_FILE = "rollup.vfr";
 
-// A `vf.journal.Sample.Outcome` with a score: `scored` or `unbeaten`.
+// Scored or unbeaten. An individual run also needs positive user effort.
 bool isScoring(int outcome);
+bool isScoring(const Run& run);
 
 struct RunKey {
   int64_t day = 0;

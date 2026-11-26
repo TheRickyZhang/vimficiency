@@ -26,7 +26,7 @@ return function(ctx)
     end,
   },
   {
-    name = "simulate replays insert and visual sequence with virtual header",
+    name = "simulate replays insert and visual sequence with fixed header",
     run = function(next)
       with_replay({ "jf;i<BS>3<Esc><Space>ve", "j" }, {
         "one two",
@@ -38,7 +38,7 @@ return function(ctx)
         assert_eq(get_snapshot(1, 3).mode, "i", "snapshot mode after entering insert")
 
         sim._debug_seek_to(3)
-        assert_true(header_lines(seq1.buf)[3]:find("Mode INSERT") ~= nil,
+        assert_true(header_lines(seq1)[3]:find("Mode INSERT") ~= nil,
           "insert header on mode row")
 
         assert_eq(get_snapshot(1, 4).lines,
@@ -55,7 +55,7 @@ return function(ctx)
 
         assert_eq(get_snapshot(1, 8).mode, "v", "snapshot mode after visual enter")
         sim._debug_seek_to(8)
-        assert_true(header_lines(seq1.buf)[3]:find("Mode VISUAL") ~= nil,
+        assert_true(header_lines(seq1)[3]:find("Mode VISUAL") ~= nil,
           "visual header on mode row")
         assert_eq(get_snapshot(1, 9).cursor, { 2, 6 }, "snapshot cursor after visual e")
       end, next)

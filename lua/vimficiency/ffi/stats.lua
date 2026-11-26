@@ -12,6 +12,7 @@ local lib = core.lib
 
 --- `vf.stats.Session` (src/LuaExports/proto/stats.proto).
 ---@class VF.Stats.Session
+---@field query VF.QueryShape
 ---@field finished_wall_epoch integer
 ---@field kind VF.Session.Kind
 ---@field outcome "no_result"|"scored"|"unbeaten"
@@ -27,7 +28,7 @@ local lib = core.lib
 
 ---@alias VF.Stats.Outcome "scored"|"too_large"|"no_result"|"crashed"|"unsupported"|"unbeaten"
 ---@alias VF.Stats.Weight "effort"|"uniform"
----@alias VF.Stats.Order "worst"|"newest"|"slowest"|"user_cost"|"best_cost"|"saved"|"typed"
+---@alias VF.Stats.Order "worst"|"newest"|"slowest"|"user_cost"|"best_cost"|"saved"|"typed"|"last_atom"|"window_size"|"tag"
 
 --- `vf.stats.Filter` (src/LuaExports/proto/summary.proto). Every field is
 --- optional; Lua copies a row's `drill` rather than building one.
@@ -42,6 +43,7 @@ local lib = core.lib
 ---@field over_typed? boolean    # only runs where the user typed more than the best sequence
 ---@field beats? boolean         # only runs whose keys cost less than the best sequence
 ---@field timed? boolean
+---@field scoring? boolean
 ---@field query_size? { first: integer, last: integer }
 
 --- `vf.stats.SummaryRequest` (src/LuaExports/proto/summary.proto).
@@ -84,25 +86,39 @@ local lib = core.lib
 ---@field score VF.Stats.Score     # over its scoring runs, timed or not
 ---@field drill? VF.Stats.Filter   # those runs
 
---- Unbeaten runs holding a command the search does not model; a run counts
+--- Runs holding a command the search does not model; a run counts
 --- under each tag it holds, and under `other` when it holds none.
----@class VF.Stats.UnbeatenTag
+---@class VF.Stats.RunTag
 ---@field name string
 ---@field runs integer
 ---@field drill VF.Stats.Filter
 
 ---@class VF.Stats.Summary
 ---@field chart_unit string
----@field lifetime { sessions: integer, mark: integer, watch: integer, recall: integer, suggest: integer, commands: integer }
+---@field recorded_sessions integer
 ---@field sessions VF.Stats.SessionSummary
 ---@field journal VF.Stats.JournalSummary
 ---@field scoring_label string   # the current stamp's
 ---@field hidden_runs integer    # sessions and rolled-up runs `current_only` left out
 
----@class VF.Stats.SessionSummary
----@field sessions integer
+---@class VF.Stats.KindBreakdown
 ---@field score VF.Stats.Score
----@field chart_score VF.Stats.Score
+---@field drill VF.Stats.Filter
+---@field sizes VF.Stats.TimingBucket[]
+
+---@class VF.Stats.RunBreakdown
+---@field nav VF.Stats.KindBreakdown
+---@field edit VF.Stats.KindBreakdown
+
+---@class VF.Stats.SessionSummary
+---@field breakdown VF.Stats.RunBreakdown
+---@field sessions integer
+---@field mark integer
+---@field watch integer
+---@field recall integer
+---@field suggest integer
+---@field command_count integer
+---@field score VF.Stats.Score
 ---@field days VF.Stats.DayScore[]
 ---@field no_result integer
 ---@field unbeaten integer
@@ -112,32 +128,31 @@ local lib = core.lib
 ---@field unbeaten_drill VF.Stats.Filter
 ---@field beats_drill VF.Stats.Filter
 ---@field commands VF.Stats.CommandSummary
----@field unbeaten_tags VF.Stats.UnbeatenTag[]
+---@field unbeaten_tags VF.Stats.RunTag[]
+---@field beats_tags VF.Stats.RunTag[]
 
 ---@class VF.Stats.JournalCoverage
 ---@field scored_bytes integer
 ---@field journal_bytes integer
 
 ---@class VF.Stats.JournalSummary: VF.Stats.JournalCoverage
+---@field breakdown VF.Stats.RunBreakdown
 ---@field present boolean
 ---@field sizes { size: integer, score: VF.Stats.Score }[]
 ---@field charted_size integer
 ---@field score VF.Stats.Score
----@field nav VF.Stats.Score
----@field edit VF.Stats.Score
----@field chart_score VF.Stats.Score
 ---@field days VF.Stats.DayScore[]
+---@field unscored_drill VF.Stats.Filter
 ---@field unscored { outcome: VF.Stats.Outcome, runs: integer, drill: VF.Stats.Filter }[]
 ---@field unbeaten integer
 ---@field deadline_hit integer
 ---@field rollup_runs_without_commands integer
----@field nav_drill VF.Stats.Filter
----@field edit_drill VF.Stats.Filter
 ---@field unbeaten_drill VF.Stats.Filter
----@field nav_timing VF.Stats.TimingBucket[]
----@field edit_timing VF.Stats.TimingBucket[]
+---@field beats integer
+---@field beats_drill VF.Stats.Filter
 ---@field commands VF.Stats.CommandSummary
----@field unbeaten_tags VF.Stats.UnbeatenTag[]
+---@field unbeaten_tags VF.Stats.RunTag[]
+---@field beats_tags VF.Stats.RunTag[]
 
 ---@class VF.Stats.CommandRow
 ---@field text string
@@ -187,6 +202,7 @@ local lib = core.lib
 ---@field best_display string
 ---@field user_typed_chars integer   # typed in insert mode
 ---@field best_typed_chars integer
+---@field tag string
 ---@field saved_filename string   # a session's file on the `sessions` shelf; "" for a journal run or an unsaved session
 
 ---@class VF.Stats.RunList

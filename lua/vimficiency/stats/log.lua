@@ -77,6 +77,7 @@ local function session_of(kind, result, saved_filename)
     typed_insert = result.user_typed_insert,
     key_count = result.key_count,
     analyze_ms = result.analyze_ms,
+    query = result.query,
   }
 end
 

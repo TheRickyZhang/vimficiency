@@ -15,6 +15,7 @@ protected:
     s.mutable_journal()->clear_scored_bytes();
     s.mutable_journal()->clear_journal_bytes();
     s.mutable_journal()->clear_unbeaten_tags();
+    s.mutable_journal()->clear_beats_tags();
     return s.journal().SerializeAsString();
   }
 };
@@ -23,7 +24,7 @@ protected:
 
 TEST_F(StatsSummaryTest, EmptyLogStillHasTheCurrentScoring) {
   const auto summary = summarize();
-  EXPECT_EQ(summary.lifetime().sessions(), 0);
+  EXPECT_EQ(summary.recorded_sessions(), 0);
   EXPECT_TRUE(summary.scoring_label().starts_with(format("scoring {}·", SCORING_VERSION)));
   EXPECT_EQ(summary.hidden_runs(), 0);
   EXPECT_EQ(summary.sessions().score().spans(), 0);
@@ -38,13 +39,13 @@ TEST_F(StatsSummaryTest, EveryStampsSessionsCountUnlessCurrentOnly) {
   append(stamp, session(10, 10));
 
   const auto all = summarize();
-  EXPECT_EQ(all.lifetime().sessions(), 3);
+  EXPECT_EQ(all.recorded_sessions(), 3);
   EXPECT_EQ(all.sessions().sessions(), 3);
   EXPECT_EQ(all.hidden_runs(), 0);
   EXPECT_NEAR(all.sessions().score().score(), 100.0 * 16 / 30, 1e-9);
 
   const auto current = summarize(true);
-  EXPECT_EQ(current.lifetime().sessions(), 3);
+  EXPECT_EQ(current.recorded_sessions(), 3);
   EXPECT_EQ(current.sessions().sessions(), 2);
   EXPECT_EQ(current.hidden_runs(), 1);
   EXPECT_DOUBLE_EQ(current.sessions().score().score(), 75);
@@ -84,7 +85,7 @@ TEST_F(StatsSummaryTest, ChartAndTimingCoverTheLast30Days) {
   append(stamp, untimed);
 
   const auto s = summarize().sessions();
-  EXPECT_EQ(s.score().spans(), 3);
+  EXPECT_EQ(s.score().spans(), 2);
   ASSERT_EQ(s.days_size(), 1);
   EXPECT_DOUBLE_EQ(s.days(0).score(), 100);
   EXPECT_EQ(s.timing().n(), 1);
@@ -95,19 +96,29 @@ TEST_F(StatsSummaryTest, ChartAndTimingCoverTheLast30Days) {
 TEST_F(StatsSummaryTest, ChartUnitsGroupTimestampedSamplesAndDrillIntoTheirBucket) {
   auto recent = sample(4, 10, 5);
   recent.set_wall_epoch(NOW);
-  auto older = sample(4, 10, 10);
+  auto older = sample(4, 10, 12);
   older.set_wall_epoch(NOW - 35 * 60);
-  journal("a", 100, params, {recent, older});
+  older.set_deadline_hit(true);
+  addCommand(older, "p");
+  auto unscored = sample(4, 0, 0, vf::journal::Sample::too_large);
+  unscored.set_wall_epoch(older.wall_epoch());
+  journal("a", 100, params, {recent, older, unscored});
   auto req = request();
   for (auto unit : {vf::stats::minutes, vf::stats::hours, vf::stats::days, vf::stats::weeks}) {
     req.set_chart_unit(unit);
     const auto chart = summarize(req).journal();
     const bool minutes = unit == vf::stats::minutes;
-    EXPECT_EQ(chart.chart_score().spans(), minutes ? 1 : 2);
-    EXPECT_DOUBLE_EQ(chart.chart_score().score(), minutes ? 50 : 75);
+    EXPECT_EQ(chart.score().spans(), minutes ? 1 : 2);
+    EXPECT_DOUBLE_EQ(chart.score().score(), minutes ? 50 : 75);
+    EXPECT_EQ(chart.beats(), minutes ? 0 : 1);
+    EXPECT_EQ(runs(chart.beats_drill()).total(), chart.beats());
+    EXPECT_EQ(chart.beats_tags_size(), chart.beats());
+    EXPECT_EQ(chart.deadline_hit(), chart.beats());
+    EXPECT_EQ(runs(chart.unscored_drill()).total(), minutes ? 0 : 1);
+    EXPECT_EQ(chart.unscored_size(), minutes ? 0 : 1);
     int listed = 0;
     for (const auto& bucket : chart.days()) listed += runs(bucket.drill()).total();
-    EXPECT_EQ(listed, chart.chart_score().spans());
+    EXPECT_EQ(listed, chart.score().spans());
   }
 
   req.set_chart_unit(vf::stats::minutes);
@@ -123,11 +134,11 @@ TEST_F(StatsSummaryTest, ChartUnitsGroupTimestampedSamplesAndDrillIntoTheirBucke
     EXPECT_EQ(runs(bucket.drill()).total(), 1);
   }
   req.set_chart_buckets(7);
-  EXPECT_EQ(summarize(req).journal().chart_score().spans(), 1);
+  EXPECT_EQ(summarize(req).journal().score().spans(), 1);
 }
 
 TEST_F(StatsSummaryTest, JournalChartsTheMiddleSizeAndListsEvery) {
-  auto nav = sample(4, 10, 10);
+  auto nav = sample(4, 10, 11);
   nav.set_nav_only(true);
   auto cut = sample(4, 10, 5);
   cut.set_deadline_hit(true);
@@ -145,12 +156,52 @@ TEST_F(StatsSummaryTest, JournalChartsTheMiddleSizeAndListsEvery) {
   EXPECT_DOUBLE_EQ(j.sizes(2).score().score(), 20);
   EXPECT_EQ(j.score().spans(), 3);
   EXPECT_NEAR(j.score().score(), 100.0 * 25 / 30, 1e-9);
-  EXPECT_DOUBLE_EQ(j.nav().score(), 100);
-  EXPECT_DOUBLE_EQ(j.edit().score(), 75);
+  EXPECT_DOUBLE_EQ(j.breakdown().nav().score().score(), 100);
+  EXPECT_DOUBLE_EQ(j.breakdown().edit().score().score(), 75);
   ASSERT_EQ(j.unscored_size(), 1);
   EXPECT_EQ(j.unscored(0).outcome(), "too_large");
   EXPECT_EQ(j.unbeaten(), 1);
+  EXPECT_EQ(j.beats(), 1);
+  EXPECT_EQ(runs(j.beats_drill()).total(), 1);
   EXPECT_EQ(j.deadline_hit(), 1);
+}
+
+TEST_F(StatsSummaryTest, SessionKindAndSizeDrillsListOnlyTheSessionsTheyCount) {
+  auto move = session(10, 5);
+  move.mutable_query()->set_nav_only(true);
+  move.mutable_query()->set_query_size(64);
+  append(stamp, move);
+  auto edit = session(10, 0, vf::stats::Session::unbeaten);
+  edit.mutable_query()->set_query_size(65);
+  edit.set_analyze_ms(0);
+  append(stamp, edit);
+  move.set_user_cost(0);
+  append(stamp, move);
+
+  auto sampled = sample(4, 10, 5);
+  sampled.set_nav_only(true);
+  sampled.set_query_size(64);
+  journal("a", 100, params, {sampled});
+  const auto summary = summarize();
+  const auto& sessions = summary.sessions();
+  const auto& nav = sessions.breakdown().nav();
+  const auto& edits = sessions.breakdown().edit();
+  EXPECT_EQ(sessions.sessions(), 3);
+  EXPECT_EQ(sessions.score().spans(), nav.score().spans() + edits.score().spans());
+  EXPECT_EQ(nav.score().spans(), 1);
+  EXPECT_DOUBLE_EQ(nav.score().score(), 50);
+  EXPECT_EQ(edits.score().spans(), 1);
+  EXPECT_DOUBLE_EQ(edits.score().score(), 100);
+  for (const auto* drill : {&nav.drill(), &nav.sizes(0).drill(), &edits.drill(), &edits.sizes(1).drill()}) {
+    const auto listed = runs(*drill);
+    ASSERT_EQ(listed.total(), 1);
+    EXPECT_TRUE(listed.runs(0).id().has_session());
+    EXPECT_EQ(listed.runs(0).nav_only(), drill->kind() == vf::stats::Filter::nav);
+  }
+  EXPECT_EQ(nav.sizes(0).timing().n(), 2);
+  EXPECT_EQ(runs(nav.sizes(0).timing().drill()).total(), 2);
+  EXPECT_EQ(edits.sizes(1).timing().n(), 0);
+  EXPECT_EQ(runs(summary.journal().breakdown().nav().drill()).total(), 1);
 }
 
 TEST_F(StatsSummaryTest, JournalTimingBucketsDrillIntoExactlyTheirTimedQueries) {
@@ -173,9 +224,9 @@ TEST_F(StatsSummaryTest, JournalTimingBucketsDrillIntoExactlyTheirTimedQueries) 
   journal("a", 100, params, {motion, slower, untimed, edit, tail, otherSize});
 
   const auto j = summarize().journal();
-  ASSERT_EQ(j.nav_timing_size(), 7);
-  ASSERT_EQ(j.edit_timing_size(), 7);
-  const auto& first = j.nav_timing(0);
+  ASSERT_EQ(j.breakdown().nav().sizes_size(), 7);
+  ASSERT_EQ(j.breakdown().edit().sizes_size(), 7);
+  const auto& first = j.breakdown().nav().sizes(0);
   EXPECT_EQ(first.first(), 1);
   EXPECT_EQ(first.last(), 64);
   EXPECT_EQ(first.timing().n(), 2);
@@ -183,15 +234,15 @@ TEST_F(StatsSummaryTest, JournalTimingBucketsDrillIntoExactlyTheirTimedQueries) 
   const auto listed = runs(first.timing().drill(), vf::stats::RunsRequest::slowest);
   ASSERT_EQ(listed.total(), 2);
   EXPECT_DOUBLE_EQ(listed.runs(0).analyze_ms(), 7);
-  EXPECT_EQ(j.nav_timing(1).timing().n(), 0);
+  EXPECT_EQ(j.breakdown().nav().sizes(1).timing().n(), 0);
   // The untimed run scores too.
   EXPECT_EQ(first.score().spans(), 3);
   EXPECT_DOUBLE_EQ(first.score().score(), 50);
   EXPECT_EQ(runs(first.drill()).total(), 3);
-  EXPECT_EQ(first.score().spans(), j.nav().spans());
-  EXPECT_FALSE(j.nav_timing(1).has_drill());
+  EXPECT_EQ(first.score().spans(), j.breakdown().nav().score().spans());
+  EXPECT_FALSE(j.breakdown().nav().sizes(1).has_drill());
 
-  const auto& editBucket = j.edit_timing(4);
+  const auto& editBucket = j.breakdown().edit().sizes(4);
   EXPECT_EQ(editBucket.first(), 513);
   EXPECT_EQ(editBucket.last(), 1024);
   EXPECT_EQ(editBucket.deadline_hit(), 1);
@@ -199,14 +250,14 @@ TEST_F(StatsSummaryTest, JournalTimingBucketsDrillIntoExactlyTheirTimedQueries) 
   EXPECT_EQ(runs(editBucket.timing().drill()).total(), 1);
   // Timed, but it found no result.
   EXPECT_EQ(editBucket.score().spans(), 0);
-  const auto& open = j.edit_timing(6);
+  const auto& open = j.breakdown().edit().sizes(6);
   EXPECT_EQ(open.first(), 2049);
   EXPECT_EQ(open.last(), 0);
   EXPECT_EQ(runs(open.timing().drill()).total(), 1);
 
   age("a");
   ASSERT_EQ(rollUp(params), 1);
-  EXPECT_EQ(summarize().journal().nav_timing(0).timing().n(), 0);
+  EXPECT_EQ(summarize().journal().breakdown().nav().sizes(0).timing().n(), 0);
   EXPECT_EQ(runs(first.timing().drill()).total(), 0);
 }
 
@@ -275,7 +326,7 @@ TEST_F(StatsSummaryTest, EachSourceHasItsOwnCommandTableOfItsScoredSpans) {
   EXPECT_EQ(runs.less(0).optimizer(), 10);
 }
 
-TEST_F(StatsSummaryTest, CommandsCoverTheChartsBuckets) {
+TEST_F(StatsSummaryTest, SummaryDetailsAndTheirDrillsCoverTheChartsBuckets) {
   const array<int64_t, 3> ages = {60, 35 * 60, 40 * DAY};
   vector<vf::journal::Sample> samples;
   for (int i = 0; i < 30; i++) {
@@ -299,8 +350,17 @@ TEST_F(StatsSummaryTest, CommandsCoverTheChartsBuckets) {
                                    pair{vf::stats::days, 20}, pair{vf::stats::weeks, 30}}) {
     req.set_chart_unit(unit);
     const auto summary = summarize(req);
-    EXPECT_EQ(summary.sessions().chart_score().spans(), spans);
-    EXPECT_EQ(summary.journal().chart_score().spans(), spans);
+    EXPECT_EQ(summary.sessions().sessions(), spans);
+    EXPECT_EQ(summary.sessions().mark(), spans);
+    EXPECT_EQ(summary.sessions().command_count(), 2 * spans);
+    EXPECT_EQ(summary.sessions().timing().n(), spans);
+    EXPECT_EQ(runs(summary.sessions().timing().drill()).total(), spans);
+    EXPECT_EQ(summary.sessions().score().spans(), spans);
+    for (const auto& edit : {summary.sessions().breakdown().edit(), summary.journal().breakdown().edit()}) {
+      EXPECT_EQ(edit.score().spans(), spans);
+      EXPECT_EQ(runs(edit.drill()).total(), spans);
+    }
+    EXPECT_EQ(summary.journal().score().spans(), spans);
     for (const auto& commands : {summary.sessions().commands(), summary.journal().commands()}) {
       EXPECT_EQ(commands.spans(), spans);
       ASSERT_EQ(commands.less_size(), 1);
@@ -441,16 +501,15 @@ TEST_F(StatsSummaryTest, RollupsUnderOtherParamsCountUnlessCurrentOnly) {
 
   const auto all = summarize();
   EXPECT_EQ(all.hidden_runs(), 0);
-  EXPECT_EQ(all.journal().score().spans(), 2);
   EXPECT_EQ(all.journal().sizes(0).score().spans(), 1);
   EXPECT_EQ(all.journal().unscored_size(), 1);
-  EXPECT_EQ(all.journal().chart_score().spans(), 1);
+  EXPECT_EQ(all.journal().score().spans(), 1);
 
   auto wide = request();
   wide.set_chart_bucket_size(3);
   const auto chart = summarize(wide).journal();
   ASSERT_EQ(chart.days_size(), 2);
-  EXPECT_EQ(chart.chart_score().spans(), 2);
+  EXPECT_EQ(chart.score().spans(), 2);
   const auto& archived = chart.days(0).drill();
   EXPECT_EQ(archived.days().last() - archived.days().first() + 1, 3);
   EXPECT_EQ(runs(archived).rolled_up(), 1);
@@ -594,6 +653,52 @@ TEST_F(StatsFormatTest, ALogWithoutAHeaderStillReadsAndGainsNone) {
   ASSERT_EQ(records.size(), 4);
   EXPECT_TRUE(records[0].has_stamp());
   EXPECT_EQ(summarize().sessions().sessions(), 3);
+}
+
+TEST_F(StatsFormatTest, MissingMeasurementsAreOutdatedInFormatOneAndMalformedInFormatTwo) {
+  append(stamp, session(10, 5));
+  auto file = sessionLog();
+  auto* header = file.mutable_records(0)->mutable_header();
+  auto* entry = file.mutable_records(2)->mutable_session();
+  entry->clear_query();
+  auto checkError = [&](string_view reason) {
+    rewrite(log(), file.SerializeAsString());
+    const auto result = Stats::summarize(request(true).SerializeAsString(), NOW);
+    ASSERT_FALSE(result);
+    EXPECT_TRUE(result.error().contains(reason)) << result.error();
+    EXPECT_TRUE(result.error().contains("byte ")) << result.error();
+  };
+  header->set_format(1);
+  checkError("outdated session");
+  header->set_format(SESSION_LOG_FORMAT);
+  checkError("malformed session: missing query");
+  entry->mutable_query()->set_query_size(0);
+  checkError("malformed session: query_size");
+}
+
+TEST_F(StatsFormatTest, InvalidSessionsAndBrokenRecordsFailWithoutAppending) {
+  vf::stats::AppendSessionRequest req;
+  req.set_path(log());
+  *req.mutable_session() = session(10, 5);
+  req.mutable_session()->clear_query();
+  const auto invalid = Stats::appendSession(req.SerializeAsString());
+  ASSERT_FALSE(invalid);
+  EXPECT_TRUE(invalid.error().contains("malformed session: missing query")) << invalid.error();
+  EXPECT_FALSE(fs::exists(log()));
+
+  req.mutable_session()->mutable_query()->set_query_size(1);
+  ASSERT_TRUE(Stats::appendSession(req.SerializeAsString()));
+  const string valid = readFile(log());
+  for (const string broken : {string("x"), string("\x0a\x01\xff", 3), string("\x0a\x00", 2)}) {
+    rewrite(log(), valid + broken);
+    const auto summary = Stats::summarize(request().SerializeAsString(), NOW);
+    ASSERT_FALSE(summary);
+    EXPECT_TRUE(summary.error().contains("malformed session log record")) << summary.error();
+    const auto appended = Stats::appendSession(req.SerializeAsString());
+    ASSERT_FALSE(appended);
+    EXPECT_EQ(appended.error(), summary.error());
+    EXPECT_EQ(readFile(log()), valid + broken);
+  }
 }
 
 TEST_F(StatsFormatTest, ALogOfANewerFormatIsAnError) {

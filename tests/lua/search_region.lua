@@ -29,6 +29,7 @@ test("build_search_request: cuts to the cursor span when buffers are equal", fun
 
   assert_eq(request.initial_lines, { "d", "e", "f", "g", "h", "i" })
   assert_eq(request.goal_lines, { "d", "e", "f", "g", "h", "i" })
+  assert_eq(request.query, { nav_only = true, query_size = 3 })
   assert_eq(request.start_row, 2)
   assert_eq(request.start_col, 1)
   assert_eq(request.end_row, 4)
@@ -49,6 +50,7 @@ test("build_search_request: expands to cover changed lines outside the cursor sp
   }), 0, 500)
 
   assert_eq(request.initial_lines, { "b", "c", "d", "e", "f", "g", "h" })
+  assert_eq(request.query, { nav_only = false, query_size = 13 })
   assert_eq(request.goal_lines[1], "changed")
   assert_eq(request.start_row, 5)
   assert_eq(request.has_lines_above, true)
@@ -62,6 +64,7 @@ test("build_search_request: keeps rows only the longer buffer has", function()
 
   assert_eq(request.initial_lines, { "a" })
   assert_eq(request.goal_lines, { "a", "" })
+  assert_eq(request.query, { nav_only = false, query_size = 2 })
   assert_eq(request.has_lines_above, false)
   assert_eq(request.has_lines_below, false)
 end)

@@ -27,6 +27,7 @@ message SearchRequest {
   // `scope:key=value` lines; empty for none.
   bytes optimizer_overrides = 12;
   vf.IndentOptions indent = 14;
+  vf.QueryShape query = 15;
 }
 
 // A session over its whole buffers. `vf_build_search_request` cuts it to the

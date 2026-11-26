@@ -16,6 +16,21 @@ constexpr int MIN_OCCURRENCES = 10;
 // Shares within 5% of each other count as the same.
 constexpr double DEADBAND = 0.05;
 
+constexpr array<string_view, 4> PUT_COMMANDS = {"p", "P", "gp", "gP"};
+constexpr array<string_view, 3> UNDO_COMMANDS = {"u", "U", "<C-r>"};
+constexpr array<string_view, 4> SCREEN_LINE_MOTIONS = {"gj", "gk", "gj (same line)", "gk (same line)"};
+constexpr array<string_view, 1> BYTE_MOTIONS = {"go"};
+constexpr array<string_view, 3> SCREEN_MOTIONS = {"H", "M", "L"};
+constexpr array<string_view, 2> JUMP_HISTORY = {"<C-o>", "<C-i>"};
+constexpr UnmodeledCommands PASTE{"paste", PUT_COMMANDS};
+constexpr UnmodeledCommands UNDO{"undo or redo", UNDO_COMMANDS};
+constexpr array UNBEATEN_TAGS = {PASTE, UNDO};
+constexpr array<UnmodeledCommands, 6> BEATS_TAGS = {{
+    {"screen-line movement (gj/gk)", SCREEN_LINE_MOTIONS}, PASTE, UNDO,
+    {"byte-offset jump (go)", BYTE_MOTIONS}, {"screen position (H/M/L)", SCREEN_MOTIONS},
+    {"jump history", JUMP_HISTORY},
+}};
+
 size_t countDigits(string_view text) {
   size_t i = 0;
   while (i < text.size() && text[i] >= '0' && text[i] <= '9') i++;
@@ -116,6 +131,35 @@ int internedId(string_view command) {
   const Interned& table = interned();
   const auto it = table.ids.find(command);
   return it == table.ids.end() ? -1 : it->second;
+}
+
+span<const UnmodeledCommands> commandTags(bool beats) {
+  return beats ? span<const UnmodeledCommands>(BEATS_TAGS) : span<const UnmodeledCommands>(UNBEATEN_TAGS);
+}
+
+bool UnmodeledCommands::matches(string_view command, bool counted) const {
+  if (counted) command.remove_prefix(countDigits(command));
+  return ranges::contains(commands, command);
+}
+
+vector<string> UnmodeledCommands::variants(bool counted) const {
+  if (!counted) return ranges::to<vector<string>>(commands);
+  vector<string> variants;
+  for (const string& name : interned().names) {
+    if (matches(name, counted)) variants.push_back(name);
+  }
+  return variants;
+}
+
+string tagLabel(const CommandCounts& user, bool beats) {
+  string label;
+  for (const auto& tag : commandTags(beats)) {
+    if (ranges::any_of(user.commands | views::keys, [&](const string& key) { return tag.matches(key, beats); })) {
+      if (!label.empty()) label += ", ";
+      label += tag.name;
+    }
+  }
+  return label;
 }
 
 void countKeys(CommandCounts& counts, string_view keys, bool insertText) {

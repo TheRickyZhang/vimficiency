@@ -38,6 +38,7 @@ struct Selection {
   // Only runs whose keys cost less than the best sequence found.
   bool beats = false;
   bool timed = false;
+  bool scoring = false;
   std::optional<std::pair<int64_t, int64_t>> querySize;
 
   // Whether it reads each run on its own, which rollups do not keep.
@@ -86,6 +87,9 @@ enum class RunOrder : uint8_t {
   Saved,
   // Characters the user typed in insert mode − the best sequence's.
   Typed,
+  LastAtom,
+  WindowSize,
+  Tag,
 };
 
 struct ListedRun {

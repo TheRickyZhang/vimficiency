@@ -43,7 +43,7 @@ require('vimficiency').setup({ sessions = { save = false } })
 A pin is a copy you keep on purpose.
 
 ```vim
-:Vimfy pin   <alias>|<filename> [<filename>]
+:Vimfy pin   <session> [filename]
 :Vimfy unpin <filename>
 :Vimfy rm    <filename>
 ```

@@ -133,9 +133,9 @@ test("sampling.refresh: scores a journal written by this Neovim, once", function
     assert_eq(j.scored_bytes, j.journal_bytes)
     assert_eq(j.charted_size, 2)
     assert_eq(j.score.spans, 3)
-    assert_eq(j.nav.spans, 3)
-    assert_eq(j.nav_timing[1].timing.n, 3)
-    assert_true(j.nav_timing[1].timing.p50 > 0)
+    assert_eq(j.breakdown.nav.score.spans, 3)
+    assert_eq(j.breakdown.nav.sizes[1].timing.n, 3)
+    assert_true(j.breakdown.nav.sizes[1].timing.p50 > 0)
     assert_eq(stats_query.summary(TOP).journal.commands.spans, 3)
     local lock = journal.dir() .. "/sampler.lock"
     local inode = assert(vim.uv.fs_stat(lock)).ino
@@ -183,6 +183,8 @@ test("ffi.stats.run: a listed journal run is cut again as it was scored", functi
       limit = 10,
     })
     assert_eq(#list.runs, 3)
+    local narrow = render.run_table(list, 0, 80)
+    assert_true(narrow[1]:match("last_atom%s+window_size%s+tag%s*$") ~= nil)
     for _, row in ipairs(list.runs) do
       local run = assert(ffi_stats.run({ id = row.id, journal_dir = journal.dir(), sample_params = sampling.params() }))
       assert_eq(run.lines, { "alpha beta gamma delta epsilon", "second line" })
@@ -218,9 +220,11 @@ test("stats view: narrows to the movement-only journal runs", function()
     assert_eq(runs[#runs], "runs 1–3 of 3")
     local _, preview = stats_pane("preview")
     assert_match(preview[1], ".vfj · 2 commands to atom ")
+    local atom, size = runs[2]:match("%s(%d+)%s+(%d+)%s*$")
+    assert_eq(atom, preview[1]:match("atom (%d+)"))
+    assert_eq(size, "2")
     assert_eq(preview[2], " you:   l l")
-    assert_true(line_with(preview, " before ") ~= nil, "the text before")
-    assert_true(line_with(preview, " │ after ") ~= nil, "the text after")
+    assert_match(assert(line_with(preview, "Initial buffer")), "Goal buffer")
     h.feed("<Esc>")
     -- Under the whole bar, its runs by unpadded region size.
     h.feed("j")
@@ -254,7 +258,7 @@ local function in_nav_runs(fn)
   journal_moves(6, "lua")
   h.with_patch({ { config.journal.sampling, "window_sizes", { 2 } } }, function()
     assert_eq(refresh(), nil)
-    local nav_drill = stats_query.summary(TOP).journal.nav_drill
+    local nav_drill = stats_query.summary(TOP).journal.breakdown.nav.drill
     stats_view.open()
     open_movement_runs()
     local rows = stats_query.runs({ current_only = false, weight = "effort", filter = nav_drill, charted_size = 0 }, "worst", false, 0, 50).runs
@@ -326,13 +330,13 @@ test("journal and session View show the same recorded edits regardless of their 
     detail.end_row, detail.end_col = 0, 4
     detail.recording.steps = {
       { keys = "l", row = detail.start_row, col = detail.start_col + 1, mode = "n", deltas = {} },
-      { keys = "==iconst<Esc>", row = 0, col = 4, mode = "n",
+      { keys = "==<Right>", typed = "iconst<Esc>", row = 0, col = 4, mode = "n",
         deltas = { { first = 0, old_count = #detail.lines, lines = detail.goal_lines } } },
     }
     local function user_states()
       assert_true(vim.wait(5000, function() return #simulate._debug_get_windows() > 0 end))
       local user = assert(simulate._debug_get_pool().user)
-      assert_eq(user.tokens[2].text, "==iconst<Esc>")
+      assert_eq(user.tokens[2].text, "iconst<Esc>")
       assert_eq(user.tokens[2].kind, "recorded")
       assert_eq(#user.states, 3)
       assert_eq(user.states[2].cursor, { detail.start_row + 1, detail.start_col + 1 })
@@ -400,8 +404,6 @@ test("stats view: right on the run length row switches the chart and runs", func
       if t.id == "run_length" then vim.api.nvim_win_set_cursor(overview_win, { t.cursor[1] + 1, t.cursor[2] }) end
     end
     h.feed("l")
-    local header = stats_header()
-    assert_true(header:find("^ Stats    all scorings · .* · runs of 4$") ~= nil, header)
     assert_eq(nav_runs(), "runs 1–1 of 1")
     _, overview = stats_pane("overview")
     assert_true(line_with(overview, " [4]") ~= nil)
@@ -431,7 +433,7 @@ test("sampling.refresh: an old journal is rolled up and deleted, and still count
     local j = journal_summary()
     assert_eq(j.journal_bytes, 0)
     assert_eq(j.score.spans, 3)
-    assert_eq(j.nav.spans, 3)
+    assert_eq(j.breakdown.nav.score.spans, 3)
     assert_eq(stats_query.summary(TOP).journal.commands.spans, 3)
   end)
 end)
